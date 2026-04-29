@@ -67,6 +67,18 @@ All 12 build steps completed. Application code covers the full Phase 1 scope.
 
 ---
 
+## Known issues (post-build cleanup)
+
+1. **`NETWORK-PNP-LIC` mock description** — `tests/mocks/catalog-responses.json` has garbage repeated words in the description for this SKU. Cosmetic, doesn't affect functionality.
+2. **Unused `pgPolicy` import** — `src/lib/db/schema.ts` imports `pgPolicy` from Drizzle but RLS is handled in the raw SQL migration. Remove the unused import.
+3. **Worker dynamic import** — `worker.ts` uses `await import()` for `getIntakeById` to work around circular imports. Refactor to a static import.
+4. **Agent parse step is embedded** — The parse step (Haiku normalization) is folded into the suggest prompt rather than being a separate LLM call. Works but is less modular than architecture specifies.
+5. **Worker credentials are mock placeholders** — `worker.ts` has hardcoded mock credentials with a TODO. Production path loads from `tenant_credentials` table via Secrets Manager.
+6. **`next-env.d.ts` not yet generated** — Created automatically on first `next dev` or `next build`. Referenced in tsconfig.json.
+7. **Typecheck not yet verified** — Need `npm install` to complete, then `npm run typecheck`. Expect a few type errors given the code volume.
+
+---
+
 ## Blockers
 
 - **Cisco API credentials needed.** Cannot test adapters against production Cisco APIs without a working CCO account with partner-level access and a registered application. One of the partners needs to provide or arrange this.
