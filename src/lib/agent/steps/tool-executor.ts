@@ -13,7 +13,7 @@ import type { ValidationContext, CatalogItemForValidation } from "@/types/valida
 import type { StandardsConfig } from "@/types/tenant";
 import type { IntakeRequirements } from "@/types/intake";
 
-interface ToolContext {
+export interface ToolContext {
   tenantId: string;
   priceListId: string;
   credentials: {

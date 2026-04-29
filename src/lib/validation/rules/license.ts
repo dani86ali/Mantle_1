@@ -59,8 +59,8 @@ export const licenseRule: ValidationRule = {
         if (l.category !== "license" && l.category !== "subscription") {
           return false;
         }
-        // Check by SKU prefix matching (e.g., C9300L-DNA matches C9300L)
-        const hwPrefix = hwLine.sku.split("-").slice(0, 2).join("-");
+        // Match on product family prefix (first segment, e.g., C9300L from C9300L-24UXG-4X-A)
+        const hwPrefix = hwLine.sku.split("-")[0];
         return l.sku.startsWith(hwPrefix) || l.parentLineId === hwLine.id;
       });
 

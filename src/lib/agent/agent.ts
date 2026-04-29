@@ -15,7 +15,7 @@ import {
   SYSTEM_PROMPT_SUMMARIZE,
   SYSTEM_PROMPT_QUOTE_DETECT,
 } from "./prompts";
-import { executeTool } from "./steps/tool-executor";
+import { executeTool, type ToolContext } from "./steps/tool-executor";
 import type { Intake, IntakeRequirements } from "@/types/intake";
 import type { BomLine, AgentSummary, QuoteAdvisory, AgentStep, LlmCallLog, CiscoCallLog } from "@/types/bom";
 import type { StandardsConfig } from "@/types/tenant";
@@ -184,7 +184,7 @@ interface ToolUseLoopParams {
   systemPrompt: string;
   userMessage: string;
   tools: Anthropic.Tool[];
-  toolContext: Record<string, unknown>;
+  toolContext: ToolContext;
   maxIterations: number;
   startTime: number;
   llmCalls: LlmCallLog[];
