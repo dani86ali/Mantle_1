@@ -1,0 +1,515 @@
+import { describe, it, expect } from "vitest";
+import type { ValidationContext, CatalogItemForValidation } from "@/types/validation";
+import type { BomLine } from "@/types/bom";
+import { runValidation } from "@/lib/validation/engine";
+import { skuExistsRule } from "@/lib/validation/rules/sku-exists";
+import { eoxRule } from "@/lib/validation/rules/eox";
+import { regionRule } from "@/lib/validation/rules/region";
+import { poeRule } from "@/lib/validation/rules/poe";
+import { opticsRule } from "@/lib/validation/rules/optics";
+import { psuRule } from "@/lib/validation/rules/psu";
+import { licenseRule } from "@/lib/validation/rules/license";
+import { stackingRule } from "@/lib/validation/rules/stacking";
+import { supportRule } from "@/lib/validation/rules/support";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
+function makeLine(overrides: Partial<BomLine> = {}): BomLine {
+  return {
+    id: `line-${Math.random().toString(36).slice(2, 8)}`,
+    lineNumber: 1,
+    sku: "C9300L-24UXG-4X-A",
+    description: "Catalyst 9300L",
+    quantity: 1,
+    unitListPrice: 13960,
+    unitNetPrice: 13960,
+    discountPercent: 0,
+    extendedNetPrice: 13960,
+    category: "hardware",
+    smartAccountMandatory: true,
+    validationFlags: [],
+    decision: "pending",
+    catalogVerified: true,
+    ...overrides,
+  };
+}
+
+function makeCatalogItem(
+  overrides: Partial<CatalogItemForValidation> = {}
+): CatalogItemForValidation {
+  return {
+    sku: "C9300L-24UXG-4X-A",
+    exists: true,
+    eoxStatus: { isEox: false },
+    regionAvailability: ["EMEAR", "APJC", "AMER", "MEA"],
+    category: "hardware",
+    productFamily: "Catalyst 9300L Series",
+    poeData: { poeBudgetWatts: 880, poePortCount: 24, poeClass: "class4" },
+    opticsData: { sfpSlots: 4, qsfpSlots: 0, totalTransceiverSlots: 4 },
+    psuData: { psuSlots: 2, psuWatts: 1100, isPrimary: true, isRedundant: false },
+    stackingData: { stackable: true, maxStackSize: 8, requiresStackKit: true, modulesPerSwitch: 2 },
+    ...overrides,
+  };
+}
+
+function makeContext(overrides: Partial<ValidationContext> = {}): ValidationContext {
+  return {
+    lines: [],
+    requirements: {},
+    region: "EMEAR",
+    country: "SA",
+    tenantStandards: {
+      requireRedundantPsu: true,
+      preferredLicenseTier: "advantage",
+      preferredDnaTier: "advantage",
+      defaultSupportLevel: "8x5xNBD",
+      approvedProductFamilies: [],
+      regionRestrictions: [],
+    },
+    catalogData: new Map(),
+    ...overrides,
+  };
+}
+
+// ─── SKU Exists ───────────────────────────────────────────────────────────
+
+describe("Rule: SKU Existence", () => {
+  it("passes when all SKUs exist in catalog", () => {
+    const line = makeLine({ sku: "C9300L-24UXG-4X-A" });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({ lines: [line], catalogData: catalog });
+
+    const results = skuExistsRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("fails when SKU not found in catalog", () => {
+    const line = makeLine({ sku: "FAKE-SKU-999" });
+    const catalog = new Map<string, CatalogItemForValidation>();
+    const ctx = makeContext({ lines: [line], catalogData: catalog });
+
+    const results = skuExistsRule.run(ctx);
+    expect(results[0].passed).toBe(false);
+    expect(results[0].severity).toBe("error");
+    expect(results[0].message).toContain("FAKE-SKU-999");
+  });
+
+  it("fails when SKU exists but marked as not found", () => {
+    const line = makeLine({ sku: "BAD-SKU" });
+    const catalog = new Map([["BAD-SKU", makeCatalogItem({ sku: "BAD-SKU", exists: false })]]);
+    const ctx = makeContext({ lines: [line], catalogData: catalog });
+
+    const results = skuExistsRule.run(ctx);
+    expect(results[0].passed).toBe(false);
+  });
+});
+
+// ─── EoX ──────────────────────────────────────────────────────────────────
+
+describe("Rule: EoX Status", () => {
+  it("passes when no EoX SKUs", () => {
+    const line = makeLine();
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({ lines: [line], catalogData: catalog });
+
+    const results = eoxRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("fails when SKU is EoX", () => {
+    const line = makeLine({ sku: "EOX-SWITCH" });
+    const catalog = new Map([
+      [
+        "EOX-SWITCH",
+        makeCatalogItem({
+          sku: "EOX-SWITCH",
+          eoxStatus: {
+            isEox: true,
+            endOfSaleDate: "2023-06-01",
+            migrationSku: "C9300-48P-A",
+          },
+        }),
+      ],
+    ]);
+    const ctx = makeContext({ lines: [line], catalogData: catalog });
+
+    const results = eoxRule.run(ctx);
+    expect(results[0].passed).toBe(false);
+    expect(results[0].severity).toBe("error");
+    expect(results[0].message).toContain("C9300-48P-A");
+  });
+});
+
+// ─── Region ───────────────────────────────────────────────────────────────
+
+describe("Rule: Region Availability", () => {
+  it("passes when SKU available in target region", () => {
+    const line = makeLine();
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({ lines: [line], catalogData: catalog, country: "SA" });
+
+    const results = regionRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("fails when SKU not available in target region", () => {
+    const line = makeLine({ sku: "AMER-ONLY" });
+    const catalog = new Map([
+      [
+        "AMER-ONLY",
+        makeCatalogItem({
+          sku: "AMER-ONLY",
+          regionAvailability: ["AMER"],
+        }),
+      ],
+    ]);
+    const ctx = makeContext({ lines: [line], catalogData: catalog, country: "SA" });
+
+    const results = regionRule.run(ctx);
+    expect(results[0].passed).toBe(false);
+    expect(results[0].message).toContain("not available");
+  });
+});
+
+// ─── PoE ──────────────────────────────────────────────────────────────────
+
+describe("Rule: PoE Budget", () => {
+  it("passes when PoE budget is sufficient", () => {
+    const line = makeLine();
+    const catalog = new Map([
+      [
+        "C9300L-24UXG-4X-A",
+        makeCatalogItem({
+          poeData: { poeBudgetWatts: 880, poePortCount: 24 },
+        }),
+      ],
+    ]);
+    const ctx = makeContext({
+      lines: [line],
+      catalogData: catalog,
+      requirements: { poeClass: "class3" }, // 15.4W per port
+    });
+
+    const results = poeRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("warns when PoE budget insufficient at max class", () => {
+    const line = makeLine();
+    const catalog = new Map([
+      [
+        "C9300L-24UXG-4X-A",
+        makeCatalogItem({
+          poeData: { poeBudgetWatts: 400, poePortCount: 24 },
+        }),
+      ],
+    ]);
+    const ctx = makeContext({
+      lines: [line],
+      catalogData: catalog,
+      requirements: { poeClass: "class4" }, // 30W per port = 720W needed
+    });
+
+    const results = poeRule.run(ctx);
+    expect(results[0].passed).toBe(false);
+    expect(results[0].severity).toBe("warning");
+  });
+
+  it("skips when no PoE switches in BoM", () => {
+    const line = makeLine({ sku: "C9120AXE-E" });
+    const catalog = new Map([
+      ["C9120AXE-E", makeCatalogItem({ sku: "C9120AXE-E", poeData: undefined })],
+    ]);
+    const ctx = makeContext({ lines: [line], catalogData: catalog });
+
+    const results = poeRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+    expect(results[0].message).toContain("not applicable");
+  });
+});
+
+// ─── Optics ───────────────────────────────────────────────────────────────
+
+describe("Rule: Optics Count", () => {
+  it("passes when optics within slot count", () => {
+    const hwLine = makeLine({ sku: "C9300L-24UXG-4X-A" });
+    const sfpLine = makeLine({
+      id: "sfp-1",
+      sku: "SFP-10G-SR",
+      description: "10G SFP+ Transceiver",
+      quantity: 2,
+      category: "accessory",
+    });
+    const catalog = new Map([
+      ["C9300L-24UXG-4X-A", makeCatalogItem()],
+    ]);
+    const ctx = makeContext({
+      lines: [hwLine, sfpLine],
+      catalogData: catalog,
+    });
+
+    const results = opticsRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("fails when optics exceed slot count", () => {
+    const hwLine = makeLine({ sku: "C9300L-24UXG-4X-A", quantity: 1 });
+    const sfpLine = makeLine({
+      id: "sfp-1",
+      sku: "SFP-10G-SR",
+      description: "10G SFP+ Transceiver",
+      quantity: 6, // Only 4 slots available
+      category: "accessory",
+    });
+    const catalog = new Map([
+      ["C9300L-24UXG-4X-A", makeCatalogItem()],
+    ]);
+    const ctx = makeContext({
+      lines: [hwLine, sfpLine],
+      catalogData: catalog,
+    });
+
+    const results = opticsRule.run(ctx);
+    expect(results[0].passed).toBe(false);
+    expect(results[0].severity).toBe("error");
+  });
+});
+
+// ─── PSU ──────────────────────────────────────────────────────────────────
+
+describe("Rule: PSU Redundancy", () => {
+  it("passes with both primary and secondary PSU", () => {
+    const chassis = makeLine({ id: "ch-1", sku: "C9300L-24UXG-4X-A", quantity: 2 });
+    const psuPri = makeLine({ id: "psu-1", sku: "PWR-C1-1100WAC-P", quantity: 2, category: "accessory" });
+    const psuSec = makeLine({ id: "psu-2", sku: "PWR-C1-1100WAC-P/2", quantity: 2, category: "accessory" });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({
+      lines: [chassis, psuPri, psuSec],
+      catalogData: catalog,
+      requirements: { redundancyRequired: true },
+    });
+
+    const results = psuRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("fails when missing secondary PSU", () => {
+    const chassis = makeLine({ id: "ch-1", sku: "C9300L-24UXG-4X-A", quantity: 2 });
+    const psuPri = makeLine({ id: "psu-1", sku: "PWR-C1-1100WAC-P", quantity: 2, category: "accessory" });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({
+      lines: [chassis, psuPri],
+      catalogData: catalog,
+      requirements: { redundancyRequired: true },
+    });
+
+    const results = psuRule.run(ctx);
+    expect(results.some((r) => !r.passed)).toBe(true);
+    expect(results.some((r) => r.message.includes("secondary"))).toBe(true);
+  });
+
+  it("skips when redundancy not required", () => {
+    const chassis = makeLine();
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({
+      lines: [chassis],
+      catalogData: catalog,
+      requirements: { redundancyRequired: false },
+      tenantStandards: {
+        requireRedundantPsu: false,
+        preferredLicenseTier: "advantage",
+        preferredDnaTier: "advantage",
+        defaultSupportLevel: "8x5xNBD",
+        approvedProductFamilies: [],
+        regionRestrictions: [],
+      },
+    });
+
+    const results = psuRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+    expect(results[0].message).toContain("not required");
+  });
+});
+
+// ─── License ──────────────────────────────────────────────────────────────
+
+describe("Rule: License Attachment", () => {
+  it("passes when hardware has license attached", () => {
+    const hw = makeLine({ id: "hw-1", sku: "C9300L-24UXG-4X-A" });
+    const lic = makeLine({
+      id: "lic-1",
+      sku: "C9300L-DNA-A-24-3Y",
+      category: "subscription",
+    });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({
+      lines: [hw, lic],
+      catalogData: catalog,
+    });
+
+    const results = licenseRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("warns when hardware has no license", () => {
+    const hw = makeLine({ id: "hw-1", sku: "C9300L-24UXG-4X-A" });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({ lines: [hw], catalogData: catalog });
+
+    const results = licenseRule.run(ctx);
+    expect(results.some((r) => !r.passed)).toBe(true);
+  });
+
+  it("accepts DNA opt-out for APs (not a missing license)", () => {
+    const ap = makeLine({
+      id: "ap-1",
+      sku: "C9120AXE-E",
+    });
+    const optOut = makeLine({
+      id: "optout-1",
+      sku: "C9120AX-DNA-OPTOUT",
+      description: "C9120AX DNA Subscription Opt Out",
+      category: "license",
+    });
+    const catalog = new Map([
+      [
+        "C9120AXE-E",
+        makeCatalogItem({
+          sku: "C9120AXE-E",
+          productFamily: "Catalyst 9120AX Series",
+        }),
+      ],
+    ]);
+    const ctx = makeContext({
+      lines: [ap, optOut],
+      catalogData: catalog,
+    });
+
+    const results = licenseRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+});
+
+// ─── Stacking ─────────────────────────────────────────────────────────────
+
+describe("Rule: Stacking", () => {
+  it("passes with complete stacking configuration", () => {
+    const sw1 = makeLine({ id: "sw-1", sku: "C9300L-24UXG-4X-A", quantity: 2 });
+    const kit = makeLine({ id: "kit-1", sku: "C9300L-STACK-KIT", quantity: 2, category: "accessory" });
+    const mod = makeLine({ id: "mod-1", sku: "C9300L-STACK", quantity: 4, category: "accessory" });
+    const cable = makeLine({ id: "cable-1", sku: "STACK-T3-50CM", quantity: 2, category: "accessory" });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({
+      lines: [sw1, kit, mod, cable],
+      catalogData: catalog,
+      requirements: { stackingRequired: true },
+    });
+
+    const results = stackingRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("fails when stacking kit missing", () => {
+    const sw1 = makeLine({ id: "sw-1", sku: "C9300L-24UXG-4X-A", quantity: 2 });
+    const mod = makeLine({ id: "mod-1", sku: "C9300L-STACK", quantity: 4, category: "accessory" });
+    const cable = makeLine({ id: "cable-1", sku: "STACK-T3-50CM", quantity: 2, category: "accessory" });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({
+      lines: [sw1, mod, cable],
+      catalogData: catalog,
+      requirements: { stackingRequired: true },
+    });
+
+    const results = stackingRule.run(ctx);
+    expect(results.some((r) => r.message.includes("kit"))).toBe(true);
+  });
+
+  it("skips when stacking not required", () => {
+    const sw1 = makeLine();
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({
+      lines: [sw1],
+      catalogData: catalog,
+      requirements: { stackingRequired: false },
+    });
+
+    const results = stackingRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+    expect(results[0].message).toContain("not required");
+  });
+});
+
+// ─── Support ──────────────────────────────────────────────────────────────
+
+describe("Rule: Support Attachment", () => {
+  it("passes when SmartNet attached to switches", () => {
+    const hw = makeLine({ id: "hw-1", sku: "C9300L-24UXG-4X-A" });
+    const svc = makeLine({
+      id: "svc-1",
+      sku: "CON-SNT-C93024GA",
+      category: "service",
+    });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({
+      lines: [hw, svc],
+      catalogData: catalog,
+    });
+
+    const results = supportRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("warns when switch has no SmartNet", () => {
+    const hw = makeLine({ id: "hw-1", sku: "C9300L-24UXG-4X-A" });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({ lines: [hw], catalogData: catalog });
+
+    const results = supportRule.run(ctx);
+    expect(results.some((r) => !r.passed)).toBe(true);
+    expect(results.some((r) => r.severity === "warning")).toBe(true);
+  });
+
+  it("does NOT flag APs without SmartNet (valid choice)", () => {
+    const ap = makeLine({
+      id: "ap-1",
+      sku: "C9120AXE-E",
+    });
+    const catalog = new Map([
+      [
+        "C9120AXE-E",
+        makeCatalogItem({
+          sku: "C9120AXE-E",
+          productFamily: "Catalyst 9120AX Series",
+        }),
+      ],
+    ]);
+    const ctx = makeContext({ lines: [ap], catalogData: catalog });
+
+    const results = supportRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+});
+
+// ─── Full Engine ──────────────────────────────────────────────────────────
+
+describe("Validation Engine: Full Run", () => {
+  it("runs all 9 rules and returns combined results", () => {
+    const hw = makeLine({ id: "hw-1", sku: "C9300L-24UXG-4X-A", quantity: 2 });
+    const lic = makeLine({ id: "lic-1", sku: "C9300L-DNA-A-24-3Y", category: "subscription" });
+    const svc = makeLine({ id: "svc-1", sku: "CON-SNT-C93024GA", category: "service" });
+    const psu1 = makeLine({ id: "psu-1", sku: "PWR-C1-1100WAC-P", quantity: 2, category: "accessory" });
+    const psu2 = makeLine({ id: "psu-2", sku: "PWR-C1-1100WAC-P/2", quantity: 2, category: "accessory" });
+
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({
+      lines: [hw, lic, svc, psu1, psu2],
+      catalogData: catalog,
+      requirements: { redundancyRequired: true, stackingRequired: false },
+    });
+
+    const results = runValidation(ctx);
+    // Should have results from all 9 rules
+    const ruleIds = new Set(results.map((r) => r.ruleId));
+    expect(ruleIds.size).toBe(9);
+  });
+});
