@@ -1,8 +1,8 @@
 # BOMatic — Progress
 
-## Current status: Pre-build (documentation complete)
+## Current status: Phase 1 build complete (code written, needs npm install + testing)
 
-No application code written yet. All research, product definition, and architecture docs are finalized.
+All 12 build steps completed. Application code covers the full Phase 1 scope.
 
 ---
 
@@ -38,15 +38,32 @@ No application code written yet. All research, product definition, and architect
 
 ---
 
+### Phase 1 Build
+- [x] Project scaffold (Next.js 14, TypeScript strict, Tailwind, Drizzle, Docker Compose, Dockerfile)
+- [x] Shared TypeScript types (intake, bom, validation, tenant, cisco)
+- [x] Database schema + migration (all tables, indexes, RLS, optimistic locking)
+- [x] Mock data layer (30+ SKUs from ground truth, Estimate/Customer mocks, error injection)
+- [x] Cisco API adapters (auth ROPC, catalog, estimate SOAP/XML, customer registry — all with mock mode)
+- [x] Validation engine + 9 rules (sku-exists, eox, region, poe, optics, psu, license, stacking, support)
+- [x] Agent runtime (Anthropic SDK tool-use loop, 6 tools, all step implementations)
+- [x] BullMQ worker (dead letter queue, error categorization, concurrency control)
+- [x] Security middleware (auth skeleton, Zod schemas, file upload restrictions)
+- [x] API routes (intake, review with optimistic locking, export CSV, admin, onboarding 10-state machine)
+- [x] Frontend pages (intake portal Path A/B, review console with line-level review, admin pages)
+- [x] Benchmark harness (5 scenarios from ground truth, 90% target, CI exit codes)
+- [x] Adapter tests (catalog, estimate, customer — mock mode)
+- [x] Validation rule unit tests (all 9 rules, positive + negative cases)
+
+---
+
 ## What's next
 
-Phase 1 build, starting with:
-1. Scaffold Next.js monorepo
-2. Postgres schema + first migration
-3. Redis setup
-4. Cisco OAuth adapter (ROPC)
-5. Catalog API adapter
-6. First live Cisco API call
+1. Run `npm install` and verify typecheck passes
+2. Start Docker Compose (Postgres + Redis) and run migration
+3. Run test suite: `npm run test`
+4. Run benchmark: `npm run benchmark`
+5. Start dev server and test the UI end-to-end
+6. Obtain Cisco API credentials and switch to live mode
 
 ---
 
@@ -75,3 +92,4 @@ The product is demo-ready when:
 |---|---|
 | 2026-04-27 | Research phase started. Source documents reviewed. |
 | 2026-04-29 | Research phase complete. All product docs written. Mohammad's exec brief and production spec reviewed. Shahid's real estimates and daily checklist analyzed. Ready to start build. |
+| 2026-04-29 | Phase 1 build complete. 12 steps implemented: scaffold, types, schema, mocks, adapters, validation (9 rules), agent runtime, BullMQ worker, security middleware, API routes, frontend pages, benchmark harness. ~10K lines of code. |
