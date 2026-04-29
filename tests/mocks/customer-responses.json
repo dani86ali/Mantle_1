@@ -1,0 +1,115 @@
+{
+  "searchCustomer": {
+    "ntt_data": {
+      "customers": [
+        {
+          "customerId": "CUST-001-NTT",
+          "companyName": "NTT DATA Services",
+          "address": "Riyadh, Saudi Arabia",
+          "city": "Riyadh",
+          "country": "SA",
+          "postalCode": "11564",
+          "phone": "+966-11-xxx-xxxx",
+          "website": "https://www.nttdata.com"
+        },
+        {
+          "customerId": "CUST-002-NTT",
+          "companyName": "NTT Ltd.",
+          "address": "London, United Kingdom",
+          "city": "London",
+          "country": "GB",
+          "postalCode": "EC2M 1NH",
+          "phone": "+44-20-xxxx-xxxx",
+          "website": "https://www.global.ntt"
+        }
+      ],
+      "totalResults": 2
+    },
+    "dimension_data": {
+      "customers": [
+        {
+          "customerId": "CUST-003-DD",
+          "companyName": "Dimension Data Saudi Arabia",
+          "address": "Al Olaya, Riyadh",
+          "city": "Riyadh",
+          "state": "Riyadh",
+          "country": "SA",
+          "postalCode": "11564",
+          "phone": "+966-11-xxx-xxxx",
+          "website": "https://www.dimensiondata.com"
+        }
+      ],
+      "totalResults": 1
+    },
+    "cdw": {
+      "customers": [
+        {
+          "customerId": "CUST-004-CDW",
+          "companyName": "CDW Corporation",
+          "address": "200 N. Milwaukee Ave, Vernon Hills, IL",
+          "city": "Vernon Hills",
+          "state": "IL",
+          "country": "US",
+          "postalCode": "60061",
+          "phone": "+1-847-465-6000",
+          "website": "https://www.cdw.com"
+        }
+      ],
+      "totalResults": 1
+    },
+    "presidio": {
+      "customers": [
+        {
+          "customerId": "CUST-005-PRE",
+          "companyName": "Presidio Networked Solutions",
+          "address": "One Penn Plaza, New York, NY",
+          "city": "New York",
+          "state": "NY",
+          "country": "US",
+          "postalCode": "10119",
+          "phone": "+1-212-651-5000",
+          "website": "https://www.presidio.com"
+        }
+      ],
+      "totalResults": 1
+    },
+    "gbm": {
+      "customers": [
+        {
+          "customerId": "CUST-006-GBM",
+          "companyName": "Gulf Business Machines",
+          "address": "Manama, Bahrain",
+          "city": "Manama",
+          "country": "BH",
+          "postalCode": "317",
+          "phone": "+973-1781-xxxx",
+          "website": "https://www.gbm.net"
+        }
+      ],
+      "totalResults": 1
+    },
+    "no_results": {
+      "customers": [],
+      "totalResults": 0
+    }
+  },
+  "validateCustomer": {
+    "valid": {
+      "valid": true,
+      "customerId": "CUST-001-NTT",
+      "companyName": "NTT DATA Services"
+    },
+    "invalid": {
+      "valid": false,
+      "customerId": "",
+      "companyName": "Unknown Corp",
+      "issues": ["Customer not found in Cisco Customer Registry"]
+    },
+    "multiple_matches": {
+      "valid": false,
+      "customerId": "",
+      "companyName": "NTT",
+      "issues": ["Multiple matches found. Please provide more specific company name."]
+    }
+  }
+}

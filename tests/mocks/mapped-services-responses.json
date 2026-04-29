@@ -1,0 +1,127 @@
+{
+  "C9300L-24UXG-4X-A": {
+    "hardwareSku": "C9300L-24UXG-4X-A",
+    "services": [
+      {
+        "sku": "CON-SNT-C93024GA",
+        "description": "SNTC-8X5XNBD Catalyst 9300L 24p data, Ntwk Adv, 4x10G",
+        "serviceLevel": "8x5xNBD",
+        "listPrice": 2584.05,
+        "durationMonths": 36,
+        "required": false
+      },
+      {
+        "sku": "CON-SSSNP-C93024GA",
+        "description": "SOLN SUPP 8X5XNBD Catalyst 9300L",
+        "serviceLevel": "SOLN-8x5xNBD",
+        "listPrice": 3100.00,
+        "durationMonths": 36,
+        "required": false
+      }
+    ],
+    "licenses": [
+      {
+        "sku": "C9300L-DNA-A-24",
+        "description": "C9300L Cisco DNA Advantage, 24-Port Term License",
+        "tier": "DNA Advantage",
+        "listPrice": 0.00,
+        "required": true
+      },
+      {
+        "sku": "C9300L-DNA-A-24-3Y",
+        "description": "C9300L Cisco DNA Advantage, 24-Port, 3 Year Term",
+        "tier": "DNA Advantage 3Y",
+        "listPrice": 2371.45,
+        "termMonths": 36,
+        "required": true
+      },
+      {
+        "sku": "C9300L-NW-A-24",
+        "description": "C9300L Network Advantage, 24-Port License",
+        "tier": "Network Advantage",
+        "listPrice": 0.00,
+        "required": true
+      }
+    ],
+    "accessories": [
+      { "sku": "PWR-C1-1100WAC-P", "description": "1100W AC Platinum Primary PSU", "listPrice": 0.00, "category": "power", "quantity": 1, "required": true },
+      { "sku": "PWR-C1-1100WAC-P/2", "description": "1100W AC Platinum Secondary PSU", "listPrice": 2317.88, "category": "power", "quantity": 1, "required": false },
+      { "sku": "FAN-T2", "description": "Catalyst 9300 Type 2 Fan Module", "listPrice": 0.00, "category": "cooling", "quantity": 3, "required": true },
+      { "sku": "C9300L-STACK-KIT", "description": "Stacking Kit", "listPrice": 1592.03, "category": "stacking", "quantity": 1, "required": false },
+      { "sku": "C9300L-STACK", "description": "Stack Module", "listPrice": 0.00, "category": "stacking", "quantity": 2, "required": false },
+      { "sku": "STACK-T3-50CM", "description": "50CM Stacking Cable", "listPrice": 0.00, "category": "stacking", "quantity": 1, "required": false },
+      { "sku": "C9K-ACC-RBFT", "description": "Rubber Feet", "listPrice": 0.00, "category": "mounting", "quantity": 1, "required": false },
+      { "sku": "C9K-ACC-SCR-4", "description": "Rack Mount Screws", "listPrice": 0.00, "category": "mounting", "quantity": 1, "required": false },
+      { "sku": "CAB-GUIDE-1RU", "description": "Cable Management Guide", "listPrice": 0.00, "category": "mounting", "quantity": 1, "required": false }
+    ]
+  },
+  "C9300-48P-A": {
+    "hardwareSku": "C9300-48P-A",
+    "services": [
+      {
+        "sku": "CON-SNT-C930048P",
+        "description": "SNTC-8X5XNBD Catalyst 9300 48-port PoE+",
+        "serviceLevel": "8x5xNBD",
+        "listPrice": 2280.00,
+        "durationMonths": 36,
+        "required": false
+      }
+    ],
+    "licenses": [
+      {
+        "sku": "C9300-DNA-A-48",
+        "description": "C9300 Cisco DNA Advantage, 48-Port",
+        "tier": "DNA Advantage",
+        "listPrice": 0.00,
+        "required": true
+      },
+      {
+        "sku": "C9300-NW-A-48",
+        "description": "C9300 Network Advantage, 48-Port",
+        "tier": "Network Advantage",
+        "listPrice": 0.00,
+        "required": true
+      }
+    ],
+    "accessories": [
+      { "sku": "PWR-C1-1100WAC-P", "description": "1100W AC Platinum Primary PSU", "listPrice": 0.00, "category": "power", "quantity": 1, "required": true },
+      { "sku": "PWR-C1-1100WAC-P/2", "description": "1100W AC Platinum Secondary PSU", "listPrice": 2317.88, "category": "power", "quantity": 1, "required": false },
+      { "sku": "FAN-T2", "description": "Fan Module", "listPrice": 0.00, "category": "cooling", "quantity": 3, "required": true }
+    ]
+  },
+  "C9120AXE-E": {
+    "hardwareSku": "C9120AXE-E",
+    "services": [],
+    "licenses": [
+      {
+        "sku": "C9120AX-DNA-OPTOUT",
+        "description": "C9120AX DNA Subscription Opt Out",
+        "tier": "DNA Opt-Out",
+        "listPrice": 0.00,
+        "required": false
+      }
+    ],
+    "accessories": [
+      { "sku": "AIR-AP-BRACKET-1", "description": "Low Profile Mounting Bracket", "listPrice": 0.00, "category": "mounting", "quantity": 1, "required": true },
+      { "sku": "AIR-AP-T-RAIL-R", "description": "Ceiling Grid Clip - Recessed", "listPrice": 0.00, "category": "mounting", "quantity": 1, "required": true },
+      { "sku": "AIR-ANT2524DW-RS", "description": "Dual-Band Dipole Antenna", "listPrice": 0.00, "category": "antenna", "quantity": 4, "required": true }
+    ]
+  },
+  "C9120AXI-E": {
+    "hardwareSku": "C9120AXI-E",
+    "services": [],
+    "licenses": [
+      {
+        "sku": "C9120AX-DNA-OPTOUT",
+        "description": "C9120AX DNA Subscription Opt Out",
+        "tier": "DNA Opt-Out",
+        "listPrice": 0.00,
+        "required": false
+      }
+    ],
+    "accessories": [
+      { "sku": "AIR-AP-BRACKET-1", "description": "Low Profile Mounting Bracket", "listPrice": 0.00, "category": "mounting", "quantity": 1, "required": true },
+      { "sku": "AIR-AP-T-RAIL-R", "description": "Ceiling Grid Clip - Recessed", "listPrice": 0.00, "category": "mounting", "quantity": 1, "required": true }
+    ]
+  }
+}
