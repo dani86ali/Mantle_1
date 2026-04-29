@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
+  { href: "/chat", label: "Chat", icon: ChatIcon },
   { href: "/review", label: "Review Console", icon: ClipboardIcon },
-  { href: "/intake", label: "New Estimate", icon: PlusIcon },
+  { href: "/intake", label: "Form Intake", icon: PlusIcon },
   { href: "/admin", label: "Admin", icon: GearIcon },
 ];
 
@@ -20,6 +21,17 @@ export function Sidebar() {
           B
         </div>
         <span className="text-lg font-bold tracking-tight">BOMatic</span>
+      </div>
+
+      {/* New Chat button */}
+      <div className="px-2 pt-3">
+        <Link
+          href="/chat"
+          className="flex items-center justify-center gap-2 rounded-md bg-brand-primary px-3 py-2 text-sm font-medium text-white transition hover:opacity-90"
+        >
+          <ChatIcon active={false} light />
+          New Chat
+        </Link>
       </div>
 
       {/* Nav links */}
@@ -85,6 +97,24 @@ function PlusIcon({ active }: { active: boolean }) {
         strokeLinecap="round"
         strokeLinejoin="round"
         d="M12 4v16m8-8H4"
+      />
+    </svg>
+  );
+}
+
+function ChatIcon({ active, light }: { active: boolean; light?: boolean }) {
+  return (
+    <svg
+      className={`h-4 w-4 ${light ? "text-white" : active ? "text-brand-primary" : "text-gray-400"}`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 0 1 1.037-.443 48.282 48.282 0 0 0 5.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z"
       />
     </svg>
   );
