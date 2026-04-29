@@ -1,0 +1,38 @@
+{
+  "id": "campus-switching-c9300-48p-10x",
+  "name": "Campus Switching: 10x Catalyst 9300 48-port PoE+ (additional scenario)",
+  "source": "shahid-ground-truth.md additional scenario suggestion",
+  "intake": {
+    "path": "path_b",
+    "customerName": "CDW Corporation",
+    "region": "AMER",
+    "country": "US",
+    "domain": "access_switching",
+    "requirements": {
+      "keyNeeds": "10x Catalyst 9300 48-port PoE+ switches with DNA Essentials, stacking, redundant PSU, SmartNet 8x5xNBD",
+      "quantities": [
+        { "description": "48-port PoE+ switches", "quantity": 10, "portCount": 48 }
+      ],
+      "poeRequired": true,
+      "poeClass": "class4",
+      "redundancyRequired": true,
+      "stackingRequired": true,
+      "licenseTier": "advantage",
+      "dnaTier": "essentials",
+      "supportTerm": "CON-SNT"
+    }
+  },
+  "expectedSkus": [
+    { "sku": "C9300-48P-A", "quantity": 10, "required": true },
+    { "sku": "PWR-C1-1100WAC-P", "quantity": 10, "required": true },
+    { "sku": "PWR-C1-1100WAC-P/2", "quantity": 10, "required": true }
+  ],
+  "validationChecks": {
+    "psuRedundancy": true,
+    "stackingComplete": true,
+    "licensesAttached": true,
+    "supportAttached": true,
+    "noEoxSkus": true,
+    "regionAvailable": true
+  }
+}

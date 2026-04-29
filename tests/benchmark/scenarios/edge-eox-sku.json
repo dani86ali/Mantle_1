@@ -1,0 +1,24 @@
+{
+  "id": "edge-eox-sku",
+  "name": "Edge Case: All EoX SKUs in uploaded BoM",
+  "source": "shahid-ground-truth.md edge case suggestion",
+  "intake": {
+    "path": "path_a",
+    "customerName": "Presidio Networked Solutions",
+    "region": "AMER",
+    "country": "US",
+    "domain": "access_switching",
+    "requirements": {
+      "uploadedBomLines": [
+        { "sku": "EOX-SWITCH-EXAMPLE", "quantity": 5 }
+      ]
+    }
+  },
+  "expectedValidationErrors": [
+    { "ruleId": "eox", "expectedCount": 5 }
+  ],
+  "validationChecks": {
+    "eoxDetected": true,
+    "migrationSuggested": true
+  }
+}

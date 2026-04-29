@@ -1,0 +1,40 @@
+{
+  "id": "wireless-c9120ax-8x",
+  "name": "Wireless: 8x Catalyst 9120AX External Antenna APs (from Shahid wireless estimate)",
+  "source": "shahid-ground-truth.md Scenario 2",
+  "intake": {
+    "path": "path_b",
+    "customerName": "NTT DATA Services",
+    "region": "EMEAR",
+    "country": "SA",
+    "domain": "wireless",
+    "requirements": {
+      "keyNeeds": "8x Cisco 9120AX external antenna APs, ceiling mount, no DNA subscription, Saudi Arabia",
+      "quantities": [
+        { "description": "9120AX external antenna access points", "quantity": 8 }
+      ],
+      "poeRequired": false,
+      "redundancyRequired": false,
+      "stackingRequired": false,
+      "dnaTier": "opt_out"
+    }
+  },
+  "expectedSkus": [
+    { "sku": "C9120AXE-E", "quantity": 8, "required": true },
+    { "sku": "SW9120AX-CAPWAP-K9", "quantity": 8, "required": true },
+    { "sku": "AIR-AP-BRACKET-1", "quantity": 8, "required": true },
+    { "sku": "AIR-AP-T-RAIL-R", "quantity": 8, "required": true },
+    { "sku": "AIR-ANT2524DW-RS", "quantity": 32, "required": true },
+    { "sku": "C9120AX-DNA-OPTOUT", "quantity": 8, "required": true },
+    { "sku": "NETWORK-PNP-LIC", "quantity": 8, "required": false },
+    { "sku": "C9120AXE-SINGLE", "quantity": 8, "required": false },
+    { "sku": "C9120-OVER", "quantity": 8, "required": false }
+  ],
+  "validationChecks": {
+    "noFalsePositiveMissingLicense": true,
+    "antennaCountCorrect": true,
+    "noFalsePositiveMissingSmartNet": true,
+    "noEoxSkus": true,
+    "regionAvailable": true
+  }
+}

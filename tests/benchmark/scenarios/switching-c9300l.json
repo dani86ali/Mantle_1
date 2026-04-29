@@ -1,0 +1,52 @@
+{
+  "id": "switching-c9300l-2x",
+  "name": "Access Switching: 2x Catalyst 9300L (from Shahid R&S estimate)",
+  "source": "shahid-ground-truth.md Scenario 1",
+  "intake": {
+    "path": "path_b",
+    "customerName": "NTT DATA Services",
+    "region": "EMEAR",
+    "country": "SA",
+    "domain": "access_switching",
+    "requirements": {
+      "keyNeeds": "2x Catalyst 9300L 24-port mGig switches with Network Advantage, DNA Advantage 3-year, redundant power, stacking, 8x5 SmartNet, Saudi Arabia",
+      "quantities": [
+        { "description": "24-port mGig switches", "quantity": 2, "portCount": 24 }
+      ],
+      "poeRequired": true,
+      "poeClass": "class4",
+      "redundancyRequired": true,
+      "stackingRequired": true,
+      "licenseTier": "advantage",
+      "dnaTier": "advantage",
+      "supportTerm": "CON-SNT"
+    }
+  },
+  "expectedSkus": [
+    { "sku": "C9300L-24UXG-4X-A", "quantity": 2, "required": true },
+    { "sku": "C9300L-DNA-A-24", "quantity": 2, "required": true },
+    { "sku": "C9300L-DNA-A-24-3Y", "quantity": 2, "required": true },
+    { "sku": "C9300L-NW-A-24", "quantity": 2, "required": true },
+    { "sku": "CON-SNT-C93024GA", "quantity": 2, "required": true },
+    { "sku": "PWR-C1-1100WAC-P", "quantity": 2, "required": true },
+    { "sku": "PWR-C1-1100WAC-P/2", "quantity": 2, "required": true },
+    { "sku": "FAN-T2", "quantity": 6, "required": true },
+    { "sku": "C9300L-STACK-KIT", "quantity": 2, "required": true },
+    { "sku": "C9300L-STACK", "quantity": 4, "required": true },
+    { "sku": "STACK-T3-50CM", "quantity": 2, "required": true },
+    { "sku": "S9300LUK9-179", "quantity": 2, "required": false },
+    { "sku": "NETWORK-PNP-LIC", "quantity": 2, "required": false },
+    { "sku": "C9300L-SSD-NONE", "quantity": 2, "required": false },
+    { "sku": "C9K-ACC-RBFT", "quantity": 2, "required": false },
+    { "sku": "C9K-ACC-SCR-4", "quantity": 2, "required": false },
+    { "sku": "CAB-GUIDE-1RU", "quantity": 2, "required": false }
+  ],
+  "validationChecks": {
+    "psuRedundancy": true,
+    "stackingComplete": true,
+    "licensesAttached": true,
+    "supportAttached": true,
+    "noEoxSkus": true,
+    "regionAvailable": true
+  }
+}

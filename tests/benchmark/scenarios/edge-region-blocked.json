@@ -1,0 +1,24 @@
+{
+  "id": "edge-region-blocked",
+  "name": "Edge Case: Region-blocked SKU for MEA region",
+  "source": "shahid-ground-truth.md edge case suggestion",
+  "intake": {
+    "path": "path_a",
+    "customerName": "Gulf Business Machines",
+    "region": "MEA",
+    "country": "BH",
+    "domain": "access_switching",
+    "requirements": {
+      "uploadedBomLines": [
+        { "sku": "REGION-BLOCKED-SKU", "quantity": 2 },
+        { "sku": "C9300L-24UXG-4X-A", "quantity": 1 }
+      ]
+    }
+  },
+  "expectedValidationErrors": [
+    { "ruleId": "region", "expectedCount": 1 }
+  ],
+  "validationChecks": {
+    "regionBlockDetected": true
+  }
+}
