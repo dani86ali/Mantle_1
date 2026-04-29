@@ -3,8 +3,9 @@ import { requireAuth } from "@/lib/middleware/auth";
 import { getBomDraftById, createExport } from "@/lib/db/queries";
 import { appendAuditLog } from "@/lib/db/queries";
 import { generateCsv } from "@/lib/export/csv";
+import { generateXlsx } from "@/lib/export/xlsx";
 
-/** GET /api/export?bomDraftId=...&format=csv */
+/** GET /api/export?bomDraftId=...&format=csv|xlsx */
 export async function GET(request: NextRequest) {
   const session = requireAuth(request);
   if (session instanceof NextResponse) return session;
@@ -57,13 +58,47 @@ export async function GET(request: NextRequest) {
     return new NextResponse(bom + csvContent, {
       headers: {
         "Content-Type": "text/csv;charset=utf-8",
-        "Content-Disposition": `attachment; filename="price-estimate-${draft.estimateId ?? bomDraftId}.csv"`,
+        "Content-Disposition": `attachment; filename="BOMatic_Estimate_${draft.estimateId ?? bomDraftId}.csv"`,
+      },
+    });
+  }
+
+  if (format === "xlsx") {
+    const xlsxBuffer = generateXlsx(
+      draft.linesJson as unknown[],
+      {
+        customerName: "",
+        estimateId: draft.estimateId ?? "",
+        priceList: "Global Price List Emerging (USD)",
+        date: new Date(),
+        summary: draft.summary as Record<string, unknown>,
+      }
+    );
+
+    await createExport({
+      tenantId: session.tenantId,
+      bomDraftId,
+      type: "csv",
+      destination: "download",
+    });
+
+    await appendAuditLog(session.tenantId, "export:xlsx", session.userId, {
+      bomDraftId,
+    });
+
+    const filename = `BOMatic_Estimate_${draft.estimateId ?? bomDraftId}.xlsx`;
+
+    return new NextResponse(new Uint8Array(xlsxBuffer), {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });
   }
 
   return NextResponse.json(
-    { error: `Export format '${format}' not supported. Use: csv` },
+    { error: `Export format '${format}' not supported. Use: csv, xlsx` },
     { status: 400 }
   );
 }

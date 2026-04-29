@@ -231,7 +231,13 @@ function ReviewDetail({
             href={`/api/export?bomDraftId=${draft.id}&format=csv`}
             className="rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
           >
-            Download CSV
+            CSV
+          </a>
+          <a
+            href={`/api/export?bomDraftId=${draft.id}&format=xlsx`}
+            className="rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            XLSX
           </a>
           <button
             onClick={handleApprove}
