@@ -15,6 +15,7 @@ interface ChatMessage {
   content: string;
   fileName?: string;
   bom?: BomLineData[];
+  bomDraftId?: string;
   quickReplies?: string[];
   timestamp: Date;
 }
@@ -25,6 +26,8 @@ interface BomLineData {
   quantity: number;
   unitListPrice: number;
   category: string;
+  serviceDurationMonths?: number | null;
+  leadTimeDays?: number | null;
 }
 
 // ─── Main export: FAB + Panel ───────────────────────────────────────────
@@ -116,6 +119,27 @@ export function ChatWidget() {
         .replace(/\[quick-replies:.*?\]/g, "")
         .trim();
 
+      // Auto-save BoM to database if one was produced
+      let bomDraftId: string | undefined;
+      if (bom && bom.length > 0) {
+        try {
+          const saveRes = await fetch("/api/chat/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              requirements: userMsg.content,
+              lines: bom,
+            }),
+          });
+          if (saveRes.ok) {
+            const saveData = await saveRes.json();
+            bomDraftId = saveData.bomDraftId;
+          }
+        } catch {
+          // Save failed silently — BoM still shows in chat
+        }
+      }
+
       setMessages((prev) => [
         ...prev,
         {
@@ -123,6 +147,7 @@ export function ChatWidget() {
           role: "assistant",
           content: cleanContent,
           bom: bom ?? undefined,
+          bomDraftId,
           quickReplies: quickReplies.length > 0 ? quickReplies : undefined,
           timestamp: new Date(),
         },
@@ -418,7 +443,7 @@ function MessageBubble({
 
         {/* Inline BoM table */}
         {message.bom && message.bom.length > 0 && (
-          <InlineBom lines={message.bom} />
+          <InlineBom lines={message.bom} bomDraftId={message.bomDraftId} />
         )}
 
         {/* Quick reply buttons */}
@@ -445,22 +470,55 @@ function MessageBubble({
   );
 }
 
-function InlineBom({ lines }: { lines: BomLineData[] }) {
+function InlineBom({ lines, bomDraftId }: { lines: BomLineData[]; bomDraftId?: string }) {
   const total = lines.reduce((s, l) => s + l.unitListPrice * l.quantity, 0);
+
+  function downloadCsv() {
+    const header = "Part Number,Description,Qty,Unit List Price,Extended Price,Category\n";
+    const rows = lines
+      .map((l) =>
+        `${l.sku},"${(l.description ?? "").replace(/"/g, '""')}",${l.quantity},${l.unitListPrice.toFixed(2)},${(l.unitListPrice * l.quantity).toFixed(2)},${l.category}`
+      )
+      .join("\n");
+    const csv = "\uFEFF" + header + rows;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    triggerDownload(blob, `BOMatic_Estimate_${bomDraftId ?? Date.now()}.csv`);
+  }
+
+  function downloadXlsx() {
+    // Build a simple XLSX via the export API if we have a saved ID
+    if (bomDraftId) {
+      window.open(`/api/export?bomDraftId=${bomDraftId}&format=xlsx`, "_blank");
+      return;
+    }
+    // Fallback: download as CSV if not saved
+    downloadCsv();
+  }
+
+  function triggerDownload(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="rounded-lg border border-[#1e1e2a] bg-bg-card">
+      {/* Header */}
       <div className="flex items-center justify-between border-b border-[#1e1e2a] px-3 py-1.5">
         <span className="text-[11px] font-medium text-text-secondary">
           BoM — {lines.length} items
         </span>
-        <a
-          href="/estimates"
-          className="flex items-center gap-1 text-[11px] text-accent hover:underline"
-        >
-          Open in Review <ExternalLink size={10} />
-        </a>
+        {bomDraftId && (
+          <span className="rounded bg-success-muted px-1.5 py-0.5 text-[10px] text-success">
+            Saved
+          </span>
+        )}
       </div>
+
+      {/* Table */}
       <div className="max-h-48 overflow-y-auto">
         <table className="min-w-full text-[11px]">
           <thead>
@@ -483,9 +541,35 @@ function InlineBom({ lines }: { lines: BomLineData[] }) {
           </tbody>
         </table>
       </div>
+
+      {/* Total */}
       <div className="flex items-center justify-between border-t border-[#1e1e2a] px-3 py-1.5">
         <span className="text-[11px] text-text-tertiary">Total</span>
         <span className="font-mono text-xs font-medium text-accent">{fmtUSD(total)}</span>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex items-center gap-1.5 border-t border-[#1e1e2a] px-3 py-2">
+        {bomDraftId && (
+          <a
+            href={`/estimates/${bomDraftId}`}
+            className="flex items-center gap-1 rounded bg-accent px-2.5 py-1 text-[11px] font-medium text-bg-primary hover:bg-accent-hover"
+          >
+            <ExternalLink size={10} /> Review Console
+          </a>
+        )}
+        <button
+          onClick={downloadCsv}
+          className="rounded border border-[#1e1e2a] px-2.5 py-1 text-[11px] text-text-secondary hover:border-[#2a2a3a] hover:text-text-primary"
+        >
+          CSV
+        </button>
+        <button
+          onClick={downloadXlsx}
+          className="rounded border border-[#1e1e2a] px-2.5 py-1 text-[11px] text-text-secondary hover:border-[#2a2a3a] hover:text-text-primary"
+        >
+          XLSX
+        </button>
       </div>
     </div>
   );
