@@ -10,7 +10,9 @@ import type {
   CiscoCustomerValidateResponse,
 } from "@/types/cisco";
 
-const MOCKS_DIR = join(__dirname);
+// Use process.cwd() instead of __dirname because Next.js compiles
+// server code into .next/server/ where __dirname won't find test fixtures
+const MOCKS_DIR = join(process.cwd(), "tests", "mocks");
 
 function loadJson<T>(filename: string): T {
   const raw = readFileSync(join(MOCKS_DIR, filename), "utf-8");
