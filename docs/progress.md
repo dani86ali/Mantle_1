@@ -51,6 +51,22 @@ All 12 build steps completed. Application code covers the full Phase 1 scope.
 - [x] Step 12: Benchmark harness (5 scenarios from ground truth, 90% target, CI exit codes)
 - [x] Adapter tests (catalog, estimate, customer — mock mode)
 - [x] Validation rule unit tests (all 9 rules, positive + negative cases)
+- [x] XLSX export (sheetjs, formatted columns, number formatting, Price Estimate template)
+- [x] File upload on intake form (drag-and-drop CSV/XLSX/PDF, 10MB limit, auto-parse CSV)
+- [x] Mock catalog expanded from 30 to 173 SKUs (C9200/9300/9300L/9300X/9800/APs/optics/licenses)
+- [x] UI redesign: dark theme enterprise SaaS (9 pages, collapsible sidebar, top bar, design system)
+- [x] Persistent AI chat widget (floating panel, drag-drop files, inline BoM tables, quick replies)
+- [x] Command palette (Ctrl+K) with search, navigation, quick actions
+- [x] Keyboard shortcuts modal (? key) with all shortcuts listed
+- [x] Notification center (bell icon dropdown, categorized, unread indicators)
+- [x] Customer directory page (/customers) with search, expandable detail, estimate history
+- [x] Dashboard charts (cost breakdown donut, status bars, domain distribution, validation flags)
+- [x] Product configurator (step-by-step guided SKU configuration with bundle suggestions)
+- [x] Print CSS (clean print layout for estimate detail pages)
+- [x] WCAG focus indicators (focus-visible outlines on all interactive elements)
+- [x] Estimate detail page with 7 sub-tabs (Configuration, Validation, Summary, Export, Sharing, History, Comments)
+- [x] Catalog browser with search, domain/family/category/EoX filters, expandable specs
+- [x] Coming Soon pages (Deals & Quotes, Orders, Services, Distributor) with feature previews
 
 ---
 
@@ -59,12 +75,30 @@ All 12 build steps completed. Application code covers the full Phase 1 scope.
 Features and items identified during post-build review that need attention:
 
 1. **Agent runtime prompt tuning** — System prompts need iteration once the agent is testable end-to-end with real LLM calls. Current prompts are first-draft.
-2. **XLSX export not built** — CSV export is implemented; XLSX export (sheetjs, formatted columns, no formulas) is specified in backlog but not yet coded.
+2. ~~**XLSX export not built**~~ — Done.
 3. **Review console diff view not built** — Path A diff view (uploaded BoM vs proposed) is specified but not yet in the review UI.
-4. **Review console comments UI not built** — Per-line and per-BoM comment fields are in the API and data model but not yet wired into the review frontend.
-5. **Review console version history UI not built** — Version column and optimistic locking work in the API, but the UI for viewing/comparing previous versions is not yet built.
+4. **Review console comments UI not built** — Per-line and per-BoM comment fields are in the API and data model but not yet wired into the review frontend. Estimate detail has a Coming Soon placeholder.
+5. **Review console version history UI not built** — Version column and optimistic locking work in the API, but the UI for viewing/comparing previous versions has a Coming Soon placeholder.
 6. **Tenant credential encryption code not written** — Schema and API routes reference encrypted credential columns, but the actual encrypt/decrypt logic (AES-256 for dev, Secrets Manager for prod) is not implemented.
-7. **Mock catalog needs expansion** — Currently ~30 SKUs from Shahid's ground truth estimates. Architecture calls for ~100 SKUs covering common Catalyst 9200/9300/9400/9500/9800 and C9120AX/C9130AX/C9136AX series.
+7. ~~**Mock catalog needs expansion**~~ — Done. Expanded from 30 to 173 SKUs.
+
+### Skipped UI features (not yet built)
+
+- Side-by-side estimate comparison (select 2-3 estimates and compare)
+- @mention in comments (tag engineers or account managers)
+- Activity feed per estimate (who viewed, who edited, when)
+- "Being edited by" indicator (concurrent editing awareness)
+- Bulk import (upload CSV of multiple estimates)
+- Templates (save estimate as template, create from template)
+- Duplicate estimate (one-click copy with new ID)
+- Quick edit mode on estimates table (inline edit without opening detail)
+- Dashboard widget drag-and-drop customization
+- Table column visibility toggle (show/hide columns)
+- Saved filters (save commonly used filter combinations)
+- Theme toggle (dark/light mode switch)
+- Guided tour (first-time user walkthrough)
+- Contextual tooltips on complex UI elements
+- "What's new" changelog in user menu
 
 ### Known issues (code cleanup)
 
@@ -73,28 +107,28 @@ Features and items identified during post-build review that need attention:
 3. **Worker dynamic import** — `worker.ts` uses `await import()` for `getIntakeById` to work around circular imports. Refactor to a static import.
 4. **Agent parse step is embedded** — The parse step (Haiku normalization) is folded into the suggest prompt rather than being a separate LLM call. Works but is less modular than architecture specifies.
 5. **Worker credentials are mock placeholders** — `worker.ts` has hardcoded mock credentials with a TODO. Production path loads from `tenant_credentials` table via Secrets Manager.
-6. **`next-env.d.ts` not yet generated** — Created automatically on first `next dev` or `next build`. Referenced in tsconfig.json.
-7. **Typecheck not yet verified** — Need `npm install` to complete, then `npm run typecheck`. Expect a few type errors given the code volume.
+6. ~~**`next-env.d.ts` not yet generated**~~ — Resolved. Generated on first `next dev`.
+7. ~~**Typecheck not yet verified**~~ — Resolved. Typecheck clean, 0 errors. 48/48 tests passing.
+8. **Old route group directories removed** — `(admin)`, `(console)`, `(portal)`, `(dashboard)` deleted to resolve conflicts with new flat route structure.
 
 ---
 
 ## What's next
 
-1. Run `npm install`
-2. Run `npm run typecheck` and fix any type errors
-3. Run `docker compose up -d` (Postgres + Redis)
-4. Run database migration: `npm run db:push`
-5. Run test suite: `npm run test`
-6. Run benchmark: `npm run benchmark`
-7. Start dev server: `npm run dev` and test UI end-to-end
-8. Fix any issues found during testing
-9. Address post-build flags (XLSX export, diff view, comments, version history, credential encryption, mock expansion, prompt tuning)
+1. **Resolve Anthropic API key issue** — Account has $40 credits but API returns "credit balance too low". Need to activate the account or generate a working key. Chat and agent are blocked until this is resolved.
+2. Test chat agent end-to-end with a working API key
+3. Tune agent prompts based on real LLM output quality
+4. Build diff view for Path A estimates (uploaded vs proposed)
+5. Wire up comments and version history UIs to real data
+6. Implement tenant credential encryption (AES-256 for dev)
+7. Address remaining skipped UI features as needed
 
 ---
 
 ## Blockers
 
 - **Cisco API credentials needed.** Cannot test adapters against production Cisco APIs without a working CCO account with partner-level access and a registered application. One of the partners needs to provide or arrange this.
+- **Anthropic API key not working.** Account shows $40 credits (Default workspace) but API returns "credit balance too low" on all requests. Key is valid and correctly set in .env. Likely needs account activation or support ticket. Chat widget and agent runtime are blocked until resolved.
 
 ---
 
@@ -117,4 +151,5 @@ The product is demo-ready when:
 |---|---|
 | 2026-04-27 | Research phase started. Source documents reviewed. |
 | 2026-04-29 | Research phase complete. All product docs written. Mohammad's exec brief and production spec reviewed. Shahid's real estimates and daily checklist analyzed. Ready to start build. |
-| 2026-04-29 | Phase 1 build complete. 12 steps implemented: scaffold, types, schema, mocks, adapters, validation (9 rules), agent runtime, BullMQ worker, security middleware, API routes, frontend pages, benchmark harness. ~10K lines of code. Post-build review identified 7 flags (XLSX export, diff view, comments UI, version history UI, credential encryption, mock expansion, prompt tuning) and 7 code cleanup items. |
+| 2026-04-29 | Phase 1 build complete. 12 steps implemented: scaffold, types, schema, mocks, adapters, validation (9 rules), agent runtime, BullMQ worker, security middleware, API routes, frontend pages, benchmark harness. ~10K lines of code. Post-build review identified 7 flags and 7 code cleanup items. |
+| 2026-04-29 | UI redesign complete. Dark theme enterprise SaaS with 9 full pages, collapsible sidebar, top bar, design system. Added XLSX export, file upload, persistent AI chat widget, command palette (Ctrl+K), keyboard shortcuts (?), notification center, customer directory, dashboard charts (donut/bars), product configurator, print CSS, WCAG focus indicators. Mock catalog expanded to 173 SKUs. Old route groups removed. Typecheck clean, 48/48 tests passing, all pages returning 200. Anthropic API key issue unresolved — chat/agent blocked. |
