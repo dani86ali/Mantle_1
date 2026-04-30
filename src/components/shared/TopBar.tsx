@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { Search, Bell, ChevronDown, User, LogOut, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NotificationCenter } from "./NotificationCenter";
 
 export function TopBar() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-[#1e1e2a] bg-bg-card px-4">
@@ -44,12 +46,21 @@ export function TopBar() {
         </button>
 
         {/* Notifications */}
-        <button className="relative flex h-8 w-8 items-center justify-center rounded-button text-text-secondary hover:bg-[#1a1a22] hover:text-text-primary transition-colors">
-          <Bell size={16} />
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-bg-primary">
-            3
-          </span>
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setNotificationsOpen(!notificationsOpen)}
+            className="relative flex h-8 w-8 items-center justify-center rounded-button text-text-secondary hover:bg-[#1a1a22] hover:text-text-primary transition-colors"
+          >
+            <Bell size={16} />
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-bg-primary">
+              3
+            </span>
+          </button>
+          <NotificationCenter
+            open={notificationsOpen}
+            onClose={() => setNotificationsOpen(false)}
+          />
+        </div>
 
         {/* User menu */}
         <div className="relative">

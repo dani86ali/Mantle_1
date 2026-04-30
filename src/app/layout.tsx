@@ -3,6 +3,7 @@ import "./globals.css";
 import { AppSidebar } from "@/components/shared/AppSidebar";
 import { TopBar } from "@/components/shared/TopBar";
 import { ChatWidget } from "@/components/shared/ChatPanel";
+import { GlobalProviders } from "@/components/shared/GlobalProviders";
 
 export const metadata: Metadata = {
   title: "BOMatic",
@@ -17,14 +18,16 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="min-h-screen bg-bg-primary text-text-primary antialiased">
-        <div className="flex h-screen">
-          <AppSidebar />
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <TopBar />
-            <main className="flex-1 overflow-y-auto">{children}</main>
+        <GlobalProviders>
+          <div className="flex h-screen">
+            <AppSidebar />
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <TopBar />
+              <main className="flex-1 overflow-y-auto">{children}</main>
+            </div>
           </div>
-        </div>
-        <ChatWidget />
+          <ChatWidget />
+        </GlobalProviders>
       </body>
     </html>
   );

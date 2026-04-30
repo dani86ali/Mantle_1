@@ -303,6 +303,131 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {/* ---- Charts row ---- */}
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Cost breakdown donut */}
+        <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-5">
+          <h2 className="mb-4 text-sm font-semibold text-text-primary">
+            Cost Breakdown
+          </h2>
+          <CostDonut product={68} service={18} subscription={14} />
+          <div className="mt-4 space-y-2">
+            <LegendRow color="bg-accent" label="Product" value="$186,400" pct="68%" />
+            <LegendRow color="bg-blue" label="Service" value="$49,300" pct="18%" />
+            <LegendRow color="bg-warning" label="Subscription" value="$38,400" pct="14%" />
+          </div>
+        </div>
+
+        {/* Estimates by status */}
+        <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-5">
+          <h2 className="mb-4 text-sm font-semibold text-text-primary">
+            Estimates by Status
+          </h2>
+          <div className="space-y-3">
+            <StatusBar label="Approved" count={14} total={24} color="bg-success" />
+            <StatusBar label="In Review" count={5} total={24} color="bg-blue" />
+            <StatusBar label="Pending" count={3} total={24} color="bg-warning" />
+            <StatusBar label="Failed" count={2} total={24} color="bg-destructive" />
+          </div>
+        </div>
+
+        {/* Domain distribution */}
+        <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-5">
+          <h2 className="mb-4 text-sm font-semibold text-text-primary">
+            Domain Distribution
+          </h2>
+          <div className="space-y-3">
+            <StatusBar label="Access Switching" count={16} total={24} color="bg-accent" />
+            <StatusBar label="Wireless" count={6} total={24} color="bg-blue" />
+            <StatusBar label="Mixed" count={2} total={24} color="bg-warning" />
+          </div>
+          <div className="mt-4 border-t border-[#1e1e2a] pt-3">
+            <h3 className="text-xs font-medium text-text-tertiary">Top Validation Flags</h3>
+            <div className="mt-2 space-y-1.5">
+              <FlagRow label="Missing SmartNet" count={8} />
+              <FlagRow label="PoE Budget Warning" count={5} />
+              <FlagRow label="Stacking Incomplete" count={3} />
+              <FlagRow label="EoX Detected" count={2} />
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Chart sub-components                                               */
+/* ------------------------------------------------------------------ */
+
+function CostDonut({ product, service, subscription }: { product: number; service: number; subscription: number }) {
+  // SVG donut chart
+  const total = product + service + subscription;
+  const r = 50;
+  const c = 2 * Math.PI * r;
+  const pPct = product / total;
+  const sPct = service / total;
+
+  return (
+    <div className="flex justify-center">
+      <svg width="140" height="140" viewBox="0 0 140 140">
+        <circle cx="70" cy="70" r={r} fill="none" stroke="#1e1e2a" strokeWidth="14" />
+        {/* Product segment */}
+        <circle cx="70" cy="70" r={r} fill="none" stroke="#00d4aa" strokeWidth="14"
+          strokeDasharray={`${c * pPct} ${c * (1 - pPct)}`}
+          strokeDashoffset={c * 0.25} strokeLinecap="round" />
+        {/* Service segment */}
+        <circle cx="70" cy="70" r={r} fill="none" stroke="#3b82f6" strokeWidth="14"
+          strokeDasharray={`${c * sPct} ${c * (1 - sPct)}`}
+          strokeDashoffset={c * 0.25 - c * pPct} strokeLinecap="round" />
+        {/* Center text */}
+        <text x="70" y="66" textAnchor="middle" className="fill-text-primary text-lg font-semibold" fontSize="18">
+          $274K
+        </text>
+        <text x="70" y="82" textAnchor="middle" className="fill-text-tertiary" fontSize="10">
+          This month
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+function LegendRow({ color, label, value, pct }: { color: string; label: string; value: string; pct: string }) {
+  return (
+    <div className="flex items-center justify-between text-xs">
+      <div className="flex items-center gap-2">
+        <span className={cn("h-2.5 w-2.5 rounded-full", color)} />
+        <span className="text-text-secondary">{label}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-text-primary">{value}</span>
+        <span className="text-text-tertiary">{pct}</span>
+      </div>
+    </div>
+  );
+}
+
+function StatusBar({ label, count, total, color }: { label: string; count: number; total: number; color: string }) {
+  const pct = Math.round((count / total) * 100);
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-text-secondary">{label}</span>
+        <span className="text-text-primary font-medium">{count}</span>
+      </div>
+      <div className="mt-1 h-1.5 rounded-full bg-[#1e1e2a]">
+        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function FlagRow({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="flex items-center justify-between text-xs">
+      <span className="text-text-secondary">{label}</span>
+      <span className="rounded-full bg-[#1e1e2a] px-2 py-0.5 font-mono text-text-tertiary">{count}</span>
     </div>
   );
 }
