@@ -181,10 +181,15 @@ export function ChatWidget() {
       let bomDraftId: string | undefined;
       if (bom && bom.length > 0) {
         try {
+          // Extract customer name from conversation history
+          const allText = [...messages, userMsg].map((m) => m.content).join(" ");
+          const customerName = extractCustomerName(allText);
+
           const saveRes = await fetch("/api/chat/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              customerName,
               requirements: userMsg.content,
               lines: bom,
             }),
@@ -702,6 +707,21 @@ function extractQuickReplies(text: string): string[] {
     const items = match[1].match(/"([^"]+)"/g);
     return items ? items.map((s) => s.replace(/"/g, "")) : [];
   } catch { return []; }
+}
+
+function extractCustomerName(text: string): string {
+  // Try common patterns: "for [Customer]", "[Customer]'s", "customer: [Customer]"
+  const patterns = [
+    /\bfor\s+([A-Z][A-Za-z\s&'-]+(?:Bank|Corp|Inc|Ltd|LLC|Group|Machines|Data|Tech|Enterprise|Services|Solutions))/i,
+    /\bcustomer[:\s]+([A-Z][A-Za-z\s&'-]+)/i,
+    /\bclient[:\s]+([A-Z][A-Za-z\s&'-]+)/i,
+    /([A-Z][A-Za-z\s&'-]+(?:Bank|Corp|Inc|Ltd|LLC|Group|Machines|Data|Tech|Enterprise|Services|Solutions))/i,
+  ];
+  for (const p of patterns) {
+    const match = text.match(p);
+    if (match) return match[1].trim();
+  }
+  return "Customer";
 }
 
 function fmtUSD(v: number): string {

@@ -32,9 +32,11 @@ export function generateCsv(
   const lines = linesRaw as ExportLine[];
   const rows: string[] = [];
 
-  // Header section
+  // Header section — matches Shahid's real estimate format
+  const customerDisplay = options.customerName || "Customer";
   rows.push("Price Estimate");
-  rows.push(`"${options.customerName}"`);
+  rows.push("MantelTech");
+  rows.push(`"Customer: ${customerDisplay}"`);
   rows.push(
     `"Price Estimate for planning and information purposes only and is not a binding offer from Cisco."`
   );
@@ -43,6 +45,9 @@ export function generateCsv(
   const dateStr = formatDate(options.date);
   rows.push(
     `Date:,${dateStr},,,Estimate ID:,${options.estimateId}`
+  );
+  rows.push(
+    `,,,,Deal ID:,N/A`
   );
   rows.push(
     `,,,,Price List:,"${options.priceList}"`

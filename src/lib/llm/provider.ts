@@ -150,7 +150,7 @@ export class GeminiLlm {
     contents: Content[]
   ): Promise<LlmResponse> {
     const model = this.genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: process.env.GEMINI_MODEL || "gemini-2.0-flash-lite",
       systemInstruction: systemPrompt,
       tools: [{ functionDeclarations: convertToolsToGemini() as never }],
     });
