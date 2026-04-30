@@ -385,7 +385,7 @@ async function getMockCreateEstimate(
     };
   }
 
-  await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
+  await new Promise((r) => setTimeout(r, 50));
 
   const { getEstimateMock } = await import("../../../tests/mocks/index");
   const mockData = getEstimateMock();
@@ -413,7 +413,7 @@ async function getMockUpdateEstimate(
   options: EstimateAdapterOptions,
   start: number
 ): Promise<CiscoApiCallResult<CiscoEstimateResponse>> {
-  await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
+  await new Promise((r) => setTimeout(r, 50));
 
   const { getEstimateMock } = await import("../../../tests/mocks/index");
   const mockData = getEstimateMock();
@@ -438,7 +438,7 @@ async function getMockAcquireEstimate(
   options: EstimateAdapterOptions,
   start: number
 ): Promise<CiscoApiCallResult<CiscoEstimateResponse>> {
-  await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
+  await new Promise((r) => setTimeout(r, 50));
 
   const { getEstimateMock } = await import("../../../tests/mocks/index");
   const mockData = getEstimateMock();

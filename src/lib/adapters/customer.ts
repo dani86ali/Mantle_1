@@ -172,7 +172,7 @@ async function getMockSearchCustomer(
     };
   }
 
-  await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
+  await new Promise((r) => setTimeout(r, 50));
 
   const { getCustomerMock } = await import("../../../tests/mocks/index");
   const mockData = getCustomerMock();
@@ -208,7 +208,7 @@ async function getMockValidateCustomer(
   options: CustomerAdapterOptions,
   start: number
 ): Promise<CiscoApiCallResult<CiscoCustomerValidateResponse>> {
-  await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
+  await new Promise((r) => setTimeout(r, 50));
 
   const { getCustomerMock } = await import("../../../tests/mocks/index");
   const mockData = getCustomerMock();

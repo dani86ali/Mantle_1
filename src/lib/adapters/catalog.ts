@@ -226,7 +226,7 @@ async function getMockCatalogItems(
   }
 
   // Simulate latency
-  await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
+  await new Promise((r) => setTimeout(r, 50));
 
   const { getCatalogMock } = await import("../../../tests/mocks/index");
   const mockData = getCatalogMock();
@@ -263,7 +263,7 @@ async function getMockMappedServices(
   options: CatalogAdapterOptions,
   start: number
 ): Promise<CiscoApiCallResult<CiscoMappedServicesResponse>> {
-  await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
+  await new Promise((r) => setTimeout(r, 50));
 
   const { getMappedServicesMock } = await import("../../../tests/mocks/index");
   const mockData = getMappedServicesMock();
