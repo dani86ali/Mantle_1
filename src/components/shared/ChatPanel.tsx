@@ -32,25 +32,30 @@ interface BomLineData {
 
 // ─── Main export: FAB + Panel ───────────────────────────────────────────
 
-// Persist chat messages to sessionStorage
+// Persist chat messages to sessionStorage (hydration-safe)
 function usePersistentMessages() {
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    if (typeof window === "undefined") return [];
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load from sessionStorage after mount (avoids hydration mismatch)
+  useEffect(() => {
     try {
       const saved = sessionStorage.getItem("bomatic-chat");
       if (saved) {
         const parsed = JSON.parse(saved);
-        return parsed.map((m: ChatMessage) => ({ ...m, timestamp: new Date(m.timestamp) }));
+        setMessages(parsed.map((m: ChatMessage) => ({ ...m, timestamp: new Date(m.timestamp) })));
       }
     } catch { /* ignore */ }
-    return [];
-  });
+    setLoaded(true);
+  }, []);
 
+  // Save to sessionStorage on change (skip initial empty write)
   useEffect(() => {
+    if (!loaded) return;
     try {
       sessionStorage.setItem("bomatic-chat", JSON.stringify(messages));
     } catch { /* ignore */ }
-  }, [messages]);
+  }, [messages, loaded]);
 
   const clearMessages = () => {
     setMessages([]);
@@ -72,10 +77,15 @@ export function ChatWidget() {
 
   // Resizable panel: compact (400), expanded (700), full
   type PanelSize = "compact" | "expanded" | "full";
-  const [panelSize, setPanelSize] = useState<PanelSize>(() => {
-    if (typeof window === "undefined") return "compact";
-    return (sessionStorage.getItem("bomatic-chat-size") as PanelSize) || "compact";
-  });
+  const [panelSize, setPanelSize] = useState<PanelSize>("compact");
+
+  // Load saved size after mount (hydration-safe)
+  useEffect(() => {
+    const saved = sessionStorage.getItem("bomatic-chat-size") as PanelSize;
+    if (saved && ["compact", "expanded", "full"].includes(saved)) {
+      setPanelSize(saved);
+    }
+  }, []);
 
   function cycleSize() {
     const next = panelSize === "compact" ? "expanded" : panelSize === "expanded" ? "full" : "compact";
