@@ -123,5 +123,118 @@
       { "sku": "AIR-AP-BRACKET-1", "description": "Low Profile Mounting Bracket", "listPrice": 0.00, "category": "mounting", "quantity": 1, "required": true },
       { "sku": "AIR-AP-T-RAIL-R", "description": "Ceiling Grid Clip - Recessed", "listPrice": 0.00, "category": "mounting", "quantity": 1, "required": true }
     ]
+  },
+  "C9200L-24P-4G-A": {
+    "hardwareSku": "C9200L-24P-4G-A",
+    "services": [
+      {
+        "sku": "CON-SNT-C920024P",
+        "description": "SNTC-8X5XNBD Catalyst 9200L 24-port",
+        "serviceLevel": "8x5xNBD",
+        "listPrice": 800,
+        "durationMonths": 36,
+        "required": false
+      }
+    ],
+    "licenses": [
+      {
+        "sku": "C9200-DNA-A-24",
+        "description": "DNA Advantage 24-port",
+        "tier": "DNA Advantage",
+        "listPrice": 0,
+        "required": true
+      },
+      {
+        "sku": "C9200-DNA-A-24-3Y",
+        "description": "DNA Advantage 24-port 3Y",
+        "tier": "DNA Advantage 3Y",
+        "listPrice": 900,
+        "termMonths": 36,
+        "required": true
+      },
+      {
+        "sku": "C9200-NW-A-24",
+        "description": "Network Advantage 24-port",
+        "tier": "Network Advantage",
+        "listPrice": 0,
+        "required": true
+      }
+    ],
+    "accessories": [
+      { "sku": "PWR-C6-125WAC", "description": "125W AC PSU", "listPrice": 0, "category": "power", "quantity": 1, "required": true }
+    ]
+  },
+  "C9200L-24P-4G-E": {
+    "hardwareSku": "C9200L-24P-4G-E",
+    "services": [
+      {
+        "sku": "CON-SNT-C920024P",
+        "description": "SNTC-8X5XNBD Catalyst 9200L 24-port",
+        "serviceLevel": "8x5xNBD",
+        "listPrice": 800,
+        "durationMonths": 36,
+        "required": false
+      }
+    ],
+    "licenses": [
+      {
+        "sku": "C9200-DNA-E-24",
+        "description": "DNA Essentials 24-port",
+        "tier": "DNA Essentials",
+        "listPrice": 0,
+        "required": true
+      },
+      {
+        "sku": "C9200-DNA-E-24-3Y",
+        "description": "DNA Essentials 24-port 3Y",
+        "tier": "DNA Essentials 3Y",
+        "listPrice": 450,
+        "termMonths": 36,
+        "required": true
+      },
+      {
+        "sku": "C9200-NW-E-24",
+        "description": "Network Essentials 24-port",
+        "tier": "Network Essentials",
+        "listPrice": 0,
+        "required": true
+      }
+    ],
+    "accessories": [
+      { "sku": "PWR-C6-125WAC", "description": "125W AC PSU", "listPrice": 0, "category": "power", "quantity": 1, "required": true }
+    ]
+  },
+  "C9800-L-F-K9": {
+    "hardwareSku": "C9800-L-F-K9",
+    "services": [
+      {
+        "sku": "CON-SNT-C9800LF",
+        "description": "SNTC-8X5XNBD Catalyst 9800-L",
+        "serviceLevel": "8x5xNBD",
+        "listPrice": 1100,
+        "durationMonths": 36,
+        "required": false
+      }
+    ],
+    "licenses": [
+      {
+        "sku": "C9800-DNA-A",
+        "description": "C9800 DNA Advantage",
+        "tier": "DNA Advantage",
+        "listPrice": 0,
+        "required": true
+      },
+      {
+        "sku": "C9800-DNA-A-3Y",
+        "description": "C9800 DNA Advantage 3Y",
+        "tier": "DNA Advantage 3Y",
+        "listPrice": 2500,
+        "termMonths": 36,
+        "required": true
+      }
+    ],
+    "accessories": [
+      { "sku": "C9800-AC-110W", "description": "9800-L Power Supply", "listPrice": 0, "category": "power", "quantity": 1, "required": true }
+    ]
   }
 }

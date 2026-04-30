@@ -578,12 +578,42 @@ function InlineBom({ lines, bomDraftId }: { lines: BomLineData[]; bomDraftId?: s
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 function extractBom(text: string): BomLineData[] | null {
-  const match = text.match(/```bom\n([\s\S]*?)```/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[1]);
-    if (Array.isArray(parsed)) return parsed;
-  } catch { /* not JSON */ }
+  // Try ```bom block first (our preferred format)
+  const bomMatch = text.match(/```bom\n([\s\S]*?)```/);
+  if (bomMatch) {
+    try {
+      const parsed = JSON.parse(bomMatch[1]);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].sku) return parsed;
+    } catch { /* not JSON */ }
+  }
+
+  // Try ```json block (Gemini often uses this)
+  const jsonMatch = text.match(/```json\n([\s\S]*?)```/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].sku) return parsed;
+    } catch { /* not JSON */ }
+  }
+
+  // Try any ``` code block containing JSON array with SKUs
+  const codeMatch = text.match(/```\n?([\s\S]*?)```/);
+  if (codeMatch) {
+    try {
+      const parsed = JSON.parse(codeMatch[1]);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].sku) return parsed;
+    } catch { /* not JSON */ }
+  }
+
+  // Try bare JSON array in the text (no code fence)
+  const bareMatch = text.match(/\[\s*\{[^]*"sku"\s*:[^]*\}\s*\]/);
+  if (bareMatch) {
+    try {
+      const parsed = JSON.parse(bareMatch[0]);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].sku) return parsed;
+    } catch { /* not JSON */ }
+  }
+
   return null;
 }
 
