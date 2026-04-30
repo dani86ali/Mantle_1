@@ -8,6 +8,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createIntake, createAgentRun, createBomDraft } from "@/lib/db/queries";
+import { db } from "@/lib/db/index";
+import { tenants } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 const saveSchema = z.object({
   customerName: z.string().default("Chat Customer"),
@@ -40,9 +43,29 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const tenantId = "chat-session"; // TODO: get from auth session
-
   try {
+    // Ensure a default tenant exists for chat sessions
+    const DEFAULT_SLUG = "default-chat";
+    let [tenant] = await db
+      .select()
+      .from(tenants)
+      .where(eq(tenants.slug, DEFAULT_SLUG))
+      .limit(1);
+
+    if (!tenant) {
+      [tenant] = await db
+        .insert(tenants)
+        .values({
+          name: "BOMatic Chat",
+          slug: DEFAULT_SLUG,
+          region: body.region,
+          onboardingState: "LIVE",
+        })
+        .returning();
+    }
+
+    const tenantId = tenant.id;
+
     // 1. Create intake record
     const intake = await createIntake({
       tenantId,
