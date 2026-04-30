@@ -1,19 +1,20 @@
 /**
  * Chat API route — multi-turn conversation with the BOMatic agent.
  *
- * Accepts messages + conversation history, calls Anthropic with tool-use,
- * executes tools (catalog lookup, mapped services, validation, estimate),
- * returns the assistant's response with any tool results.
+ * Supports Anthropic (Claude) and Google (Gemini) via LLM_PROVIDER env var.
+ * Both use the same tool-use loop with identical tool definitions.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { executeTool, type ToolContext } from "@/lib/agent/steps/tool-executor";
-import { AGENT_TOOLS } from "@/lib/agent/tools";
 import { DEFAULT_STANDARDS } from "@/types/tenant";
-
-const client = new Anthropic();
+import {
+  getProvider,
+  AnthropicLlm,
+  GeminiLlm,
+  type ToolResult,
+} from "@/lib/llm/provider";
 
 const SYSTEM_PROMPT = `You are BOMatic, an AI-powered Cisco presales engineer assistant. You help engineers build, validate, and export Bills of Materials (BoMs) for Cisco networking equipment.
 
@@ -84,90 +85,105 @@ export async function POST(request: NextRequest) {
     ciscoCalls: [],
   };
 
-  // Build the message list for Anthropic
-  const anthropicMessages: Anthropic.MessageParam[] = body.messages.map(
-    (m) => ({
-      role: m.role,
-      content: m.content,
-    })
-  );
-
-  // If there's file content, prepend it to the last user message
-  if (body.fileContent && anthropicMessages.length > 0) {
-    const lastMsg = anthropicMessages[anthropicMessages.length - 1];
-    if (lastMsg.role === "user" && typeof lastMsg.content === "string") {
-      lastMsg.content = `[Uploaded file: ${body.fileName}]\n\n${body.fileContent}\n\n${lastMsg.content}`;
+  // Prepend file content to last user message if present
+  if (body.fileContent && body.messages.length > 0) {
+    const last = body.messages[body.messages.length - 1];
+    if (last.role === "user") {
+      last.content = `[Uploaded file: ${body.fileName}]\n\n${body.fileContent}\n\n${last.content}`;
     }
   }
 
+  const provider = getProvider();
+
   try {
-    // Tool-use loop — run until the model stops calling tools
-    let finalText = "";
-    let iterations = 0;
-    const MAX_ITERATIONS = 12;
-
-    while (iterations < MAX_ITERATIONS) {
-      iterations++;
-
-      const response = await client.messages.create({
-        model: "claude-sonnet-4-5-20241022",
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        tools: AGENT_TOOLS,
-        messages: anthropicMessages,
-      });
-
-      // Collect text and tool uses from response
-      const toolUseBlocks: Anthropic.ToolUseBlock[] = [];
-      for (const block of response.content) {
-        if (block.type === "text") {
-          finalText += block.text;
-        } else if (block.type === "tool_use") {
-          toolUseBlocks.push(block);
-        }
-      }
-
-      // If no tool calls, we're done
-      if (toolUseBlocks.length === 0 || response.stop_reason === "end_turn") {
-        break;
-      }
-
-      // Execute tools and add results to conversation
-      anthropicMessages.push({
-        role: "assistant",
-        content: response.content,
-      });
-
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-      for (const toolUse of toolUseBlocks) {
-        const result = await executeTool(
-          toolUse.name,
-          toolUse.input as Record<string, unknown>,
-          toolContext
-        );
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: toolUse.id,
-          content: JSON.stringify(result.data),
-        });
-      }
-
-      anthropicMessages.push({
-        role: "user",
-        content: toolResults,
-      });
+    if (provider === "gemini") {
+      return await handleGemini(body.messages, toolContext);
+    } else {
+      return await handleAnthropic(body.messages, toolContext);
     }
-
-    return NextResponse.json({
-      response: finalText,
-      ciscoCalls: toolContext.ciscoCalls.length,
-    });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Unknown error";
+    const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json(
-      { error: `Agent error: ${message}` },
+      { error: `Agent error (${provider}): ${message}` },
       { status: 500 }
     );
   }
+}
+
+// ─── Anthropic handler ──────────────────────────────────────────────────
+
+async function handleAnthropic(
+  chatMessages: { role: "user" | "assistant"; content: string }[],
+  toolContext: ToolContext
+) {
+  const llm = new AnthropicLlm();
+  const messages = llm.buildMessages(chatMessages);
+
+  let finalText = "";
+  const MAX_ITERATIONS = 12;
+
+  for (let i = 0; i < MAX_ITERATIONS; i++) {
+    const response = await llm.chat(SYSTEM_PROMPT, messages);
+    finalText += response.text;
+
+    if (response.done) break;
+
+    // Execute tools
+    llm.appendAssistantWithToolUse(messages, response);
+    const results: ToolResult[] = [];
+    for (const tc of response.toolCalls) {
+      const result = await executeTool(tc.name, tc.input, toolContext);
+      results.push({
+        toolCallId: tc.id,
+        name: tc.name,
+        result: JSON.stringify(result.data),
+      });
+    }
+    llm.appendToolResults(messages, results);
+  }
+
+  return NextResponse.json({
+    response: finalText,
+    provider: "anthropic",
+    ciscoCalls: toolContext.ciscoCalls.length,
+  });
+}
+
+// ─── Gemini handler ─────────────────────────────────────────────────────
+
+async function handleGemini(
+  chatMessages: { role: "user" | "assistant"; content: string }[],
+  toolContext: ToolContext
+) {
+  const llm = new GeminiLlm();
+  const contents = llm.buildContents(chatMessages);
+
+  let finalText = "";
+  const MAX_ITERATIONS = 12;
+
+  for (let i = 0; i < MAX_ITERATIONS; i++) {
+    const response = await llm.chat(SYSTEM_PROMPT, contents);
+    finalText += response.text;
+
+    if (response.done) break;
+
+    // Execute tools
+    llm.appendAssistantWithToolUse(contents, response);
+    const results: ToolResult[] = [];
+    for (const tc of response.toolCalls) {
+      const result = await executeTool(tc.name, tc.input, toolContext);
+      results.push({
+        toolCallId: tc.id,
+        name: tc.name,
+        result: JSON.stringify(result.data),
+      });
+    }
+    llm.appendToolResults(contents, results);
+  }
+
+  return NextResponse.json({
+    response: finalText,
+    provider: "gemini",
+    ciscoCalls: toolContext.ciscoCalls.length,
+  });
 }
