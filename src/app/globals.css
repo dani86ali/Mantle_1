@@ -2,8 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
 :root {
-  --brand-primary: #0d6efd;
-  --brand-secondary: #6c757d;
-  --brand-accent: #198754;
+  --bg-primary: #0a0a0f;
+  --bg-card: #141419;
+  --bg-elevated: #1a1a22;
+  --border: #1e1e2a;
+  --border-hover: #2a2a3a;
+  --accent: #00d4aa;
+  --accent-hover: #00e6b8;
+  --accent-muted: rgba(0, 212, 170, 0.1);
+  --blue: #3b82f6;
+  --blue-muted: rgba(59, 130, 246, 0.1);
+  --destructive: #ef4444;
+  --destructive-muted: rgba(239, 68, 68, 0.1);
+  --warning: #f59e0b;
+  --warning-muted: rgba(245, 158, 11, 0.1);
+  --success: #10b981;
+  --success-muted: rgba(16, 185, 129, 0.1);
+  --text-primary: #f0f0f5;
+  --text-secondary: #8888a0;
+  --text-tertiary: #55556a;
+  --brand-primary: #00d4aa;
+  --brand-secondary: #3b82f6;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2a3a #0a0a0f;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Skeleton loading animation */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-elevated) 50%, var(--bg-card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+/* Toast animation */
+@keyframes toast-in {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes toast-out {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(100%); opacity: 0; }
+}
+
+.toast-enter { animation: toast-in 0.3s ease-out; }
+.toast-exit { animation: toast-out 0.3s ease-in; }
+
+/* Form inputs */
+.form-input {
+  @apply w-full rounded-input border border-[#1e1e2a] bg-bg-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50;
 }

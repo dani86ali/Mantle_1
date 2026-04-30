@@ -2,7 +2,29 @@
   "permissions": {
     "allow": [
       "Bash(git init *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(grep -E '\\\\.\\(ts|tsx|json|sql|css|yml\\)$')",
+      "Bash(xargs wc *)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(docker compose up *)",
+      "Bash(\"/c/Program Files/Docker/Docker/resources/bin/docker.exe\" --version)",
+      "Bash(\"C:/Program Files/Docker/Docker/Docker Desktop.exe\" --version)",
+      "Bash(docker *)",
+      "Bash(cmd.exe /c \"docker --version\")",
+      "Bash(powershell.exe -Command \"docker --version\")",
+      "Bash(DATABASE_URL=\"postgresql://bomatic:bomatic_dev@localhost:5432/bomatic\" npx drizzle-kit *)",
+      "WebSearch",
+      "WebFetch(domain:www.cisco.com)",
+      "WebFetch(domain:itprice.com)",
+      "WebFetch(domain:www.itmall.sale)",
+      "WebFetch(domain:www.pinglabz.com)",
+      "Bash(node -e \"const d = require\\('./tests/mocks/catalog-responses.json'\\); const keys = Object.keys\\(d.items\\); console.log\\('Total SKUs:', keys.length\\); console.log\\('Errors:', Object.keys\\(d.errors\\).length\\); console.log\\('JSON is valid.'\\);\")",
+      "Bash(node -e ' *)",
+      "Bash(node *)",
+      "Bash(curl *)",
+      "Bash(taskkill //F //IM node.exe)"
     ]
   }
 }

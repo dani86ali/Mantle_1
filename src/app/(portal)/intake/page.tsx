@@ -23,6 +23,42 @@ export default function IntakePage() {
   const [licenseTier, setLicenseTier] = useState<"essentials" | "advantage">("advantage");
   const [pastedText, setPastedText] = useState("");
   const [pastedBom, setPastedBom] = useState("");
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const ALLOWED_TYPES = [
+    "text/csv",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/pdf",
+  ];
+  const MAX_SIZE = 10 * 1024 * 1024;
+
+  function handleFileSelect(file: File) {
+    setFileError(null);
+
+    if (!ALLOWED_TYPES.includes(file.type) && !file.name.match(/\.(csv|xlsx|xls|pdf)$/i)) {
+      setFileError(`File type not allowed. Accepted: CSV, XLSX, PDF.`);
+      return;
+    }
+    if (file.size > MAX_SIZE) {
+      setFileError(`File size ${(file.size / 1024 / 1024).toFixed(1)} MB exceeds 10 MB limit.`);
+      return;
+    }
+
+    setUploadedFile(file);
+
+    // Auto-parse CSV files into the paste field
+    if (file.name.endsWith(".csv") || file.type === "text/csv") {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        if (text) setPastedBom(text);
+      };
+      reader.readAsText(file);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -228,20 +264,100 @@ export default function IntakePage() {
 
         {/* Path-specific inputs */}
         {path === "path_a" && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Paste BoM (SKU lines)
-            </label>
-            <textarea
-              value={pastedBom}
-              onChange={(e) => setPastedBom(e.target.value)}
-              placeholder={"C9300L-24UXG-4X-A, 2\nC9300L-DNA-A-24-3Y, 2\nCON-SNT-C93024GA, 2"}
-              className="mt-1 w-full rounded-md border border-gray-300 p-3 font-mono text-sm"
-              rows={8}
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              Format: SKU, Quantity (one per line). Or upload a CSV/XLSX file.
-            </p>
+          <div className="space-y-4">
+            {/* File upload */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Upload BoM file
+              </label>
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  const file = e.dataTransfer.files[0];
+                  if (file) handleFileSelect(file);
+                }}
+                className={`mt-1 flex flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-8 transition ${
+                  dragOver
+                    ? "border-brand-primary bg-blue-50"
+                    : "border-gray-300 hover:border-gray-400"
+                }`}
+              >
+                {uploadedFile ? (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-gray-900">
+                      {uploadedFile.name}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      ({(uploadedFile.size / 1024).toFixed(1)} KB)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUploadedFile(null);
+                        setFileError(null);
+                      }}
+                      className="text-sm text-red-500 hover:text-red-700"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-600">
+                      Drag and drop a file here, or{" "}
+                      <label className="cursor-pointer font-medium text-brand-primary hover:underline">
+                        browse
+                        <input
+                          type="file"
+                          accept=".csv,.xlsx,.xls,.pdf"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleFileSelect(file);
+                          }}
+                        />
+                      </label>
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      CSV, XLSX, or PDF — max 10 MB
+                    </p>
+                  </>
+                )}
+              </div>
+              {fileError && (
+                <p className="mt-1 text-sm text-red-600">{fileError}</p>
+              )}
+            </div>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-gray-200" />
+              <span className="text-xs text-gray-400">or paste directly</span>
+              <div className="h-px flex-1 bg-gray-200" />
+            </div>
+
+            {/* Paste BoM */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Paste BoM (SKU lines)
+              </label>
+              <textarea
+                value={pastedBom}
+                onChange={(e) => setPastedBom(e.target.value)}
+                placeholder={"C9300L-24UXG-4X-A, 2\nC9300L-DNA-A-24-3Y, 2\nCON-SNT-C93024GA, 2"}
+                className="mt-1 w-full rounded-md border border-gray-300 p-3 font-mono text-sm"
+                rows={6}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Format: SKU, Quantity (one per line)
+              </p>
+            </div>
           </div>
         )}
 
