@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AppSidebar } from "@/components/shared/AppSidebar";
 import { TopBar } from "@/components/shared/TopBar";
+import { ChatWidget } from "@/components/shared/ChatPanel";
 
 export const metadata: Metadata = {
   title: "BOMatic",
@@ -23,6 +24,7 @@ export default function RootLayout({
             <main className="flex-1 overflow-y-auto">{children}</main>
           </div>
         </div>
+        <ChatWidget />
       </body>
     </html>
   );
