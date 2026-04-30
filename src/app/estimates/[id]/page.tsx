@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ChevronLeft, Table2, ShieldCheck, FileText, Download,
@@ -22,20 +23,20 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-// Mock estimate data
-const ESTIMATE = {
-  id: "OG164161387AE",
-  customer: "NTT DATA Services",
+// Default estimate data (overridden by API fetch)
+const DEFAULT_ESTIMATE = {
+  id: "",
+  customer: "Loading...",
   region: "EMEAR",
   country: "SA",
   domain: "Access Switching",
   status: "READY_FOR_REVIEW",
   version: 1,
-  createdAt: "2025-10-14T00:00:00Z",
-  ccwUrl: "https://apps.cisco.com/ccw/cpc/est/OG164161387AE",
+  createdAt: new Date().toISOString(),
+  ccwUrl: "",
 };
 
-const LINES = [
+const FALLBACK_LINES = [
   { ln: 1, sku: "C9300L-24UXG-4X-A", sa: true, desc: "Catalyst 9300L 24p data, Network Advantage, 4x10G Uplink", qty: 2, listPrice: 13960, disc: 0, netPrice: 13960, lead: 28, dur: null, cat: "hardware", valid: "pass" },
   { ln: 2, sku: "C9300L-DNA-A-24", sa: true, desc: "C9300L Cisco DNA Advantage, 24-Port Term License", qty: 2, listPrice: 0, disc: 0, netPrice: 0, lead: 0, dur: null, cat: "license", valid: "pass" },
   { ln: 3, sku: "C9300L-DNA-A-24-3Y", sa: true, desc: "C9300L DNA Advantage 3 Year Term", qty: 2, listPrice: 2371.45, disc: 0, netPrice: 2371.45, lead: 0, dur: 36, cat: "subscription", valid: "pass" },
@@ -64,7 +65,53 @@ const VALIDATION_RULES = [
 ];
 
 export default function EstimateDetailPage() {
+  const params = useParams();
+  const id = params.id as string;
   const [tab, setTab] = useState<TabId>("config");
+  const [ESTIMATE, setEstimate] = useState(DEFAULT_ESTIMATE);
+  const [LINES, setLines] = useState(FALLBACK_LINES);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(`/api/estimates/${id}`);
+        if (res.ok) {
+          const { estimate } = await res.json();
+          setEstimate({
+            id: estimate.estimateId ?? id.slice(0, 12).toUpperCase(),
+            customer: estimate.customerName ?? "Unknown",
+            region: estimate.region ?? "EMEAR",
+            country: estimate.country ?? "SA",
+            domain: estimate.domain ?? "access_switching",
+            status: estimate.status ?? "READY_FOR_REVIEW",
+            version: 1,
+            createdAt: estimate.createdAt,
+            ccwUrl: estimate.ccwUrl ?? "",
+          });
+          const lines = (estimate.linesJson ?? []) as Array<Record<string, unknown>>;
+          if (lines.length > 0) {
+            setLines(lines.map((l, i) => ({
+              ln: i + 1,
+              sku: (l.sku as string) ?? "",
+              sa: (l.smartAccountMandatory as boolean) ?? false,
+              desc: (l.description as string) ?? "",
+              qty: (l.quantity as number) ?? 1,
+              listPrice: (l.unitListPrice as number) ?? 0,
+              disc: (l.discountPercent as number) ?? 0,
+              netPrice: (l.unitNetPrice as number) ?? (l.unitListPrice as number) ?? 0,
+              lead: (l.leadTimeDays as number) ?? 0,
+              dur: (l.serviceDurationMonths as number) ?? null,
+              cat: (l.category as string) ?? "other",
+              valid: "pass",
+            })));
+          }
+        }
+      } catch { /* use fallback */ }
+      setLoading(false);
+    }
+    load();
+  }, [id]);
 
   const productTotal = LINES.filter((l) => !["service", "subscription", "license"].includes(l.cat)).reduce((s, l) => s + l.netPrice * l.qty, 0);
   const serviceTotal = LINES.filter((l) => l.cat === "service").reduce((s, l) => s + l.netPrice * l.qty, 0);
@@ -246,8 +293,8 @@ export default function EstimateDetailPage() {
           <div className="max-w-xl space-y-4">
             <h3 className="text-lg font-semibold text-text-primary">Export Options</h3>
             <div className="space-y-3">
-              <ExportCard icon={<Download size={18} />} title="CSV Export" desc="Price Estimate template format, UTF-8 with BOM" action="Download CSV" href={`/api/export?bomDraftId=${ESTIMATE.id}&format=csv`} />
-              <ExportCard icon={<FileText size={18} />} title="XLSX Export" desc="Formatted Excel workbook with column widths and number formatting" action="Download XLSX" href={`/api/export?bomDraftId=${ESTIMATE.id}&format=xlsx`} />
+              <ExportCard icon={<Download size={18} />} title="CSV Export" desc="Price Estimate template format, UTF-8 with BOM" action="Download CSV" href={`/api/export?bomDraftId=${id}&format=csv`} />
+              <ExportCard icon={<FileText size={18} />} title="XLSX Export" desc="Formatted Excel workbook with column widths and number formatting" action="Download XLSX" href={`/api/export?bomDraftId=${id}&format=xlsx`} />
               <ExportCard icon={<FileText size={18} />} title="PDF Export" desc="Professional formatted document with tenant branding" action="Coming Phase 2" disabled />
             </div>
             {ESTIMATE.ccwUrl && (

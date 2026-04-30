@@ -221,7 +221,8 @@ const PAGE_SIZE = 10;
 
 export default function EstimatesPage() {
   const { data: dbEstimates, loading, refresh } = useEstimates();
-  const allEstimates = dbEstimates.length > 0 ? dbEstimates : FALLBACK_ESTIMATES;
+  // Show DB estimates on top, then fallback mock data below
+  const allEstimates = [...dbEstimates, ...FALLBACK_ESTIMATES];
 
   // Filter state
   const [search, setSearch] = useState("");
