@@ -24,7 +24,9 @@
       "Bash(node -e ' *)",
       "Bash(node *)",
       "Bash(curl *)",
-      "Bash(taskkill //F //IM node.exe)"
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(rm -rf \"src/app/\\(admin\\)\" \"src/app/\\(console\\)\" \"src/app/\\(portal\\)\" \"src/app/\\(dashboard\\)\" \"src/app/chat\")",
+      "Bash(rm -f src/components/shared/Sidebar.tsx src/components/shared/StatusBadge.tsx src/components/shared/ValidationFlag.tsx)"
     ]
   }
 }
