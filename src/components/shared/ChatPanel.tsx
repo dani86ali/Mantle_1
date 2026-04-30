@@ -32,15 +32,58 @@ interface BomLineData {
 
 // ─── Main export: FAB + Panel ───────────────────────────────────────────
 
+// Persist chat messages to sessionStorage
+function usePersistentMessages() {
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = sessionStorage.getItem("bomatic-chat");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.map((m: ChatMessage) => ({ ...m, timestamp: new Date(m.timestamp) }));
+      }
+    } catch { /* ignore */ }
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("bomatic-chat", JSON.stringify(messages));
+    } catch { /* ignore */ }
+  }, [messages]);
+
+  const clearMessages = () => {
+    setMessages([]);
+    sessionStorage.removeItem("bomatic-chat");
+  };
+
+  return { messages, setMessages, clearMessages };
+}
+
 export function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const { messages, setMessages, clearMessages } = usePersistentMessages();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+
+  // Resizable panel: compact (400), expanded (700), full
+  type PanelSize = "compact" | "expanded" | "full";
+  const [panelSize, setPanelSize] = useState<PanelSize>(() => {
+    if (typeof window === "undefined") return "compact";
+    return (sessionStorage.getItem("bomatic-chat-size") as PanelSize) || "compact";
+  });
+
+  function cycleSize() {
+    const next = panelSize === "compact" ? "expanded" : panelSize === "expanded" ? "full" : "compact";
+    setPanelSize(next);
+    sessionStorage.setItem("bomatic-chat-size", next);
+  }
+
+  const panelWidth = panelSize === "full" ? "100vw" : panelSize === "expanded" ? "700px" : "400px";
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -114,10 +157,15 @@ export function ChatWidget() {
 
       const bom = extractBom(data.response);
       const quickReplies = extractQuickReplies(data.response);
-      const cleanContent = data.response
-        .replace(/```bom\n[\s\S]*?```/g, "")
+      // Strip ALL code blocks and bare JSON arrays from display text
+      let cleanContent = data.response
+        .replace(/```(?:bom|json)?\n[\s\S]*?```/g, "")
+        .replace(/```[\s\S]*?```/g, "")
+        .replace(/\[\s*\{[^]*?"sku"\s*:[^]*?\}\s*\]/g, "")
         .replace(/\[quick-replies:.*?\]/g, "")
         .trim();
+      // Remove lines that are just whitespace after stripping
+      cleanContent = cleanContent.replace(/\n{3,}/g, "\n\n").trim();
 
       // Auto-save BoM to database if one was produced
       let bomDraftId: string | undefined;
@@ -221,7 +269,10 @@ export function ChatWidget() {
   // ─── Full Panel ─────────────────────────────────────────────────────
 
   return (
-    <div className="fixed bottom-0 right-0 top-0 z-50 flex w-[400px] flex-col border-l border-[#1e1e2a] bg-bg-primary shadow-2xl shadow-black/50">
+    <div
+      className="fixed bottom-0 right-0 top-0 z-50 flex flex-col border-l border-[#1e1e2a] bg-bg-primary shadow-2xl shadow-black/50 transition-all duration-200"
+      style={{ width: panelWidth }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[#1e1e2a] bg-bg-card px-4 py-3">
         <div className="flex items-center gap-2.5">
@@ -234,6 +285,22 @@ export function ChatWidget() {
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {messages.length > 0 && (
+            <button
+              onClick={clearMessages}
+              className="flex h-7 items-center gap-1 rounded px-1.5 text-[10px] text-text-tertiary hover:bg-[#1a1a22] hover:text-text-secondary"
+              title="Clear chat"
+            >
+              Clear
+            </button>
+          )}
+          <button
+            onClick={cycleSize}
+            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[#1a1a22] hover:text-text-secondary"
+            title={panelSize === "compact" ? "Expand" : panelSize === "expanded" ? "Full screen" : "Compact"}
+          >
+            {panelSize === "full" ? <Minus size={14} /> : <ExternalLink size={14} />}
+          </button>
           <button
             onClick={() => setMinimized(true)}
             className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[#1a1a22] hover:text-text-secondary"

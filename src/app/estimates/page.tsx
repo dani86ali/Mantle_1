@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
@@ -11,6 +11,7 @@ import {
   ChevronRight,
   SearchX,
   Calendar,
+  Trash2,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -38,37 +39,66 @@ interface Estimate {
 }
 
 // ---------------------------------------------------------------------------
-// Mock data
+// Data fetching
 // ---------------------------------------------------------------------------
 
-const MOCK_ESTIMATES: Estimate[] = [
-  {
-    id: "OG164161387AE",
-    customer: "NTT Data",
-    domain: "Access Switching",
-    status: "Approved",
-    engineer: "Sarah Chen",
-    created: "2026-04-28",
-    totalPrice: 148_250.0,
-  },
-  {
-    id: "OG164161492BF",
-    customer: "CDW",
-    domain: "Wireless",
-    status: "Processing",
-    engineer: "James Rivera",
-    created: "2026-04-27",
-    totalPrice: 67_430.0,
-  },
-  {
-    id: "OG164161538CG",
-    customer: "Presidio",
-    domain: "Both",
-    status: "Ready for Review",
-    engineer: "Sarah Chen",
-    created: "2026-04-26",
-    totalPrice: 95_120.0,
-  },
+function useEstimates() {
+  const [data, setData] = useState<Estimate[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = async () => {
+    try {
+      const res = await fetch("/api/estimates");
+      const json = await res.json();
+      if (json.estimates) {
+        setData(
+          json.estimates.map((e: Record<string, unknown>) => ({
+            id: e.id as string,
+            customer: (e.customer as string) || "Unknown",
+            domain: mapDomain(e.domain as string),
+            status: mapStatus(e.status as string),
+            engineer: (e.engineer as string) || "Unassigned",
+            created: typeof e.created === "string"
+              ? e.created.slice(0, 10)
+              : new Date(e.created as string).toISOString().slice(0, 10),
+            totalPrice: (e.totalPrice as number) || 0,
+          }))
+        );
+      }
+    } catch { /* API may not be available */ }
+    setLoading(false);
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  return { data, loading, refresh };
+}
+
+function mapStatus(s: string): EstimateStatus {
+  const map: Record<string, EstimateStatus> = {
+    READY_FOR_REVIEW: "Ready for Review",
+    APPROVED: "Approved",
+    PENDING: "Pending",
+    PROCESSING: "Processing",
+    AGENT_FAILED: "Failed",
+    AGENT_PROCESSING: "Processing",
+    AGENT_TIMEOUT: "Failed",
+    NEEDS_CLARIFICATION: "Draft",
+    IN_REVIEW: "Ready for Review",
+    REJECTED: "Failed",
+    COMPLETED: "Ready for Review",
+  };
+  return map[s] ?? "Draft";
+}
+
+function mapDomain(d: string): Domain {
+  if (d?.includes("wireless")) return "Wireless";
+  if (d?.includes("switching_wireless") || d?.includes("both")) return "Both";
+  return "Access Switching";
+}
+
+// Keep mock data as fallback when DB is empty
+const FALLBACK_ESTIMATES: Estimate[] = [
   {
     id: "OG164161604DH",
     customer: "Gulf Business Machines",
@@ -187,10 +217,12 @@ function domainColor(domain: Domain) {
 // Component
 // ---------------------------------------------------------------------------
 
-const TOTAL_COUNT = 24;
 const PAGE_SIZE = 10;
 
 export default function EstimatesPage() {
+  const { data: dbEstimates, loading, refresh } = useEstimates();
+  const allEstimates = dbEstimates.length > 0 ? dbEstimates : FALLBACK_ESTIMATES;
+
   // Filter state
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | EstimateStatus>(
@@ -203,9 +235,17 @@ export default function EstimatesPage() {
   // Pagination
   const [page, setPage] = useState(1);
 
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this estimate? This cannot be undone.")) return;
+    try {
+      await fetch(`/api/review/${id}`, { method: "DELETE" });
+      refresh();
+    } catch { /* ignore */ }
+  }
+
   // Derived data
   const filtered = useMemo(() => {
-    let rows = MOCK_ESTIMATES;
+    let rows = allEstimates;
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -262,7 +302,7 @@ export default function EstimatesPage() {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-text-primary">Estimates</h1>
             <span className="rounded-full bg-accent-muted px-2.5 py-0.5 text-xs font-medium text-accent">
-              {isFiltering ? totalFiltered : TOTAL_COUNT}
+              {totalFiltered}
             </span>
           </div>
           <Link
@@ -404,6 +444,7 @@ export default function EstimatesPage() {
                     <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-text-secondary">
                       Total Price
                     </th>
+                    <th className="w-10 px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1e1e2a]">
@@ -459,6 +500,15 @@ export default function EstimatesPage() {
                       <td className="whitespace-nowrap px-4 py-3 text-right font-mono font-medium text-text-primary">
                         {currencyFmt.format(row.totalPrice)}
                       </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        <button
+                          onClick={(e) => { e.preventDefault(); handleDelete(row.id); }}
+                          className="rounded p-1 text-text-tertiary hover:bg-destructive-muted hover:text-destructive"
+                          title="Delete estimate"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -476,7 +526,7 @@ export default function EstimatesPage() {
                 </span>{" "}
                 of{" "}
                 <span className="font-medium text-text-primary">
-                  {isFiltering ? totalFiltered : TOTAL_COUNT}
+                  {totalFiltered}
                 </span>
               </p>
               <div className="flex items-center gap-2">

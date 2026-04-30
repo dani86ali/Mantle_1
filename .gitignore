@@ -44,3 +44,9 @@ next-env.d.ts
 # OS
 .DS_Store
 desktop.ini
+
+# Moat task system
+.moat/
+
+# Claude Code configuration
+.claude/

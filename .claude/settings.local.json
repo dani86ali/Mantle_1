@@ -26,7 +26,10 @@
       "Bash(curl *)",
       "Bash(taskkill //F //IM node.exe)",
       "Bash(rm -rf \"src/app/\\(admin\\)\" \"src/app/\\(console\\)\" \"src/app/\\(portal\\)\" \"src/app/\\(dashboard\\)\" \"src/app/chat\")",
-      "Bash(rm -f src/components/shared/Sidebar.tsx src/components/shared/StatusBadge.tsx src/components/shared/ValidationFlag.tsx)"
+      "Bash(rm -f src/components/shared/Sidebar.tsx src/components/shared/StatusBadge.tsx src/components/shared/ValidationFlag.tsx)",
+      "Bash(npx drizzle-kit *)",
+      "Bash(DATABASE_URL=\"postgresql://bomatic:bomatic_dev@localhost:5432/bomatic\" npm run *)",
+      "Bash(npm info *)"
     ]
   }
 }
