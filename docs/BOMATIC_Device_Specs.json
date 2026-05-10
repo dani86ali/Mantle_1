@@ -1,0 +1,573 @@
+{
+  "metadata": {
+    "purpose": "BOMATIC deterministic device specification tables for runtime calculations",
+    "generated": "2026-05-09",
+    "sources": [
+      "Cisco datasheets",
+      "Fortinet performance matrix",
+      "Cisco AP power reference",
+      "vendor websites"
+    ],
+    "usage": "These tables drive PoE validation, sizing calculations, accessory selection, and validation rules. Never use AI to look up these values \u2014 query this data directly."
+  },
+  "cisco_switches": {
+    "catalyst_9300": [
+      {
+        "model": "C9300-24P",
+        "ports": 24,
+        "port_type": "1G PoE+",
+        "poe_per_port_w": 30,
+        "poe_budget_default_w": 445,
+        "poe_budget_1100w_psu": 720,
+        "psu_default": "PWR-C1-715WAC",
+        "psu_redundant": "PWR-C1-715WAC/2",
+        "psu_upgrade": "PWR-C1-1100WAC",
+        "fans": 3,
+        "fan_sku": "C9300-FAN-1RU",
+        "stack_max": 8,
+        "stack_bw_gbps": 480,
+        "stack_type": "StackWise-480",
+        "stack_cable_needed": true,
+        "stack_kit_needed": false,
+        "uplink": "modular",
+        "rack_units": 1
+      },
+      {
+        "model": "C9300-48P",
+        "ports": 48,
+        "port_type": "1G PoE+",
+        "poe_per_port_w": 30,
+        "poe_budget_default_w": 437,
+        "poe_budget_1100w_psu": 740,
+        "poe_budget_dual_1100w": 1440,
+        "psu_default": "PWR-C1-715WAC",
+        "fans": 3,
+        "fan_sku": "C9300-FAN-1RU",
+        "stack_max": 8,
+        "stack_bw_gbps": 480,
+        "stack_type": "StackWise-480",
+        "stack_cable_needed": true,
+        "stack_kit_needed": false,
+        "uplink": "modular",
+        "rack_units": 1
+      },
+      {
+        "model": "C9300-24T",
+        "ports": 24,
+        "port_type": "1G data",
+        "poe_per_port_w": 0,
+        "poe_budget_default_w": 0,
+        "psu_default": "PWR-C1-350WAC",
+        "fans": 3,
+        "fan_sku": "C9300-FAN-1RU",
+        "stack_max": 8,
+        "stack_bw_gbps": 480,
+        "uplink": "modular",
+        "rack_units": 1
+      },
+      {
+        "model": "C9300-48T",
+        "ports": 48,
+        "port_type": "1G data",
+        "poe_per_port_w": 0,
+        "poe_budget_default_w": 0,
+        "psu_default": "PWR-C1-350WAC",
+        "fans": 3,
+        "fan_sku": "C9300-FAN-1RU",
+        "stack_max": 8,
+        "stack_bw_gbps": 480,
+        "uplink": "modular",
+        "rack_units": 1
+      },
+      {
+        "model": "C9300-24U",
+        "ports": 24,
+        "port_type": "1G UPOE",
+        "poe_per_port_w": 60,
+        "poe_budget_default_w": 720,
+        "poe_budget_dual_1100w": 1440,
+        "psu_default": "PWR-C1-1100WAC",
+        "fans": 3,
+        "fan_sku": "C9300-FAN-1RU",
+        "stack_max": 8,
+        "stack_bw_gbps": 480,
+        "uplink": "modular",
+        "rack_units": 1
+      },
+      {
+        "model": "C9300-48U",
+        "ports": 48,
+        "port_type": "1G UPOE",
+        "poe_per_port_w": 60,
+        "poe_budget_default_w": 1440,
+        "psu_default": "PWR-C1-1100WAC",
+        "fans": 3,
+        "fan_sku": "C9300-FAN-1RU",
+        "stack_max": 8,
+        "stack_bw_gbps": 480,
+        "uplink": "modular",
+        "rack_units": 1
+      },
+      {
+        "model": "C9300-24H",
+        "ports": 24,
+        "port_type": "1G PoE++ (UPOE+)",
+        "poe_per_port_w": 90,
+        "poe_budget_default_w": 822,
+        "psu_default": "PWR-C1-1100WAC-P",
+        "fans": 3,
+        "fan_sku": "C9300-FAN-1RU",
+        "stack_max": 8,
+        "uplink": "modular",
+        "rack_units": 1
+      }
+    ],
+    "catalyst_9300L": [
+      {
+        "model": "C9300L-24P-4X",
+        "ports": 24,
+        "port_type": "1G PoE+",
+        "poe_per_port_w": 30,
+        "poe_budget_default_w": 445,
+        "psu_default": "PWR-C1-715WAC",
+        "fans": 3,
+        "fan_sku": "C9300L-FAN-1RU",
+        "stack_max": 8,
+        "stack_bw_gbps": 320,
+        "stack_type": "StackWise-320",
+        "stack_cable_needed": true,
+        "stack_kit_needed": true,
+        "stack_kit_sku": "C9300L-STACK-KIT",
+        "uplink": "fixed 4x10G",
+        "rack_units": 1
+      },
+      {
+        "model": "C9300L-48P-4X",
+        "ports": 48,
+        "port_type": "1G PoE+",
+        "poe_per_port_w": 30,
+        "poe_budget_default_w": 437,
+        "psu_default": "PWR-C1-715WAC",
+        "fans": 3,
+        "fan_sku": "C9300L-FAN-1RU",
+        "stack_max": 8,
+        "stack_bw_gbps": 320,
+        "stack_type": "StackWise-320",
+        "stack_cable_needed": true,
+        "stack_kit_needed": true,
+        "stack_kit_sku": "C9300L-STACK-KIT",
+        "uplink": "fixed 4x10G",
+        "rack_units": 1
+      },
+      {
+        "model": "C9300L-24T-4X",
+        "ports": 24,
+        "port_type": "1G data",
+        "poe_per_port_w": 0,
+        "poe_budget_default_w": 0,
+        "psu_default": "PWR-C1-350WAC",
+        "fans": 3,
+        "fan_sku": "C9300L-FAN-1RU",
+        "stack_max": 8,
+        "stack_bw_gbps": 320,
+        "uplink": "fixed 4x10G",
+        "rack_units": 1
+      },
+      {
+        "model": "C9300L-48T-4X",
+        "ports": 48,
+        "port_type": "1G data",
+        "poe_per_port_w": 0,
+        "poe_budget_default_w": 0,
+        "psu_default": "PWR-C1-350WAC",
+        "fans": 3,
+        "fan_sku": "C9300L-FAN-1RU",
+        "stack_max": 8,
+        "stack_bw_gbps": 320,
+        "uplink": "fixed 4x10G",
+        "rack_units": 1
+      },
+      {
+        "model": "C9300L-24UXG-4X",
+        "ports": 24,
+        "port_type": "mGig UPOE (8x10G + 16x1G)",
+        "poe_per_port_w": 60,
+        "poe_budget_default_w": 720,
+        "psu_default": "PWR-C1-1100WAC-P",
+        "psu_redundant": "PWR-C1-1100WAC-P/2",
+        "fans": 3,
+        "fan_sku": "C9300L-FAN-1RU",
+        "stack_max": 8,
+        "stack_bw_gbps": 320,
+        "stack_kit_needed": true,
+        "stack_kit_sku": "C9300L-STACK-KIT",
+        "uplink": "fixed 4x10G",
+        "rack_units": 1,
+        "notes": "Shahid's reference model from ground truth"
+      }
+    ],
+    "catalyst_9300X": [
+      {
+        "model": "C9300X-48HX",
+        "ports": 48,
+        "port_type": "mGig 90W PoE",
+        "poe_per_port_w": 90,
+        "poe_budget_default_w": 1920,
+        "psu_default": "C9K-PWR-C5-1KWAC",
+        "fans": 3,
+        "stack_max": 8,
+        "stack_bw_gbps": 480,
+        "uplink": "modular",
+        "rack_units": 1,
+        "notes": "Smart building / Wi-Fi 6E deployments"
+      }
+    ]
+  },
+  "cisco_wireless_aps": [
+    {
+      "model": "C9120AXI",
+      "wifi": "Wi-Fi 6",
+      "antenna": "internal",
+      "antennas_needed": 0,
+      "poe_draw_w": 25.5,
+      "poe_class": 4,
+      "max_poe_w": 30,
+      "mimo": "4x4",
+      "radios": 4,
+      "max_clients_approx": 200,
+      "uplink": "1x mGig",
+      "mounting": "AIR-AP-BRACKET-1"
+    },
+    {
+      "model": "C9120AXE",
+      "wifi": "Wi-Fi 6",
+      "antenna": "external",
+      "antennas_needed": 4,
+      "antenna_sku": "AIR-ANT2524DW-RS",
+      "poe_draw_w": 25.5,
+      "poe_class": 4,
+      "max_poe_w": 30,
+      "mimo": "4x4",
+      "radios": 4,
+      "max_clients_approx": 200,
+      "uplink": "1x mGig",
+      "mounting": "AIR-AP-BRACKET-1",
+      "notes": "Shahid's reference model \u2014 4 antennas per AP"
+    },
+    {
+      "model": "C9130AXI",
+      "wifi": "Wi-Fi 6",
+      "antenna": "internal",
+      "antennas_needed": 0,
+      "poe_draw_w": 30,
+      "poe_class": 6,
+      "max_poe_w": 51,
+      "mimo": "8x8:8 (5GHz) + 4x4:4 (2.4GHz)",
+      "radios": 4,
+      "max_clients_approx": 400,
+      "uplink": "1x 5G mGig",
+      "notes": "Higher density than 9120"
+    },
+    {
+      "model": "C9136I",
+      "wifi": "Wi-Fi 6E",
+      "antenna": "internal",
+      "antennas_needed": 0,
+      "poe_draw_w": 35,
+      "poe_class": 8,
+      "max_poe_w": 71,
+      "mimo": "4x4:4 tri-band",
+      "radios": 4,
+      "max_clients_approx": 500,
+      "uplink": "1x 5G mGig",
+      "notes": "Wi-Fi 6E with 6GHz band. Needs 802.3bt PoE."
+    }
+  ],
+  "poe_device_draw_reference": {
+    "description": "Standard PoE draw by device type \u2014 used for PoE budget validation",
+    "devices": [
+      {
+        "type": "IP phone (basic)",
+        "poe_draw_w": 6.5,
+        "poe_class": 2,
+        "standard": "802.3af"
+      },
+      {
+        "type": "IP phone (video)",
+        "poe_draw_w": 12.5,
+        "poe_class": 3,
+        "standard": "802.3af"
+      },
+      {
+        "type": "Wireless AP (Wi-Fi 5)",
+        "poe_draw_w": 15.4,
+        "poe_class": 3,
+        "standard": "802.3af"
+      },
+      {
+        "type": "Wireless AP (Wi-Fi 6 \u2014 C9120)",
+        "poe_draw_w": 25.5,
+        "poe_class": 4,
+        "standard": "802.3at"
+      },
+      {
+        "type": "Wireless AP (Wi-Fi 6 \u2014 C9130)",
+        "poe_draw_w": 30,
+        "poe_class": 6,
+        "standard": "802.3bt"
+      },
+      {
+        "type": "Wireless AP (Wi-Fi 6E \u2014 C9136)",
+        "poe_draw_w": 35,
+        "poe_class": 8,
+        "standard": "802.3bt"
+      },
+      {
+        "type": "IP camera (fixed)",
+        "poe_draw_w": 12,
+        "poe_class": 3,
+        "standard": "802.3af"
+      },
+      {
+        "type": "IP camera (PTZ)",
+        "poe_draw_w": 25,
+        "poe_class": 4,
+        "standard": "802.3at"
+      },
+      {
+        "type": "IP camera (4K PTZ)",
+        "poe_draw_w": 60,
+        "poe_class": 6,
+        "standard": "802.3bt"
+      },
+      {
+        "type": "Door access controller",
+        "poe_draw_w": 12,
+        "poe_class": 3,
+        "standard": "802.3af"
+      },
+      {
+        "type": "Digital signage display",
+        "poe_draw_w": 25,
+        "poe_class": 4,
+        "standard": "802.3at"
+      },
+      {
+        "type": "IoT sensor",
+        "poe_draw_w": 5,
+        "poe_class": 1,
+        "standard": "802.3af"
+      }
+    ]
+  },
+  "fortigate_firewalls": [
+    {
+      "model": "FG-60F",
+      "firewall_gbps": 10,
+      "ngfw_gbps": 1,
+      "threat_gbps": 0.7,
+      "ips_gbps": 1.4,
+      "ipsec_gbps": 6.5,
+      "sessions_concurrent": 700000,
+      "interfaces": "10x GE RJ45",
+      "form_factor": "desktop",
+      "psu": "external AC adapter",
+      "psu_redundant": null,
+      "rack_units": 0,
+      "segment": "branch/SOHO"
+    },
+    {
+      "model": "FG-81F",
+      "firewall_gbps": 10,
+      "ngfw_gbps": 1,
+      "threat_gbps": 0.9,
+      "ips_gbps": 1.8,
+      "ipsec_gbps": 6.5,
+      "sessions_concurrent": 1500000,
+      "interfaces": "10x GE RJ45, 2x GE SFP",
+      "form_factor": "desktop",
+      "psu": "external AC adapter",
+      "psu_redundant": null,
+      "rack_units": 0,
+      "segment": "branch"
+    },
+    {
+      "model": "FG-101F",
+      "firewall_gbps": 20,
+      "ngfw_gbps": 1.6,
+      "threat_gbps": 1,
+      "ips_gbps": 2.6,
+      "ipsec_gbps": 11.5,
+      "sessions_concurrent": 1500000,
+      "interfaces": "12x GE RJ45, 2x GE SFP, 2x 10GE SFP+",
+      "form_factor": "1RU",
+      "psu": "AC internal",
+      "psu_redundant": "SP-FG101F-PS",
+      "rack_units": 1,
+      "segment": "mid-enterprise"
+    },
+    {
+      "model": "FG-201F",
+      "firewall_gbps": 27,
+      "ngfw_gbps": 3.5,
+      "threat_gbps": 3,
+      "ips_gbps": 5,
+      "ipsec_gbps": 13,
+      "sessions_concurrent": 3000000,
+      "interfaces": "16x GE RJ45, 8x GE SFP, 4x 10GE SFP+",
+      "form_factor": "1RU",
+      "psu": "dual AC",
+      "psu_redundant": "included",
+      "ssd_gb": 480,
+      "rack_units": 1,
+      "segment": "enterprise"
+    },
+    {
+      "model": "FG-401F",
+      "firewall_gbps": 79.5,
+      "ngfw_gbps": 10,
+      "threat_gbps": 9,
+      "ips_gbps": 12,
+      "ipsec_gbps": 55,
+      "sessions_concurrent": 7800000,
+      "interfaces": "16x GE RJ45, 8x GE SFP, 8x 10GE SFP+",
+      "form_factor": "1RU",
+      "psu": "dual AC",
+      "psu_redundant": "included",
+      "ssd_gb": 960,
+      "rack_units": 1,
+      "segment": "large enterprise / DC edge"
+    },
+    {
+      "model": "FG-601F",
+      "firewall_gbps": 139,
+      "ngfw_gbps": 11.5,
+      "threat_gbps": 10.5,
+      "ips_gbps": 11.5,
+      "ipsec_gbps": 55,
+      "sessions_concurrent": 8000000,
+      "interfaces": "16x GE RJ45, 8x GE SFP, 4x 10GE SFP+, 4x 25GE SFP28",
+      "form_factor": "1RU",
+      "psu": "dual AC",
+      "psu_redundant": "included",
+      "ssd_gb": 480,
+      "rack_units": 1,
+      "segment": "large enterprise / DC"
+    },
+    {
+      "model": "FG-1001F",
+      "firewall_gbps": 198,
+      "ngfw_gbps": 15,
+      "threat_gbps": 13,
+      "ips_gbps": 19,
+      "ipsec_gbps": 55,
+      "sessions_concurrent": 7500000,
+      "interfaces": "18x GE RJ45, 8x GE SFP, 4x 10GE SFP+",
+      "form_factor": "1RU",
+      "psu": "dual AC",
+      "psu_redundant": "included",
+      "ssd_gb": 480,
+      "rack_units": 1,
+      "segment": "data center"
+    }
+  ],
+  "sizing_guidelines": {
+    "description": "Rules of thumb for device sizing. These become deterministic functions.",
+    "switches": {
+      "rule": "1 access port per wired user + 1 PoE port per AP/camera/phone. Add 20% headroom.",
+      "example": "100 users + 10 APs + 20 phones + 10 cameras = 140 ports \u2192 3x C9300-48P (144 ports)"
+    },
+    "firewalls": {
+      "rule": "Size by NGFW throughput (not firewall throughput \u2014 that's UDP, unrealistic). 1.5x current bandwidth for 3-year growth.",
+      "tiers": [
+        {
+          "users_max": 100,
+          "bandwidth_mbps_max": 500,
+          "recommended": "FG-81F or FG-101F"
+        },
+        {
+          "users_max": 500,
+          "bandwidth_mbps_max": 2000,
+          "recommended": "FG-201F"
+        },
+        {
+          "users_max": 2000,
+          "bandwidth_mbps_max": 5000,
+          "recommended": "FG-401F"
+        },
+        {
+          "users_max": 5000,
+          "bandwidth_mbps_max": 10000,
+          "recommended": "FG-601F"
+        },
+        {
+          "users_max": 10000,
+          "bandwidth_mbps_max": 15000,
+          "recommended": "FG-1001F"
+        }
+      ]
+    },
+    "wireless_aps": {
+      "rule": "1 AP per 30-50 users (office density). 1 AP per 15-25 users (high density: auditorium, conference). Add 20% overlap for roaming.",
+      "coverage_sqm_per_ap": {
+        "office": 150,
+        "warehouse": 250,
+        "outdoor": 500
+      }
+    }
+  },
+  "stacking_rules": {
+    "description": "Deterministic stacking validation rules",
+    "rules": [
+      {
+        "rule": "C9300 (modular uplink): stack cables needed, NO stack kit. Cable SKUs: STACK-T1-50CM, STACK-T1-1M, STACK-T1-3M"
+      },
+      {
+        "rule": "C9300L (fixed uplink): stack kit + stack cables needed. Kit SKU: C9300L-STACK-KIT. Adapters: 2 per switch (C9300L-STACK). Cable on top."
+      },
+      {
+        "rule": "C9300 and C9300L CANNOT be stacked together"
+      },
+      {
+        "rule": "C9300X and C9300 CAN be stacked at StackWise-480"
+      },
+      {
+        "rule": "C9300 higher-scale (C9300-xxUB) must stack with other higher-scale models only"
+      },
+      {
+        "rule": "Max stack members: 8 (all C9300 variants)"
+      },
+      {
+        "rule": "Cable count for ring topology: N cables for N switches (closed loop)"
+      },
+      {
+        "rule": "Cable count for chain topology: N-1 cables for N switches"
+      }
+    ]
+  },
+  "psu_rules": {
+    "description": "Power supply selection and redundancy rules",
+    "rules": [
+      {
+        "rule": "Redundant PSU = primary + secondary (DIFFERENT SKUs)",
+        "example": "PWR-C1-1100WAC-P (primary) + PWR-C1-1100WAC-P/2 (secondary)"
+      },
+      {
+        "rule": "PoE budget increases with higher PSU wattage",
+        "example": "C9300-48P: 437W (715W PSU) \u2192 740W (1100W PSU) \u2192 1440W (dual 1100W)"
+      },
+      {
+        "rule": "Data-only switches use 350W PSU \u2014 no PoE budget"
+      },
+      {
+        "rule": "UPOE switches default to 1100W PSU \u2014 higher PoE per port"
+      },
+      {
+        "rule": "FortiGate 201F and above include dual PSU by default"
+      },
+      {
+        "rule": "FortiGate 101F and below: redundant PSU is optional add-on SKU"
+      }
+    ]
+  }
+}
