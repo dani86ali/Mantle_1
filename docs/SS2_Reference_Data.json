@@ -1,0 +1,162 @@
+{
+  "metadata": {
+    "purpose": "BOMATIC SS2 BoM Construction reference data for items previously marked MISSING",
+    "generated": "2026-05-08",
+    "vendors_in_scope": ["Cisco", "Fortinet"]
+  },
+
+  "fx_rates": {
+    "description": "Currency reference for BOMATIC pricing engine. Pegged currencies are static; floating currencies need periodic refresh.",
+    "base_currency": "USD",
+    "pegged": {
+      "SAR": {"rate": 3.75, "peg": "USD", "notes": "Fixed since 1986. 1 USD = 3.75 SAR."},
+      "AED": {"rate": 3.6725, "peg": "USD", "notes": "Fixed since 1997. 1 USD = 3.6725 AED."},
+      "BHD": {"rate": 0.376, "peg": "USD", "notes": "Fixed. 1 USD = 0.376 BHD."},
+      "QAR": {"rate": 3.64, "peg": "USD", "notes": "Fixed. 1 USD = 3.64 QAR."},
+      "OMR": {"rate": 0.385, "peg": "USD", "notes": "Fixed. 1 USD = 0.385 OMR."}
+    },
+    "floating": {
+      "EGP": {"approx_rate": 52.77, "last_updated": "2026-05-06", "volatility": "high", "notes": "Floated 2022. ~14.07 SAR per EGP. Update monthly minimum."},
+      "TRY": {"approx_rate": 41.3, "last_updated": "2026-05-08", "volatility": "very_high", "notes": "~11.02 SAR per TRY. Depreciating. Update weekly for active bids."},
+      "KWD": {"approx_rate": 0.307, "last_updated": "2026-05-06", "volatility": "low", "notes": "Pegged to basket but floats slightly."},
+      "JOD": {"approx_rate": 0.709, "last_updated": "2026-05-06", "volatility": "low", "notes": "Effectively pegged to USD."}
+    },
+    "vat_rates": {
+      "KSA": {"rate": 0.15, "notes": "15% VAT since 2020"},
+      "UAE": {"rate": 0.05, "notes": "5% VAT since 2018"},
+      "BHR": {"rate": 0.10, "notes": "10% VAT since 2022"},
+      "OMN": {"rate": 0.05, "notes": "5% VAT since 2021"},
+      "QAT": {"rate": 0.00, "notes": "No VAT"},
+      "KWT": {"rate": 0.00, "notes": "No VAT yet"},
+      "EGY": {"rate": 0.14, "notes": "14% VAT"},
+      "JOR": {"rate": 0.16, "notes": "16% sales tax"},
+      "TUR": {"rate": 0.20, "notes": "20% VAT (general)"}
+    },
+    "bomatic_implementation": "Pegged rates can be hardcoded as constants. Floating rates need a manual input field for month 1. Future: API feed from exchangeratesapi.io or similar."
+  },
+
+  "power_cords": {
+    "description": "Country-specific power cord SKU mapping for Cisco equipment. Saudi Arabia uses BS 1363 Type G (same as UK).",
+    "cisco_power_cord_skus": {
+      "KSA_UAE_GCC": {
+        "plug_type": "BS 1363 Type G (UK standard)",
+        "standard_skus": [
+          {"sku": "CAB-ACU=", "description": "AC Power Cord UK, BS 1363 to C13, 10A/250V, 2.5m", "use_case": "Switches, routers, most equipment"},
+          {"sku": "CAB-ACU-RA=", "description": "AC Power Cord UK Right Angle, BS 1363 to C13, 2.5m", "use_case": "Dense rack deployments"},
+          {"sku": "CAB-AC-C5-UK=", "description": "C5 Power Cord UK, 1.8m", "use_case": "IP phones, small devices"},
+          {"sku": "CAB-BS1363-C19-UK=", "description": "BS 1363 to C19, 13A/250V, 4.3m", "use_case": "High-power switches (C9500, Nexus)"},
+          {"sku": "CP-PWR-CORD-UK=", "description": "IP Phone Power Cord UK", "use_case": "7800/8800 series phones"}
+        ],
+        "notes": "Saudi Arabia uses BS 1363 (Type G) — identical to UK. All GCC countries (UAE, Bahrain, Qatar, Oman, Kuwait) also use Type G."
+      },
+      "Europe": {
+        "plug_type": "CEE 7/7 Schuko (Type E/F)",
+        "standard_skus": [
+          {"sku": "CAB-ACE=", "description": "AC Power Cord Europe, CEE 7/7 to C13, 10A/250V, 2.5m"},
+          {"sku": "CAB-ACE-RA=", "description": "AC Power Cord Europe Right Angle, 2.5m"},
+          {"sku": "CAB-CEE77-C19-EU=", "description": "CEE 7/7 to C19, 14ft, high-power"},
+          {"sku": "CAB-AC-2500W-EU=", "description": "2500W Power Cord Europe, CEE 7/7 to C19"}
+        ]
+      },
+      "North_America": {
+        "plug_type": "NEMA 5-15P (Type A/B)",
+        "standard_skus": [
+          {"sku": "CAB-AC=", "description": "AC Power Cord NA, NEMA 5-15P to C13, 2.1m"},
+          {"sku": "CAB-AC-RA=", "description": "AC Power Cord NA Right Angle"}
+        ]
+      },
+      "cabinet_jumpers": [
+        {"sku": "CAB-C13-C14-2M=", "description": "C13 to C14 cabinet jumper, 2m, universal"},
+        {"sku": "CAB-C19-CBN=", "description": "C20 to C19 cabinet jumper, 2.74m, high-power"},
+        {"sku": "CAB-C15-CBN=", "description": "C16 to C15 cabinet jumper, 0.7m"}
+      ]
+    },
+    "fortinet_power_cords": {
+      "notes": "Fortinet appliances ship with country-specific cords based on order region. SKU suffix indicates region: -USG (US), -EU (Europe), -UK (UK/GCC). For KSA/GCC, order with -UK suffix or specify BS 1363 at PO."
+    },
+    "bomatic_implementation": "Auto-select power cord SKU based on country field in project. Default for KSA/GCC = BS 1363 Type G (UK variants). Add 2 per device (redundant PSU)."
+  },
+
+  "rack_rails_mounting": {
+    "description": "Rack mounting hardware is typically included with Cisco equipment orders. Additional rails/mounting kits are ordered separately when needed.",
+    "cisco_common_skus": [
+      {"sku": "RACK-KIT-T1=", "description": "19-inch 4-post rack mount kit (most Catalyst switches)"},
+      {"sku": "STK-RACKMOUNT-1RU=", "description": "1RU rack mount kit"},
+      {"sku": "ACS-4220-RM-19=", "description": "19-inch rack mount kit for ASA 5506/Firepower 1000"},
+      {"sku": "C9K-RACK-KIT=", "description": "Catalyst 9000 Series rack mount kit"},
+      {"sku": "UCSC-RAILB-M6=", "description": "UCS C-Series M6 ball-bearing rail kit"},
+      {"sku": "N9K-C93RAIL=", "description": "Nexus 9300 rail kit"}
+    ],
+    "notes": "Most Cisco devices include basic rack ears in the box. Rail kits for servers (UCS) and high-end switches (Nexus) are separate SKUs. Fortinet appliances include rack ears in box for all rackmount models.",
+    "bomatic_implementation": "Auto-add rack mount kit SKU per device if not included in base config. Flag when device needs 4-post rails vs 2-post ears."
+  },
+
+  "eol_eos_data_sources": {
+    "description": "How BOMATIC should check End-of-Life / End-of-Sale status for proposed equipment.",
+    "cisco": {
+      "api": {
+        "name": "Cisco EoX API (Support APIs)",
+        "url": "https://developer.cisco.com/docs/support-apis/eox/",
+        "auth": "Requires Cisco API Console credentials (OAuth2)",
+        "capabilities": [
+          "Query by Product ID (SKU) — returns all EoL milestones",
+          "Query by date range — returns all products with EoL announcements in range",
+          "Query by software release — returns EoL dates for OS versions",
+          "Returns: EndOfSaleDate, EndOfSWMaintenance, EndOfSecurityVulSupport, LastDateOfSupport, EndOfServiceContractRenewal"
+        ],
+        "implementation": "Integrate via NTT's Cisco API access. Query each SKU in generated BoM against EoX API. Flag any device past EndOfSale or approaching LastDateOfSupport."
+      },
+      "manual_fallback": {
+        "url": "https://www.cisco.com/c/en/us/products/eos-eol-listing.html",
+        "notes": "Full listing of all EoL/EoS notices by product category. Scrape monthly for offline DB."
+      }
+    },
+    "fortinet": {
+      "url": "https://support.fortinet.com/Information/ProductLifeCycle.aspx",
+      "notes": "Fortinet publishes EoL notices per product family. No public API. Scrape or manual check monthly.",
+      "implementation": "Build a static lookup table of current FortiGate/FortiSwitch/FortiAP model lifecycle status. Update monthly."
+    },
+    "bomatic_implementation": "For month 1: static lookup table for common models. Phase 2: integrate Cisco EoX API for real-time validation."
+  },
+
+  "vendor_compatibility": {
+    "cisco": {
+      "tool": "Cisco Feature Navigator",
+      "url": "https://cfn.cloudapps.cisco.com/ITDIT/CFN/",
+      "notes": "Check feature support by platform + IOS version. No public API — cache results for common platforms.",
+      "key_checks": ["Optics compatibility (SFP/QSFP)", "Stacking support", "PoE budget by model", "License feature sets (Essentials/Advantage/Premier)"]
+    },
+    "fortinet": {
+      "tool": "Fortinet Product Matrix / Compatibility Charts",
+      "url": "https://docs.fortinet.com/",
+      "notes": "FortiOS compatibility matrix published per major release. Check FortiGate + FortiSwitch + FortiAP interop.",
+      "key_checks": ["FortiOS version support per model", "FortiSwitch management compatibility", "FortiAP supported controller versions"]
+    },
+    "bomatic_implementation": "Month 1: hardcode compatibility rules for top 20 most-ordered models per vendor. Expand as needed."
+  },
+
+  "accessory_matrices": {
+    "description": "PSU, fan, and rail requirements per device model.",
+    "cisco_pattern": {
+      "notes": "Cisco CCW (Commerce Workspace) generates accessory requirements automatically during configuration. For BOMATIC month 1, hardcode the top 20 Catalyst/ISR/Firepower models.",
+      "example_c9300": {
+        "model": "C9300-48U-E",
+        "psu": {"sku": "PWR-C1-1100WAC=", "qty": 2, "notes": "Redundant 1100W AC for full PoE"},
+        "fan": {"sku": "C9300-FAN-1RU=", "qty": 1, "notes": "Included"},
+        "stack_cable": {"sku": "STACK-T1-3M=", "qty": 1, "notes": "If stacking"},
+        "network_module": {"sku": "C9300-NM-8X=", "qty": 1, "notes": "Optional 10G uplink module"},
+        "power_cord": {"sku": "CAB-ACU=", "qty": 2, "notes": "For KSA/GCC"}
+      }
+    },
+    "fortinet_pattern": {
+      "notes": "Fortinet appliances ship with PSU and fans included. Redundant PSU is a separate SKU for high-availability models.",
+      "example_fg600f": {
+        "model": "FG-600F",
+        "redundant_psu": {"sku": "SP-FG600F-PS", "qty": 1, "notes": "Optional redundant PSU"},
+        "rack_ears": "Included",
+        "power_cord": "Ships with region-specific cord"
+      }
+    },
+    "bomatic_implementation": "Build accessory lookup table: model -> [required_accessories]. Start with top 20 models per vendor. Expand from BoM corpus (we have 58 BoM files showing real accessory selections)."
+  }
+}
