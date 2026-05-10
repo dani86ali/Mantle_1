@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { convertCurrency, applyVendorDiscount, applyInhouseMargin, calculateOverhead, calculateCostWithOverhead, calculateSellingPrice, calculateExtendedSell } from "@/engines/e2/pricing-engine";
 import { calculateRevenueSplit } from "@/engines/e2/revenue-split";
+import { calculateVAT } from "@/engines/e2/vat";
 
 describe("convertCurrency (CS-001)", () => {
   it("converts 100 USD at 3.75 to 375 SAR", () => {
@@ -415,5 +416,62 @@ describe("calculateRevenueSplit (CS-008)", () => {
     expect(() =>
       calculateRevenueSplit({ sellAmount: 100000, stcsSplitPct: 1.1, partnerSplitPct: -0.1 })
     ).toThrow();
+  });
+});
+
+describe("calculateVAT (CS-009)", () => {
+  // ── standard rates ─────────────────────────────────────────────────────────────
+
+  it("KSA 15%: 100000 × 0.15 = 15000 VAT, total = 115000", () => {
+    // 100000 * 0.15 = 15000; 100000 + 15000 = 115000
+    const r = calculateVAT({ sellPrice: 100000, vatRate: 0.15 });
+    expect(r.vatAmount).toBeCloseTo(15000, 6);
+    expect(r.totalWithVat).toBeCloseTo(115000, 6);
+  });
+
+  it("UAE 5%: 200000 × 0.05 = 10000 VAT, total = 210000", () => {
+    // 200000 * 0.05 = 10000; 200000 + 10000 = 210000
+    const r = calculateVAT({ sellPrice: 200000, vatRate: 0.05 });
+    expect(r.vatAmount).toBeCloseTo(10000, 6);
+    expect(r.totalWithVat).toBeCloseTo(210000, 6);
+  });
+
+  // ── zero-rated and exempt ──────────────────────────────────────────────────────
+
+  it("zero-rated: vatRate = 0 → vatAmount = 0, totalWithVat = sellPrice", () => {
+    // 50000 * 0 = 0; 50000 + 0 = 50000
+    const r = calculateVAT({ sellPrice: 50000, vatRate: 0 });
+    expect(r.vatAmount).toBe(0);
+    expect(r.totalWithVat).toBe(50000);
+  });
+
+  it("exempt: caller passes vatRate = 0 → vatAmount = 0, totalWithVat = sellPrice", () => {
+    // Exempt items bear no VAT — caller passes vatRate = 0
+    const r = calculateVAT({ sellPrice: 75000, vatRate: 0 });
+    expect(r.vatAmount).toBe(0);
+    expect(r.totalWithVat).toBe(75000);
+  });
+
+  // ── boundary ──────────────────────────────────────────────────────────────────
+
+  it("zero sell price: vatAmount = 0, totalWithVat = 0", () => {
+    // 0 * 0.15 = 0; 0 + 0 = 0
+    const r = calculateVAT({ sellPrice: 0, vatRate: 0.15 });
+    expect(r.vatAmount).toBe(0);
+    expect(r.totalWithVat).toBe(0);
+  });
+
+  // ── validation ─────────────────────────────────────────────────────────────────
+
+  it("throws on negative sellPrice", () => {
+    expect(() => calculateVAT({ sellPrice: -1, vatRate: 0.15 })).toThrow();
+  });
+
+  it("throws on vatRate > 1", () => {
+    expect(() => calculateVAT({ sellPrice: 100000, vatRate: 1.5 })).toThrow();
+  });
+
+  it("throws on negative vatRate", () => {
+    expect(() => calculateVAT({ sellPrice: 100000, vatRate: -0.1 })).toThrow();
   });
 });
