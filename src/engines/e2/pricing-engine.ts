@@ -124,6 +124,35 @@ export function calculateSellingPrice(input: CalculateSellingPriceInput): number
     : parsed.costWithOverhead * (1 + parsed.profitPct);
 }
 
+// ─── CS-007 ────────────────────────────────────────────────────────────────
+
+const CalculateExtendedSellSchema = z
+  .object({
+    unitSellPrice:    z.number().nonnegative(),
+    qty:              z.number().nonnegative(),
+    discountEmbedPct: z.number().min(0).max(1),
+    solutionEmbedPct: z.number().min(0).max(1),
+    inhouseEmbedPct:  z.number().min(0).max(1),
+  })
+  .refine(
+    (d) => d.discountEmbedPct + d.solutionEmbedPct + d.inhouseEmbedPct < 1,
+    { message: "Sum of embed discounts must be < 1" }
+  );
+export type CalculateExtendedSellInput = z.infer<typeof CalculateExtendedSellSchema>;
+
+/**
+ * CS-007: Extended sell — quantity-scaled B2B sale after all three embed discounts.
+ *
+ * Formula: unitSellPrice × qty × (1 − discountEmbedPct − solutionEmbedPct − inhouseEmbedPct)
+ * TA ref: BoQ!CA = BZ×J; B2B_After_Embed = CA×(1−BG−BI−BK)
+ *   BZ = unit selling price SAR (CS-006); BG/BI/BK = embed % from FINANCIAL SUMMARY cols X/Y/Z
+ */
+export function calculateExtendedSell(input: CalculateExtendedSellInput): number {
+  const { unitSellPrice, qty, discountEmbedPct, solutionEmbedPct, inhouseEmbedPct } =
+    CalculateExtendedSellSchema.parse(input);
+  return unitSellPrice * qty * (1 - discountEmbedPct - solutionEmbedPct - inhouseEmbedPct);
+}
+
 // ─── CS-004 ────────────────────────────────────────────────────────────────
 
 /**

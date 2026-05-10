@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { convertCurrency, applyVendorDiscount, applyInhouseMargin, calculateOverhead, calculateCostWithOverhead, calculateSellingPrice } from "@/engines/e2/pricing-engine";
+import { convertCurrency, applyVendorDiscount, applyInhouseMargin, calculateOverhead, calculateCostWithOverhead, calculateSellingPrice, calculateExtendedSell } from "@/engines/e2/pricing-engine";
 
 describe("convertCurrency (CS-001)", () => {
   it("converts 100 USD at 3.75 to 375 SAR", () => {
@@ -288,6 +288,59 @@ describe("calculateSellingPrice (CS-006)", () => {
   it("throws on negative profitPct", () => {
     expect(() =>
       calculateSellingPrice({ mode: "markup", costWithOverhead: 10000, profitPct: -0.1 })
+    ).toThrow();
+  });
+});
+
+describe("calculateExtendedSell (CS-007)", () => {
+  // ── no discount ──────────────────────────────────────────────────────────────
+
+  it("no embeds: 1000 × 5 = 5000", () => {
+    // 1000 * 5 * (1 - 0 - 0 - 0) = 5000
+    expect(calculateExtendedSell({ unitSellPrice: 1000, qty: 5, discountEmbedPct: 0, solutionEmbedPct: 0, inhouseEmbedPct: 0 })).toBe(5000);
+  });
+
+  // ── multi-quantity ────────────────────────────────────────────────────────────
+
+  it("qty 10, no embeds: 1000 × 10 = 10000", () => {
+    // 1000 * 10 * (1 - 0 - 0 - 0) = 10000
+    expect(calculateExtendedSell({ unitSellPrice: 1000, qty: 10, discountEmbedPct: 0, solutionEmbedPct: 0, inhouseEmbedPct: 0 })).toBe(10000);
+  });
+
+  // ── discount tiers ────────────────────────────────────────────────────────────
+
+  it("discount embed only: 2000 × 3 × (1 − 0.10) = 5400", () => {
+    // 2000 * 3 * 0.90 = 5400
+    expect(calculateExtendedSell({ unitSellPrice: 2000, qty: 3, discountEmbedPct: 0.10, solutionEmbedPct: 0, inhouseEmbedPct: 0 })).toBe(5400);
+  });
+
+  it("all 3 embeds: 100000 × 10 × (1 − 0.05 − 0.03 − 0.02) = 900000", () => {
+    // 100000 * 10 * 0.90 = 900000
+    expect(calculateExtendedSell({ unitSellPrice: 100000, qty: 10, discountEmbedPct: 0.05, solutionEmbedPct: 0.03, inhouseEmbedPct: 0.02 })).toBeCloseTo(900000, 2);
+  });
+
+  // ── boundary ──────────────────────────────────────────────────────────────────
+
+  it("zero unit price → 0", () => {
+    expect(calculateExtendedSell({ unitSellPrice: 0, qty: 5, discountEmbedPct: 0.05, solutionEmbedPct: 0, inhouseEmbedPct: 0 })).toBe(0);
+  });
+
+  it("zero qty → 0", () => {
+    expect(calculateExtendedSell({ unitSellPrice: 1000, qty: 0, discountEmbedPct: 0.05, solutionEmbedPct: 0, inhouseEmbedPct: 0 })).toBe(0);
+  });
+
+  // ── validation ────────────────────────────────────────────────────────────────
+
+  it("throws when sum of embeds >= 1", () => {
+    // 0.5 + 0.3 + 0.2 = 1.0 — not < 1
+    expect(() =>
+      calculateExtendedSell({ unitSellPrice: 1000, qty: 5, discountEmbedPct: 0.5, solutionEmbedPct: 0.3, inhouseEmbedPct: 0.2 })
+    ).toThrow();
+  });
+
+  it("throws on negative unitSellPrice", () => {
+    expect(() =>
+      calculateExtendedSell({ unitSellPrice: -1, qty: 5, discountEmbedPct: 0, solutionEmbedPct: 0, inhouseEmbedPct: 0 })
     ).toThrow();
   });
 });
