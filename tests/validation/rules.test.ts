@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { ValidationContext, CatalogItemForValidation } from "@/types/validation";
 import type { BomLine } from "@/types/bom";
 import { runValidation } from "@/lib/validation/engine";
+import { antennaCountRule } from "@/lib/validation/rules/antenna-count";
+import { fanCountRule } from "@/lib/validation/rules/fan-count";
 import { checkDnaOptout } from "@/lib/validation/rules/dna-optout";
 import { checkApOnly } from "@/lib/validation/rules/ap-only";
 import { skuExistsRule } from "@/lib/validation/rules/sku-exists";
@@ -587,6 +589,134 @@ describe("Rule: AP-only", () => {
 
 // ─── Full Engine ──────────────────────────────────────────────────────────
 
+// ─── Antenna Count ────────────────────────────────────────────────────────
+
+describe("Rule: Antenna Count", () => {
+  it("passes when C9120AXE × 8 has 32 antennas (4 per AP)", () => {
+    const ap = makeLine({ id: "ap-1", sku: "C9120AXE-E", quantity: 8, category: "hardware" });
+    const ant = makeLine({
+      id: "ant-1",
+      sku: "AIR-ANT2524DW-RS",
+      quantity: 32,
+      category: "accessory",
+    });
+    const catalog = new Map([["C9120AXE-E", makeCatalogItem({ sku: "C9120AXE-E" })]]);
+    const ctx = makeContext({ lines: [ap, ant], catalogData: catalog });
+
+    const results = antennaCountRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("errors when C9120AXE × 8 has only 24 antennas (should be 32)", () => {
+    const ap = makeLine({ id: "ap-1", sku: "C9120AXE-E", quantity: 8, category: "hardware" });
+    const ant = makeLine({
+      id: "ant-1",
+      sku: "AIR-ANT2524DW-RS",
+      quantity: 24,
+      category: "accessory",
+    });
+    const catalog = new Map([["C9120AXE-E", makeCatalogItem({ sku: "C9120AXE-E" })]]);
+    const ctx = makeContext({ lines: [ap, ant], catalogData: catalog });
+
+    const results = antennaCountRule.run(ctx);
+    expect(results[0].passed).toBe(false);
+    expect(results[0].severity).toBe("error");
+    expect(results[0].message).toContain("32");
+    expect(results[0].message).toContain("24");
+  });
+
+  it("errors when antenna line is absent entirely", () => {
+    const ap = makeLine({ id: "ap-1", sku: "C9120AXE-E", quantity: 4, category: "hardware" });
+    const catalog = new Map([["C9120AXE-E", makeCatalogItem({ sku: "C9120AXE-E" })]]);
+    const ctx = makeContext({ lines: [ap], catalogData: catalog });
+
+    const results = antennaCountRule.run(ctx);
+    expect(results[0].passed).toBe(false);
+    expect(results[0].severity).toBe("error");
+    expect(results[0].message).toContain("16"); // 4 APs × 4 antennas
+  });
+
+  it("skips for C9120AXI (internal antenna, antennas_needed = 0)", () => {
+    const ap = makeLine({ id: "ap-1", sku: "C9120AXI-E", quantity: 4, category: "hardware" });
+    const catalog = new Map([["C9120AXI-E", makeCatalogItem({ sku: "C9120AXI-E" })]]);
+    const ctx = makeContext({ lines: [ap], catalogData: catalog });
+
+    const results = antennaCountRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+    expect(results[0].message).toContain("not applicable");
+  });
+
+  it("skips when no AP hardware lines in BoM", () => {
+    const sw = makeLine({ id: "sw-1", sku: "C9300L-24UXG-4X-A", quantity: 2 });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({ lines: [sw], catalogData: catalog });
+
+    const results = antennaCountRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+    expect(results[0].message).toContain("not applicable");
+  });
+});
+
+// ─── Fan Count ────────────────────────────────────────────────────────────
+
+describe("Rule: Fan Count", () => {
+  it("passes when C9300L × 2 has 6 fans (3 per switch)", () => {
+    const sw = makeLine({ id: "sw-1", sku: "C9300L-24UXG-4X-A", quantity: 2, category: "hardware" });
+    const fan = makeLine({
+      id: "fan-1",
+      sku: "C9300L-FAN-1RU",
+      quantity: 6,
+      category: "accessory",
+    });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({ lines: [sw, fan], catalogData: catalog });
+
+    const results = fanCountRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("warns when C9300L × 2 has only 4 fans (should be 6)", () => {
+    const sw = makeLine({ id: "sw-1", sku: "C9300L-24UXG-4X-A", quantity: 2, category: "hardware" });
+    const fan = makeLine({
+      id: "fan-1",
+      sku: "C9300L-FAN-1RU",
+      quantity: 4,
+      category: "accessory",
+    });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({ lines: [sw, fan], catalogData: catalog });
+
+    const results = fanCountRule.run(ctx);
+    expect(results[0].passed).toBe(false);
+    expect(results[0].severity).toBe("warning");
+    expect(results[0].message).toContain("6");
+    expect(results[0].message).toContain("4");
+  });
+
+  it("warns when fan line is absent entirely", () => {
+    const sw = makeLine({ id: "sw-1", sku: "C9300L-24UXG-4X-A", quantity: 1, category: "hardware" });
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
+    const ctx = makeContext({ lines: [sw], catalogData: catalog });
+
+    const results = fanCountRule.run(ctx);
+    expect(results[0].passed).toBe(false);
+    expect(results[0].severity).toBe("warning");
+    expect(results[0].message).toContain("3"); // 1 switch × 3 fans
+  });
+
+  it("skips when no switch hardware lines in BoM", () => {
+    const ap = makeLine({ id: "ap-1", sku: "C9120AXE-E", quantity: 4, category: "hardware" });
+    const catalog = new Map([["C9120AXE-E", makeCatalogItem({ sku: "C9120AXE-E" })]]);
+    const ctx = makeContext({ lines: [ap], catalogData: catalog });
+
+    const results = fanCountRule.run(ctx);
+    expect(results[0].passed).toBe(true);
+    expect(results[0].message).toContain("not applicable");
+  });
+});
+
+// ─── Full Engine ──────────────────────────────────────────────────────────
+
 describe("Validation Engine: Full Run", () => {
   it("runs all 9 rules and returns combined results", () => {
     const hw = makeLine({ id: "hw-1", sku: "C9300L-24UXG-4X-A", quantity: 2 });
@@ -603,8 +733,8 @@ describe("Validation Engine: Full Run", () => {
     });
 
     const results = runValidation(ctx);
-    // Should have results from all 9 rules
+    // Should have results from all 11 rules
     const ruleIds = new Set(results.map((r) => r.ruleId));
-    expect(ruleIds.size).toBe(9);
+    expect(ruleIds.size).toBe(11);
   });
 });
