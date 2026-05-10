@@ -1,7 +1,7 @@
 /**
  * Deterministic validation engine.
  *
- * Runs all 13 validation rules against a candidate BoM.
+ * Runs all 17 validation rules against a candidate BoM.
  * NO LLM calls — every rule is deterministic with a traceable source of truth.
  * LLM is used for fix suggestions only (in the agent's fix loop).
  */
@@ -25,6 +25,11 @@ import { antennaCountRule } from "./rules/antenna-count";
 import { fanCountRule } from "./rules/fan-count";
 import { poeBudgetRule } from "./rules/poe-budget";
 import { psuRedundancyRule } from "./rules/psu-redundancy";
+import { checkDnaOptout } from "./rules/dna-optout";
+import { checkApOnly } from "./rules/ap-only";
+import { checkEox } from "./rules/eox-check";
+import { checkLicenseDeps } from "./rules/license-deps";
+import { adaptSimpleRule } from "./adapter";
 
 const ALL_RULES: ValidationRule[] = [
   skuExistsRule,
@@ -40,6 +45,30 @@ const ALL_RULES: ValidationRule[] = [
   supportRule,
   antennaCountRule,
   fanCountRule,
+  adaptSimpleRule(
+    checkDnaOptout,
+    "dna-optout",
+    "DNA Opt-out",
+    "Flags intentional DNA subscription opt-out SKUs"
+  ),
+  adaptSimpleRule(
+    checkApOnly,
+    "ap-only",
+    "AP-only Estimate",
+    "Detects AP-only BoMs without a wireless controller"
+  ),
+  adaptSimpleRule(
+    (lines) => checkEox(lines),
+    "eox-check",
+    "EoX Check (stub)",
+    "Checks for end-of-life SKUs using the configured EoX lookup"
+  ),
+  adaptSimpleRule(
+    checkLicenseDeps,
+    "license-deps",
+    "License Dependencies",
+    "Verifies C9300/C9300L switches have required NW and DNA licenses"
+  ),
 ];
 
 export function runValidation(

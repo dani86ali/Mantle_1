@@ -718,7 +718,7 @@ describe("Rule: Fan Count", () => {
 // ─── Full Engine ──────────────────────────────────────────────────────────
 
 describe("Validation Engine: Full Run", () => {
-  it("runs all 9 rules and returns combined results", () => {
+  it("runs all 17 rules and returns combined results", () => {
     const hw = makeLine({ id: "hw-1", sku: "C9300L-24UXG-4X-A", quantity: 2 });
     const lic = makeLine({ id: "lic-1", sku: "C9300L-DNA-A-24-3Y", category: "subscription" });
     const svc = makeLine({ id: "svc-1", sku: "CON-SNT-C93024GA", category: "service" });
@@ -733,8 +733,8 @@ describe("Validation Engine: Full Run", () => {
     });
 
     const results = runValidation(ctx);
-    // Should have results from all 13 rules
+    // Should have results from all 17 rules (13 original + 4 adapted)
     const ruleIds = new Set(results.map((r) => r.ruleId));
-    expect(ruleIds.size).toBe(13);
+    expect(ruleIds.size).toBe(17);
   });
 });
