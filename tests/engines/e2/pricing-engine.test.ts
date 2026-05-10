@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { convertCurrency, applyVendorDiscount, applyInhouseMargin } from "@/engines/e2/pricing-engine";
+import { convertCurrency, applyVendorDiscount, applyInhouseMargin, calculateOverhead } from "@/engines/e2/pricing-engine";
 
 describe("convertCurrency (CS-001)", () => {
   it("converts 100 USD at 3.75 to 375 SAR", () => {
@@ -64,6 +64,123 @@ describe("applyInhouseMargin (CS-003)", () => {
   it("throws on margin > 1", () => {
     expect(() =>
       applyInhouseMargin({ netCost: 10000, inhouseMarginPct: 1.5, taVersion: "V34" })
+    ).toThrow();
+  });
+});
+
+const ZERO_RATES = { shipmentPct: 0, customPct: 0, insurancePct: 0, whtaxPct: 0, zakatPct: 0, financePct: 0, riskPct: 0 };
+
+describe("calculateOverhead (CS-004)", () => {
+  // ── individual components ──────────────────────────────────────────────────
+
+  it("shipment only: 10000 × 0.03 = 300", () => {
+    // 10000 * 0.03 = 300
+    const r = calculateOverhead({ unitAfterDiscount: 10000, ...ZERO_RATES, shipmentPct: 0.03 });
+    expect(r.shipment).toBeCloseTo(300, 6);
+    expect(r.custom).toBe(0);
+    expect(r.insurance).toBe(0);
+    expect(r.whtax).toBe(0);
+    expect(r.zakat).toBe(0);
+    expect(r.finance).toBe(0);
+    expect(r.risk).toBe(0);
+    expect(r.total).toBeCloseTo(300, 6);
+  });
+
+  it("custom only: 10000 × 0.02 = 200", () => {
+    // 10000 * 0.02 = 200
+    const r = calculateOverhead({ unitAfterDiscount: 10000, ...ZERO_RATES, customPct: 0.02 });
+    expect(r.custom).toBeCloseTo(200, 6);
+    expect(r.total).toBeCloseTo(200, 6);
+  });
+
+  it("insurance only: 10000 × 0.01 = 100", () => {
+    // 10000 * 0.01 = 100
+    const r = calculateOverhead({ unitAfterDiscount: 10000, ...ZERO_RATES, insurancePct: 0.01 });
+    expect(r.insurance).toBeCloseTo(100, 6);
+    expect(r.total).toBeCloseTo(100, 6);
+  });
+
+  it("whtax only: 10000 × 0.07 = 700", () => {
+    // 10000 * 0.07 = 700 (IEEE 754: ~700.0000000000001)
+    const r = calculateOverhead({ unitAfterDiscount: 10000, ...ZERO_RATES, whtaxPct: 0.07 });
+    expect(r.whtax).toBeCloseTo(700, 6);
+    expect(r.total).toBeCloseTo(700, 6);
+  });
+
+  it("zakat only: 10000 × 0.025 = 250 (V34+ default rate)", () => {
+    // 10000 * 0.025 = 250; pre-V34 callers pass zakatPct: 0
+    const r = calculateOverhead({ unitAfterDiscount: 10000, ...ZERO_RATES, zakatPct: 0.025 });
+    expect(r.zakat).toBeCloseTo(250, 6);
+    expect(r.total).toBeCloseTo(250, 6);
+  });
+
+  it("finance only: 10000 × 0.05 = 500", () => {
+    // 10000 * 0.05 = 500
+    const r = calculateOverhead({ unitAfterDiscount: 10000, ...ZERO_RATES, financePct: 0.05 });
+    expect(r.finance).toBeCloseTo(500, 6);
+    expect(r.total).toBeCloseTo(500, 6);
+  });
+
+  it("risk only: 10000 × 0.05 = 500", () => {
+    // 10000 * 0.05 = 500
+    const r = calculateOverhead({ unitAfterDiscount: 10000, ...ZERO_RATES, riskPct: 0.05 });
+    expect(r.risk).toBeCloseTo(500, 6);
+    expect(r.total).toBeCloseTo(500, 6);
+  });
+
+  // ── combined ───────────────────────────────────────────────────────────────
+
+  it("combined: 10000 × (0.03+0.02+0+0.07+0.025+0+0.05) = 1950", () => {
+    // shipment=300, custom=200, insurance=0, whtax=700, zakat=250, finance=0, risk=500 → total=1950
+    const r = calculateOverhead({
+      unitAfterDiscount: 10000,
+      shipmentPct: 0.03, customPct: 0.02, insurancePct: 0,
+      whtaxPct: 0.07, zakatPct: 0.025, financePct: 0, riskPct: 0.05,
+    });
+    expect(r.shipment).toBeCloseTo(300, 6);
+    expect(r.custom).toBeCloseTo(200, 6);
+    expect(r.insurance).toBe(0);
+    expect(r.whtax).toBeCloseTo(700, 6);
+    expect(r.zakat).toBeCloseTo(250, 6);
+    expect(r.finance).toBe(0);
+    expect(r.risk).toBeCloseTo(500, 6);
+    expect(r.total).toBeCloseTo(1950, 6);
+  });
+
+  // ── boundary ───────────────────────────────────────────────────────────────
+
+  it("zero unitAfterDiscount → all amounts are zero", () => {
+    const r = calculateOverhead({
+      unitAfterDiscount: 0,
+      shipmentPct: 0.03, customPct: 0.02, insurancePct: 0.01,
+      whtaxPct: 0.07, zakatPct: 0.025, financePct: 0.05, riskPct: 0.05,
+    });
+    expect(r.shipment).toBe(0);
+    expect(r.custom).toBe(0);
+    expect(r.insurance).toBe(0);
+    expect(r.whtax).toBe(0);
+    expect(r.zakat).toBe(0);
+    expect(r.finance).toBe(0);
+    expect(r.risk).toBe(0);
+    expect(r.total).toBe(0);
+  });
+
+  it("all rates zero → total overhead is zero", () => {
+    const r = calculateOverhead({ unitAfterDiscount: 50000, ...ZERO_RATES });
+    expect(r.total).toBe(0);
+  });
+
+  // ── validation ─────────────────────────────────────────────────────────────
+
+  it("throws on negative unitAfterDiscount", () => {
+    expect(() =>
+      calculateOverhead({ unitAfterDiscount: -1, ...ZERO_RATES })
+    ).toThrow();
+  });
+
+  it("throws when a rate exceeds 1 (100%)", () => {
+    expect(() =>
+      calculateOverhead({ unitAfterDiscount: 10000, ...ZERO_RATES, shipmentPct: 1.1 })
     ).toThrow();
   });
 });
