@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { ValidationContext, CatalogItemForValidation } from "@/types/validation";
 import type { BomLine } from "@/types/bom";
 import { runValidation } from "@/lib/validation/engine";
+import { checkDnaOptout } from "@/lib/validation/rules/dna-optout";
+import { checkApOnly } from "@/lib/validation/rules/ap-only";
 import { skuExistsRule } from "@/lib/validation/rules/sku-exists";
 import { eoxRule } from "@/lib/validation/rules/eox";
 import { regionRule } from "@/lib/validation/rules/region";
@@ -487,6 +489,99 @@ describe("Rule: Support Attachment", () => {
 
     const results = supportRule.run(ctx);
     expect(results[0].passed).toBe(true);
+  });
+});
+
+// ─── DNA Opt-out ──────────────────────────────────────────────────────────
+
+describe("Rule: DNA Opt-out", () => {
+  it("returns valid+info when a DNA-OPTOUT SKU is present", () => {
+    const result = checkDnaOptout([
+      { sku: "C9120AXE-E" },
+      { sku: "C9120AX-DNA-OPTOUT" },
+    ]);
+    expect(result.valid).toBe(true);
+    expect(result.severity).toBe("info");
+    expect(result.message).toBe("DNA subscription opted out — intentional");
+  });
+
+  it("returns valid+info (no opt-out) when no DNA-OPTOUT SKU present", () => {
+    const result = checkDnaOptout([{ sku: "C9300L-24UXG-4X-A" }]);
+    expect(result.valid).toBe(true);
+    expect(result.severity).toBe("info");
+    expect(result.message).not.toContain("opted out");
+  });
+
+  it("matches any prefix before -DNA-OPTOUT", () => {
+    const result = checkDnaOptout([{ sku: "SOME-PRODUCT-DNA-OPTOUT" }]);
+    expect(result.valid).toBe(true);
+    expect(result.message).toBe("DNA subscription opted out — intentional");
+  });
+
+  it("does not match partial suffix (no false positives)", () => {
+    const result = checkDnaOptout([{ sku: "C9120AX-DNA-OPTOUT-EXTRA" }]);
+    expect(result.valid).toBe(true);
+    expect(result.message).not.toContain("opted out");
+  });
+
+  it("throws on invalid input (non-array)", () => {
+    expect(() => checkDnaOptout("not-an-array")).toThrow();
+  });
+
+  it("throws when sku field is missing", () => {
+    expect(() => checkDnaOptout([{ partNumber: "C9120AX-DNA-OPTOUT" }])).toThrow();
+  });
+});
+
+// ─── AP-only ──────────────────────────────────────────────────────────────
+
+describe("Rule: AP-only", () => {
+  it("returns valid+info AP-only message when APs present but no controller", () => {
+    const result = checkApOnly([
+      { sku: "C9120AXE-E" },
+      { sku: "C9120AX-DNA-OPTOUT" },
+    ]);
+    expect(result.valid).toBe(true);
+    expect(result.severity).toBe("info");
+    expect(result.message).toBe("AP-only estimate — controller assumed separate");
+  });
+
+  it("returns not-applicable when no AP SKUs present", () => {
+    const result = checkApOnly([{ sku: "C9300L-24UXG-4X-A" }]);
+    expect(result.valid).toBe(true);
+    expect(result.severity).toBe("info");
+    expect(result.message).toContain("not applicable");
+  });
+
+  it("returns not-applicable when controller is present alongside APs", () => {
+    const result = checkApOnly([
+      { sku: "C9120AXE-E" },
+      { sku: "C9800-L-F-K9" },
+    ]);
+    expect(result.valid).toBe(true);
+    expect(result.severity).toBe("info");
+    expect(result.message).toContain("controller present");
+  });
+
+  it("detects C9130 AP family", () => {
+    const result = checkApOnly([{ sku: "C9130AXI-E" }]);
+    expect(result.message).toBe("AP-only estimate — controller assumed separate");
+  });
+
+  it("detects C9800-CL cloud controller", () => {
+    const result = checkApOnly([
+      { sku: "C9120AXE-E" },
+      { sku: "C9800-CL-K9" },
+    ]);
+    expect(result.message).toContain("controller present");
+  });
+
+  it("throws on invalid input (non-array)", () => {
+    expect(() => checkApOnly(null)).toThrow();
+  });
+
+  it("throws when sku field is missing", () => {
+    expect(() => checkApOnly([{ model: "C9120AXE-E" }])).toThrow();
   });
 });
 
