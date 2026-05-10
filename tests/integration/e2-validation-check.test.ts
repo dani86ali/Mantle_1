@@ -1,5 +1,5 @@
 /**
- * Integration: E2 BoM → all 13 validation rules.
+ * Integration: E2 BoM → all 17 validation rules.
  *
  * Scenario 1 — correct BoM → zero rule errors.
  * Scenario 2 — secondary PSU removed → psu-redundancy fires.
@@ -113,7 +113,7 @@ function buildCorrectBom(): BomLine[] {
 
 // ─── Scenario 1: correct BoM ──────────────────────────────────────────────────
 
-describe("Scenario 1 — correct BoM passes all 13 rules with zero errors", () => {
+describe("Scenario 1 — correct BoM passes all 17 rules with zero errors", () => {
   it("overall: 0 rule errors", () => {
     const bom = buildCorrectBom();
     const results = runValidation(makeCtx(bom));
