@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeModel } from "@/lib/utils/normalize-model";
 
 export interface LicenseLine {
   sku: string;
@@ -55,12 +56,14 @@ function ln(
 }
 
 export function calculateLicenses(
-  model: string,
+  rawModel: string,
   qty: number,
   config: LicenseConfig
 ): LicenseLine[] {
-  InputSchema.parse({ model, qty });
+  InputSchema.parse({ model: rawModel, qty });
   ConfigSchema.parse(config);
+
+  const model = normalizeModel(rawModel);
 
   const {
     dnaTier,

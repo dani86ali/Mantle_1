@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeModel } from "@/lib/utils/normalize-model";
 
 export interface SupportLine {
   sku: string;
@@ -37,13 +38,14 @@ function encodeForFortinet(model: string): string {
 }
 
 export function selectSupport(
-  model: string,
+  rawModel: string,
   qty: number,
   config: { criticality: "standard" | "mission_critical" | "none"; term: 12 | 36 | 60; vendor: "cisco" | "fortinet" }
 ): SupportLine[] {
-  InputSchema.parse({ model, qty });
+  InputSchema.parse({ model: rawModel, qty });
   ConfigSchema.parse(config);
 
+  const model = normalizeModel(rawModel);
   const { criticality, term, vendor } = config;
 
   if (criticality === "none") return [];

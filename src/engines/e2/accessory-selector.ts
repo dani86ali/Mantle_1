@@ -1,5 +1,6 @@
 import { z } from "zod";
 import specsJson from "../../../docs/BOMATIC_Device_Specs.json";
+import { normalizeModel } from "@/lib/utils/normalize-model";
 
 export interface AccessoryLine {
   sku: string;
@@ -45,18 +46,12 @@ const SWITCHES = [
 
 const APS = specsJson.cisco_wireless_aps as unknown as DeviceSpec[];
 
-// "C9300L-24UXG-4X-A" matches spec model "C9300L-24UXG-4X"
-function isMatch(input: string, specModel: string): boolean {
-  return input === specModel ||
-    (input.startsWith(specModel) && input[specModel.length] === "-");
-}
-
 function lookup(model: string): { spec: DeviceSpec; cls: DeviceClass } {
   for (const s of SWITCHES) {
-    if (isMatch(model, s.model)) return { spec: s, cls: "switch" };
+    if (model === s.model) return { spec: s, cls: "switch" };
   }
   for (const s of APS) {
-    if (isMatch(model, s.model)) return { spec: s, cls: "ap" };
+    if (model === s.model) return { spec: s, cls: "ap" };
   }
   throw new Error(`Unknown model: ${model}`);
 }
@@ -75,7 +70,7 @@ export function selectAccessories(
   InputSchema.parse({ model, qty });
   OptionsSchema.parse(options);
 
-  const { spec, cls } = lookup(model);
+  const { spec, cls } = lookup(normalizeModel(model));
   const { powerCordType = DEFAULT_CORD } = options;
   const redundantPsu = options.redundantPsu === true;
 
