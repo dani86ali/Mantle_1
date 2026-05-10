@@ -63,6 +63,32 @@ export function applyInhouseMargin(input: ApplyInhouseMarginInput): number {
   return netCost * (1 - inhouseMarginPct);
 }
 
+// ─── CS-005 ────────────────────────────────────────────────────────────────
+
+const CalculateCostWithOverheadSchema = z.object({
+  unitAfterInhouseMargin: z.number().nonnegative(),
+  overheadTotal:          z.number().nonnegative(),
+  fixedValue:             z.number().nonnegative(),
+});
+export type CalculateCostWithOverheadInput = z.infer<typeof CalculateCostWithOverheadSchema>;
+
+/**
+ * CS-005: Cost with overhead — loaded unit cost before profit application.
+ *
+ * Formula: unitAfterInhouseMargin + overheadTotal + fixedValue
+ * TA ref: BoQ!BW = ROUND(AJ + overhead_amounts_sum/(J*K) + BD, decimals)
+ *   AJ = unit after discount & inhouse margin (SAR, output of CS-002/CS-003)
+ *   overhead_amounts_sum = calculateOverhead().total (output of CS-004)
+ *   BD = fixed value per unit from FINANCIAL SUMMARY col T (pass 0 if none)
+ */
+export function calculateCostWithOverhead(input: CalculateCostWithOverheadInput): number {
+  const { unitAfterInhouseMargin, overheadTotal, fixedValue } =
+    CalculateCostWithOverheadSchema.parse(input);
+  return unitAfterInhouseMargin + overheadTotal + fixedValue;
+}
+
+// ─── CS-004 ────────────────────────────────────────────────────────────────
+
 /**
  * CS-004: Overhead loading — 7 components each applied to unit cost after discount.
  *

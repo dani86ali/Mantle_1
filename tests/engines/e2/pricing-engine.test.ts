@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { convertCurrency, applyVendorDiscount, applyInhouseMargin, calculateOverhead } from "@/engines/e2/pricing-engine";
+import { convertCurrency, applyVendorDiscount, applyInhouseMargin, calculateOverhead, calculateCostWithOverhead } from "@/engines/e2/pricing-engine";
 
 describe("convertCurrency (CS-001)", () => {
   it("converts 100 USD at 3.75 to 375 SAR", () => {
@@ -181,6 +181,44 @@ describe("calculateOverhead (CS-004)", () => {
   it("throws when a rate exceeds 1 (100%)", () => {
     expect(() =>
       calculateOverhead({ unitAfterDiscount: 10000, ...ZERO_RATES, shipmentPct: 1.1 })
+    ).toThrow();
+  });
+});
+
+describe("calculateCostWithOverhead (CS-005)", () => {
+  it("typical: 9000 (after discount) + 1350 (overhead) + 100 (fixed) = 10450", () => {
+    // 9000 + 1350 + 100 = 10450
+    expect(calculateCostWithOverhead({ unitAfterInhouseMargin: 9000, overheadTotal: 1350, fixedValue: 100 })).toBe(10450);
+  });
+
+  it("no fixed value: 9000 + 1350 + 0 = 10350", () => {
+    // 9000 + 1350 + 0 = 10350
+    expect(calculateCostWithOverhead({ unitAfterInhouseMargin: 9000, overheadTotal: 1350, fixedValue: 0 })).toBe(10350);
+  });
+
+  it("zero overhead and fixed: returns unitAfterInhouseMargin unchanged", () => {
+    expect(calculateCostWithOverhead({ unitAfterInhouseMargin: 9000, overheadTotal: 0, fixedValue: 0 })).toBe(9000);
+  });
+
+  it("all zeros: returns 0", () => {
+    expect(calculateCostWithOverhead({ unitAfterInhouseMargin: 0, overheadTotal: 0, fixedValue: 0 })).toBe(0);
+  });
+
+  it("throws on negative unitAfterInhouseMargin", () => {
+    expect(() =>
+      calculateCostWithOverhead({ unitAfterInhouseMargin: -1, overheadTotal: 100, fixedValue: 0 })
+    ).toThrow();
+  });
+
+  it("throws on negative overheadTotal", () => {
+    expect(() =>
+      calculateCostWithOverhead({ unitAfterInhouseMargin: 9000, overheadTotal: -1, fixedValue: 0 })
+    ).toThrow();
+  });
+
+  it("throws on negative fixedValue", () => {
+    expect(() =>
+      calculateCostWithOverhead({ unitAfterInhouseMargin: 9000, overheadTotal: 100, fixedValue: -1 })
     ).toThrow();
   });
 });
