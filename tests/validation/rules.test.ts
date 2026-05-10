@@ -428,7 +428,7 @@ describe("Rule: Stacking", () => {
     expect(results.some((r) => r.message.includes("kit"))).toBe(true);
   });
 
-  it("skips when stacking not required", () => {
+  it("skips when only a single switch is present (no stacking needed)", () => {
     const sw1 = makeLine();
     const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
     const ctx = makeContext({
@@ -439,7 +439,7 @@ describe("Rule: Stacking", () => {
 
     const results = stackingRule.run(ctx);
     expect(results[0].passed).toBe(true);
-    expect(results[0].message).toContain("not required");
+    expect(results[0].message).toContain("not applicable");
   });
 });
 
@@ -733,8 +733,8 @@ describe("Validation Engine: Full Run", () => {
     });
 
     const results = runValidation(ctx);
-    // Should have results from all 11 rules
+    // Should have results from all 13 rules
     const ruleIds = new Set(results.map((r) => r.ruleId));
-    expect(ruleIds.size).toBe(11);
+    expect(ruleIds.size).toBe(13);
   });
 });
