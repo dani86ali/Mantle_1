@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { convertCurrency, applyVendorDiscount, applyInhouseMargin, calculateOverhead, calculateCostWithOverhead } from "@/engines/e2/pricing-engine";
+import { convertCurrency, applyVendorDiscount, applyInhouseMargin, calculateOverhead, calculateCostWithOverhead, calculateSellingPrice } from "@/engines/e2/pricing-engine";
 
 describe("convertCurrency (CS-001)", () => {
   it("converts 100 USD at 3.75 to 375 SAR", () => {
@@ -219,6 +219,75 @@ describe("calculateCostWithOverhead (CS-005)", () => {
   it("throws on negative fixedValue", () => {
     expect(() =>
       calculateCostWithOverhead({ unitAfterInhouseMargin: 9000, overheadTotal: 100, fixedValue: -1 })
+    ).toThrow();
+  });
+});
+
+describe("calculateSellingPrice (CS-006)", () => {
+  // ── margin mode ──────────────────────────────────────────────────────────────
+
+  it("margin: 10000 cost, 25% profit → 10000/0.75 ≈ 13333.33", () => {
+    // 10000 / (1 - 0.25) = 10000 / 0.75 = 13333.333...
+    expect(calculateSellingPrice({ mode: "margin", costWithOverhead: 10000, profitPct: 0.25 }))
+      .toBeCloseTo(13333.33, 2);
+  });
+
+  it("margin: zero cost → 0", () => {
+    expect(calculateSellingPrice({ mode: "margin", costWithOverhead: 0, profitPct: 0.25 })).toBe(0);
+  });
+
+  it("margin: zero profitPct → returns costWithOverhead unchanged", () => {
+    // 10000 / (1 - 0) = 10000 / 1 = 10000
+    expect(calculateSellingPrice({ mode: "margin", costWithOverhead: 10000, profitPct: 0 })).toBe(10000);
+  });
+
+  // ── markup mode ──────────────────────────────────────────────────────────────
+
+  it("markup: 10000 cost, 25% profit → 10000 × 1.25 = 12500", () => {
+    // 10000 * (1 + 0.25) = 12500
+    expect(calculateSellingPrice({ mode: "markup", costWithOverhead: 10000, profitPct: 0.25 })).toBe(12500);
+  });
+
+  it("markup: zero cost → 0", () => {
+    expect(calculateSellingPrice({ mode: "markup", costWithOverhead: 0, profitPct: 0.25 })).toBe(0);
+  });
+
+  it("markup: zero profitPct → returns costWithOverhead unchanged", () => {
+    // 10000 * (1 + 0) = 10000
+    expect(calculateSellingPrice({ mode: "markup", costWithOverhead: 10000, profitPct: 0 })).toBe(10000);
+  });
+
+  it("markup: 100% profitPct is valid — 10000 × 2 = 20000", () => {
+    // 10000 * (1 + 1) = 20000
+    expect(calculateSellingPrice({ mode: "markup", costWithOverhead: 10000, profitPct: 1 })).toBe(20000);
+  });
+
+  // ── margin vs markup inequality ───────────────────────────────────────────────
+
+  it("same inputs: margin yields higher sell price than markup when profitPct > 0", () => {
+    // margin: 10000/0.75 ≈ 13333; markup: 10000*1.25 = 12500 → margin > markup
+    const margin = calculateSellingPrice({ mode: "margin", costWithOverhead: 10000, profitPct: 0.25 });
+    const markup = calculateSellingPrice({ mode: "markup", costWithOverhead: 10000, profitPct: 0.25 });
+    expect(margin).toBeGreaterThan(markup);
+  });
+
+  // ── validation ────────────────────────────────────────────────────────────────
+
+  it("margin: throws when profitPct = 1 (1 − 1 = 0 denominator)", () => {
+    expect(() =>
+      calculateSellingPrice({ mode: "margin", costWithOverhead: 10000, profitPct: 1 })
+    ).toThrow();
+  });
+
+  it("throws on negative costWithOverhead", () => {
+    expect(() =>
+      calculateSellingPrice({ mode: "margin", costWithOverhead: -1, profitPct: 0.25 })
+    ).toThrow();
+  });
+
+  it("throws on negative profitPct", () => {
+    expect(() =>
+      calculateSellingPrice({ mode: "markup", costWithOverhead: 10000, profitPct: -0.1 })
     ).toThrow();
   });
 });

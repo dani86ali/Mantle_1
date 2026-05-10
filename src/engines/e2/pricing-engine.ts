@@ -87,6 +87,43 @@ export function calculateCostWithOverhead(input: CalculateCostWithOverheadInput)
   return unitAfterInhouseMargin + overheadTotal + fixedValue;
 }
 
+// ─── CS-006 ────────────────────────────────────────────────────────────────
+
+const MarginModeSchema = z.object({
+  mode: z.literal("margin"),
+  costWithOverhead: z.number().nonnegative(),
+  /** Must be < 1 to avoid division by zero (1 − profitPct denominator) */
+  profitPct: z.number().min(0).lt(1),
+});
+
+const MarkupModeSchema = z.object({
+  mode: z.literal("markup"),
+  costWithOverhead: z.number().nonnegative(),
+  profitPct: z.number().min(0).max(1),
+});
+
+const CalculateSellingPriceSchema = z.discriminatedUnion("mode", [
+  MarginModeSchema,
+  MarkupModeSchema,
+]);
+export type CalculateSellingPriceInput = z.infer<typeof CalculateSellingPriceSchema>;
+
+/**
+ * CS-006: Selling price from loaded cost — Margin or Markup mode.
+ *
+ * Margin:  sellPrice = costWithOverhead / (1 − profitPct)
+ * Markup:  sellPrice = costWithOverhead × (1 + profitPct)
+ *
+ * TA ref: BoQ!BZ = IF(INPUT_LISTS!C24="Margin", BW/(1−BY), BW×(1+BY))
+ *   BW = Item Cost w OH (SAR, output of CS-005); BY = Profit % (FINANCIAL SUMMARY col U)
+ */
+export function calculateSellingPrice(input: CalculateSellingPriceInput): number {
+  const parsed = CalculateSellingPriceSchema.parse(input);
+  return parsed.mode === "margin"
+    ? parsed.costWithOverhead / (1 - parsed.profitPct)
+    : parsed.costWithOverhead * (1 + parsed.profitPct);
+}
+
 // ─── CS-004 ────────────────────────────────────────────────────────────────
 
 /**
