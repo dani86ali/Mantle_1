@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { convertCurrency, applyVendorDiscount, applyInhouseMargin, calculateOverhead, calculateCostWithOverhead, calculateSellingPrice, calculateExtendedSell } from "@/engines/e2/pricing-engine";
+import { calculateRevenueSplit } from "@/engines/e2/revenue-split";
 
 describe("convertCurrency (CS-001)", () => {
   it("converts 100 USD at 3.75 to 375 SAR", () => {
@@ -341,6 +342,78 @@ describe("calculateExtendedSell (CS-007)", () => {
   it("throws on negative unitSellPrice", () => {
     expect(() =>
       calculateExtendedSell({ unitSellPrice: -1, qty: 5, discountEmbedPct: 0, solutionEmbedPct: 0, inhouseEmbedPct: 0 })
+    ).toThrow();
+  });
+});
+
+describe("calculateRevenueSplit (CS-008)", () => {
+  // ── standard ratios ───────────────────────────────────────────────────────────
+
+  it("85/15 split: 100000 × 0.85 = 85000 STCS, 100000 × 0.15 = 15000 partner", () => {
+    // 100000 * 0.85 = 85000; 100000 * 0.15 = 15000
+    const r = calculateRevenueSplit({ sellAmount: 100000, stcsSplitPct: 0.85, partnerSplitPct: 0.15 });
+    expect(r.stcsAmount).toBeCloseTo(85000, 6);
+    expect(r.partnerAmount).toBeCloseTo(15000, 6);
+  });
+
+  it("70/30 split: 50000 × 0.70 = 35000 STCS, 50000 × 0.30 = 15000 partner", () => {
+    // 50000 * 0.70 = 35000; 50000 * 0.30 = 15000
+    const r = calculateRevenueSplit({ sellAmount: 50000, stcsSplitPct: 0.70, partnerSplitPct: 0.30 });
+    expect(r.stcsAmount).toBeCloseTo(35000, 6);
+    expect(r.partnerAmount).toBeCloseTo(15000, 6);
+  });
+
+  // ── 100/0 edge case ────────────────────────────────────────────────────────────
+
+  it("100/0: STCS retains full amount, partner gets 0", () => {
+    // 200000 * 1 = 200000; 200000 * 0 = 0
+    const r = calculateRevenueSplit({ sellAmount: 200000, stcsSplitPct: 1, partnerSplitPct: 0 });
+    expect(r.stcsAmount).toBe(200000);
+    expect(r.partnerAmount).toBe(0);
+  });
+
+  it("0/100: partner retains full amount (100% STC Scope), STCS gets 0", () => {
+    // 200000 * 0 = 0; 200000 * 1 = 200000
+    const r = calculateRevenueSplit({ sellAmount: 200000, stcsSplitPct: 0, partnerSplitPct: 1 });
+    expect(r.stcsAmount).toBe(0);
+    expect(r.partnerAmount).toBe(200000);
+  });
+
+  // ── rounding ────────────────────────────────────────────────────────────────────
+
+  it("fractional SAR: 1.50 at 85/15 → STCS=1.275, partner=0.225", () => {
+    // 1.50 * 0.85 = 1.275; 1.50 * 0.15 = 0.225
+    const r = calculateRevenueSplit({ sellAmount: 1.5, stcsSplitPct: 0.85, partnerSplitPct: 0.15 });
+    expect(r.stcsAmount).toBeCloseTo(1.275, 6);
+    expect(r.partnerAmount).toBeCloseTo(0.225, 6);
+  });
+
+  // ── zero sell amount ───────────────────────────────────────────────────────────
+
+  it("zero sell amount → both amounts are 0", () => {
+    const r = calculateRevenueSplit({ sellAmount: 0, stcsSplitPct: 0.85, partnerSplitPct: 0.15 });
+    expect(r.stcsAmount).toBe(0);
+    expect(r.partnerAmount).toBe(0);
+  });
+
+  // ── validation ─────────────────────────────────────────────────────────────────
+
+  it("throws when splits do not sum to 1", () => {
+    // 0.60 + 0.30 = 0.90 — not 1
+    expect(() =>
+      calculateRevenueSplit({ sellAmount: 100000, stcsSplitPct: 0.60, partnerSplitPct: 0.30 })
+    ).toThrow();
+  });
+
+  it("throws on negative sellAmount", () => {
+    expect(() =>
+      calculateRevenueSplit({ sellAmount: -1, stcsSplitPct: 0.85, partnerSplitPct: 0.15 })
+    ).toThrow();
+  });
+
+  it("throws when a split percentage exceeds 1", () => {
+    expect(() =>
+      calculateRevenueSplit({ sellAmount: 100000, stcsSplitPct: 1.1, partnerSplitPct: -0.1 })
     ).toThrow();
   });
 });
