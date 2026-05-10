@@ -1,7 +1,7 @@
 /**
  * Deterministic validation engine.
  *
- * Runs all 9 validation rules against a candidate BoM.
+ * Runs all 13 validation rules against a candidate BoM.
  * NO LLM calls — every rule is deterministic with a traceable source of truth.
  * LLM is used for fix suggestions only (in the agent's fix loop).
  */
@@ -21,17 +21,25 @@ import { psuRule } from "./rules/psu";
 import { licenseRule } from "./rules/license";
 import { stackingRule } from "./rules/stacking";
 import { supportRule } from "./rules/support";
+import { antennaCountRule } from "./rules/antenna-count";
+import { fanCountRule } from "./rules/fan-count";
+import { poeBudgetRule } from "./rules/poe-budget";
+import { psuRedundancyRule } from "./rules/psu-redundancy";
 
 const ALL_RULES: ValidationRule[] = [
   skuExistsRule,
   eoxRule,
   regionRule,
   poeRule,
+  poeBudgetRule,
   opticsRule,
   psuRule,
+  psuRedundancyRule,
   licenseRule,
   stackingRule,
   supportRule,
+  antennaCountRule,
+  fanCountRule,
 ];
 
 export function runValidation(

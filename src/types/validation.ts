@@ -10,11 +10,15 @@ export type ValidationRuleId =
   | "eox"
   | "region"
   | "poe"
+  | "poe-budget"
   | "optics"
   | "psu"
+  | "psu-redundancy"
   | "license"
   | "stacking"
-  | "support";
+  | "support"
+  | "antenna-count"
+  | "fan-count";
 
 export interface ValidationResult {
   ruleId: ValidationRuleId;
