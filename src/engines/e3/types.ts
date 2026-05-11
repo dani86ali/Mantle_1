@@ -54,12 +54,22 @@ export interface PricingTierTotals {
   grandTotal: number;
 }
 
+export interface PricingTierBomLine {
+  sku: string;
+  description: string;
+  qty: number;
+  category: string;
+  unitSellPrice: number;
+  extendedSell: number;
+}
+
 export interface PricingTier {
   name: TierName;
   label: string;
   description: string;
   sections: ProposalSection[];
   totals: PricingTierTotals;
+  bom?: PricingTierBomLine[];
 }
 
 export interface MarginFlag {
