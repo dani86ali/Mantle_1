@@ -1,433 +1,487 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowUpRight,
-  ArrowDownRight,
-  Clock,
+  FileText,
+  Loader2,
   CheckCircle2,
+  ClipboardCheck,
+  Plus,
+  ArrowRight,
   AlertTriangle,
   XCircle,
-  FileText,
-  Plus,
-  BookOpen,
-  Layers,
-  TrendingUp,
-  Timer,
-  ShieldCheck,
+  Hourglass,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  EstimateRow,
+  ActivityEntry,
+  buildActivityFeed,
+  lifecycleStage,
+  pipelineProgress,
+  relativeTime,
+  statusLabel,
+  PipelineProgress,
+} from "./helpers";
 
-/* ------------------------------------------------------------------ */
-/*  Mock data                                                          */
-/* ------------------------------------------------------------------ */
+const currencyFmt = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
 
-const metrics = [
-  {
-    label: "Estimates This Week",
-    value: "12",
-    trend: "+3 from last week",
-    trendDirection: "up" as "up" | "down" | "neutral",
-    icon: FileText,
-  },
-  {
-    label: "Avg Processing Time",
-    value: "4.2 min",
-    trend: "-18% improvement",
-    trendDirection: "up" as "up" | "down" | "neutral",
-    icon: Timer,
-  },
-  {
-    label: "Time Saved",
-    value: "8.5 hrs",
-    trend: "this week",
-    trendDirection: "neutral" as "up" | "down" | "neutral",
-    icon: Clock,
-  },
-  {
-    label: "Validation Pass Rate",
-    value: "94%",
-    trend: "+2% from last week",
-    trendDirection: "up" as "up" | "down" | "neutral",
-    icon: ShieldCheck,
-  },
-];
-
-type ActivityStatus = "completed" | "pending" | "failed";
-
-interface ActivityItem {
-  id: number;
-  message: string;
-  timestamp: string;
-  status: ActivityStatus;
+interface ApiEstimate {
+  id: string;
+  estimateId?: string;
+  customer?: string | null;
+  domain?: string | null;
+  status: string;
+  created: string;
+  totalPrice?: number;
 }
 
-const recentActivity: ActivityItem[] = [
-  {
-    id: 1,
-    message: "Estimate OG164161387AE approved",
-    timestamp: "2 hours ago",
-    status: "completed",
-  },
-  {
-    id: 2,
-    message: "New intake from NTT Data submitted",
-    timestamp: "3 hours ago",
-    status: "pending",
-  },
-  {
-    id: 3,
-    message: "Validation failed on EST-2024-089",
-    timestamp: "4 hours ago",
-    status: "failed",
-  },
-  {
-    id: 4,
-    message: "Estimate EST-2024-091 exported to XLSX",
-    timestamp: "5 hours ago",
-    status: "completed",
-  },
-  {
-    id: 5,
-    message: "Draft saved for Acme Corp campus refresh",
-    timestamp: "6 hours ago",
-    status: "pending",
-  },
-  {
-    id: 6,
-    message: "Estimate EST-2024-088 approved by reviewer",
-    timestamp: "8 hours ago",
-    status: "completed",
-  },
-  {
-    id: 7,
-    message: "New intake from BT Group submitted",
-    timestamp: "1 day ago",
-    status: "completed",
-  },
-  {
-    id: 8,
-    message: "Validation passed on EST-2024-087",
-    timestamp: "1 day ago",
-    status: "completed",
-  },
-];
+function useEstimates(): { rows: EstimateRow[]; loading: boolean; error: boolean } {
+  const [rows, setRows] = useState<EstimateRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-const queueStatus = {
-  pending: 3,
-  processing: 1,
-  failed: 0,
-};
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/estimates");
+        const json = (await res.json()) as { estimates?: ApiEstimate[] };
+        if (cancelled) return;
+        const list = (json.estimates ?? []).map((e) => ({
+          id: e.id,
+          estimateId: e.estimateId ?? e.id.slice(0, 12).toUpperCase(),
+          customer: e.customer ?? "Unknown",
+          domain: e.domain ?? "",
+          status: e.status,
+          created:
+            typeof e.created === "string"
+              ? e.created
+              : new Date(e.created).toISOString(),
+          totalPrice: e.totalPrice ?? 0,
+        }));
+        setRows(list);
+      } catch {
+        if (!cancelled) setError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-const statusDotColor: Record<ActivityStatus, string> = {
-  completed: "bg-success",
-  pending: "bg-warning",
-  failed: "bg-destructive",
-};
-
-/* ------------------------------------------------------------------ */
-/*  Component                                                          */
-/* ------------------------------------------------------------------ */
+  return { rows, loading, error };
+}
 
 export default function DashboardPage() {
+  const { rows, loading } = useEstimates();
+
+  const stats = useMemo(() => {
+    const total = rows.length;
+    let inProgress = 0;
+    let review = 0;
+    let approved = 0;
+    for (const r of rows) {
+      const s = lifecycleStage(r.status);
+      if (s === "in_progress") inProgress++;
+      else if (s === "ready_for_review") review++;
+      else if (s === "approved") approved++;
+    }
+    return { total, inProgress, review, approved };
+  }, [rows]);
+
+  const recent = useMemo(
+    () =>
+      [...rows]
+        .sort((a, b) => (a.created < b.created ? 1 : -1))
+        .slice(0, 5),
+    [rows]
+  );
+
+  const activity = useMemo(() => buildActivityFeed(rows), [rows]);
+
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
-      {/* ---- Header ---- */}
       <header className="mb-8">
         <h1 className="text-2xl font-semibold text-text-primary">Dashboard</h1>
         <p className="mt-1 text-sm text-text-secondary">
-          Overview of your presales activity
+          Pipeline activity across all estimates
         </p>
       </header>
 
-      {/* ---- Metric Cards ---- */}
-      <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {metrics.map((m) => {
-          const Icon = m.icon;
-          return (
-            <div
-              key={m.label}
-              className="rounded-card border border-[var(--border)] bg-bg-card p-5"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-text-secondary">{m.label}</span>
-                <Icon className="h-4 w-4 text-text-tertiary" />
-              </div>
+      <StatsRow loading={loading} stats={stats} />
 
-              <p className="mt-3 text-3xl font-semibold text-text-primary">
-                {m.value}
+      {!loading && rows.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <>
+          <RecentEstimates loading={loading} rows={recent} />
+          <ActivityFeed loading={loading} entries={activity} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Stats row                                                          */
+/* ------------------------------------------------------------------ */
+
+interface StatsRowProps {
+  loading: boolean;
+  stats: { total: number; inProgress: number; review: number; approved: number };
+}
+
+function StatsRow({ loading, stats }: StatsRowProps) {
+  const cards = [
+    {
+      label: "Total Estimates",
+      value: stats.total,
+      icon: FileText,
+      borderClass: "border-l-accent",
+      iconClass: "text-accent",
+    },
+    {
+      label: "In Progress",
+      value: stats.inProgress,
+      icon: Loader2,
+      borderClass: "border-l-blue",
+      iconClass: "text-blue",
+    },
+    {
+      label: "Ready for Review",
+      value: stats.review,
+      icon: ClipboardCheck,
+      borderClass: "border-l-warning",
+      iconClass: "text-warning",
+    },
+    {
+      label: "Approved",
+      value: stats.approved,
+      icon: CheckCircle2,
+      borderClass: "border-l-success",
+      iconClass: "text-success",
+    },
+  ];
+
+  return (
+    <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {cards.map((c) => {
+        const Icon = c.icon;
+        return (
+          <div
+            key={c.label}
+            className={cn(
+              "rounded-card border border-[var(--border)] border-l-4 bg-bg-card p-5",
+              c.borderClass
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-text-secondary">{c.label}</span>
+              <Icon className={cn("h-4 w-4", c.iconClass)} />
+            </div>
+            {loading ? (
+              <div className="mt-3 h-9 w-16 skeleton" />
+            ) : (
+              <p className="mt-3 font-mono text-3xl font-semibold text-text-primary">
+                {c.value}
               </p>
-
-              <div className="mt-2 flex items-center gap-1 text-xs">
-                {m.trendDirection === "up" && (
-                  <ArrowUpRight className="h-3.5 w-3.5 text-success" />
-                )}
-                {m.trendDirection === "down" && (
-                  <ArrowDownRight className="h-3.5 w-3.5 text-destructive" />
-                )}
-                <span
-                  className={cn(
-                    m.trendDirection === "up" && "text-success",
-                    m.trendDirection === "down" && "text-destructive",
-                    m.trendDirection === "neutral" && "text-text-secondary"
-                  )}
-                >
-                  {m.trend}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </section>
-
-      {/* ---- Two-column layout ---- */}
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Left: Recent Activity (spans 2 cols) */}
-        <div className="lg:col-span-2 rounded-card border border-[var(--border)] bg-bg-card p-5">
-          <h2 className="mb-4 text-base font-semibold text-text-primary">
-            Recent Activity
-          </h2>
-
-          <ul className="divide-y divide-[var(--border)]">
-            {recentActivity.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"
-              >
-                {/* Status dot */}
-                <span
-                  className={cn(
-                    "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-                    statusDotColor[item.status]
-                  )}
-                />
-
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-text-primary">{item.message}</p>
-                  <p className="mt-0.5 text-xs text-text-tertiary">
-                    {item.timestamp}
-                  </p>
-                </div>
-
-                {/* Status icon */}
-                {item.status === "completed" && (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-                )}
-                {item.status === "pending" && (
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
-                )}
-                {item.status === "failed" && (
-                  <XCircle className="h-4 w-4 shrink-0 text-destructive" />
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Right column */}
-        <div className="flex flex-col gap-6">
-          {/* Quick Actions */}
-          <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
-            <h2 className="mb-4 text-base font-semibold text-text-primary">
-              Quick Actions
-            </h2>
-
-            <div className="flex flex-col gap-3">
-              <Link
-                href="/estimate/new"
-                className="flex items-center justify-center gap-2 rounded-button bg-accent px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-accent-hover"
-              >
-                <Plus className="h-4 w-4" />
-                New Estimate
-              </Link>
-
-              <button
-                type="button"
-                className="flex items-center justify-center gap-2 rounded-button border border-[var(--border)] bg-transparent px-4 py-2.5 text-sm font-medium text-text-primary transition hover:border-border-hover hover:bg-bg-elevated"
-              >
-                <Layers className="h-4 w-4" />
-                Resume Draft
-              </button>
-
-              <Link
-                href="/catalog"
-                className="flex items-center justify-center gap-2 rounded-button border border-[var(--border)] bg-transparent px-4 py-2.5 text-sm font-medium text-text-primary transition hover:border-border-hover hover:bg-bg-elevated"
-              >
-                <BookOpen className="h-4 w-4" />
-                Browse Catalog
-              </Link>
-            </div>
+            )}
           </div>
-
-          {/* Queue Status */}
-          <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
-            <h2 className="mb-4 text-base font-semibold text-text-primary">
-              Queue Status
-            </h2>
-
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="h-2 w-2 rounded-full bg-warning" />
-                <span className="text-sm text-text-secondary">
-                  <span className="font-medium text-text-primary">
-                    {queueStatus.pending}
-                  </span>{" "}
-                  pending
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                <span className="h-2 w-2 rounded-full bg-blue" />
-                <span className="text-sm text-text-secondary">
-                  <span className="font-medium text-text-primary">
-                    {queueStatus.processing}
-                  </span>{" "}
-                  processing
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                <span className="h-2 w-2 rounded-full bg-destructive" />
-                <span className="text-sm text-text-secondary">
-                  <span className="font-medium text-text-primary">
-                    {queueStatus.failed}
-                  </span>{" "}
-                  failed
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ---- Charts row ---- */}
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Cost breakdown donut */}
-        <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
-          <h2 className="mb-4 text-sm font-semibold text-text-primary">
-            Cost Breakdown
-          </h2>
-          <CostDonut product={68} service={18} subscription={14} />
-          <div className="mt-4 space-y-2">
-            <LegendRow color="bg-accent" label="Product" value="$186,400" pct="68%" />
-            <LegendRow color="bg-blue" label="Service" value="$49,300" pct="18%" />
-            <LegendRow color="bg-warning" label="Subscription" value="$38,400" pct="14%" />
-          </div>
-        </div>
-
-        {/* Estimates by status */}
-        <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
-          <h2 className="mb-4 text-sm font-semibold text-text-primary">
-            Estimates by Status
-          </h2>
-          <div className="space-y-3">
-            <StatusBar label="Approved" count={14} total={24} color="bg-success" />
-            <StatusBar label="In Review" count={5} total={24} color="bg-blue" />
-            <StatusBar label="Pending" count={3} total={24} color="bg-warning" />
-            <StatusBar label="Failed" count={2} total={24} color="bg-destructive" />
-          </div>
-        </div>
-
-        {/* Domain distribution */}
-        <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
-          <h2 className="mb-4 text-sm font-semibold text-text-primary">
-            Domain Distribution
-          </h2>
-          <div className="space-y-3">
-            <StatusBar label="Access Switching" count={16} total={24} color="bg-accent" />
-            <StatusBar label="Wireless" count={6} total={24} color="bg-blue" />
-            <StatusBar label="Mixed" count={2} total={24} color="bg-warning" />
-          </div>
-          <div className="mt-4 border-t border-[var(--border)] pt-3">
-            <h3 className="text-xs font-medium text-text-tertiary">Top Validation Flags</h3>
-            <div className="mt-2 space-y-1.5">
-              <FlagRow label="Missing SmartNet" count={8} />
-              <FlagRow label="PoE Budget Warning" count={5} />
-              <FlagRow label="Stacking Incomplete" count={3} />
-              <FlagRow label="EoX Detected" count={2} />
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
+        );
+      })}
+    </section>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  Chart sub-components                                               */
+/*  Recent estimates table                                             */
 /* ------------------------------------------------------------------ */
 
-function CostDonut({ product, service, subscription }: { product: number; service: number; subscription: number }) {
-  // SVG donut chart
-  const total = product + service + subscription;
-  const r = 50;
-  const c = 2 * Math.PI * r;
-  const pPct = product / total;
-  const sPct = service / total;
-
+function RecentEstimates({
+  loading,
+  rows,
+}: {
+  loading: boolean;
+  rows: EstimateRow[];
+}) {
   return (
-    <div className="flex justify-center">
-      <svg width="140" height="140" viewBox="0 0 140 140">
-        <circle cx="70" cy="70" r={r} fill="none" stroke="#E2E4EB" strokeWidth="14" />
-        {/* Product segment */}
-        <circle cx="70" cy="70" r={r} fill="none" stroke="#01BFFD" strokeWidth="14"
-          strokeDasharray={`${c * pPct} ${c * (1 - pPct)}`}
-          strokeDashoffset={c * 0.25} strokeLinecap="round" />
-        {/* Service segment */}
-        <circle cx="70" cy="70" r={r} fill="none" stroke="#2980F9" strokeWidth="14"
-          strokeDasharray={`${c * sPct} ${c * (1 - sPct)}`}
-          strokeDashoffset={c * 0.25 - c * pPct} strokeLinecap="round" />
-        {/* Center text */}
-        <text x="70" y="66" textAnchor="middle" className="fill-text-primary text-lg font-semibold" fontSize="18">
-          $274K
-        </text>
-        <text x="70" y="82" textAnchor="middle" className="fill-text-tertiary" fontSize="10">
-          This month
-        </text>
-      </svg>
+    <section className="mb-8 rounded-card border border-[var(--border)] bg-bg-card">
+      <header className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
+        <h2 className="text-base font-semibold text-text-primary">
+          Recent Estimates
+        </h2>
+        <Link
+          href="/estimates"
+          className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+        >
+          View all <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </header>
+
+      {loading ? (
+        <TableSkeleton rows={5} />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[var(--border)] text-left text-xs uppercase tracking-wider text-text-secondary">
+                <th className="px-5 py-3 font-medium">Estimate</th>
+                <th className="px-5 py-3 font-medium">Customer</th>
+                <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 font-medium">Pipeline</th>
+                <th className="px-5 py-3 font-medium">Created</th>
+                <th className="px-5 py-3 text-right font-medium">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border)]">
+              {rows.map((r) => (
+                <tr key={r.id} className="transition-colors hover:bg-bg-elevated">
+                  <td className="whitespace-nowrap px-5 py-3">
+                    <Link
+                      href={`/estimates/${r.id}`}
+                      className="font-mono text-sm font-medium text-accent hover:underline"
+                    >
+                      {r.estimateId}
+                    </Link>
+                  </td>
+                  <td className="whitespace-nowrap px-5 py-3 text-text-primary">
+                    {r.customer}
+                  </td>
+                  <td className="whitespace-nowrap px-5 py-3">
+                    <StatusBadge status={r.status} />
+                  </td>
+                  <td className="px-5 py-3">
+                    <PipelineIndicator progress={pipelineProgress(r.status)} />
+                  </td>
+                  <td className="whitespace-nowrap px-5 py-3 text-text-secondary">
+                    {new Date(r.created).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </td>
+                  <td className="whitespace-nowrap px-5 py-3 text-right font-mono text-text-primary">
+                    {currencyFmt.format(r.totalPrice)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const stage = lifecycleStage(status);
+  const cls =
+    stage === "approved"
+      ? "bg-success-muted text-success"
+      : stage === "ready_for_review"
+      ? "bg-warning-muted text-warning"
+      : stage === "failed"
+      ? "bg-destructive-muted text-destructive"
+      : "bg-blue-muted text-blue";
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
+        cls
+      )}
+    >
+      {statusLabel(status)}
+    </span>
+  );
+}
+
+function PipelineIndicator({ progress }: { progress: PipelineProgress }) {
+  const steps: Array<{ key: "E1" | "E2" | "E3"; state: PipelineProgress["e1"] }> = [
+    { key: "E1", state: progress.e1 },
+    { key: "E2", state: progress.e2 },
+    { key: "E3", state: progress.e3 },
+  ];
+  return (
+    <div className="flex items-center gap-1.5">
+      {steps.map((s, idx) => (
+        <div key={s.key} className="flex items-center gap-1.5">
+          <Dot state={s.state} label={s.key} />
+          {idx < steps.length - 1 && (
+            <span
+              className={cn(
+                "h-px w-4",
+                s.state === "done" ? "bg-success" : "bg-[var(--border)]"
+              )}
+            />
+          )}
+        </div>
+      ))}
     </div>
   );
 }
 
-function LegendRow({ color, label, value, pct }: { color: string; label: string; value: string; pct: string }) {
+function Dot({
+  state,
+  label,
+}: {
+  state: PipelineProgress["e1"];
+  label: string;
+}) {
+  const cls =
+    state === "done"
+      ? "bg-success text-white"
+      : state === "running"
+      ? "bg-accent text-white animate-pulse"
+      : state === "failed"
+      ? "bg-destructive text-white"
+      : "bg-[var(--bg-elevated)] text-text-tertiary border border-[var(--border)]";
   return (
-    <div className="flex items-center justify-between text-xs">
-      <div className="flex items-center gap-2">
-        <span className={cn("h-2.5 w-2.5 rounded-full", color)} />
-        <span className="text-text-secondary">{label}</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-text-primary">{value}</span>
-        <span className="text-text-tertiary">{pct}</span>
-      </div>
-    </div>
+    <span
+      className={cn(
+        "inline-flex h-5 w-5 items-center justify-center rounded-full font-mono text-[10px] font-medium",
+        cls
+      )}
+      title={`${label}: ${state}`}
+    >
+      {label.slice(1)}
+    </span>
   );
 }
 
-function StatusBar({ label, count, total, color }: { label: string; count: number; total: number; color: string }) {
-  const pct = Math.round((count / total) * 100);
+/* ------------------------------------------------------------------ */
+/*  Activity feed                                                      */
+/* ------------------------------------------------------------------ */
+
+function ActivityFeed({
+  loading,
+  entries,
+}: {
+  loading: boolean;
+  entries: ActivityEntry[];
+}) {
   return (
-    <div>
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-text-secondary">{label}</span>
-        <span className="text-text-primary font-medium">{count}</span>
-      </div>
-      <div className="mt-1 h-1.5 rounded-full bg-[var(--border)]">
-        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
+    <section className="rounded-card border border-[var(--border)] bg-bg-card">
+      <header className="border-b border-[var(--border)] px-5 py-4">
+        <h2 className="text-base font-semibold text-text-primary">
+          Pipeline Activity
+        </h2>
+      </header>
+
+      {loading ? (
+        <div className="space-y-3 p-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-12 skeleton" />
+          ))}
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="px-5 py-10 text-center text-sm text-text-tertiary">
+          No pipeline activity yet.
+        </div>
+      ) : (
+        <ul className="divide-y divide-[var(--border)]">
+          {entries.map((e) => (
+            <li
+              key={e.id}
+              className="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-bg-elevated"
+            >
+              <ActivityIcon state={e.state} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-text-primary">
+                  <span className="font-mono text-xs text-text-secondary">
+                    {e.engine}
+                  </span>{" "}
+                  <span className="text-text-secondary">·</span>{" "}
+                  <span className="font-medium">{e.engineLabel}</span>{" "}
+                  <span className="text-text-secondary">
+                    {labelForState(e.state)}
+                  </span>
+                </p>
+                <p className="mt-0.5 text-xs text-text-tertiary">
+                  <Link
+                    href={`/estimates/${e.estimateLinkId}`}
+                    className="font-mono text-accent hover:underline"
+                  >
+                    {e.estimateId}
+                  </Link>{" "}
+                  · {e.customer}
+                </p>
+              </div>
+              <span className="shrink-0 text-xs text-text-tertiary">
+                {relativeTime(e.timestamp)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
-function FlagRow({ label, count }: { label: string; count: number }) {
+function ActivityIcon({ state }: { state: ActivityEntry["state"] }) {
+  if (state === "completed")
+    return <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />;
+  if (state === "running")
+    return <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />;
+  if (state === "awaiting_review")
+    return <Hourglass className="h-4 w-4 shrink-0 text-warning" />;
+  if (state === "failed")
+    return <XCircle className="h-4 w-4 shrink-0 text-destructive" />;
+  return <AlertTriangle className="h-4 w-4 shrink-0 text-text-tertiary" />;
+}
+
+function labelForState(state: ActivityEntry["state"]): string {
+  switch (state) {
+    case "completed":
+      return "completed";
+    case "running":
+      return "running";
+    case "awaiting_review":
+      return "awaiting review";
+    case "failed":
+      return "failed";
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Empty + skeleton                                                   */
+/* ------------------------------------------------------------------ */
+
+function EmptyState() {
   return (
-    <div className="flex items-center justify-between text-xs">
-      <span className="text-text-secondary">{label}</span>
-      <span className="rounded-full bg-[var(--border)] px-2 py-0.5 font-mono text-text-tertiary">{count}</span>
+    <section className="rounded-card border border-dashed border-[var(--border)] bg-bg-card px-6 py-16 text-center">
+      <FileText className="mx-auto h-10 w-10 text-text-tertiary" />
+      <h2 className="mt-4 text-base font-semibold text-text-primary">
+        No estimates yet
+      </h2>
+      <p className="mt-1 text-sm text-text-secondary">
+        Kick off the pipeline by uploading an RFP or RFI.
+      </p>
+      <Link
+        href="/estimate/new"
+        className="mt-5 inline-flex items-center gap-2 rounded-button bg-accent px-4 py-2 text-sm font-medium text-text-primary transition hover:bg-accent-hover"
+      >
+        <Plus className="h-4 w-4" />
+        Create your first estimate
+      </Link>
+    </section>
+  );
+}
+
+function TableSkeleton({ rows }: { rows: number }) {
+  return (
+    <div className="space-y-2 p-5">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="h-10 skeleton" />
+      ))}
     </div>
   );
 }
