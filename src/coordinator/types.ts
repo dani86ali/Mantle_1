@@ -78,6 +78,7 @@ export interface EngineCall {
 export interface PipelineState {
   id: string;
   opportunityId: string;
+  intakeId?: string;
   mode: IntakeMode;
   currentEngine: EngineId;
   artifacts: ArtifactRegistry;
