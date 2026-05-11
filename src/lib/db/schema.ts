@@ -268,6 +268,31 @@ export const onboardingEvents = pgTable("onboarding_events", {
     .defaultNow(),
 });
 
+// ─── Pipeline Runs (Phase 3 — coordinator state + engine artifacts) ─────
+
+export const pipelineRuns = pgTable(
+  "pipeline_runs",
+  {
+    id: uuid("id").primaryKey(),
+    opportunityId: varchar("opportunity_id", { length: 255 }).notNull(),
+    intakeId: uuid("intake_id").unique(),
+    state: jsonb("state"),
+    e1Artifacts: jsonb("e1_artifacts"),
+    e2Artifacts: jsonb("e2_artifacts"),
+    status: varchar("status", { length: 30 }).notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_pipeline_runs_opportunity").on(table.opportunityId),
+    index("idx_pipeline_runs_intake").on(table.intakeId),
+  ]
+);
+
 // ─── RAG Chunks (Phase 2 — schema prepared) ──────────────────────────────
 
 export const ragChunks = pgTable("rag_chunks", {
