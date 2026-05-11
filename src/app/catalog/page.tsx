@@ -223,7 +223,7 @@ export default function CatalogPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="border-b border-[#1e1e2a] px-6 py-5">
+      <div className="border-b border-[var(--border)] px-6 py-5">
         <h1 className="text-2xl font-semibold text-text-primary">Catalog</h1>
         <p className="mt-1 text-sm text-text-secondary">
           Browse Cisco product catalog{" "}
@@ -234,7 +234,7 @@ export default function CatalogPage() {
       </div>
 
       {/* Search bar */}
-      <div className="border-b border-[#1e1e2a] px-6 py-4">
+      <div className="border-b border-[var(--border)] px-6 py-4">
         <div className="relative max-w-2xl">
           <Search
             size={18}
@@ -248,7 +248,7 @@ export default function CatalogPage() {
               setVisibleCount(PAGE_SIZE);
             }}
             placeholder="Search by SKU or description..."
-            className="w-full rounded-input border border-[#1e1e2a] bg-bg-card py-2.5 pl-10 pr-10 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            className="w-full rounded-input border border-[var(--border)] bg-bg-card py-2.5 pl-10 pr-10 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
           {query && (
             <button
@@ -267,7 +267,7 @@ export default function CatalogPage() {
       {/* Body: sidebar + results */}
       <div className="flex flex-1 overflow-hidden">
         {/* Filter sidebar */}
-        <aside className="w-[200px] shrink-0 overflow-y-auto border-r border-[#1e1e2a] px-4 py-4">
+        <aside className="w-[200px] shrink-0 overflow-y-auto border-r border-[var(--border)] px-4 py-4">
           <div className="mb-4 flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-text-secondary">
               <Filter size={12} />
@@ -340,7 +340,7 @@ export default function CatalogPage() {
         {/* Results */}
         <div className="flex-1 overflow-y-auto">
           {/* Result count */}
-          <div className="border-b border-[#1e1e2a] px-6 py-3">
+          <div className="border-b border-[var(--border)] px-6 py-3">
             <p className="text-xs text-text-secondary">
               Showing{" "}
               <span className="font-medium text-text-primary">
@@ -357,7 +357,7 @@ export default function CatalogPage() {
           {/* Table */}
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[#1e1e2a] text-left text-xs font-medium uppercase tracking-wider text-text-tertiary">
+              <tr className="border-b border-[var(--border)] text-left text-xs font-medium uppercase tracking-wider text-text-tertiary">
                 <th className="px-6 py-3">SKU</th>
                 <th className="px-4 py-3">Description</th>
                 <th className="px-4 py-3">Category</th>
@@ -393,10 +393,10 @@ export default function CatalogPage() {
 
           {/* Load more */}
           {hasMore && (
-            <div className="flex justify-center border-t border-[#1e1e2a] py-4">
+            <div className="flex justify-center border-t border-[var(--border)] py-4">
               <button
                 onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
-                className="rounded-button border border-[#1e1e2a] bg-bg-card px-5 py-2 text-sm font-medium text-text-primary hover:border-accent hover:text-accent"
+                className="rounded-button border border-[var(--border)] bg-bg-card px-5 py-2 text-sm font-medium text-text-primary hover:border-accent hover:text-accent"
               >
                 Load more ({filtered.length - visibleCount} remaining)
               </button>
@@ -444,7 +444,7 @@ function Checkbox({
         type="checkbox"
         checked={checked}
         onChange={onChange}
-        className="h-3.5 w-3.5 rounded-sm border-[#1e1e2a] bg-bg-card accent-accent"
+        className="h-3.5 w-3.5 rounded-sm border-[var(--border)] bg-bg-card accent-accent"
       />
       {label}
     </label>
@@ -468,8 +468,8 @@ function ItemRow({
       <tr
         onClick={onToggle}
         className={cn(
-          "cursor-pointer border-b border-[#1e1e2a] transition-colors",
-          isExpanded ? "bg-[#1a1a22]" : "hover:bg-[#1a1a22]"
+          "cursor-pointer border-b border-[var(--border)] transition-colors",
+          isExpanded ? "bg-[var(--bg-elevated)]" : "hover:bg-[var(--bg-elevated)]"
         )}
       >
         <td className="px-6 py-3 font-mono text-sm font-medium text-text-primary">
@@ -510,7 +510,7 @@ function ItemRow({
 
       {/* Expanded detail panel */}
       {isExpanded && (
-        <tr className="border-b border-[#1e1e2a] bg-[#12121a]">
+        <tr className="border-b border-[var(--border)] bg-[var(--bg-card)]">
           <td colSpan={7} className="px-6 py-4">
             <div className="grid grid-cols-3 gap-6">
               {/* Specs */}

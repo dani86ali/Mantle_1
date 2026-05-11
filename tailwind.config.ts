@@ -9,39 +9,43 @@ const config: Config = {
     extend: {
       colors: {
         bg: {
-          primary: "#0a0a0f",
-          card: "#141419",
-          elevated: "#1a1a22",
+          primary: "#FFFFFF",
+          card: "#F8F9FC",
+          elevated: "#F0F2F7",
         },
         border: {
-          DEFAULT: "#1e1e2a",
-          hover: "#2a2a3a",
+          DEFAULT: "#E2E4EB",
+          hover: "#C8CCd6",
         },
         accent: {
-          DEFAULT: "#00d4aa",
-          hover: "#00e6b8",
-          muted: "rgba(0, 212, 170, 0.1)",
+          DEFAULT: "#01BFFD",
+          hover: "#01D0FE",
+          muted: "rgba(1, 191, 253, 0.1)",
         },
         blue: {
-          DEFAULT: "#3b82f6",
-          muted: "rgba(59, 130, 246, 0.1)",
+          DEFAULT: "#2980F9",
+          muted: "rgba(41, 128, 249, 0.1)",
         },
         destructive: {
           DEFAULT: "#ef4444",
-          muted: "rgba(239, 68, 68, 0.1)",
+          muted: "rgba(239, 68, 68, 0.06)",
         },
         warning: {
           DEFAULT: "#f59e0b",
-          muted: "rgba(245, 158, 11, 0.1)",
+          muted: "rgba(245, 158, 11, 0.06)",
         },
         success: {
           DEFAULT: "#10b981",
-          muted: "rgba(16, 185, 129, 0.1)",
+          muted: "rgba(16, 185, 129, 0.06)",
         },
         text: {
-          primary: "#f0f0f5",
-          secondary: "#8888a0",
-          tertiary: "#55556a",
+          primary: "#1A1A2E",
+          secondary: "#5A5A7A",
+          tertiary: "#9A9AB0",
+        },
+        brand: {
+          primary: "#01BFFD",
+          secondary: "#7509FD",
         },
       },
       fontFamily: {

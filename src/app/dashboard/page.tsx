@@ -151,7 +151,7 @@ export default function DashboardPage() {
           return (
             <div
               key={m.label}
-              className="rounded-card border border-[#1e1e2a] bg-bg-card p-5"
+              className="rounded-card border border-[var(--border)] bg-bg-card p-5"
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm text-text-secondary">{m.label}</span>
@@ -187,12 +187,12 @@ export default function DashboardPage() {
       {/* ---- Two-column layout ---- */}
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left: Recent Activity (spans 2 cols) */}
-        <div className="lg:col-span-2 rounded-card border border-[#1e1e2a] bg-bg-card p-5">
+        <div className="lg:col-span-2 rounded-card border border-[var(--border)] bg-bg-card p-5">
           <h2 className="mb-4 text-base font-semibold text-text-primary">
             Recent Activity
           </h2>
 
-          <ul className="divide-y divide-[#1e1e2a]">
+          <ul className="divide-y divide-[var(--border)]">
             {recentActivity.map((item) => (
               <li
                 key={item.id}
@@ -231,7 +231,7 @@ export default function DashboardPage() {
         {/* Right column */}
         <div className="flex flex-col gap-6">
           {/* Quick Actions */}
-          <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-5">
+          <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
             <h2 className="mb-4 text-base font-semibold text-text-primary">
               Quick Actions
             </h2>
@@ -239,7 +239,7 @@ export default function DashboardPage() {
             <div className="flex flex-col gap-3">
               <Link
                 href="/estimate/new"
-                className="flex items-center justify-center gap-2 rounded-button bg-accent px-4 py-2.5 text-sm font-medium text-bg-primary transition hover:bg-accent-hover"
+                className="flex items-center justify-center gap-2 rounded-button bg-accent px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-accent-hover"
               >
                 <Plus className="h-4 w-4" />
                 New Estimate
@@ -247,7 +247,7 @@ export default function DashboardPage() {
 
               <button
                 type="button"
-                className="flex items-center justify-center gap-2 rounded-button border border-[#1e1e2a] bg-transparent px-4 py-2.5 text-sm font-medium text-text-primary transition hover:border-border-hover hover:bg-bg-elevated"
+                className="flex items-center justify-center gap-2 rounded-button border border-[var(--border)] bg-transparent px-4 py-2.5 text-sm font-medium text-text-primary transition hover:border-border-hover hover:bg-bg-elevated"
               >
                 <Layers className="h-4 w-4" />
                 Resume Draft
@@ -255,7 +255,7 @@ export default function DashboardPage() {
 
               <Link
                 href="/catalog"
-                className="flex items-center justify-center gap-2 rounded-button border border-[#1e1e2a] bg-transparent px-4 py-2.5 text-sm font-medium text-text-primary transition hover:border-border-hover hover:bg-bg-elevated"
+                className="flex items-center justify-center gap-2 rounded-button border border-[var(--border)] bg-transparent px-4 py-2.5 text-sm font-medium text-text-primary transition hover:border-border-hover hover:bg-bg-elevated"
               >
                 <BookOpen className="h-4 w-4" />
                 Browse Catalog
@@ -264,7 +264,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Queue Status */}
-          <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-5">
+          <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
             <h2 className="mb-4 text-base font-semibold text-text-primary">
               Queue Status
             </h2>
@@ -307,7 +307,7 @@ export default function DashboardPage() {
       {/* ---- Charts row ---- */}
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Cost breakdown donut */}
-        <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-5">
+        <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
           <h2 className="mb-4 text-sm font-semibold text-text-primary">
             Cost Breakdown
           </h2>
@@ -320,7 +320,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Estimates by status */}
-        <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-5">
+        <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
           <h2 className="mb-4 text-sm font-semibold text-text-primary">
             Estimates by Status
           </h2>
@@ -333,7 +333,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Domain distribution */}
-        <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-5">
+        <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
           <h2 className="mb-4 text-sm font-semibold text-text-primary">
             Domain Distribution
           </h2>
@@ -342,7 +342,7 @@ export default function DashboardPage() {
             <StatusBar label="Wireless" count={6} total={24} color="bg-blue" />
             <StatusBar label="Mixed" count={2} total={24} color="bg-warning" />
           </div>
-          <div className="mt-4 border-t border-[#1e1e2a] pt-3">
+          <div className="mt-4 border-t border-[var(--border)] pt-3">
             <h3 className="text-xs font-medium text-text-tertiary">Top Validation Flags</h3>
             <div className="mt-2 space-y-1.5">
               <FlagRow label="Missing SmartNet" count={8} />
@@ -372,13 +372,13 @@ function CostDonut({ product, service, subscription }: { product: number; servic
   return (
     <div className="flex justify-center">
       <svg width="140" height="140" viewBox="0 0 140 140">
-        <circle cx="70" cy="70" r={r} fill="none" stroke="#1e1e2a" strokeWidth="14" />
+        <circle cx="70" cy="70" r={r} fill="none" stroke="#E2E4EB" strokeWidth="14" />
         {/* Product segment */}
-        <circle cx="70" cy="70" r={r} fill="none" stroke="#00d4aa" strokeWidth="14"
+        <circle cx="70" cy="70" r={r} fill="none" stroke="#01BFFD" strokeWidth="14"
           strokeDasharray={`${c * pPct} ${c * (1 - pPct)}`}
           strokeDashoffset={c * 0.25} strokeLinecap="round" />
         {/* Service segment */}
-        <circle cx="70" cy="70" r={r} fill="none" stroke="#3b82f6" strokeWidth="14"
+        <circle cx="70" cy="70" r={r} fill="none" stroke="#2980F9" strokeWidth="14"
           strokeDasharray={`${c * sPct} ${c * (1 - sPct)}`}
           strokeDashoffset={c * 0.25 - c * pPct} strokeLinecap="round" />
         {/* Center text */}
@@ -416,7 +416,7 @@ function StatusBar({ label, count, total, color }: { label: string; count: numbe
         <span className="text-text-secondary">{label}</span>
         <span className="text-text-primary font-medium">{count}</span>
       </div>
-      <div className="mt-1 h-1.5 rounded-full bg-[#1e1e2a]">
+      <div className="mt-1 h-1.5 rounded-full bg-[var(--border)]">
         <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -427,7 +427,7 @@ function FlagRow({ label, count }: { label: string; count: number }) {
   return (
     <div className="flex items-center justify-between text-xs">
       <span className="text-text-secondary">{label}</span>
-      <span className="rounded-full bg-[#1e1e2a] px-2 py-0.5 font-mono text-text-tertiary">{count}</span>
+      <span className="rounded-full bg-[var(--border)] px-2 py-0.5 font-mono text-text-tertiary">{count}</span>
     </div>
   );
 }

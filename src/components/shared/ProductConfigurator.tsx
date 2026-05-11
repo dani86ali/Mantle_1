@@ -147,9 +147,9 @@ export function ProductConfigurator({
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/60" onClick={onClose} />
-      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-card border border-[#1e1e2a] bg-bg-card shadow-2xl">
+      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-card border border-[var(--border)] bg-bg-card shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#1e1e2a] px-5 py-3">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
           <div>
             <h3 className="text-sm font-semibold text-text-primary">
               Configure {sku}
@@ -158,7 +158,7 @@ export function ProductConfigurator({
           </div>
           <button
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[#1a1a22] hover:text-text-secondary"
+            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[var(--bg-elevated)] hover:text-text-secondary"
           >
             <X size={14} />
           </button>
@@ -171,7 +171,7 @@ export function ProductConfigurator({
               key={i}
               className={cn(
                 "h-1 flex-1 rounded-full transition-colors",
-                i <= step ? "bg-accent" : "bg-[#1e1e2a]"
+                i <= step ? "bg-accent" : "bg-[var(--border)]"
               )}
             />
           ))}
@@ -203,7 +203,7 @@ export function ProductConfigurator({
                         "flex w-full items-center justify-between rounded-button border px-4 py-2.5 text-left text-sm transition-colors",
                         selections[currentOption.id] === opt.value
                           ? "border-accent bg-accent-muted text-accent"
-                          : "border-[#1e1e2a] text-text-secondary hover:border-[#2a2a3a] hover:text-text-primary"
+                          : "border-[var(--border)] text-text-secondary hover:border-[var(--border-hover)] hover:text-text-primary"
                       )}
                     >
                       <span>{opt.label}</span>
@@ -232,7 +232,7 @@ export function ProductConfigurator({
                         "flex-1 rounded-button border px-4 py-2.5 text-sm font-medium transition-colors",
                         selections[currentOption.id] === v
                           ? "border-accent bg-accent-muted text-accent"
-                          : "border-[#1e1e2a] text-text-secondary hover:border-[#2a2a3a]"
+                          : "border-[var(--border)] text-text-secondary hover:border-[var(--border-hover)]"
                       )}
                     >
                       {v === "yes" ? "Yes" : "No"}
@@ -281,7 +281,7 @@ export function ProductConfigurator({
         )}
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-[#1e1e2a] px-5 py-3">
+        <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3">
           <button
             onClick={() => step > 0 && setStep(step - 1)}
             disabled={step === 0}
@@ -291,7 +291,7 @@ export function ProductConfigurator({
           </button>
           <button
             onClick={handleNext}
-            className="flex items-center gap-1.5 rounded-button bg-accent px-4 py-2 text-sm font-medium text-bg-primary hover:bg-accent-hover"
+            className="flex items-center gap-1.5 rounded-button bg-accent px-4 py-2 text-sm font-medium text-text-primary hover:bg-accent-hover"
           >
             {step === config.length - 1 ? "Add to Estimate" : "Next"}
             <ChevronRight size={14} />

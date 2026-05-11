@@ -239,7 +239,7 @@ export default function CustomersPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by company, country, city..."
-              className="w-full rounded-lg border border-[#1e1e2a] bg-bg-card py-2 pl-9 pr-9 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/30"
+              className="w-full rounded-lg border border-[var(--border)] bg-bg-card py-2 pl-9 pr-9 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/30"
             />
             {search && (
               <button
@@ -271,7 +271,7 @@ export default function CustomersPage() {
           ].map((stat) => (
             <div
               key={stat.label}
-              className="rounded-xl border border-[#1e1e2a] bg-bg-card px-4 py-3"
+              className="rounded-xl border border-[var(--border)] bg-bg-card px-4 py-3"
             >
               <p className="text-xs text-text-tertiary">{stat.label}</p>
               <p className="mt-1 text-lg font-semibold text-text-primary">
@@ -283,7 +283,7 @@ export default function CustomersPage() {
 
         {/* ---- Customer Cards ---- */}
         {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-[#1e1e2a] bg-bg-card py-16 text-center">
+          <div className="flex flex-col items-center justify-center rounded-xl border border-[var(--border)] bg-bg-card py-16 text-center">
             <Search size={32} className="mb-3 text-text-tertiary" />
             <p className="text-sm text-text-secondary">
               No customers match &ldquo;{search}&rdquo;
@@ -302,7 +302,7 @@ export default function CustomersPage() {
               return (
                 <div
                   key={customer.id}
-                  className="rounded-xl border border-[#1e1e2a] bg-bg-card transition-colors hover:border-[#2a2a3a]"
+                  className="rounded-xl border border-[var(--border)] bg-bg-card transition-colors hover:border-[var(--border-hover)]"
                 >
                   {/* Card Header — clickable */}
                   <button
@@ -362,7 +362,7 @@ export default function CustomersPage() {
                   </button>
 
                   {/* Mobile stats (shown below company on small screens) */}
-                  <div className="flex items-center gap-4 border-t border-[#1e1e2a] px-5 py-2 sm:hidden">
+                  <div className="flex items-center gap-4 border-t border-[var(--border)] px-5 py-2 sm:hidden">
                     <span className="flex items-center gap-1 text-xs text-text-secondary">
                       <FileText size={12} />
                       {customer.estimateCount} estimates
@@ -379,7 +379,7 @@ export default function CustomersPage() {
 
                   {/* ---- Expanded Detail Panel ---- */}
                   {isExpanded && (
-                    <div className="border-t border-[#1e1e2a] px-5 py-5">
+                    <div className="border-t border-[var(--border)] px-5 py-5">
                       <div className="grid gap-6 lg:grid-cols-3">
                         {/* Company Info */}
                         <div className="lg:col-span-1">
@@ -435,7 +435,7 @@ export default function CustomersPage() {
                               <Link
                                 key={est.id}
                                 href={`/estimates`}
-                                className="group flex items-center justify-between rounded-lg border border-[#1e1e2a] bg-bg-primary px-4 py-3 transition-colors hover:border-[#2a2a3a]"
+                                className="group flex items-center justify-between rounded-lg border border-[var(--border)] bg-bg-primary px-4 py-3 transition-colors hover:border-[var(--border-hover)]"
                               >
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-2">
@@ -476,7 +476,7 @@ export default function CustomersPage() {
                           {/* Create Estimate Button */}
                           <Link
                             href="/estimate/new"
-                            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-bg-primary transition-opacity hover:opacity-90"
+                            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-text-primary transition-opacity hover:opacity-90"
                           >
                             <Plus size={16} />
                             Create Estimate for {customer.company}

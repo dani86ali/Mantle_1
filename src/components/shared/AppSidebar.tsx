@@ -39,14 +39,14 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "flex h-screen flex-col border-r border-[#1e1e2a] bg-bg-card transition-all duration-200",
+        "flex h-screen flex-col border-r border-[var(--border)] bg-bg-card transition-all duration-200",
         collapsed ? "w-16" : "w-56"
       )}
     >
       {/* Logo */}
-      <div className="flex h-14 items-center justify-between border-b border-[#1e1e2a] px-3">
+      <div className="flex h-14 items-center justify-between border-b border-[var(--border)] px-3">
         <Link href="/dashboard" className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-sm font-bold text-bg-primary">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-sm font-bold text-text-primary">
             B
           </div>
           {!collapsed && (
@@ -79,7 +79,7 @@ export function AppSidebar() {
                 "flex items-center gap-3 rounded-button px-3 py-2 text-sm font-medium transition-colors",
                 active
                   ? "bg-accent-muted text-accent"
-                  : "text-text-secondary hover:bg-[#1a1a22] hover:text-text-primary"
+                  : "text-text-secondary hover:bg-[var(--bg-elevated)] hover:text-text-primary"
               )}
             >
               <item.icon size={18} className="shrink-0" />
@@ -87,7 +87,7 @@ export function AppSidebar() {
                 <>
                   <span className="flex-1">{item.label}</span>
                   {item.badge && (
-                    <span className="rounded-full bg-[#1e1e2a] px-1.5 py-0.5 text-[10px] text-text-tertiary">
+                    <span className="rounded-full bg-[var(--border)] px-1.5 py-0.5 text-[10px] text-text-tertiary">
                       {item.badge}
                     </span>
                   )}
@@ -100,7 +100,7 @@ export function AppSidebar() {
 
       {/* Footer */}
       {!collapsed && (
-        <div className="border-t border-[#1e1e2a] px-4 py-3">
+        <div className="border-t border-[var(--border)] px-4 py-3">
           <p className="text-[11px] text-text-tertiary">
             Cisco Presales Automation
           </p>

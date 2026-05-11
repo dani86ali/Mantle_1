@@ -40,7 +40,7 @@ export default function NewEstimatePage() {
   return (
     <div className="flex h-full flex-col">
       {/* Header with mode toggle */}
-      <div className="flex items-center justify-between border-b border-[#1e1e2a] bg-bg-card px-6 py-3">
+      <div className="flex items-center justify-between border-b border-[var(--border)] bg-bg-card px-6 py-3">
         <div>
           <h1 className="text-lg font-semibold text-text-primary">
             New Estimate
@@ -49,7 +49,7 @@ export default function NewEstimatePage() {
             Create a new Cisco presales estimate
           </p>
         </div>
-        <div className="flex rounded-button border border-[#1e1e2a] bg-bg-primary p-0.5">
+        <div className="flex rounded-button border border-[var(--border)] bg-bg-primary p-0.5">
           <button
             onClick={() => setMode("chat")}
             className={cn(
@@ -202,7 +202,7 @@ function ChatMode() {
               <button
                 key={i}
                 onClick={() => setInput(prompt)}
-                className="rounded-card border border-[#1e1e2a] bg-bg-card px-4 py-3 text-left text-xs text-text-secondary transition-colors hover:border-[#2a2a3a] hover:text-text-primary"
+                className="rounded-card border border-[var(--border)] bg-bg-card px-4 py-3 text-left text-xs text-text-secondary transition-colors hover:border-[var(--border-hover)] hover:text-text-primary"
               >
                 {prompt}
               </button>
@@ -237,7 +237,7 @@ function ChatMode() {
           ))}
           {sending && (
             <div className="flex items-start gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-bg-primary">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-text-primary">
                 B
               </div>
               <div className="rounded-card bg-bg-card px-4 py-3">
@@ -284,7 +284,7 @@ function ChatInput({
   onFileSelect: (f: File) => void;
 }) {
   return (
-    <div className="border-t border-[#1e1e2a] bg-bg-card px-6 py-3">
+    <div className="border-t border-[var(--border)] bg-bg-card px-6 py-3">
       <div className="mx-auto max-w-3xl">
         {uploadedFile && (
           <div className="mb-2 flex items-center gap-2 rounded-input bg-bg-primary px-3 py-1.5 text-sm">
@@ -301,7 +301,7 @@ function ChatInput({
         <div className="flex items-end gap-2">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-button border border-[#1e1e2a] text-text-tertiary hover:border-[#2a2a3a] hover:text-text-secondary"
+            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-button border border-[var(--border)] text-text-tertiary hover:border-[var(--border-hover)] hover:text-text-secondary"
           >
             <Paperclip size={16} />
           </button>
@@ -327,14 +327,14 @@ function ChatInput({
               }
             }}
             placeholder="Describe requirements or paste a BoM..."
-            className="max-h-40 min-h-[36px] flex-1 resize-none rounded-button border border-[#1e1e2a] bg-bg-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none"
+            className="max-h-40 min-h-[36px] flex-1 resize-none rounded-button border border-[var(--border)] bg-bg-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none"
             rows={1}
             disabled={sending}
           />
           <button
             onClick={onSend}
             disabled={sending || (!input.trim() && !uploadedFile)}
-            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-button bg-accent text-bg-primary hover:bg-accent-hover disabled:opacity-40"
+            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-button bg-accent text-text-primary hover:bg-accent-hover disabled:opacity-40"
           >
             <Send size={16} />
           </button>
@@ -353,7 +353,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       <div
         className={cn(
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-          isUser ? "bg-blue text-white" : "bg-accent text-bg-primary"
+          isUser ? "bg-blue text-white" : "bg-accent text-text-primary"
         )}
       >
         {isUser ? "You" : "B"}
@@ -389,8 +389,8 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 function InlineBomTable({ lines }: { lines: BomLineData[] }) {
   const total = lines.reduce((s, l) => s + l.unitListPrice * l.quantity, 0);
   return (
-    <div className="rounded-card border border-[#1e1e2a] bg-bg-card">
-      <div className="flex items-center justify-between border-b border-[#1e1e2a] px-4 py-2">
+    <div className="rounded-card border border-[var(--border)] bg-bg-card">
+      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2">
         <span className="text-xs font-medium text-text-secondary">
           Bill of Materials — {lines.length} items
         </span>
@@ -398,7 +398,7 @@ function InlineBomTable({ lines }: { lines: BomLineData[] }) {
       <div className="overflow-x-auto">
         <table className="min-w-full text-xs">
           <thead>
-            <tr className="border-b border-[#1e1e2a] text-left text-text-tertiary">
+            <tr className="border-b border-[var(--border)] text-left text-text-tertiary">
               <th className="px-3 py-2 font-medium">SKU</th>
               <th className="px-3 py-2 font-medium">Description</th>
               <th className="px-3 py-2 text-right font-medium">Qty</th>
@@ -406,7 +406,7 @@ function InlineBomTable({ lines }: { lines: BomLineData[] }) {
               <th className="px-3 py-2 text-right font-medium">Extended</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#1e1e2a]">
+          <tbody className="divide-y divide-[var(--border)]">
             {lines.map((l, i) => (
               <tr key={i} className="hover:bg-bg-elevated">
                 <td className="whitespace-nowrap px-3 py-1.5 font-mono font-medium text-text-primary">
@@ -426,7 +426,7 @@ function InlineBomTable({ lines }: { lines: BomLineData[] }) {
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t border-[#1e1e2a] font-medium">
+            <tr className="border-t border-[var(--border)] font-medium">
               <td colSpan={4} className="px-3 py-2 text-right text-text-secondary">
                 Total:
               </td>
@@ -490,7 +490,7 @@ function FormMode() {
           </p>
           <button
             onClick={() => { setSubmitted(false); setPath(null); }}
-            className="mt-6 rounded-button bg-accent px-4 py-2 text-sm font-medium text-bg-primary hover:bg-accent-hover"
+            className="mt-6 rounded-button bg-accent px-4 py-2 text-sm font-medium text-text-primary hover:bg-accent-hover"
           >
             Submit Another
           </button>
@@ -509,7 +509,7 @@ function FormMode() {
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <button
               onClick={() => setPath("path_a")}
-              className="rounded-card border border-[#1e1e2a] bg-bg-card p-6 text-left transition-colors hover:border-accent"
+              className="rounded-card border border-[var(--border)] bg-bg-card p-6 text-left transition-colors hover:border-accent"
             >
               <Upload size={20} className="text-accent" />
               <h3 className="mt-3 font-medium text-text-primary">I have a BoM</h3>
@@ -519,7 +519,7 @@ function FormMode() {
             </button>
             <button
               onClick={() => setPath("path_b")}
-              className="rounded-card border border-[#1e1e2a] bg-bg-card p-6 text-left transition-colors hover:border-accent"
+              className="rounded-card border border-[var(--border)] bg-bg-card p-6 text-left transition-colors hover:border-accent"
             >
               <FileText size={20} className="text-blue" />
               <h3 className="mt-3 font-medium text-text-primary">I need a configuration</h3>
@@ -615,7 +615,7 @@ function FormMode() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-button bg-accent py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover disabled:opacity-50"
+            className="w-full rounded-button bg-accent py-2.5 text-sm font-medium text-text-primary hover:bg-accent-hover disabled:opacity-50"
           >
             {submitting ? "Submitting..." : "Submit Request"}
           </button>

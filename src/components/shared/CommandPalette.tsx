@@ -248,12 +248,12 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-card border border-[#1e1e2a] bg-bg-card shadow-2xl"
+        className="w-full max-w-lg rounded-card border border-[var(--border)] bg-bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
         {/* Search input */}
-        <div className="flex items-center gap-3 border-b border-[#1e1e2a] px-4 py-3">
+        <div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-3">
           <Search size={16} className="shrink-0 text-text-tertiary" />
           <input
             ref={inputRef}
@@ -266,7 +266,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             placeholder="Type a command or search..."
             className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
           />
-          <kbd className="rounded border border-[#1e1e2a] bg-bg-primary px-1.5 py-0.5 text-[10px] text-text-tertiary">
+          <kbd className="rounded border border-[var(--border)] bg-bg-primary px-1.5 py-0.5 text-[10px] text-text-tertiary">
             Esc
           </kbd>
         </div>
@@ -300,7 +300,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                       "flex w-full items-center gap-3 px-4 py-2 text-sm transition-colors",
                       isActive
                         ? "bg-accent-muted text-accent"
-                        : "text-text-secondary hover:bg-[#1a1a22] hover:text-text-primary"
+                        : "text-text-secondary hover:bg-[var(--bg-elevated)] hover:text-text-primary"
                     )}
                   >
                     <Icon size={16} className="shrink-0" />
@@ -308,7 +308,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                       {item.label}
                     </span>
                     {item.shortcut && (
-                      <kbd className="ml-auto rounded border border-[#1e1e2a] bg-bg-primary px-1.5 py-0.5 text-[10px] text-text-tertiary">
+                      <kbd className="ml-auto rounded border border-[var(--border)] bg-bg-primary px-1.5 py-0.5 text-[10px] text-text-tertiary">
                         {item.shortcut}
                       </kbd>
                     )}
@@ -323,21 +323,21 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         </div>
 
         {/* Footer hint */}
-        <div className="flex items-center gap-4 border-t border-[#1e1e2a] px-4 py-2">
+        <div className="flex items-center gap-4 border-t border-[var(--border)] px-4 py-2">
           <span className="flex items-center gap-1 text-[11px] text-text-tertiary">
-            <kbd className="rounded border border-[#1e1e2a] bg-bg-primary px-1 py-0.5 text-[9px]">
+            <kbd className="rounded border border-[var(--border)] bg-bg-primary px-1 py-0.5 text-[9px]">
               &uarr;&darr;
             </kbd>
             navigate
           </span>
           <span className="flex items-center gap-1 text-[11px] text-text-tertiary">
-            <kbd className="rounded border border-[#1e1e2a] bg-bg-primary px-1 py-0.5 text-[9px]">
+            <kbd className="rounded border border-[var(--border)] bg-bg-primary px-1 py-0.5 text-[9px]">
               &crarr;
             </kbd>
             select
           </span>
           <span className="flex items-center gap-1 text-[11px] text-text-tertiary">
-            <kbd className="rounded border border-[#1e1e2a] bg-bg-primary px-1 py-0.5 text-[9px]">
+            <kbd className="rounded border border-[var(--border)] bg-bg-primary px-1 py-0.5 text-[9px]">
               esc
             </kbd>
             close

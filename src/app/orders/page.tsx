@@ -19,7 +19,7 @@ export default function OrdersPage() {
             className={cn(
               "rounded-button px-4 py-2 text-sm font-medium transition-colors",
               activeTab === tab
-                ? "bg-[#1a1a22] text-text-primary"
+                ? "bg-[var(--bg-elevated)] text-text-primary"
                 : "text-text-secondary hover:text-text-primary"
             )}
           >

@@ -25,7 +25,7 @@ export default function AdminPage() {
   return (
     <div className="flex h-full">
       {/* Tab sidebar */}
-      <div className="w-48 border-r border-[#1e1e2a] bg-bg-card py-4">
+      <div className="w-48 border-r border-[var(--border)] bg-bg-card py-4">
         <h2 className="mb-3 px-4 text-xs font-semibold uppercase tracking-wider text-text-tertiary">
           Administration
         </h2>
@@ -37,7 +37,7 @@ export default function AdminPage() {
               "flex w-full items-center gap-2.5 px-4 py-2 text-sm transition-colors",
               tab === t.id
                 ? "border-r-2 border-accent bg-accent-muted text-accent"
-                : "text-text-secondary hover:bg-[#1a1a22] hover:text-text-primary"
+                : "text-text-secondary hover:bg-[var(--bg-elevated)] hover:text-text-primary"
             )}
           >
             <t.icon size={15} />
@@ -77,20 +77,20 @@ function GeneralTab() {
         <Field label="Locale" value="en-US" type="select" options={["en-US", "en-GB", "ar-SA"]} />
         <Field label="Timezone" value="Asia/Riyadh" />
       </div>
-      <div className="border-t border-[#1e1e2a] pt-4">
+      <div className="border-t border-[var(--border)] pt-4">
         <h4 className="mb-3 text-sm font-medium text-text-secondary">Branding</h4>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Company Name" value="Dimension Data" />
           <div>
             <label className="mb-1.5 block text-sm text-text-secondary">Primary Color</label>
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded border border-[#1e1e2a]" style={{ backgroundColor: "#00d4aa" }} />
-              <span className="font-mono text-sm text-text-secondary">#00d4aa</span>
+              <div className="h-8 w-8 rounded border border-[var(--border)]" style={{ backgroundColor: "#01BFFD" }} />
+              <span className="font-mono text-sm text-text-secondary">#01BFFD</span>
             </div>
           </div>
         </div>
       </div>
-      <button className="rounded-button bg-accent px-4 py-2 text-sm font-medium text-bg-primary hover:bg-accent-hover">
+      <button className="rounded-button bg-accent px-4 py-2 text-sm font-medium text-text-primary hover:bg-accent-hover">
         Save Changes
       </button>
     </div>
@@ -107,21 +107,21 @@ function UsersTab() {
     <div className="max-w-3xl">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-text-primary">Users</h3>
-        <button className="rounded-button bg-accent px-3 py-1.5 text-sm font-medium text-bg-primary">
+        <button className="rounded-button bg-accent px-3 py-1.5 text-sm font-medium text-text-primary">
           Invite User
         </button>
       </div>
-      <div className="mt-4 rounded-card border border-[#1e1e2a]">
+      <div className="mt-4 rounded-card border border-[var(--border)]">
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="border-b border-[#1e1e2a] text-left text-text-tertiary">
+            <tr className="border-b border-[var(--border)] text-left text-text-tertiary">
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Email</th>
               <th className="px-4 py-3 font-medium">Role</th>
               <th className="px-4 py-3 font-medium">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#1e1e2a]">
+          <tbody className="divide-y divide-[var(--border)]">
             {users.map((u) => (
               <tr key={u.email} className="hover:bg-bg-elevated">
                 <td className="px-4 py-3 text-text-primary">{u.name}</td>
@@ -147,7 +147,7 @@ function CredentialsTab() {
   return (
     <div className="max-w-2xl space-y-6">
       <h3 className="text-lg font-semibold text-text-primary">Cisco Credentials</h3>
-      <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-5">
+      <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-text-primary">Connection Status</p>
@@ -165,10 +165,10 @@ function CredentialsTab() {
         <Field label="Client Secret" value="" placeholder="********" type="password" />
       </div>
       <div className="flex gap-3">
-        <button className="rounded-button bg-accent px-4 py-2 text-sm font-medium text-bg-primary">
+        <button className="rounded-button bg-accent px-4 py-2 text-sm font-medium text-text-primary">
           Save Credentials
         </button>
-        <button className="rounded-button border border-[#1e1e2a] px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
+        <button className="rounded-button border border-[var(--border)] px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
           Test Connection
         </button>
       </div>
@@ -203,14 +203,14 @@ function OnboardingTab() {
               "flex items-center gap-3 rounded-card border px-4 py-3",
               step.done ? "border-success/20 bg-success-muted" :
               step.current ? "border-accent/30 bg-accent-muted" :
-              "border-[#1e1e2a] bg-bg-card"
+              "border-[var(--border)] bg-bg-card"
             )}
           >
             <div className={cn(
               "flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold",
               step.done ? "bg-success text-white" :
-              step.current ? "bg-accent text-bg-primary" :
-              "bg-[#2a2a3a] text-text-tertiary"
+              step.current ? "bg-accent text-text-primary" :
+              "bg-[var(--border-hover)] text-text-tertiary"
             )}>
               {step.done ? "✓" : i + 1}
             </div>
@@ -243,7 +243,7 @@ function StandardsTab() {
           </label>
         </div>
       </div>
-      <button className="rounded-button bg-accent px-4 py-2 text-sm font-medium text-bg-primary">
+      <button className="rounded-button bg-accent px-4 py-2 text-sm font-medium text-text-primary">
         Save Standards
       </button>
     </div>
@@ -255,17 +255,17 @@ function UsageTab() {
     <div className="max-w-3xl space-y-6">
       <h3 className="text-lg font-semibold text-text-primary">API Usage</h3>
       <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-4">
+        <div className="rounded-card border border-[var(--border)] bg-bg-card p-4">
           <p className="text-xs text-text-tertiary">Cisco API Calls (Today)</p>
           <p className="mt-1 text-2xl font-semibold text-text-primary">47</p>
           <p className="mt-1 text-xs text-text-tertiary">of ~100 est. limit</p>
         </div>
-        <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-4">
+        <div className="rounded-card border border-[var(--border)] bg-bg-card p-4">
           <p className="text-xs text-text-tertiary">Anthropic Tokens (Today)</p>
           <p className="mt-1 text-2xl font-semibold text-text-primary">23,450</p>
           <p className="mt-1 text-xs text-text-tertiary">of 500K daily budget</p>
         </div>
-        <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-4">
+        <div className="rounded-card border border-[var(--border)] bg-bg-card p-4">
           <p className="text-xs text-text-tertiary">Rate Limit Events</p>
           <p className="mt-1 text-2xl font-semibold text-success">0</p>
           <p className="mt-1 text-xs text-text-tertiary">No 429s today</p>

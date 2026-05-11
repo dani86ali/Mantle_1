@@ -150,9 +150,9 @@ export function NotificationCenter({ open, onClose }: NotificationCenterProps) {
       <div className="fixed inset-0 z-40" onClick={onClose} />
 
       {/* Dropdown panel */}
-      <div className="absolute right-0 top-full z-50 mt-1 w-80 max-h-96 flex flex-col rounded-card border border-[#1e1e2a] bg-bg-card shadow-lg">
+      <div className="absolute right-0 top-full z-50 mt-1 w-80 max-h-96 flex flex-col rounded-card border border-[var(--border)] bg-bg-card shadow-lg">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#1e1e2a] px-4 py-3">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
           <h3 className="text-sm font-semibold text-text-primary">
             Notifications
             {unreadCount > 0 && (
@@ -170,7 +170,7 @@ export function NotificationCenter({ open, onClose }: NotificationCenterProps) {
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-[#1e1e2a] px-4">
+        <div className="flex border-b border-[var(--border)] px-4">
           {tabs.map((tab) => (
             <button
               key={tab.value}
@@ -201,12 +201,12 @@ export function NotificationCenter({ open, onClose }: NotificationCenterProps) {
               <div
                 key={notification.id}
                 className={cn(
-                  "flex items-start gap-3 px-4 py-3 border-b border-[#1e1e2a] last:border-b-0 transition-colors cursor-pointer hover:bg-[#1a1a22]",
+                  "flex items-start gap-3 px-4 py-3 border-b border-[var(--border)] last:border-b-0 transition-colors cursor-pointer hover:bg-[var(--bg-elevated)]",
                   !notification.read && "bg-accent/[0.03]"
                 )}
               >
                 {/* Icon */}
-                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1a1a24]">
+                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--bg-elevated)]">
                   {getNotificationIcon(notification)}
                 </div>
 

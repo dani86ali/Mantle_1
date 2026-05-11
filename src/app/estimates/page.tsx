@@ -198,7 +198,7 @@ function statusColor(status: EstimateStatus) {
     case "Failed":
       return "bg-destructive-muted text-destructive";
     case "Draft":
-      return "bg-[#1e1e2a] text-text-tertiary";
+      return "bg-[var(--border)] text-text-tertiary";
   }
 }
 
@@ -209,7 +209,7 @@ function domainColor(domain: Domain) {
     case "Wireless":
       return "bg-blue-muted text-blue";
     case "Both":
-      return "bg-[#1a1a2e] text-text-secondary";
+      return "bg-[var(--bg-elevated)] text-text-secondary";
   }
 }
 
@@ -308,7 +308,7 @@ export default function EstimatesPage() {
           </div>
           <Link
             href="/estimate/new"
-            className="inline-flex items-center gap-2 rounded-button bg-accent px-4 py-2 text-sm font-medium text-bg-primary transition hover:bg-accent-hover"
+            className="inline-flex items-center gap-2 rounded-button bg-accent px-4 py-2 text-sm font-medium text-text-primary transition hover:bg-accent-hover"
           >
             <Plus className="h-4 w-4" />
             New Estimate
@@ -330,7 +330,7 @@ export default function EstimatesPage() {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              className="w-full rounded-input border border-[#1e1e2a] bg-bg-card py-2 pl-10 pr-3 text-sm text-text-primary placeholder-text-tertiary outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
+              className="w-full rounded-input border border-[var(--border)] bg-bg-card py-2 pl-10 pr-3 text-sm text-text-primary placeholder-text-tertiary outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
             />
           </div>
 
@@ -342,7 +342,7 @@ export default function EstimatesPage() {
                 setStatusFilter(e.target.value as "All" | EstimateStatus);
                 setPage(1);
               }}
-              className="appearance-none rounded-input border border-[#1e1e2a] bg-bg-card py-2 pl-3 pr-9 text-sm text-text-primary outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
+              className="appearance-none rounded-input border border-[var(--border)] bg-bg-card py-2 pl-3 pr-9 text-sm text-text-primary outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
             >
               <option value="All">All Statuses</option>
               {ALL_STATUSES.map((s) => (
@@ -365,7 +365,7 @@ export default function EstimatesPage() {
                   setDateFrom(e.target.value);
                   setPage(1);
                 }}
-                className="rounded-input border border-[#1e1e2a] bg-bg-card py-2 pl-9 pr-3 text-sm text-text-primary outline-none transition focus:border-accent focus:ring-1 focus:ring-accent [color-scheme:dark]"
+                className="rounded-input border border-[var(--border)] bg-bg-card py-2 pl-9 pr-3 text-sm text-text-primary outline-none transition focus:border-accent focus:ring-1 focus:ring-accent [color-scheme:light]"
               />
             </div>
             <span className="text-text-tertiary text-xs">to</span>
@@ -378,7 +378,7 @@ export default function EstimatesPage() {
                   setDateTo(e.target.value);
                   setPage(1);
                 }}
-                className="rounded-input border border-[#1e1e2a] bg-bg-card py-2 pl-9 pr-3 text-sm text-text-primary outline-none transition focus:border-accent focus:ring-1 focus:ring-accent [color-scheme:dark]"
+                className="rounded-input border border-[var(--border)] bg-bg-card py-2 pl-9 pr-3 text-sm text-text-primary outline-none transition focus:border-accent focus:ring-1 focus:ring-accent [color-scheme:light]"
               />
             </div>
           </div>
@@ -391,7 +391,7 @@ export default function EstimatesPage() {
                 setDomainFilter(e.target.value as "All" | Domain);
                 setPage(1);
               }}
-              className="appearance-none rounded-input border border-[#1e1e2a] bg-bg-card py-2 pl-3 pr-9 text-sm text-text-primary outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
+              className="appearance-none rounded-input border border-[var(--border)] bg-bg-card py-2 pl-3 pr-9 text-sm text-text-primary outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
             >
               <option value="All">All Domains</option>
               {ALL_DOMAINS.map((d) => (
@@ -407,7 +407,7 @@ export default function EstimatesPage() {
         {/* ---------------------------------------------------------------- */}
         {/* Data table                                                       */}
         {/* ---------------------------------------------------------------- */}
-        <div className="mt-6 overflow-hidden rounded-card border border-[#1e1e2a] bg-bg-card">
+        <div className="mt-6 overflow-hidden rounded-card border border-[var(--border)] bg-bg-card">
           {pageRows.length === 0 ? (
             /* Empty state */
             <div className="flex flex-col items-center justify-center py-20 text-text-secondary">
@@ -422,7 +422,7 @@ export default function EstimatesPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 border-b border-[#1e1e2a] bg-bg-card">
+                <thead className="sticky top-0 z-10 border-b border-[var(--border)] bg-bg-card">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">
                       Estimate ID
@@ -448,13 +448,13 @@ export default function EstimatesPage() {
                     <th className="w-10 px-4 py-3" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1e1e2a]">
+                <tbody className="divide-y divide-[var(--border)]">
                   {pageRows.map((row, idx) => (
                     <tr
                       key={row.id}
                       className={cn(
-                        "transition-colors hover:bg-[#1a1a22]",
-                        idx % 2 === 1 && "bg-[#13131a]"
+                        "transition-colors hover:bg-[var(--bg-elevated)]",
+                        idx % 2 === 1 && "bg-[var(--bg-card)]"
                       )}
                     >
                       <td className="whitespace-nowrap px-4 py-3">
@@ -519,7 +519,7 @@ export default function EstimatesPage() {
 
           {/* Pagination */}
           {totalFiltered > 0 && (
-            <div className="flex items-center justify-between border-t border-[#1e1e2a] px-4 py-3">
+            <div className="flex items-center justify-between border-t border-[var(--border)] px-4 py-3">
               <p className="text-sm text-text-secondary">
                 Showing{" "}
                 <span className="font-medium text-text-primary">
@@ -534,7 +534,7 @@ export default function EstimatesPage() {
                 <button
                   disabled={safePage <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="inline-flex items-center gap-1 rounded-button border border-[#1e1e2a] bg-bg-card px-3 py-1.5 text-sm text-text-secondary transition hover:border-border-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center gap-1 rounded-button border border-[var(--border)] bg-bg-card px-3 py-1.5 text-sm text-text-secondary transition hover:border-border-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Prev
@@ -542,7 +542,7 @@ export default function EstimatesPage() {
                 <button
                   disabled={safePage >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  className="inline-flex items-center gap-1 rounded-button border border-[#1e1e2a] bg-bg-card px-3 py-1.5 text-sm text-text-secondary transition hover:border-border-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center gap-1 rounded-button border border-[var(--border)] bg-bg-card px-3 py-1.5 text-sm text-text-secondary transition hover:border-border-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Next
                   <ChevronRight className="h-4 w-4" />

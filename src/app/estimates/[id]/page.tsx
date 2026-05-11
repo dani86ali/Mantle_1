@@ -121,7 +121,7 @@ export default function EstimateDetailPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Breadcrumb + header */}
-      <div className="border-b border-[#1e1e2a] bg-bg-card px-6 py-3">
+      <div className="border-b border-[var(--border)] bg-bg-card px-6 py-3">
         <Link href="/estimates" className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-secondary">
           <ChevronLeft size={14} /> Estimates
         </Link>
@@ -141,7 +141,7 @@ export default function EstimateDetailPage() {
           <div className="flex items-center gap-2">
             {ESTIMATE.ccwUrl && (
               <a href={ESTIMATE.ccwUrl} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-button border border-[#1e1e2a] px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary">
+                className="flex items-center gap-1.5 rounded-button border border-[var(--border)] px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary">
                 <ExternalLink size={14} /> Open in CCW
               </a>
             )}
@@ -175,10 +175,10 @@ export default function EstimateDetailPage() {
       <div className="flex-1 overflow-y-auto p-6">
         {tab === "config" && (
           <div>
-            <div className="overflow-x-auto rounded-card border border-[#1e1e2a]">
+            <div className="overflow-x-auto rounded-card border border-[var(--border)]">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="border-b border-[#1e1e2a] bg-bg-card text-left text-xs text-text-tertiary">
+                  <tr className="border-b border-[var(--border)] bg-bg-card text-left text-xs text-text-tertiary">
                     <th className="px-3 py-2.5 font-medium">#</th>
                     <th className="px-3 py-2.5 font-medium">Part Number</th>
                     <th className="px-3 py-2.5 font-medium">SA</th>
@@ -195,7 +195,7 @@ export default function EstimateDetailPage() {
                 </thead>
                 <tbody>
                   {LINES.map((l, i) => (
-                    <tr key={l.ln} className={cn("border-b border-[#1e1e2a] hover:bg-bg-elevated", i % 2 === 1 && "bg-[#12121a]")}>
+                    <tr key={l.ln} className={cn("border-b border-[var(--border)] hover:bg-bg-elevated", i % 2 === 1 && "bg-[var(--bg-card)]")}>
                       <td className="px-3 py-2 text-text-tertiary">{l.ln}</td>
                       <td className="px-3 py-2 font-mono font-medium text-text-primary">{l.sku}</td>
                       <td className="px-3 py-2 text-text-tertiary">{l.sa ? "Yes" : "-"}</td>
@@ -213,18 +213,18 @@ export default function EstimateDetailPage() {
                     </tr>
                   ))}
                 </tbody>
-                <tfoot className="border-t-2 border-[#2a2a3a] bg-bg-card text-sm font-medium">
-                  <tr className="border-b border-[#1e1e2a]">
+                <tfoot className="border-t-2 border-[var(--border-hover)] bg-bg-card text-sm font-medium">
+                  <tr className="border-b border-[var(--border)]">
                     <td colSpan={8} className="px-3 py-2 text-right text-text-secondary">Product Total:</td>
                     <td className="px-3 py-2 text-right font-mono text-text-primary">{fmtUSD(productTotal)}</td>
                     <td colSpan={3} />
                   </tr>
-                  <tr className="border-b border-[#1e1e2a]">
+                  <tr className="border-b border-[var(--border)]">
                     <td colSpan={8} className="px-3 py-2 text-right text-text-secondary">Service Total:</td>
                     <td className="px-3 py-2 text-right font-mono text-text-primary">{fmtUSD(serviceTotal)}</td>
                     <td colSpan={3} />
                   </tr>
-                  <tr className="border-b border-[#1e1e2a]">
+                  <tr className="border-b border-[var(--border)]">
                     <td colSpan={8} className="px-3 py-2 text-right text-text-secondary">Subscription Total:</td>
                     <td className="px-3 py-2 text-right font-mono text-text-primary">{fmtUSD(subscriptionTotal)}</td>
                     <td colSpan={3} />
@@ -250,7 +250,7 @@ export default function EstimateDetailPage() {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {VALIDATION_RULES.map((r) => (
-                <div key={r.id} className="rounded-card border border-[#1e1e2a] bg-bg-card p-4">
+                <div key={r.id} className="rounded-card border border-[var(--border)] bg-bg-card p-4">
                   <div className="flex items-center gap-2">
                     <ValidIcon status={r.status} />
                     <span className="text-sm font-medium text-text-primary">{r.name}</span>
@@ -298,11 +298,11 @@ export default function EstimateDetailPage() {
               <ExportCard icon={<FileText size={18} />} title="PDF Export" desc="Professional formatted document with tenant branding" action="Coming Phase 2" disabled />
             </div>
             {ESTIMATE.ccwUrl && (
-              <div className="mt-6 rounded-card border border-[#1e1e2a] bg-bg-card p-4">
+              <div className="mt-6 rounded-card border border-[var(--border)] bg-bg-card p-4">
                 <p className="text-sm font-medium text-text-primary">CCW Estimate</p>
                 <p className="mt-1 font-mono text-xs text-text-secondary">{ESTIMATE.id}</p>
                 <a href={ESTIMATE.ccwUrl} target="_blank" rel="noopener noreferrer"
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-button bg-accent px-4 py-2 text-sm font-medium text-bg-primary hover:bg-accent-hover">
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-button bg-accent px-4 py-2 text-sm font-medium text-text-primary hover:bg-accent-hover">
                   <ExternalLink size={14} /> Open in CCW
                 </a>
               </div>
@@ -344,7 +344,7 @@ function StatusBadge({ status }: { status: string }) {
     PROCESSING: "bg-accent-muted text-accent",
   };
   return (
-    <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", styles[status] ?? "bg-[#1e1e2a] text-text-tertiary")}>
+    <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", styles[status] ?? "bg-[var(--border)] text-text-tertiary")}>
       {status.replace(/_/g, " ")}
     </span>
   );
@@ -359,7 +359,7 @@ function ValidIcon({ status }: { status: string }) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-card border border-[#1e1e2a] bg-bg-card p-5">
+    <div className="rounded-card border border-[var(--border)] bg-bg-card p-5">
       <h4 className="text-sm font-medium text-text-primary">{title}</h4>
       <div className="mt-3">{children}</div>
     </div>
@@ -370,7 +370,7 @@ function ExportCard({ icon, title, desc, action, href, disabled }: {
   icon: React.ReactNode; title: string; desc: string; action: string; href?: string; disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-card border border-[#1e1e2a] bg-bg-card p-4">
+    <div className="flex items-center justify-between rounded-card border border-[var(--border)] bg-bg-card p-4">
       <div className="flex items-center gap-3">
         <div className="text-text-secondary">{icon}</div>
         <div>
@@ -379,9 +379,9 @@ function ExportCard({ icon, title, desc, action, href, disabled }: {
         </div>
       </div>
       {disabled ? (
-        <span className="rounded-full bg-[#1e1e2a] px-3 py-1 text-xs text-text-tertiary">{action}</span>
+        <span className="rounded-full bg-[var(--border)] px-3 py-1 text-xs text-text-tertiary">{action}</span>
       ) : (
-        <a href={href} className="rounded-button bg-accent px-3 py-1.5 text-xs font-medium text-bg-primary hover:bg-accent-hover">
+        <a href={href} className="rounded-button bg-accent px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-accent-hover">
           {action}
         </a>
       )}

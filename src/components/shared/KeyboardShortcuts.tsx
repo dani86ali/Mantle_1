@@ -48,17 +48,17 @@ export function KeyboardShortcuts({ open, onClose }: KeyboardShortcutsProps) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-card border border-[#1e1e2a] bg-bg-card shadow-2xl"
+        className="w-full max-w-md rounded-card border border-[var(--border)] bg-bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#1e1e2a] px-5 py-4">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
           <h2 className="text-sm font-semibold text-text-primary">
             Keyboard Shortcuts
           </h2>
           <button
             onClick={onClose}
-            className="rounded-button px-2 py-0.5 text-xs text-text-tertiary hover:bg-[#1a1a22] hover:text-text-secondary transition-colors"
+            className="rounded-button px-2 py-0.5 text-xs text-text-tertiary hover:bg-[var(--bg-elevated)] hover:text-text-secondary transition-colors"
           >
             Esc
           </button>
@@ -80,10 +80,10 @@ export function KeyboardShortcuts({ open, onClose }: KeyboardShortcutsProps) {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-[#1e1e2a] px-5 py-3">
+        <div className="border-t border-[var(--border)] px-5 py-3">
           <p className="text-[11px] text-text-tertiary">
             Press{" "}
-            <kbd className="rounded border border-[#1e1e2a] bg-bg-primary px-1 py-0.5 text-[10px] font-mono text-text-tertiary">
+            <kbd className="rounded border border-[var(--border)] bg-bg-primary px-1 py-0.5 text-[10px] font-mono text-text-tertiary">
               ?
             </kbd>{" "}
             anywhere to toggle this panel.
@@ -108,7 +108,7 @@ function Kbd({ keys }: { keys: string }) {
           )}
           <kbd
             className={cn(
-              "inline-flex items-center justify-center rounded border border-[#1e1e2a] bg-bg-primary font-mono text-[11px] text-text-tertiary",
+              "inline-flex items-center justify-center rounded border border-[var(--border)] bg-bg-primary font-mono text-[11px] text-text-tertiary",
               part.length === 1 ? "h-6 w-6" : "h-6 px-1.5"
             )}
           >

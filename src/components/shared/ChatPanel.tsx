@@ -244,7 +244,7 @@ export function ChatWidget() {
     return (
       <button
         onClick={() => { setOpen(true); setMinimized(false); }}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-accent shadow-lg shadow-accent/20 text-bg-primary transition-transform hover:scale-105 active:scale-95"
+        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-accent shadow-lg shadow-accent/20 text-text-primary transition-transform hover:scale-105 active:scale-95"
       >
         <MessageSquare size={22} />
         {messages.length > 0 && (
@@ -260,8 +260,8 @@ export function ChatWidget() {
 
   if (minimized) {
     return (
-      <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full border border-[#1e1e2a] bg-bg-card px-4 py-2 shadow-lg">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-xs font-bold text-bg-primary">
+      <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full border border-[var(--border)] bg-bg-card px-4 py-2 shadow-lg">
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-xs font-bold text-text-primary">
           B
         </div>
         <span className="text-sm font-medium text-text-primary">BOMatic AI</span>
@@ -285,13 +285,13 @@ export function ChatWidget() {
 
   return (
     <div
-      className="fixed bottom-0 right-0 top-0 z-50 flex flex-col border-l border-[#1e1e2a] bg-bg-primary shadow-2xl shadow-black/50 transition-all duration-200"
+      className="fixed bottom-0 right-0 top-0 z-50 flex flex-col border-l border-[var(--border)] bg-bg-primary shadow-2xl shadow-black/50 transition-all duration-200"
       style={{ width: panelWidth }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#1e1e2a] bg-bg-card px-4 py-3">
+      <div className="flex items-center justify-between border-b border-[var(--border)] bg-bg-card px-4 py-3">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-sm font-bold text-bg-primary">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-sm font-bold text-text-primary">
             B
           </div>
           <div>
@@ -303,7 +303,7 @@ export function ChatWidget() {
           {messages.length > 0 && (
             <button
               onClick={clearMessages}
-              className="flex h-7 items-center gap-1 rounded px-1.5 text-[10px] text-text-tertiary hover:bg-[#1a1a22] hover:text-text-secondary"
+              className="flex h-7 items-center gap-1 rounded px-1.5 text-[10px] text-text-tertiary hover:bg-[var(--bg-elevated)] hover:text-text-secondary"
               title="Clear chat"
             >
               Clear
@@ -311,20 +311,20 @@ export function ChatWidget() {
           )}
           <button
             onClick={cycleSize}
-            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[#1a1a22] hover:text-text-secondary"
+            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[var(--bg-elevated)] hover:text-text-secondary"
             title={panelSize === "compact" ? "Expand" : panelSize === "expanded" ? "Full screen" : "Compact"}
           >
             {panelSize === "full" ? <Minus size={14} /> : <ExternalLink size={14} />}
           </button>
           <button
             onClick={() => setMinimized(true)}
-            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[#1a1a22] hover:text-text-secondary"
+            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[var(--bg-elevated)] hover:text-text-secondary"
           >
             <Minus size={14} />
           </button>
           <button
             onClick={() => setOpen(false)}
-            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[#1a1a22] hover:text-text-secondary"
+            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[var(--bg-elevated)] hover:text-text-secondary"
           >
             <X size={14} />
           </button>
@@ -360,7 +360,7 @@ export function ChatWidget() {
 
             {sending && (
               <div className="flex items-start gap-2.5">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-bg-primary">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-text-primary">
                   B
                 </div>
                 <div className="rounded-lg rounded-tl-sm bg-bg-card px-3 py-2">
@@ -385,7 +385,7 @@ export function ChatWidget() {
       </div>
 
       {/* Input area */}
-      <div className="border-t border-[#1e1e2a] bg-bg-card px-3 py-2.5">
+      <div className="border-t border-[var(--border)] bg-bg-card px-3 py-2.5">
         {/* File chip */}
         {uploadedFile && (
           <div className="mb-2 flex items-center gap-2 rounded bg-bg-primary px-2.5 py-1.5 text-xs">
@@ -403,7 +403,7 @@ export function ChatWidget() {
         <div className="flex items-end gap-2">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded text-text-tertiary hover:bg-[#1a1a22] hover:text-text-secondary"
+            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded text-text-tertiary hover:bg-[var(--bg-elevated)] hover:text-text-secondary"
             title="Attach CSV, XLSX, or PDF"
           >
             <Paperclip size={15} />
@@ -426,7 +426,7 @@ export function ChatWidget() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask BOMatic anything..."
-            className="max-h-[120px] min-h-[32px] flex-1 resize-none rounded border border-[#1e1e2a] bg-bg-primary px-3 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none"
+            className="max-h-[120px] min-h-[32px] flex-1 resize-none rounded border border-[var(--border)] bg-bg-primary px-3 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none"
             rows={1}
             disabled={sending}
           />
@@ -434,7 +434,7 @@ export function ChatWidget() {
           <button
             onClick={() => handleSend()}
             disabled={sending || (!input.trim() && !uploadedFile)}
-            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded bg-accent text-bg-primary hover:bg-accent-hover disabled:opacity-30"
+            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded bg-accent text-text-primary hover:bg-accent-hover disabled:opacity-30"
           >
             <Send size={14} />
           </button>
@@ -470,7 +470,7 @@ function EmptyState({ onSelect }: { onSelect: (p: string) => void }) {
           <button
             key={i}
             onClick={() => onSelect(s)}
-            className="w-full rounded-lg border border-[#1e1e2a] bg-bg-card px-3 py-2 text-left text-xs text-text-secondary transition-colors hover:border-[#2a2a3a] hover:text-text-primary"
+            className="w-full rounded-lg border border-[var(--border)] bg-bg-card px-3 py-2 text-left text-xs text-text-secondary transition-colors hover:border-[var(--border-hover)] hover:text-text-primary"
           >
             {s}
           </button>
@@ -492,7 +492,7 @@ function MessageBubble({
   return (
     <div className={cn("flex items-start gap-2.5", isUser && "flex-row-reverse")}>
       {!isUser && (
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-bg-primary">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-text-primary">
           B
         </div>
       )}
@@ -511,7 +511,7 @@ function MessageBubble({
             className={cn(
               "rounded-lg px-3 py-2 text-[13px] leading-relaxed",
               isUser
-                ? "rounded-tr-sm bg-accent text-bg-primary"
+                ? "rounded-tr-sm bg-accent text-text-primary"
                 : "rounded-tl-sm bg-bg-card text-text-primary"
             )}
           >
@@ -535,7 +535,7 @@ function MessageBubble({
               <button
                 key={i}
                 onClick={() => onQuickReply(reply)}
-                className="rounded-full border border-accent/30 bg-accent-muted px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent hover:text-bg-primary"
+                className="rounded-full border border-accent/30 bg-accent-muted px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent hover:text-text-primary"
               >
                 {reply}
               </button>
@@ -587,9 +587,9 @@ function InlineBom({ lines, bomDraftId }: { lines: BomLineData[]; bomDraftId?: s
   }
 
   return (
-    <div className="rounded-lg border border-[#1e1e2a] bg-bg-card">
+    <div className="rounded-lg border border-[var(--border)] bg-bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#1e1e2a] px-3 py-1.5">
+      <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-1.5">
         <span className="text-[11px] font-medium text-text-secondary">
           BoM — {lines.length} items
         </span>
@@ -604,13 +604,13 @@ function InlineBom({ lines, bomDraftId }: { lines: BomLineData[]; bomDraftId?: s
       <div className="max-h-48 overflow-y-auto">
         <table className="min-w-full text-[11px]">
           <thead>
-            <tr className="border-b border-[#1e1e2a] text-text-tertiary">
+            <tr className="border-b border-[var(--border)] text-text-tertiary">
               <th className="px-2 py-1.5 text-left font-medium">SKU</th>
               <th className="px-2 py-1.5 text-right font-medium">Qty</th>
               <th className="px-2 py-1.5 text-right font-medium">Price</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#1e1e2a]/50">
+          <tbody className="divide-y divide-[var(--border)]/50">
             {lines.map((l, i) => (
               <tr key={i} className="hover:bg-bg-elevated">
                 <td className="px-2 py-1 font-mono text-text-primary">{l.sku}</td>
@@ -625,30 +625,30 @@ function InlineBom({ lines, bomDraftId }: { lines: BomLineData[]; bomDraftId?: s
       </div>
 
       {/* Total */}
-      <div className="flex items-center justify-between border-t border-[#1e1e2a] px-3 py-1.5">
+      <div className="flex items-center justify-between border-t border-[var(--border)] px-3 py-1.5">
         <span className="text-[11px] text-text-tertiary">Total</span>
         <span className="font-mono text-xs font-medium text-accent">{fmtUSD(total)}</span>
       </div>
 
       {/* Action buttons */}
-      <div className="flex items-center gap-1.5 border-t border-[#1e1e2a] px-3 py-2">
+      <div className="flex items-center gap-1.5 border-t border-[var(--border)] px-3 py-2">
         {bomDraftId && (
           <a
             href={`/estimates/${bomDraftId}`}
-            className="flex items-center gap-1 rounded bg-accent px-2.5 py-1 text-[11px] font-medium text-bg-primary hover:bg-accent-hover"
+            className="flex items-center gap-1 rounded bg-accent px-2.5 py-1 text-[11px] font-medium text-text-primary hover:bg-accent-hover"
           >
             <ExternalLink size={10} /> Review Console
           </a>
         )}
         <button
           onClick={downloadCsv}
-          className="rounded border border-[#1e1e2a] px-2.5 py-1 text-[11px] text-text-secondary hover:border-[#2a2a3a] hover:text-text-primary"
+          className="rounded border border-[var(--border)] px-2.5 py-1 text-[11px] text-text-secondary hover:border-[var(--border-hover)] hover:text-text-primary"
         >
           CSV
         </button>
         <button
           onClick={downloadXlsx}
-          className="rounded border border-[#1e1e2a] px-2.5 py-1 text-[11px] text-text-secondary hover:border-[#2a2a3a] hover:text-text-primary"
+          className="rounded border border-[var(--border)] px-2.5 py-1 text-[11px] text-text-secondary hover:border-[var(--border-hover)] hover:text-text-primary"
         >
           XLSX
         </button>
@@ -696,7 +696,94 @@ function extractBom(text: string): BomLineData[] | null {
     } catch { /* not JSON */ }
   }
 
-  return null;
+  // ─── Fallback: keyword-triggered markdown table parsing ─────────────
+  // Detect completion signals in the response
+  const TRIGGER_KEYWORDS = [
+    "Estimate Saved",
+    "BoM Submitted",
+    "Total List Price",
+    "CCW Estimate ID",
+    "MOCK-",
+  ];
+  const hasTrigger = TRIGGER_KEYWORDS.some((kw) => text.includes(kw));
+  if (!hasTrigger) return null;
+
+  // Parse all markdown tables that contain SKU-like data
+  // Matches rows like: | C9300L-24UXG-4X-A | Description... | 2 | $5,200.00 | ... |
+  const lines: BomLineData[] = [];
+  const SKU_PATTERN = /^[A-Z][A-Z0-9]+-[A-Z0-9/._-]+$/;
+  const tableRows = text.match(/\|.*\|/g);
+  if (!tableRows) return null;
+
+  for (const row of tableRows) {
+    const cells = row.split("|").map((c) => c.trim()).filter(Boolean);
+    if (cells.length < 3) continue;
+
+    // Find which cell contains a SKU
+    const skuIdx = cells.findIndex((c) => SKU_PATTERN.test(c));
+    if (skuIdx === -1) continue;
+
+    const sku = cells[skuIdx];
+    // Skip header separator rows (---) or header labels
+    if (sku.includes("---") || sku.toLowerCase() === "sku" || sku.toLowerCase() === "part number") continue;
+
+    // Parse quantity — look for a pure integer cell
+    let quantity = 1;
+    let unitListPrice = 0;
+    let description = "";
+    let category: string = "hardware";
+
+    for (let i = 0; i < cells.length; i++) {
+      if (i === skuIdx) continue;
+      const cell = cells[i];
+
+      // Pure integer → quantity
+      if (/^\d+$/.test(cell) && parseInt(cell) > 0 && parseInt(cell) <= 9999) {
+        quantity = parseInt(cell);
+        continue;
+      }
+
+      // Price-like: $1,234.56 or 1234.56
+      const priceMatch = cell.match(/^\$?([\d,]+(?:\.\d{1,2})?)$/);
+      if (priceMatch) {
+        const val = parseFloat(priceMatch[1].replace(/,/g, ""));
+        if (val >= 0) {
+          unitListPrice = val;
+          continue;
+        }
+      }
+
+      // Category keywords
+      const lower = cell.toLowerCase();
+      if (["hardware", "license", "subscription", "service", "accessory", "software"].includes(lower)) {
+        category = lower;
+        continue;
+      }
+
+      // Otherwise treat as description (take the longest text cell)
+      if (cell.length > description.length && !cell.match(/^\d/) && cell.length > 3) {
+        description = cell;
+      }
+    }
+
+    // Avoid duplicates (same SKU already added)
+    const existing = lines.find((l) => l.sku === sku);
+    if (existing) {
+      existing.quantity += quantity;
+    } else {
+      lines.push({
+        sku,
+        description,
+        quantity,
+        unitListPrice,
+        category,
+        serviceDurationMonths: null,
+        leadTimeDays: null,
+      });
+    }
+  }
+
+  return lines.length > 0 ? lines : null;
 }
 
 function extractQuickReplies(text: string): string[] {
