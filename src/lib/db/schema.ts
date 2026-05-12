@@ -279,6 +279,7 @@ export const pipelineRuns = pgTable(
     state: jsonb("state"),
     e1Artifacts: jsonb("e1_artifacts"),
     e2Artifacts: jsonb("e2_artifacts"),
+    e3Artifacts: jsonb("e3_artifacts"),
     status: varchar("status", { length: 30 }).notNull().default("pending"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

@@ -75,7 +75,7 @@ export async function GET(
       );
     }
 
-    const [{ e1, e2 }, pipelineState] = await Promise.all([
+    const [{ e1, e2, e3 }, pipelineState] = await Promise.all([
       loadArtifacts(intakeId),
       loadPipelineStateByIntake(intakeId),
     ]);
@@ -84,6 +84,7 @@ export async function GET(
       estimate,
       e1: e1 ?? null,
       e2: e2 ?? null,
+      e3: e3 ?? null,
       pipeline: pipelineState,
     });
   } catch (err) {

@@ -10,6 +10,7 @@ import {
   savePipelineState,
   saveE1Artifacts,
   saveE2Artifacts,
+  saveE3Artifacts,
 } from "@/lib/db/pipeline-store";
 import type {
   E2Device,
@@ -107,6 +108,7 @@ async function runAndPersistPipeline(
     await savePipelineState(result.state);
     if (result.e1Output) await saveE1Artifacts(intakeId, result.e1Output);
     if (result.e2Output) await saveE2Artifacts(intakeId, result.e2Output);
+    if (result.e3Output) await saveE3Artifacts(intakeId, result.e3Output);
   } catch (err) {
     console.error(`[intake ${intakeId}] pipeline failed:`, err);
   }

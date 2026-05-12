@@ -6,16 +6,22 @@ vi.mock('@/engines/e1/orchestrator', () => ({
 vi.mock('@/engines/e2/orchestrator', () => ({
   runE2: vi.fn(),
 }));
+vi.mock('@/engines/e3/orchestrator', () => ({
+  runE3: vi.fn(),
+}));
 
 import { runE1 } from '@/engines/e1/orchestrator';
 import { runE2 } from '@/engines/e2/orchestrator';
+import { runE3 } from '@/engines/e3/orchestrator';
 import { runPipeline, type PipelineInput } from '@/coordinator/pipeline';
 import type { CheckpointStatus, EngineId, PipelineState } from '@/coordinator/types';
 import type { E1Output } from '@/engines/e1/orchestrator';
 import type { E2Output } from '@/engines/e2/orchestrator';
+import type { E3Output } from '@/engines/e3/orchestrator';
 
 const mockRunE1 = vi.mocked(runE1);
 const mockRunE2 = vi.mocked(runE2);
+const mockRunE3 = vi.mocked(runE3);
 
 function makeE1Output(): E1Output {
   return {
@@ -54,6 +60,20 @@ function makeE2Output(): E2Output {
   };
 }
 
+function makeE3Output(): E3Output {
+  return {
+    sections: [],
+    tiers: { tiers: [], comparison: [] } as unknown as E3Output['tiers'],
+    margin: {
+      totalCost: 100, totalSell: 200, grossMargin: 100, grossMarginPct: 0.5,
+      hardwareMarginPct: 0.5, servicesMarginPct: 0.5, servicesAttachRate: 0.5,
+      approvalLevel: 'presales_lead', requiresStrategicJustification: false, flags: [],
+    },
+    proposalPath: '/tmp/bomatic-e3/x/proposal.docx',
+    financialPath: '/tmp/bomatic-e3/x/financial.xlsx',
+  };
+}
+
 const DEVICES: PipelineInput['devices'] = [
   {
     model: 'C9300L-24UXG-4X-A', qty: 1,
@@ -81,22 +101,26 @@ function baseInput(overrides: Partial<PipelineInput> = {}): PipelineInput {
 beforeEach(() => {
   mockRunE1.mockReset();
   mockRunE2.mockReset();
+  mockRunE3.mockReset();
   mockRunE1.mockResolvedValue(makeE1Output());
   mockRunE2.mockResolvedValue(makeE2Output());
+  mockRunE3.mockResolvedValue(makeE3Output());
 });
 
 describe('runPipeline', () => {
-  it('RFP mode runs e1 then e2 in sequence', async () => {
+  it('RFP mode runs e1, e2, e3 in sequence', async () => {
     const result = await runPipeline(baseInput());
 
     expect(mockRunE1).toHaveBeenCalledTimes(1);
     expect(mockRunE2).toHaveBeenCalledTimes(1);
+    expect(mockRunE3).toHaveBeenCalledTimes(1);
     expect(result.e1Output).toBeDefined();
     expect(result.e2Output).toBeDefined();
+    expect(result.e3Output).toBeDefined();
     expect(result.state.artifacts.e1.sector).toBe('oil_and_gas');
     expect(result.state.artifacts.e2.bomWorkbook).toBeDefined();
-    // e3 stub: no artifacts produced.
-    expect(result.state.artifacts.e3).toEqual({});
+    expect(result.state.artifacts.e3.technicalProposal).toBe('/tmp/bomatic-e3/x/proposal.docx');
+    expect(result.state.artifacts.e3.financialProposal).toBe('/tmp/bomatic-e3/x/financial.xlsx');
   });
 
   it('passes E1 sector into E2 projectContext', async () => {
@@ -154,11 +178,34 @@ describe('runPipeline', () => {
     expect(result.state.checkpoints[0].status).toBe('rejected');
   });
 
-  it('e3 stub logs warning and produces no artifacts', async () => {
-    const result = await runPipeline(baseInput());
-    expect(result.state.artifacts.e3).toEqual({});
-    // engineCalls records the e3 stub invocation.
-    expect(result.state.engineCalls.some((c) => c.engine === 'e3')).toBe(true);
+  it('e3 receives metadata, cost stack, and mapped E1/E2 data', async () => {
+    await runPipeline(baseInput({ clientName: 'Aramco', country: 'SA' }));
+    expect(mockRunE3).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          customerName: 'Aramco',
+          country: 'SA',
+          currency: 'SAR',
+        }),
+        costStack: expect.objectContaining({
+          hardwareCost: expect.any(Number),
+          softwareCost: expect.any(Number),
+        }),
+        e1: expect.objectContaining({ sectorDetection: expect.any(Object) }),
+        e2: expect.objectContaining({ totals: expect.any(Object) }),
+        outputDir: expect.stringContaining('bomatic-e3'),
+      }),
+    );
+  });
+
+  it('cost stack derives from E2 totals using profitPct (margin mode)', async () => {
+    // PRICING: profitMode=margin, profitPct=0.18 → cost = sell * 0.82
+    await runPipeline(baseInput());
+    const args = mockRunE3.mock.calls[0][0];
+    expect(args.costStack.hardwareCost).toBeCloseTo(100 * 0.82);
+    expect(args.costStack.softwareCost).toBeCloseTo(50 * 0.82);
+    expect(args.costStack.servicesCost).toBeCloseTo(25 * 0.82);
+    expect(args.costStack.subscriptionCost).toBeCloseTo(25 * 0.82);
   });
 
   it('engineCalls records each engine in the sequence', async () => {

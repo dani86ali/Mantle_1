@@ -10,6 +10,7 @@ interface Row {
   state: unknown;
   e1Artifacts: unknown;
   e2Artifacts: unknown;
+  e3Artifacts: unknown;
   status: string;
   createdAt: Date;
   updatedAt: Date;
@@ -20,7 +21,7 @@ const { rows, mockDb } = vi.hoisted(() => {
 
   const emptyRow = (): Row => ({
     id: "", opportunityId: "", intakeId: null,
-    state: null, e1Artifacts: null, e2Artifacts: null,
+    state: null, e1Artifacts: null, e2Artifacts: null, e3Artifacts: null,
     status: "pending", createdAt: new Date(), updatedAt: new Date(),
   });
 
@@ -68,6 +69,7 @@ const { rows, mockDb } = vi.hoisted(() => {
                     state: "state",
                     e1_artifacts: "e1Artifacts",
                     e2_artifacts: "e2Artifacts",
+                    e3_artifacts: "e3Artifacts",
                     status: "status",
                     created_at: "createdAt",
                     updated_at: "updatedAt",
@@ -111,11 +113,13 @@ import {
   loadPipelineState,
   saveE1Artifacts,
   saveE2Artifacts,
+  saveE3Artifacts,
   loadArtifacts,
 } from "@/lib/db/pipeline-store";
 import type { PipelineState } from "@/coordinator/types";
 import type { E1Output } from "@/engines/e1/orchestrator";
 import type { E2Output } from "@/engines/e2/orchestrator";
+import type { E3Output } from "@/engines/e3/orchestrator";
 
 function makeState(overrides: Partial<PipelineState> = {}): PipelineState {
   const now = new Date("2026-05-10T10:00:00Z");
@@ -164,6 +168,23 @@ function makeE2Output(): E2Output {
       hardwareTotal: 100, softwareTotal: 50, serviceTotal: 25, subscriptionTotal: 25,
       grandTotalExVat: 200, vatAmount: 30, grandTotalIncVat: 230,
     },
+  };
+}
+
+function makeE3Output(): E3Output {
+  return {
+    sections: [
+      { id: 0, title: "Cover Page", slug: "cover_page", content: "Cover", generationMethod: "deterministic", status: "generated" },
+      { id: 2, title: "Executive Summary", slug: "executive_summary", content: "Summary", generationMethod: "ai", status: "generated" },
+    ],
+    tiers: { tiers: [], comparison: [] } as unknown as E3Output["tiers"],
+    margin: {
+      totalCost: 100, totalSell: 200, grossMargin: 100, grossMarginPct: 0.5,
+      hardwareMarginPct: 0.5, servicesMarginPct: 0.5, servicesAttachRate: 0.5,
+      approvalLevel: "presales_lead", requiresStrategicJustification: false, flags: [],
+    },
+    proposalPath: "/tmp/proposal.docx",
+    financialPath: "/tmp/financial.xlsx",
   };
 }
 
@@ -266,6 +287,32 @@ describe("pipeline-store", () => {
     it("returns empty object for unknown intakeId", async () => {
       const loaded = await loadArtifacts(uuid());
       expect(loaded).toEqual({});
+    });
+
+    it("round-trips E3 output by intakeId", async () => {
+      const intakeId = uuid();
+      const e3 = makeE3Output();
+      await saveE3Artifacts(intakeId, e3);
+
+      const loaded = await loadArtifacts(intakeId);
+      expect(loaded.e3).toBeDefined();
+      expect(loaded.e3!.proposalPath).toBe("/tmp/proposal.docx");
+      expect(loaded.e3!.financialPath).toBe("/tmp/financial.xlsx");
+      expect(loaded.e3!.sections).toHaveLength(2);
+      expect(loaded.e3!.margin.grossMarginPct).toBe(0.5);
+    });
+
+    it("E1 + E2 + E3 saves merge into one row keyed by intakeId", async () => {
+      const intakeId = uuid();
+      await saveE1Artifacts(intakeId, makeE1Output());
+      await saveE2Artifacts(intakeId, makeE2Output());
+      await saveE3Artifacts(intakeId, makeE3Output());
+
+      const loaded = await loadArtifacts(intakeId);
+      expect(loaded.e1).toBeDefined();
+      expect(loaded.e2).toBeDefined();
+      expect(loaded.e3).toBeDefined();
+      expect(loaded.e3!.proposalPath).toBe("/tmp/proposal.docx");
     });
 
     it("re-saving E1 for same intakeId overwrites prior artifact", async () => {

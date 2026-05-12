@@ -5,16 +5,19 @@ import { pipelineRuns } from "./schema";
 import type { PipelineState } from "@/coordinator/types";
 import type { E1Output } from "@/engines/e1/orchestrator";
 import type { E2Output } from "@/engines/e2/orchestrator";
+import type { E3Output } from "@/engines/e3/orchestrator";
 
 export async function savePipelineState(state: PipelineState): Promise<void> {
   const status = state.timestamps.completedAt ? "completed" : "running";
   const now = new Date();
+  const stateJson = state as unknown as Record<string, unknown>;
   await db
     .insert(pipelineRuns)
     .values({
       id: state.id,
       opportunityId: state.opportunityId,
-      state: state as unknown as Record<string, unknown>,
+      intakeId: state.intakeId,
+      state: stateJson,
       status,
       createdAt: state.timestamps.createdAt,
       updatedAt: now,
@@ -23,7 +26,8 @@ export async function savePipelineState(state: PipelineState): Promise<void> {
       target: pipelineRuns.id,
       set: {
         opportunityId: state.opportunityId,
-        state: state as unknown as Record<string, unknown>,
+        intakeId: state.intakeId,
+        state: stateJson,
         status,
         updatedAt: now,
       },
@@ -37,6 +41,18 @@ export async function loadPipelineState(
     .select({ state: pipelineRuns.state })
     .from(pipelineRuns)
     .where(eq(pipelineRuns.id, pipelineId))
+    .limit(1);
+  if (!row || !row.state) return null;
+  return reviveState(row.state as Record<string, unknown>);
+}
+
+export async function loadPipelineStateByIntake(
+  intakeId: string,
+): Promise<PipelineState | null> {
+  const [row] = await db
+    .select({ state: pipelineRuns.state })
+    .from(pipelineRuns)
+    .where(eq(pipelineRuns.intakeId, intakeId))
     .limit(1);
   if (!row || !row.state) return null;
   return reviveState(row.state as Record<string, unknown>);
@@ -56,30 +72,43 @@ export async function saveE2Artifacts(
   await upsertByIntake(intakeId, { e2Artifacts: serialize(e2Output) });
 }
 
+export async function saveE3Artifacts(
+  intakeId: string,
+  e3Output: E3Output,
+): Promise<void> {
+  await upsertByIntake(intakeId, { e3Artifacts: serialize(e3Output) });
+}
+
 export async function loadArtifacts(
   intakeId: string,
-): Promise<{ e1?: E1Output; e2?: E2Output }> {
+): Promise<{ e1?: E1Output; e2?: E2Output; e3?: E3Output }> {
   const [row] = await db
     .select({
       e1Artifacts: pipelineRuns.e1Artifacts,
       e2Artifacts: pipelineRuns.e2Artifacts,
+      e3Artifacts: pipelineRuns.e3Artifacts,
     })
     .from(pipelineRuns)
     .where(eq(pipelineRuns.intakeId, intakeId))
     .limit(1);
   if (!row) return {};
-  const out: { e1?: E1Output; e2?: E2Output } = {};
+  const out: { e1?: E1Output; e2?: E2Output; e3?: E3Output } = {};
   if (row.e1Artifacts) out.e1 = row.e1Artifacts as unknown as E1Output;
   if (row.e2Artifacts) out.e2 = row.e2Artifacts as unknown as E2Output;
+  if (row.e3Artifacts) out.e3 = row.e3Artifacts as unknown as E3Output;
   return out;
 }
 
-// PipelineState carries no intakeId, so artifact rows are independent of
-// state rows: a pipeline that calls savePipelineState AND saveE*Artifacts
-// will produce two pipeline_runs rows. Plumb intakeId into PipelineState to merge.
+// When state.intakeId is set, savePipelineState and saveE*Artifacts merge
+// into one pipeline_runs row keyed by intake_id. When unset (e.g. pure
+// opportunity flows), the rows remain independent.
 async function upsertByIntake(
   intakeId: string,
-  patch: { e1Artifacts?: Record<string, unknown>; e2Artifacts?: Record<string, unknown> },
+  patch: {
+    e1Artifacts?: Record<string, unknown>;
+    e2Artifacts?: Record<string, unknown>;
+    e3Artifacts?: Record<string, unknown>;
+  },
 ): Promise<void> {
   const now = new Date();
   await db
