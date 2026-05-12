@@ -26,6 +26,7 @@
     "bullmq": "^5.30.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "docx": "^9.6.1",
     "drizzle-orm": "^0.38.0",
     "fast-xml-parser": "^4.5.0",
     "ioredis": "^5.4.0",
