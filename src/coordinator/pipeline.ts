@@ -15,6 +15,20 @@ import type {
 const MAX_REVISIONS = 3;
 const STUB_ENGINES: EngineId[] = ['e4', 'e5'];
 
+const ENGINE_CHECKPOINTS: Record<EngineId, { id: string; label: string }[]> = {
+  e1: [
+    { id: 'e1-requirements', label: 'Requirements baseline review' },
+    { id: 'e1-compliance', label: 'Compliance matrix review' },
+  ],
+  e2: [
+    { id: 'e2-sku-confirmation', label: 'SKU confirmation' },
+    { id: 'e2-pricing-review', label: 'Pricing review' },
+  ],
+  e3: [{ id: 'e3-proposal', label: 'Proposal review' }],
+  e4: [],
+  e5: [],
+};
+
 export interface PipelineInput {
   opportunityId: string;
   mode: IntakeMode;
@@ -134,17 +148,27 @@ async function runCheckpoint(
   state: PipelineState, engine: EngineId, revision: number,
   cb: PipelineInput['onCheckpoint'],
 ): Promise<CheckpointStatus> {
-  if (!cb) return 'approved';
-  const decision = await cb(state, engine);
-  const checkpoint: Checkpoint = {
-    id: uuid(), engine, label: `${engine}-review`, status: decision,
-    revisionsUsed: revision, decidedAt: new Date(),
-  };
-  state.checkpoints.push(checkpoint);
-  logEntry({
-    timestamp: checkpoint.decidedAt!, pipelineId: state.id, opportunityId: state.opportunityId,
-    level: 'info', category: 'checkpoint', engine, checkpointId: checkpoint.id, decision,
-  });
+  const defs = ENGINE_CHECKPOINTS[engine];
+  if (defs.length === 0) return 'approved';
+  const decision: CheckpointStatus = cb ? await cb(state, engine) : 'approved';
+  const decidedAt = new Date();
+  for (const def of defs) {
+    const existing = state.checkpoints.find((c) => c.id === def.id);
+    if (existing) {
+      existing.status = decision;
+      existing.revisionsUsed = revision;
+      existing.decidedAt = decidedAt;
+    } else {
+      state.checkpoints.push({
+        id: def.id, engine, label: def.label, status: decision,
+        revisionsUsed: revision, decidedAt,
+      });
+    }
+    logEntry({
+      timestamp: decidedAt, pipelineId: state.id, opportunityId: state.opportunityId,
+      level: 'info', category: 'checkpoint', engine, checkpointId: def.id, decision,
+    });
+  }
   return decision;
 }
 

@@ -139,9 +139,14 @@ describe('runPipeline', () => {
 
     const result = await runPipeline(baseInput({ onCheckpoint }));
 
-    // e1, e2, e3 checkpoints in RFP sequence.
+    // onCheckpoint runs once per engine (e1, e2, e3) in RFP sequence; each
+    // engine creates its own set of checkpoint records.
     expect(onCheckpoint).toHaveBeenCalledTimes(3);
-    expect(result.state.checkpoints.map((c) => c.engine)).toEqual(['e1', 'e2', 'e3']);
+    expect(result.state.checkpoints.map((c) => c.id)).toEqual([
+      'e1-requirements', 'e1-compliance',
+      'e2-sku-confirmation', 'e2-pricing-review',
+      'e3-proposal',
+    ]);
     expect(result.state.checkpoints.every((c) => c.status === 'approved')).toBe(true);
     expect(mockRunE1).toHaveBeenCalledTimes(1);
     expect(mockRunE2).toHaveBeenCalledTimes(1);
@@ -174,8 +179,10 @@ describe('runPipeline', () => {
 
     expect(mockRunE1).toHaveBeenCalledTimes(1);
     expect(mockRunE2).not.toHaveBeenCalled();
-    expect(result.state.checkpoints).toHaveLength(1);
-    expect(result.state.checkpoints[0].status).toBe('rejected');
+    expect(result.state.checkpoints.map((c) => c.id)).toEqual([
+      'e1-requirements', 'e1-compliance',
+    ]);
+    expect(result.state.checkpoints.every((c) => c.status === 'rejected')).toBe(true);
   });
 
   it('e3 receives metadata, cost stack, and mapped E1/E2 data', async () => {
