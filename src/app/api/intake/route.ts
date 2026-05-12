@@ -123,6 +123,7 @@ async function runAndPersistPipeline(
       clientName: req.customerName,
       country: req.country,
       solutionContext: req.keyNeeds,
+      files: req.uploadedFiles?.map((f) => ({ path: f.path })),
     });
     result.state.intakeId = intakeId;
     await savePipelineState(result.state);
@@ -165,6 +166,7 @@ export async function POST(request: NextRequest) {
         constraints: data.constraints,
         pastedText: data.pastedText,
         uploadedBomLines: data.uploadedBomLines,
+        uploadedFiles: data.uploadedFiles,
         pricingConfig: data.pricingConfig,
       },
       status: "PENDING",

@@ -81,6 +81,14 @@ export const intakeFormSchema = z.object({
       })
     )
     .optional(),
+  uploadedFiles: z
+    .array(
+      z.object({
+        filename: z.string(),
+        path: z.string(),
+      })
+    )
+    .optional(),
   pricingConfig: z
     .object({
       fxRate: z.number().positive(),

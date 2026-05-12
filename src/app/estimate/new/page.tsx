@@ -33,10 +33,21 @@ export default function NewEstimatePage() {
     setSubmitting(true);
     setError(null);
     try {
+      let uploadedFiles: { filename: string; path: string }[] | undefined;
+      if (state.mode === "rfp" && state.files.length > 0) {
+        const fd = new FormData();
+        for (const f of state.files) fd.append("files", f);
+        const up = await fetch("/api/upload", { method: "POST", body: fd });
+        const upData = await up.json();
+        if (!up.ok) throw new Error(upData.error ?? "File upload failed");
+        uploadedFiles = (upData.files as { filename: string; path: string }[]).map(
+          (f) => ({ filename: f.filename, path: f.path }),
+        );
+      }
       const res = await fetch("/api/intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildIntakeBody(state)),
+        body: JSON.stringify(buildIntakeBody(state, uploadedFiles)),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to create estimate");
@@ -105,7 +116,10 @@ function canProceed(s: WizardState, step: number): boolean {
   return true;
 }
 
-function buildIntakeBody(s: WizardState) {
+function buildIntakeBody(
+  s: WizardState,
+  uploadedFiles?: { filename: string; path: string }[],
+) {
   const pricingConfig = {
     fxRate: s.fxRate,
     partnerDiscountPct: s.partnerDiscountPct / 100,
@@ -129,8 +143,6 @@ function buildIntakeBody(s: WizardState) {
     vendorPreferences: s.vendorPreferences || undefined,
     pricingConfig,
   };
-  // TODO: file upload deferred — needs multipart endpoint or S3 pre-upload.
-  // Wizard currently gates on file selection but does not transmit file content.
   if (s.mode === "quick_bom") {
     return {
       ...base,
@@ -146,5 +158,6 @@ function buildIntakeBody(s: WizardState) {
     path: "path_b" as const,
     keyNeeds: s.keyNeeds,
     constraints: s.constraints,
+    uploadedFiles,
   };
 }
