@@ -3,6 +3,7 @@ import type { EngineId, IntakeMode, PipelineState } from './types';
 const SEQUENCES: Record<IntakeMode, EngineId[]> = {
   rfp: ['e1', 'e2', 'e3'],
   rfi: ['e4', 'e5', 'e2', 'e3'],
+  quick_bom: ['e2', 'e3'],
 };
 
 export function getEngineSequence(mode: IntakeMode): EngineId[] {

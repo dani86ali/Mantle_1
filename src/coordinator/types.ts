@@ -1,6 +1,6 @@
 /** Coordinator pipeline types — all inter-engine state flows through here */
 
-export type IntakeMode = 'rfp' | 'rfi';
+export type IntakeMode = 'rfp' | 'rfi' | 'quick_bom';
 
 export type EngineId = 'e1' | 'e2' | 'e3' | 'e4' | 'e5';
 
@@ -75,6 +75,16 @@ export interface EngineCall {
   outcome: 'pass' | 'flagged' | 'failed';
 }
 
+export interface PipelineTotalsSnapshot {
+  hardwareTotal: number;
+  softwareTotal: number;
+  serviceTotal: number;
+  subscriptionTotal: number;
+  grandTotalExVat: number;
+  vatAmount: number;
+  grandTotalIncVat: number;
+}
+
 export interface PipelineState {
   id: string;
   opportunityId: string;
@@ -84,6 +94,8 @@ export interface PipelineState {
   artifacts: ArtifactRegistry;
   checkpoints: Checkpoint[];
   engineCalls: EngineCall[];
+  /** Set by re-run flows to power the before/after totals comparison banner. */
+  previousTotals?: PipelineTotalsSnapshot;
   timestamps: {
     createdAt: Date;
     updatedAt: Date;
