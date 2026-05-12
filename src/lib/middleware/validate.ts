@@ -44,12 +44,14 @@ export async function validateBody<T extends z.ZodType>(
 // ─── Zod schemas for intake forms ────────────────────────────────────────
 
 export const intakeFormSchema = z.object({
-  path: z.enum(["path_a", "path_b"]),
+  path: z.enum(["path_a", "path_b"]).optional(),
+  mode: z.enum(["rfp", "quick_bom", "rfi"]).optional(),
   customerName: z.string().min(1).max(500),
   region: z.string().min(1).max(50),
   country: z.string().max(100).optional(),
   domain: z.enum(["access_switching", "wireless", "access_switching_wireless"]),
   keyNeeds: z.string().max(5000).optional(),
+  vendorPreferences: z.string().max(5000).optional(),
   quantities: z
     .array(
       z.object({
@@ -78,6 +80,16 @@ export const intakeFormSchema = z.object({
         unitPrice: z.number().optional(),
       })
     )
+    .optional(),
+  pricingConfig: z
+    .object({
+      fxRate: z.number().positive(),
+      partnerDiscountPct: z.number().min(0).max(1),
+      dealRegDiscountPct: z.number().min(0).max(1),
+      profitMode: z.enum(["margin", "markup"]),
+      profitPct: z.number().min(0).max(1),
+      vatRate: z.number().min(0).max(1),
+    })
     .optional(),
 });
 

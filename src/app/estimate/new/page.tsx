@@ -106,7 +106,16 @@ function canProceed(s: WizardState, step: number): boolean {
 }
 
 function buildIntakeBody(s: WizardState) {
+  const pricingConfig = {
+    fxRate: s.fxRate,
+    partnerDiscountPct: s.partnerDiscountPct / 100,
+    dealRegDiscountPct: s.dealRegDiscountPct / 100,
+    profitMode: s.profitMode,
+    profitPct: s.profitPct / 100,
+    vatRate: s.vatRate / 100,
+  };
   const base = {
+    mode: s.mode ?? "rfp",
     customerName: s.customerName,
     region: s.region,
     country: s.country,
@@ -117,7 +126,11 @@ function buildIntakeBody(s: WizardState) {
     licenseTier: s.licenseTier,
     dnaTier: s.dnaTier,
     supportTerm: s.supportTerm,
+    vendorPreferences: s.vendorPreferences || undefined,
+    pricingConfig,
   };
+  // TODO: file upload deferred — needs multipart endpoint or S3 pre-upload.
+  // Wizard currently gates on file selection but does not transmit file content.
   if (s.mode === "quick_bom") {
     return {
       ...base,

@@ -17,6 +17,7 @@ import type {
   E2DeviceConfig,
   E2PricingConfig,
 } from "@/engines/e2/orchestrator";
+import type { IntakeMode } from "@/coordinator/types";
 
 type IntakeRequirements = z.infer<typeof intakeFormSchema>;
 
@@ -52,6 +53,24 @@ function defaultPricingConfig(country?: string): E2PricingConfig {
     vatRate: 0.15,
     country: country ?? "SA",
   };
+}
+
+function resolvePricingConfig(req: IntakeRequirements): E2PricingConfig {
+  if (!req.pricingConfig) return defaultPricingConfig(req.country);
+  return {
+    ...req.pricingConfig,
+    country: req.country ?? "SA",
+  };
+}
+
+function resolveMode(req: IntakeRequirements): IntakeMode {
+  if (req.mode) return req.mode;
+  if (req.path === "path_a") return "quick_bom";
+  return "rfp";
+}
+
+function modeToPath(mode: IntakeMode): "path_a" | "path_b" {
+  return mode === "quick_bom" ? "path_a" : "path_b";
 }
 
 function buildDeviceConfig(req: IntakeRequirements): E2DeviceConfig {
@@ -94,10 +113,11 @@ async function runAndPersistPipeline(
 ): Promise<void> {
   try {
     const devices = devicesFromIntake(req);
-    const pricingConfig = defaultPricingConfig(req.country);
+    const pricingConfig = resolvePricingConfig(req);
+    const mode = resolveMode(req);
     const result = await runPipeline({
       opportunityId: `intake:${intakeId}`,
-      mode: "rfp",
+      mode,
       devices,
       pricingConfig,
       clientName: req.customerName,
@@ -121,16 +141,19 @@ export async function POST(request: NextRequest) {
   const tenantId = await getDefaultTenantId();
 
   try {
+    const mode = resolveMode(data);
     const intake = await createIntake({
       tenantId,
-      path: data.path,
+      path: data.path ?? modeToPath(mode),
       source: "ui_form",
       customerName: data.customerName,
       region: data.region,
       country: data.country,
       domain: data.domain,
       requirementsJson: {
+        mode,
         keyNeeds: data.keyNeeds,
+        vendorPreferences: data.vendorPreferences,
         quantities: data.quantities,
         poeRequired: data.poeRequired,
         poeClass: data.poeClass,
@@ -142,6 +165,7 @@ export async function POST(request: NextRequest) {
         constraints: data.constraints,
         pastedText: data.pastedText,
         uploadedBomLines: data.uploadedBomLines,
+        pricingConfig: data.pricingConfig,
       },
       status: "PENDING",
     });
