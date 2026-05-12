@@ -95,3 +95,70 @@ export async function GET(
     );
   }
 }
+
+/**
+ * PATCH /api/estimates/[id] — approve the deal at the commercial gate.
+ * Body: { status: "APPROVED", strategicJustification?: string }
+ * Updates status on whichever row the id resolves to (bomDraft or intake)
+ * and stores the optional justification in that row's jsonb summary blob.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const body = (await request.json()) as {
+      status?: string;
+      strategicJustification?: string;
+    };
+    if (body.status !== "APPROVED") {
+      return NextResponse.json(
+        { error: "Only status 'APPROVED' is supported" },
+        { status: 400 }
+      );
+    }
+
+    const justification = body.strategicJustification?.trim() || undefined;
+
+    const [draftRow] = await db
+      .select({ id: bomDrafts.id, summary: bomDrafts.summary })
+      .from(bomDrafts)
+      .where(eq(bomDrafts.id, params.id))
+      .limit(1);
+    if (draftRow) {
+      const summary = (draftRow.summary as Record<string, unknown>) ?? {};
+      const nextSummary = justification
+        ? { ...summary, strategicJustification: justification, approvedAt: new Date().toISOString() }
+        : { ...summary, approvedAt: new Date().toISOString() };
+      const [updated] = await db
+        .update(bomDrafts)
+        .set({ status: "APPROVED", summary: nextSummary, updatedAt: new Date() })
+        .where(eq(bomDrafts.id, params.id))
+        .returning();
+      return NextResponse.json({ estimate: updated });
+    }
+
+    const [intakeRow] = await db
+      .select({ id: intakes.id, requirementsJson: intakes.requirementsJson })
+      .from(intakes)
+      .where(eq(intakes.id, params.id))
+      .limit(1);
+    if (intakeRow) {
+      const reqs = (intakeRow.requirementsJson as Record<string, unknown>) ?? {};
+      const nextReqs = justification
+        ? { ...reqs, strategicJustification: justification, approvedAt: new Date().toISOString() }
+        : { ...reqs, approvedAt: new Date().toISOString() };
+      const [updated] = await db
+        .update(intakes)
+        .set({ status: "APPROVED", requirementsJson: nextReqs })
+        .where(eq(intakes.id, params.id))
+        .returning();
+      return NextResponse.json({ estimate: updated });
+    }
+
+    return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
