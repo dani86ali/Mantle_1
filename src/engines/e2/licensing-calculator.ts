@@ -34,6 +34,22 @@ function isAP(model: string): boolean {
   return /^C9\d+AX/.test(model);
 }
 
+function isFortinet(model: string): boolean {
+  return model.startsWith("FG-");
+}
+
+// FG-601F → F601F  (matches Fortinet FC-10-{code}-{svc}-02 model encoding)
+function encodeForFortinet(model: string): string {
+  const suffix = model.split("-").slice(1).join("");
+  return "F" + suffix;
+}
+
+const FORTIGUARD_BUNDLES: Record<"essentials" | "advantage" | "premier", { code: string; name: string }> = {
+  essentials: { code: "928", name: "ATP" },
+  advantage:  { code: "950", name: "UTP" },
+  premier:    { code: "811", name: "Enterprise Protection" },
+};
+
 function switchPrefix(model: string): string {
   if (/^C9300L/.test(model)) return "C9300L";
   if (/^C9300/.test(model)) return "C9300";
@@ -72,6 +88,25 @@ export function calculateLicenses(
     includeThousandEyes = false,
     includeDnaSpaces = false,
   } = config;
+
+  if (isFortinet(model)) {
+    const lines: LicenseLine[] = [
+      ln(`${model}-FW`, `${model} FortiOS firmware`, qty, "software"),
+    ];
+    if (dnaTier !== "optout") {
+      const bundle = FORTIGUARD_BUNDLES[dnaTier];
+      const code = encodeForFortinet(model);
+      lines.push(
+        ln(
+          `FC-10-${code}-${bundle.code}-02`,
+          `FortiGuard ${bundle.name} bundle ${term}Y`,
+          qty,
+          "dna_subscription"
+        )
+      );
+    }
+    return lines;
+  }
 
   if (isAP(model)) {
     const lines: LicenseLine[] = [

@@ -36,7 +36,7 @@ interface DeviceSpec {
   antenna_sku?:   string;
 }
 
-type DeviceClass = "switch" | "ap";
+type DeviceClass = "switch" | "ap" | "fortigate";
 
 const SWITCHES = [
   ...(specsJson.cisco_switches.catalyst_9300  as unknown as DeviceSpec[]),
@@ -46,6 +46,8 @@ const SWITCHES = [
 
 const APS = specsJson.cisco_wireless_aps as unknown as DeviceSpec[];
 
+const FORTIGATES = specsJson.fortigate_firewalls as unknown as DeviceSpec[];
+
 function lookup(model: string): { spec: DeviceSpec; cls: DeviceClass } {
   for (const s of SWITCHES) {
     if (model === s.model) return { spec: s, cls: "switch" };
@@ -53,7 +55,15 @@ function lookup(model: string): { spec: DeviceSpec; cls: DeviceClass } {
   for (const s of APS) {
     if (model === s.model) return { spec: s, cls: "ap" };
   }
+  for (const s of FORTIGATES) {
+    if (model === s.model) return { spec: s, cls: "fortigate" };
+  }
   throw new Error(`Unknown model: ${model}`);
+}
+
+// Strip "FG-" prefix to get the bare model code used in Fortinet accessory SKUs
+function fgSuffix(model: string): string {
+  return model.replace(/^FG-/, "");
 }
 
 function acc(sku: string, description: string, qtyPerUnit: number, units: number): AccessoryLine {
@@ -98,13 +108,20 @@ export function selectAccessories(
     out.push(acc("CAB-GUIDE-1RU",   "1RU cable guide",    1, qty));
     out.push(acc("C9K-ACC-RBFT",    "Rubber feet",        1, qty));
     out.push(acc("C9300L-SSD-NONE", "SSD option — none",  1, qty));
-  } else {
+  } else if (cls === "ap") {
     out.push(acc("AIR-AP-BRACKET-1", "Low profile mount bracket",       1, qty));
     out.push(acc("AIR-AP-T-RAIL-R",  "Ceiling T-rail clip (recessed)",  1, qty));
 
     if (spec.antenna === "external" && spec.antennas_needed && spec.antenna_sku) {
       out.push(acc(spec.antenna_sku, "External antenna", spec.antennas_needed, qty));
     }
+  } else {
+    // FortiGate: generic SKU patterns; no fans/SSD/rubber feet
+    const suffix = fgSuffix(spec.model);
+    const psuCount = redundantPsu ? 2 : 1;
+    out.push(acc(`FG-SP-${suffix}`, "Power supply", psuCount, qty));
+    out.push(acc(`SP-FGR-${suffix}-KIT`, "Rack mount kit", 1, qty));
+    out.push(acc(powerCordType, "Power cord", psuCount, qty));
   }
 
   return out;

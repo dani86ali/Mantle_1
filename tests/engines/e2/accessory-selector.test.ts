@@ -151,6 +151,46 @@ describe("selectAccessories — custom power cord", () => {
   });
 });
 
+// ── FG-601F — FortiGate accessories ─────────────────────────────────────────
+
+describe("selectAccessories — FG-601F FortiGate", () => {
+  it("redundant PSU emits rack kit + 2 PSUs + 2 cords per unit", () => {
+    const lines = selectAccessories("FG-601F", 1, { redundantPsu: true });
+
+    const psu = lines.find((l) => l.sku === "FG-SP-601F");
+    expect(psu).toBeDefined();
+    expect(psu!.qtyPerUnit).toBe(2);
+    expect(psu!.totalQty).toBe(2);
+
+    const kit = lines.find((l) => l.sku === "SP-FGR-601F-KIT");
+    expect(kit).toBeDefined();
+    expect(kit!.qtyPerUnit).toBe(1);
+
+    const cord = lines.find((l) => l.sku === "CAB-TA-UK");
+    expect(cord).toBeDefined();
+    expect(cord!.qtyPerUnit).toBe(2);
+  });
+
+  it("single PSU (no redundancy): 1 PSU + 1 cord per unit", () => {
+    const lines = selectAccessories("FG-601F", 1, { redundantPsu: false });
+    expect(lines.find((l) => l.sku === "FG-SP-601F")?.qtyPerUnit).toBe(1);
+    expect(lines.find((l) => l.sku === "CAB-TA-UK")?.qtyPerUnit).toBe(1);
+  });
+
+  it("no Cisco fans/SSD/rubber feet on FortiGate", () => {
+    const lines = selectAccessories("FG-601F", 1, { redundantPsu: true });
+    expect(lines.find((l) => l.sku.includes("FAN"))).toBeUndefined();
+    expect(lines.find((l) => l.sku.includes("SSD"))).toBeUndefined();
+    expect(lines.find((l) => l.sku === "C9K-ACC-RBFT")).toBeUndefined();
+  });
+
+  it("qty scales totals across multiple FortiGates", () => {
+    const lines = selectAccessories("FG-601F", 3, { redundantPsu: true });
+    expect(lines.find((l) => l.sku === "FG-SP-601F")?.totalQty).toBe(6);
+    expect(lines.find((l) => l.sku === "SP-FGR-601F-KIT")?.totalQty).toBe(3);
+  });
+});
+
 // ── validation ──────────────────────────────────────────────────────────────
 
 describe("selectAccessories — validation", () => {

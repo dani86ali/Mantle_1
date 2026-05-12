@@ -171,6 +171,65 @@ describe("calculateLicenses — variants", () => {
   });
 });
 
+// ── FG-601F — FortiGate FortiGuard bundles ─────────────────────────────────
+
+describe("calculateLicenses — FG-601F FortiGate", () => {
+  it("advantage (UTP) → FC-10-F601F-950-02 + firmware", () => {
+    const lines = calculateLicenses("FG-601F", 1, {
+      dnaTier: "advantage",
+      networkTier: "advantage",
+      term: 3,
+    });
+    expect(lines).toHaveLength(2);
+    expect(lines.find((l) => l.sku === "FG-601F-FW")?.category).toBe("software");
+    const utp = lines.find((l) => l.sku === "FC-10-F601F-950-02");
+    expect(utp).toBeDefined();
+    expect(utp!.category).toBe("dna_subscription");
+    expect(utp!.qty).toBe(1);
+  });
+
+  it("essentials → ATP bundle (-928-)", () => {
+    const lines = calculateLicenses("FG-601F", 1, {
+      dnaTier: "essentials",
+      networkTier: "essentials",
+      term: 3,
+    });
+    expect(lines.find((l) => l.sku === "FC-10-F601F-928-02")).toBeDefined();
+  });
+
+  it("premier → Enterprise Protection bundle (-811-)", () => {
+    const lines = calculateLicenses("FG-601F", 2, {
+      dnaTier: "premier",
+      networkTier: "advantage",
+      term: 5,
+    });
+    const ep = lines.find((l) => l.sku === "FC-10-F601F-811-02");
+    expect(ep).toBeDefined();
+    expect(ep!.qty).toBe(2);
+  });
+
+  it("optout → firmware only, no FortiGuard bundle", () => {
+    const lines = calculateLicenses("FG-601F", 1, {
+      dnaTier: "optout",
+      networkTier: "advantage",
+      term: 3,
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines.find((l) => l.sku === "FG-601F-FW")).toBeDefined();
+    expect(lines.find((l) => l.sku.startsWith("FC-10-"))).toBeUndefined();
+  });
+
+  it("no Cisco-only lines on FortiGate", () => {
+    const lines = calculateLicenses("FG-601F", 1, {
+      dnaTier: "advantage",
+      networkTier: "advantage",
+      term: 3,
+    });
+    expect(lines.find((l) => l.sku === "NETWORK-PNP-LIC")).toBeUndefined();
+    expect(lines.find((l) => l.sku === "S9300LUK9-179")).toBeUndefined();
+  });
+});
+
 // ── Validation ───────────────────────────────────────────────────────────────
 
 describe("calculateLicenses — validation", () => {

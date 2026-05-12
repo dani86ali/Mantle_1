@@ -89,6 +89,18 @@ describe("selectSupport", () => {
       expect(result[0].tier).toBe("FortiCare Premium 24x7");
     });
 
+    it("FG-601F standard → FC-10-F601F-247-02 (model encoding works)", () => {
+      const result = selectSupport("FG-601F", 1, {
+        criticality: "standard",
+        term: 36,
+        vendor: "fortinet",
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].sku).toBe("FC-10-F601F-247-02");
+      expect(result[0].tier).toBe("FortiCare Premium 24x7");
+    });
+
     it("Fortinet criticality none → empty array", () => {
       const result = selectSupport("FortiGate-200F", 3, {
         criticality: "none",
