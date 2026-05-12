@@ -8,11 +8,6 @@ import {
   PlusCircle,
   FileStack,
   Search,
-  Users,
-  Handshake,
-  Package,
-  RefreshCw,
-  Building2,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -24,12 +19,7 @@ const NAV_ITEMS = [
   { href: "/estimate/new", label: "New Estimate", icon: PlusCircle },
   { href: "/estimates", label: "Estimates", icon: FileStack },
   { href: "/catalog", label: "Catalog", icon: Search },
-  { href: "/customers", label: "Customers", icon: Users },
-  { href: "/deals", label: "Deals & Quotes", icon: Handshake, badge: "Phase 3" },
-  { href: "/orders", label: "Orders", icon: Package, badge: "Phase 4" },
-  { href: "/services", label: "Services", icon: RefreshCw, badge: "Phase 4" },
-  { href: "/distributor", label: "Distributor", icon: Building2, badge: "Phase 3" },
-  { href: "/admin", label: "Admin", icon: Settings },
+  { href: "/admin", label: "Settings", icon: Settings },
 ];
 
 export function AppSidebar() {
@@ -83,16 +73,7 @@ export function AppSidebar() {
               )}
             >
               <item.icon size={18} className="shrink-0" />
-              {!collapsed && (
-                <>
-                  <span className="flex-1">{item.label}</span>
-                  {item.badge && (
-                    <span className="rounded-full bg-[var(--border)] px-1.5 py-0.5 text-[10px] text-text-tertiary">
-                      {item.badge}
-                    </span>
-                  )}
-                </>
-              )}
+              {!collapsed && <span className="flex-1">{item.label}</span>}
             </Link>
           );
         })}
@@ -102,7 +83,7 @@ export function AppSidebar() {
       {!collapsed && (
         <div className="border-t border-[var(--border)] px-4 py-3">
           <p className="text-[11px] text-text-tertiary">
-            Cisco Presales Automation
+            BOMATIC — Multi-vendor Pre-sales Platform
           </p>
         </div>
       )}
