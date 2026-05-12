@@ -19,6 +19,7 @@ export interface EditableRow {
   key: string;
   requirementId: string;
   requirementText: string;
+  classification: string;
   frameworkId: string;
   controlId: string;
   controlName: string;
@@ -27,22 +28,26 @@ export interface EditableRow {
   tpSection: string;
 }
 
-export interface CoverageGap {
+export interface CoverageGapView {
   frameworkId: string;
   controlId: string;
   controlName: string;
+  message: string;
 }
 
-export interface OrphanRequirement {
+export interface OrphanView {
   requirementId: string;
   requirementText: string;
+  reason: string;
 }
 
 export interface Stats {
+  total: number;
   compliant: number;
   partial: number;
   nonCompliant: number;
   alternative: number;
+  coveragePct: number;
 }
 
 export const STATUS_TONE: Record<Status, string> = {
@@ -52,89 +57,118 @@ export const STATUS_TONE: Record<Status, string> = {
   "Alternative Proposed": "bg-blue-muted text-blue border-blue/30",
 };
 
+export interface Filters {
+  framework: string;
+  status: Status | "all";
+  search: string;
+}
+
+export const DEFAULT_FILTERS: Filters = {
+  framework: "all",
+  status: "all",
+  search: "",
+};
+
+export function filterRows(rows: EditableRow[], f: Filters): EditableRow[] {
+  const s = f.search.trim().toLowerCase();
+  return rows.filter((r) => {
+    if (f.framework !== "all" && r.frameworkId !== f.framework) return false;
+    if (f.status !== "all" && r.status !== f.status) return false;
+    if (
+      s &&
+      !r.requirementText.toLowerCase().includes(s) &&
+      !r.requirementId.toLowerCase().includes(s)
+    )
+      return false;
+    return true;
+  });
+}
+
 export function StatsBar({ stats }: { stats: Stats }) {
-  const total =
-    stats.compliant + stats.partial + stats.nonCompliant + stats.alternative;
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <StatBadge label="Compliant" value={stats.compliant} tone={STATUS_TONE.Compliant} />
-      <StatBadge label="Partially Compliant" value={stats.partial} tone={STATUS_TONE["Partially Compliant"]} />
-      <StatBadge label="Non-Compliant" value={stats.nonCompliant} tone={STATUS_TONE["Non-Compliant"]} />
-      <StatBadge label="Alternative Proposed" value={stats.alternative} tone={STATUS_TONE["Alternative Proposed"]} />
-      <span className="ml-auto text-xs text-text-tertiary">
-        {total} pair{total === 1 ? "" : "s"}
-      </span>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <StatCard label="Compliant" value={stats.compliant} tone={STATUS_TONE.Compliant} />
+      <StatCard
+        label="Partially Compliant"
+        value={stats.partial}
+        tone={STATUS_TONE["Partially Compliant"]}
+      />
+      <StatCard
+        label="Non-Compliant"
+        value={stats.nonCompliant}
+        tone={STATUS_TONE["Non-Compliant"]}
+      />
+      <StatCard
+        label="Alternative Proposed"
+        value={stats.alternative}
+        tone={STATUS_TONE["Alternative Proposed"]}
+      />
+      <div className="rounded-card border border-[var(--border)] bg-bg-card p-4">
+        <p className="text-xs text-text-tertiary">Coverage</p>
+        <p className="mt-1 font-mono text-lg font-semibold text-text-primary">
+          {stats.coveragePct.toFixed(0)}%
+        </p>
+        <p className="text-[10px] text-text-tertiary">{stats.total} total pairs</p>
+      </div>
     </div>
   );
 }
 
-function StatBadge({ label, value, tone }: { label: string; value: number; tone: string }) {
+function StatCard({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
-    <div className={cn("rounded-full border px-3 py-1 text-xs font-medium", tone)}>
-      <span className="font-semibold">{value}</span>
-      <span className="ml-1.5 opacity-80">{label}</span>
+    <div className="rounded-card border border-[var(--border)] bg-bg-card p-4">
+      <p className="text-xs text-text-tertiary">{label}</p>
+      <div className="mt-1 flex items-baseline gap-2">
+        <p className="font-mono text-lg font-semibold text-text-primary">{value}</p>
+        <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium", tone)}>
+          {label.toLowerCase()}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function FilterBar({
+  filters,
+  onChange,
+  frameworkIds,
+}: {
+  filters: Filters;
+  onChange: (f: Filters) => void;
+  frameworkIds: string[];
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-card border border-[var(--border)] bg-bg-card p-3">
+      <select
+        value={filters.framework}
+        onChange={(e) => onChange({ ...filters, framework: e.target.value })}
+        className="form-input w-auto"
+      >
+        <option value="all">All frameworks</option>
+        {frameworkIds.map((f) => (
+          <option key={f} value={f}>{f}</option>
+        ))}
+      </select>
+      <select
+        value={filters.status}
+        onChange={(e) => onChange({ ...filters, status: e.target.value as Filters["status"] })}
+        className="form-input w-auto"
+      >
+        <option value="all">All statuses</option>
+        {STATUS_OPTIONS.map((s) => (
+          <option key={s} value={s}>{s}</option>
+        ))}
+      </select>
+      <input
+        type="text"
+        placeholder="Search requirement text or ID…"
+        value={filters.search}
+        onChange={(e) => onChange({ ...filters, search: e.target.value })}
+        className="form-input min-w-[200px] flex-1"
+      />
     </div>
   );
 }
 
 export { MatrixTable } from "./matrix-table";
-
-export function GapAnalysis({
-  coverageGaps,
-  orphans,
-}: {
-  coverageGaps: CoverageGap[];
-  orphans: OrphanRequirement[];
-}) {
-  return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <div>
-        <h4 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-tertiary">
-          Coverage Gaps ({coverageGaps.length})
-        </h4>
-        {coverageGaps.length === 0 ? (
-          <p className="text-sm text-text-tertiary">No framework controls without matches.</p>
-        ) : (
-          <ul className="space-y-2">
-            {coverageGaps.map((g) => (
-              <li
-                key={`${g.frameworkId}#${g.controlId}`}
-                className="rounded-card border border-warning/30 bg-warning-muted p-3"
-              >
-                <div className="flex flex-wrap items-baseline gap-2 text-xs">
-                  <span className="font-mono font-semibold text-warning">{g.frameworkId}</span>
-                  <span className="font-mono text-text-secondary">{g.controlId}</span>
-                </div>
-                <p className="mt-1 text-sm text-text-secondary">{g.controlName}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <div>
-        <h4 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-tertiary">
-          Orphan Requirements ({orphans.length})
-        </h4>
-        {orphans.length === 0 ? (
-          <p className="text-sm text-text-tertiary">All requirements matched a control.</p>
-        ) : (
-          <ul className="space-y-2">
-            {orphans.map((o) => (
-              <li
-                key={o.requirementId}
-                className="rounded-card border border-blue/30 bg-blue-muted p-3"
-              >
-                <div className="font-mono text-xs font-semibold text-blue">
-                  {o.requirementId}
-                </div>
-                <p className="mt-1 line-clamp-3 text-sm text-text-secondary" title={o.requirementText}>
-                  {o.requirementText}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-}
+export { CollapsibleCard, CoverageGapsList, OrphanList } from "./gap-cards";

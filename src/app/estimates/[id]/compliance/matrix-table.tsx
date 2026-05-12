@@ -9,6 +9,17 @@ import {
   type Status,
 } from "./sections";
 
+const CLASSIFICATION_TONE: Record<string, string> = {
+  Mandatory: "bg-destructive-muted text-destructive",
+  Functional: "bg-blue-muted text-blue",
+  "Non-functional": "bg-accent-muted text-accent",
+  Optional: "bg-[var(--border)] text-text-tertiary",
+};
+
+function classBadge(c: string): string {
+  return CLASSIFICATION_TONE[c] ?? "bg-[var(--border)] text-text-tertiary";
+}
+
 export function MatrixTable({
   rows,
   onChange,
@@ -19,21 +30,25 @@ export function MatrixTable({
   dirtyKeys: Set<string>;
 }) {
   if (rows.length === 0) {
-    return <p className="text-sm text-text-tertiary">No compliance pairs generated.</p>;
+    return (
+      <div className="rounded-card border border-[var(--border)] bg-bg-card p-6 text-sm text-text-tertiary">
+        No compliance rows match the current filters.
+      </div>
+    );
   }
   const groups = groupByFramework(rows);
   return (
     <div className="overflow-x-auto rounded-card border border-[var(--border)] bg-bg-card">
-      <table className="min-w-[1000px] w-full text-sm">
+      <table className="min-w-[1100px] w-full text-sm">
         <thead>
           <tr className="border-b border-[var(--border)] bg-bg-elevated text-left text-xs text-text-tertiary">
             <th className="px-3 py-2 font-medium">Req ID</th>
             <th className="px-3 py-2 font-medium">Requirement</th>
-            <th className="px-3 py-2 font-medium">Framework</th>
-            <th className="px-3 py-2 font-medium">Control</th>
+            <th className="px-3 py-2 font-medium">Class</th>
+            <th className="px-3 py-2 font-medium">Control ID</th>
+            <th className="px-3 py-2 font-medium">Control Name</th>
             <th className="px-3 py-2 font-medium">Status</th>
             <th className="px-3 py-2 font-medium">Notes</th>
-            <th className="px-3 py-2 font-medium">TP Section</th>
           </tr>
         </thead>
         <tbody>
@@ -80,7 +95,7 @@ function Row({
     <tr
       className={cn(
         "border-b border-[var(--border)] align-top hover:bg-bg-elevated/50",
-        dirty && "bg-warning-muted/40"
+        dirty && "bg-warning-muted/40",
       )}
     >
       <td className="px-3 py-2 font-mono text-xs text-text-tertiary whitespace-nowrap">
@@ -95,21 +110,33 @@ function Row({
         >
           {row.requirementText}
         </button>
+        {row.tpSection && (
+          <span className="mt-1 inline-block font-mono text-[10px] text-text-tertiary">
+            TP: {row.tpSection}
+          </span>
+        )}
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap">
+        <span
+          className={cn(
+            "rounded-full px-2 py-0.5 text-[10px] font-medium",
+            classBadge(row.classification),
+          )}
+        >
+          {row.classification}
+        </span>
       </td>
       <td className="px-3 py-2 font-mono text-xs text-text-secondary whitespace-nowrap">
-        {row.frameworkId}
+        {row.controlId}
       </td>
-      <td className="px-3 py-2 text-xs text-text-secondary whitespace-nowrap">
-        <span className="font-mono">{row.controlId}</span>
-        <div className="text-text-tertiary">{row.controlName}</div>
-      </td>
+      <td className="px-3 py-2 text-xs text-text-secondary">{row.controlName}</td>
       <td className="px-3 py-2 whitespace-nowrap">
         <select
           value={row.status}
           onChange={(e) => onChange({ status: e.target.value as Status })}
           className={cn(
             "rounded-input border px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-accent",
-            STATUS_TONE[row.status]
+            STATUS_TONE[row.status],
           )}
         >
           {STATUS_OPTIONS.map((s) => (
@@ -127,9 +154,6 @@ function Row({
           placeholder="Add notes…"
           className="form-input min-w-[200px] py-1 text-xs"
         />
-      </td>
-      <td className="px-3 py-2 font-mono text-xs text-text-tertiary whitespace-nowrap">
-        {row.tpSection || "—"}
       </td>
     </tr>
   );

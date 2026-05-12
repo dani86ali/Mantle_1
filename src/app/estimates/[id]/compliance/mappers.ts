@@ -1,61 +1,112 @@
+import type { ApiResponse, HubData } from "../hub-mappers";
+import { toHubData } from "../hub-mappers";
 import type {
   EditableRow,
-  CoverageGap,
-  OrphanRequirement,
+  CoverageGapView,
+  OrphanView,
   Status,
 } from "./sections";
 
 export interface PageData {
-  customerName: string;
+  hub: HubData;
   pipelineId: string | null;
   rows: EditableRow[];
-  gaps: { coverageGaps: CoverageGap[]; orphans: OrphanRequirement[] };
+  gaps: { coverageGaps: CoverageGapView[]; orphans: OrphanView[] };
+  frameworkIds: string[];
+}
+
+interface RawRow {
+  requirementId?: string;
+  requirementText?: string;
+  classification?: string;
+  frameworkId?: string;
+  controlId?: string;
+  controlName?: string;
+  status?: string;
+  notes?: string;
+  tpSection?: string;
+}
+
+interface RawGap {
+  frameworkId?: string;
+  controlId?: string;
+  controlName?: string;
+}
+
+interface RawOrphan {
+  requirementId?: string;
+  requirementText?: string;
 }
 
 interface RawMatrix {
-  rows?: Array<Record<string, unknown>>;
-  gaps?: {
-    coverageGaps?: Array<Record<string, unknown>>;
-    orphanRequirements?: Array<Record<string, unknown>>;
-  };
+  rows?: RawRow[];
+  gaps?: { coverageGaps?: RawGap[]; orphanRequirements?: RawOrphan[] };
 }
 
-export function toPageData(json: {
-  estimate: Record<string, unknown>;
-  e1?: { complianceMatrix?: RawMatrix } | null;
-  pipeline?: { id?: string } | null;
-}): PageData {
-  const matrix = json.e1?.complianceMatrix ?? {};
+const VALID_STATUSES: Status[] = [
+  "Compliant",
+  "Partially Compliant",
+  "Non-Compliant",
+  "Alternative Proposed",
+];
+
+function normalizeStatus(s: string | undefined): Status {
+  return VALID_STATUSES.includes(s as Status)
+    ? (s as Status)
+    : "Partially Compliant";
+}
+
+export function toPageData(
+  json: ApiResponse & { e1?: { complianceMatrix?: RawMatrix } | null },
+  fallbackId: string,
+): PageData {
+  const hub = toHubData(json, fallbackId);
+  const matrix: RawMatrix = json.e1?.complianceMatrix ?? {};
   const rawRows = matrix.rows ?? [];
+
   const rows: EditableRow[] = rawRows.map((r) => {
-    const requirementId = (r.requirementId as string) ?? "";
-    const frameworkId = (r.frameworkId as string) ?? "";
-    const controlId = (r.controlId as string) ?? "";
+    const requirementId = r.requirementId ?? "";
+    const frameworkId = r.frameworkId ?? "";
+    const controlId = r.controlId ?? "";
     return {
       key: `${requirementId}#${frameworkId}#${controlId}`,
       requirementId,
-      requirementText: (r.requirementText as string) ?? "",
+      requirementText: r.requirementText ?? "",
+      classification: r.classification ?? "Functional",
       frameworkId,
       controlId,
-      controlName: (r.controlName as string) ?? "",
-      status: ((r.status as string) ?? "Partially Compliant") as Status,
-      notes: (r.notes as string) ?? "",
-      tpSection: (r.tpSection as string) ?? "",
+      controlName: r.controlName ?? "",
+      status: normalizeStatus(r.status),
+      notes: r.notes ?? "",
+      tpSection: r.tpSection ?? "",
     };
   });
-  const coverageGaps: CoverageGap[] = (matrix.gaps?.coverageGaps ?? []).map((g) => ({
-    frameworkId: (g.frameworkId as string) ?? "",
-    controlId: (g.controlId as string) ?? "",
-    controlName: (g.controlName as string) ?? "",
-  }));
-  const orphans: OrphanRequirement[] = (matrix.gaps?.orphanRequirements ?? []).map((o) => ({
-    requirementId: (o.requirementId as string) ?? "",
-    requirementText: (o.requirementText as string) ?? "",
-  }));
+
+  const coverageGaps: CoverageGapView[] = (matrix.gaps?.coverageGaps ?? []).map(
+    (g) => ({
+      frameworkId: g.frameworkId ?? "",
+      controlId: g.controlId ?? "",
+      controlName: g.controlName ?? "",
+      message: "No requirement matched this control during keyword analysis.",
+    }),
+  );
+  const orphans: OrphanView[] = (matrix.gaps?.orphanRequirements ?? []).map(
+    (o) => ({
+      requirementId: o.requirementId ?? "",
+      requirementText: o.requirementText ?? "",
+      reason: "No matching control found in the selected frameworks.",
+    }),
+  );
+
+  const frameworkIds = Array.from(new Set(rows.map((r) => r.frameworkId)))
+    .filter(Boolean)
+    .sort();
+
   return {
-    customerName: (json.estimate.customerName as string) ?? "Unknown customer",
+    hub,
     pipelineId: json.pipeline?.id ?? null,
     rows,
     gaps: { coverageGaps, orphans },
+    frameworkIds,
   };
 }
