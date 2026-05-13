@@ -97,73 +97,6 @@ function mapDomain(d: string): Domain {
   return "Access Switching";
 }
 
-// Keep mock data as fallback when DB is empty
-const FALLBACK_ESTIMATES: Estimate[] = [
-  {
-    id: "OG164161604DH",
-    customer: "Gulf Business Machines",
-    domain: "Access Switching",
-    status: "Pending",
-    engineer: "Amit Patel",
-    created: "2026-04-25",
-    totalPrice: 33_780.0,
-  },
-  {
-    id: "OG164161715EI",
-    customer: "Logicalis",
-    domain: "Wireless",
-    status: "Failed",
-    engineer: "James Rivera",
-    created: "2026-04-24",
-    totalPrice: 21_560.0,
-  },
-  {
-    id: "OG164161829FJ",
-    customer: "Dimension Data",
-    domain: "Access Switching",
-    status: "Approved",
-    engineer: "Sarah Chen",
-    created: "2026-04-23",
-    totalPrice: 112_900.0,
-  },
-  {
-    id: "OG164161934GK",
-    customer: "Insight Enterprises",
-    domain: "Both",
-    status: "Draft",
-    engineer: "Amit Patel",
-    created: "2026-04-22",
-    totalPrice: 15_340.0,
-  },
-  {
-    id: "OG164162048HL",
-    customer: "SHI International",
-    domain: "Access Switching",
-    status: "Processing",
-    engineer: "James Rivera",
-    created: "2026-04-21",
-    totalPrice: 87_650.0,
-  },
-  {
-    id: "OG164162157IM",
-    customer: "World Wide Technology",
-    domain: "Wireless",
-    status: "Approved",
-    engineer: "Sarah Chen",
-    created: "2026-04-20",
-    totalPrice: 54_890.0,
-  },
-  {
-    id: "OG164162263JN",
-    customer: "Computacenter",
-    domain: "Both",
-    status: "Pending",
-    engineer: "Amit Patel",
-    created: "2026-04-19",
-    totalPrice: 129_470.0,
-  },
-];
-
 const ALL_STATUSES: EstimateStatus[] = [
   "Pending",
   "Processing",
@@ -220,9 +153,7 @@ function domainColor(domain: Domain) {
 const PAGE_SIZE = 10;
 
 export default function EstimatesPage() {
-  const { data: dbEstimates, loading, refresh } = useEstimates();
-  // Show DB estimates on top, then fallback mock data below
-  const allEstimates = [...dbEstimates, ...FALLBACK_ESTIMATES];
+  const { data: allEstimates, loading, refresh } = useEstimates();
 
   // Filter state
   const [search, setSearch] = useState("");
