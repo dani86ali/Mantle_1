@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { basename, extname, join } from "path";
 import { v4 as uuid } from "uuid";
+import { requireAuth } from "@/lib/middleware/auth";
 
 const ALLOWED_EXTENSIONS = [
   ".pdf",
@@ -28,6 +29,9 @@ function safeBasename(name: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   let form: FormData;
   try {
     form = await request.formData();

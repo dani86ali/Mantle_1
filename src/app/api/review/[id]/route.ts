@@ -5,20 +5,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/index";
 import { bomDrafts, reviews, agentRuns, intakes, exports as exportsTable } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { requireAuth } from "@/lib/middleware/auth";
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   const bomDraftId = params.id;
 
   try {
-    // Get the bom_draft to find related records
     const [draft] = await db
-      .select()
+      .select({
+        id: bomDrafts.id,
+        intakeId: bomDrafts.intakeId,
+        agentRunId: bomDrafts.agentRunId,
+      })
       .from(bomDrafts)
-      .where(eq(bomDrafts.id, bomDraftId))
+      .innerJoin(intakes, eq(bomDrafts.intakeId, intakes.id))
+      .where(and(eq(bomDrafts.id, bomDraftId), eq(intakes.tenantId, session.tenantId)))
       .limit(1);
 
     if (!draft) {

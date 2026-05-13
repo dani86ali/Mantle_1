@@ -11,6 +11,7 @@ import { createIntake, createAgentRun, createBomDraft } from "@/lib/db/queries";
 import { db } from "@/lib/db/index";
 import { tenants } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { requireAuth } from "@/lib/middleware/auth";
 
 const saveSchema = z.object({
   customerName: z.string().default("Chat Customer"),
@@ -32,6 +33,9 @@ const saveSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   let body: z.infer<typeof saveSchema>;
   try {
     const raw = await request.json();

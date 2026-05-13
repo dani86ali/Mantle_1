@@ -2,12 +2,16 @@
  * GET /api/estimates — list all bom_drafts with intake data joined.
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/index";
 import { bomDrafts, intakes } from "@/lib/db/schema";
 import { desc, eq } from "drizzle-orm";
+import { requireAuth } from "@/lib/middleware/auth";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const results = await db
       .select({
@@ -26,6 +30,7 @@ export async function GET() {
       })
       .from(bomDrafts)
       .innerJoin(intakes, eq(bomDrafts.intakeId, intakes.id))
+      .where(eq(intakes.tenantId, session.tenantId))
       .orderBy(desc(bomDrafts.createdAt));
 
     const estimates = results.map((r) => {

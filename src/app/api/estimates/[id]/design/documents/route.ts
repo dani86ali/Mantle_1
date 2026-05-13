@@ -12,6 +12,7 @@ import {
   loadE5State,
   resolveIntake,
 } from "@/app/api/estimates/[id]/_e5-state";
+import { requireAuth } from "@/lib/middleware/auth";
 
 const ALLOWED_TYPES = ["hld", "lld", "diagram"] as const;
 type DocumentType = (typeof ALLOWED_TYPES)[number];
@@ -57,6 +58,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   const type = new URL(request.url).searchParams.get("type");
   if (!isDocumentType(type)) {
     return NextResponse.json(
@@ -65,7 +69,7 @@ export async function GET(
     );
   }
 
-  const resolved = await resolveIntake(params.id);
+  const resolved = await resolveIntake(params.id, session.tenantId);
   if (!resolved) {
     return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
   }

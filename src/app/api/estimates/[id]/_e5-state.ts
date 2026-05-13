@@ -3,7 +3,7 @@
  * Persistence: stored under intake.requirementsJson.e5 (mirrors E4 pattern).
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/index";
 import { bomDrafts, intakes } from "@/lib/db/schema";
 import type { PipelineState } from "@/coordinator/types";
@@ -41,40 +41,54 @@ export interface ResolvedIntake {
   intakeId: string;
   customerName: string;
   country: string;
+  tenantId: string;
 }
 
-export async function resolveIntake(id: string): Promise<ResolvedIntake | null> {
+export async function resolveIntake(
+  id: string,
+  tenantId?: string,
+): Promise<ResolvedIntake | null> {
+  const draftWhere = tenantId
+    ? and(eq(bomDrafts.id, id), eq(intakes.tenantId, tenantId))
+    : eq(bomDrafts.id, id);
   const [draft] = await db
     .select({
       intakeId: bomDrafts.intakeId,
       customerName: intakes.customerName,
       country: intakes.country,
+      tenantId: intakes.tenantId,
     })
     .from(bomDrafts)
     .innerJoin(intakes, eq(bomDrafts.intakeId, intakes.id))
-    .where(eq(bomDrafts.id, id))
+    .where(draftWhere)
     .limit(1);
   if (draft?.intakeId) {
     return {
       intakeId: draft.intakeId,
       customerName: draft.customerName ?? "estimate",
       country: draft.country ?? "",
+      tenantId: draft.tenantId,
     };
   }
+  const intakeWhere = tenantId
+    ? and(eq(intakes.id, id), eq(intakes.tenantId, tenantId))
+    : eq(intakes.id, id);
   const [intake] = await db
     .select({
       id: intakes.id,
       customerName: intakes.customerName,
       country: intakes.country,
+      tenantId: intakes.tenantId,
     })
     .from(intakes)
-    .where(eq(intakes.id, id))
+    .where(intakeWhere)
     .limit(1);
   if (intake) {
     return {
       intakeId: intake.id,
       customerName: intake.customerName ?? "estimate",
       country: intake.country ?? "",
+      tenantId: intake.tenantId,
     };
   }
   return null;

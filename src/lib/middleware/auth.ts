@@ -21,10 +21,18 @@ export interface AuthSession {
  * In production, this reads from NextAuth.js session cookie.
  * In development, supports a dev header for testing.
  */
+export const DEFAULT_DEV_SESSION: AuthSession = {
+  userId: "dev-user",
+  tenantId: "stc-solutions",
+  email: "dev@bomatic.ai",
+  name: "Dev User",
+  role: "engineer",
+};
+
 export function getSession(request: NextRequest): AuthSession | null {
   // Development mode: allow X-Dev-Session header
   if (process.env.NODE_ENV === "development") {
-    const devSession = request.headers.get("x-dev-session");
+    const devSession = request.headers?.get("x-dev-session");
     if (devSession) {
       try {
         return JSON.parse(devSession) as AuthSession;
@@ -32,11 +40,16 @@ export function getSession(request: NextRequest): AuthSession | null {
         return null;
       }
     }
+
+    // Dev mode default: if no header and no cookie, return the default dev session
+    if (!request.cookies?.get("next-auth.session-token")?.value) {
+      return DEFAULT_DEV_SESSION;
+    }
   }
 
   // Production: read from NextAuth.js session
   // This is a skeleton — wire up NextAuth.js + Cognito in production
-  const sessionToken = request.cookies.get("next-auth.session-token")?.value;
+  const sessionToken = request.cookies?.get("next-auth.session-token")?.value;
   if (!sessionToken) {
     return null;
   }

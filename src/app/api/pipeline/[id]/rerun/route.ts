@@ -27,6 +27,7 @@ import {
   type IntakeRequirementsForE2,
 } from "@/coordinator/intake-to-e2";
 import type { PipelineState } from "@/coordinator/types";
+import { requireAuth } from "@/lib/middleware/auth";
 
 const rerunSchema = z.object({
   engine: z.enum(["e2", "e3"]),
@@ -47,6 +48,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   const body = await validateBody(request, rerunSchema);
   if (body instanceof NextResponse) return body;
 

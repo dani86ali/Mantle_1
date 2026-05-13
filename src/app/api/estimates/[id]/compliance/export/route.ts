@@ -5,16 +5,20 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/index";
 import { bomDrafts, intakes } from "@/lib/db/schema";
 import { loadArtifacts } from "@/lib/db/pipeline-store";
+import { requireAuth } from "@/lib/middleware/auth";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const resolved = await resolveIntake(params.id);
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
+  const resolved = await resolveIntake(params.id, session.tenantId);
   if (!resolved) {
     return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
   }
@@ -88,20 +92,21 @@ export async function GET(
 }
 
 async function resolveIntake(
-  id: string
+  id: string,
+  tenantId: string,
 ): Promise<{ intakeId: string; customerName: string } | null> {
   const [draft] = await db
     .select({ intakeId: bomDrafts.intakeId, customerName: intakes.customerName })
     .from(bomDrafts)
     .innerJoin(intakes, eq(bomDrafts.intakeId, intakes.id))
-    .where(eq(bomDrafts.id, id))
+    .where(and(eq(bomDrafts.id, id), eq(intakes.tenantId, tenantId)))
     .limit(1);
   if (draft) return { intakeId: draft.intakeId, customerName: draft.customerName ?? "estimate" };
 
   const [intake] = await db
     .select({ id: intakes.id, customerName: intakes.customerName })
     .from(intakes)
-    .where(eq(intakes.id, id))
+    .where(and(eq(intakes.id, id), eq(intakes.tenantId, tenantId)))
     .limit(1);
   if (intake) return { intakeId: intake.id, customerName: intake.customerName ?? "estimate" };
 

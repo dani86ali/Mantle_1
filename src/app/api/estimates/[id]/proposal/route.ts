@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { readFile, access, mkdir } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -24,6 +24,7 @@ import {
 } from "@/engines/e3/financial-proposal-writer";
 import type { E3Output } from "@/engines/e3/orchestrator";
 import type { ProposalMetadata } from "@/engines/e3/types";
+import { requireAuth } from "@/lib/middleware/auth";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -38,7 +39,10 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const resolved = await resolveIntake(params.id);
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
+  const resolved = await resolveIntake(params.id, session.tenantId);
   if (!resolved) {
     return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
   }
@@ -200,7 +204,10 @@ function slug(s: string): string {
   return (s || "estimate").replace(/[^\w-]+/g, "_");
 }
 
-async function resolveIntake(id: string): Promise<Resolved | null> {
+async function resolveIntake(
+  id: string,
+  tenantId: string,
+): Promise<Resolved | null> {
   const [draft] = await db
     .select({
       intakeId: bomDrafts.intakeId,
@@ -209,7 +216,7 @@ async function resolveIntake(id: string): Promise<Resolved | null> {
     })
     .from(bomDrafts)
     .innerJoin(intakes, eq(bomDrafts.intakeId, intakes.id))
-    .where(eq(bomDrafts.id, id))
+    .where(and(eq(bomDrafts.id, id), eq(intakes.tenantId, tenantId)))
     .limit(1);
   if (draft?.intakeId) {
     return {
@@ -225,7 +232,7 @@ async function resolveIntake(id: string): Promise<Resolved | null> {
       country: intakes.country,
     })
     .from(intakes)
-    .where(eq(intakes.id, id))
+    .where(and(eq(intakes.id, id), eq(intakes.tenantId, tenantId)))
     .limit(1);
   if (intake) {
     return {

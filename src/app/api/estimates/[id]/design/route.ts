@@ -19,6 +19,7 @@ import {
   type E5StoredState,
 } from "@/app/api/estimates/[id]/_e5-state";
 import { handlePatchAction } from "./_actions";
+import { requireAuth } from "@/lib/middleware/auth";
 
 const designInputSchema = z.object({
   vendor: z.enum(["cisco", "fortinet"]),
@@ -70,10 +71,13 @@ const patchSchema = z
   );
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const resolved = await resolveIntake(params.id);
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
+  const resolved = await resolveIntake(params.id, session.tenantId);
   if (!resolved) {
     return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
   }
@@ -106,10 +110,13 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   const data = await validateBody(request, designInputSchema);
   if (data instanceof NextResponse) return data;
 
-  const resolved = await resolveIntake(params.id);
+  const resolved = await resolveIntake(params.id, session.tenantId);
   if (!resolved) {
     return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
   }
@@ -152,10 +159,13 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   const data = await validateBody(request, patchSchema);
   if (data instanceof NextResponse) return data;
 
-  const resolved = await resolveIntake(params.id);
+  const resolved = await resolveIntake(params.id, session.tenantId);
   if (!resolved) {
     return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
   }

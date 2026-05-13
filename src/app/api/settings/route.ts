@@ -5,6 +5,7 @@ import { tenants } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getTenantConfig, updateTenantConfig } from "@/lib/db/queries";
 import type { TenantConfig } from "@/types/tenant";
+import { requireAuth } from "@/lib/middleware/auth";
 
 async function getDefaultTenantId(): Promise<string> {
   const DEFAULT_SLUG = "default-chat";
@@ -52,13 +53,18 @@ const tenantConfigPatchSchema = z.object({
   boilerplateOverrides: z.record(z.string()).optional(),
 });
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
   const tenantId = await getDefaultTenantId();
   const config = await getTenantConfig(tenantId);
   return NextResponse.json({ config });
 }
 
 export async function PATCH(request: NextRequest) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   let body: unknown;
   try {
     body = await request.json();

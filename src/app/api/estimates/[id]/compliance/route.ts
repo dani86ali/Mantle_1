@@ -5,11 +5,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { validateBody } from "@/lib/middleware/validate";
 import { db } from "@/lib/db/index";
 import { bomDrafts, intakes } from "@/lib/db/schema";
 import { loadArtifacts, saveE1Artifacts } from "@/lib/db/pipeline-store";
+import { requireAuth } from "@/lib/middleware/auth";
 import type { E1Output } from "@/engines/e1/orchestrator";
 import type {
   ComplianceStatus,
@@ -34,10 +35,13 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   const data = await validateBody(request, patchSchema);
   if (data instanceof NextResponse) return data;
 
-  const intakeId = await resolveIntakeId(params.id);
+  const intakeId = await resolveIntakeId(params.id, session.tenantId);
   if (!intakeId) {
     return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
   }
@@ -79,18 +83,22 @@ export async function PATCH(
   return NextResponse.json({ ok: true, stats, count: Object.keys(data.edits).length });
 }
 
-async function resolveIntakeId(id: string): Promise<string | null> {
+async function resolveIntakeId(
+  id: string,
+  tenantId: string,
+): Promise<string | null> {
   const [draft] = await db
     .select({ intakeId: bomDrafts.intakeId })
     .from(bomDrafts)
-    .where(eq(bomDrafts.id, id))
+    .innerJoin(intakes, eq(bomDrafts.intakeId, intakes.id))
+    .where(and(eq(bomDrafts.id, id), eq(intakes.tenantId, tenantId)))
     .limit(1);
   if (draft?.intakeId) return draft.intakeId;
 
   const [intake] = await db
     .select({ id: intakes.id })
     .from(intakes)
-    .where(eq(intakes.id, id))
+    .where(and(eq(intakes.id, id), eq(intakes.tenantId, tenantId)))
     .limit(1);
   return intake?.id ?? null;
 }

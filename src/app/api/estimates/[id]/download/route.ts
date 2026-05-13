@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { readFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join, basename } from "path";
@@ -16,6 +16,7 @@ import { bomDrafts, intakes } from "@/lib/db/schema";
 import { loadArtifacts } from "@/lib/db/pipeline-store";
 import { writeBoMExport, type BoMExportLine } from "@/lib/io/excel-writer";
 import { writeComplianceMatrix } from "@/lib/io/compliance-matrix-writer";
+import { requireAuth } from "@/lib/middleware/auth";
 
 const XLSX_MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -33,6 +34,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   const artifact = new URL(request.url).searchParams.get("artifact");
   if (!artifact) {
     return NextResponse.json(
@@ -40,7 +44,7 @@ export async function GET(
       { status: 400 }
     );
   }
-  const resolved = await resolveIntake(params.id);
+  const resolved = await resolveIntake(params.id, session.tenantId);
   if (!resolved) {
     return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
   }
@@ -148,7 +152,10 @@ function slug(s: string): string {
   return s.replace(/[^\w-]+/g, "_");
 }
 
-async function resolveIntake(id: string): Promise<Resolved | null> {
+async function resolveIntake(
+  id: string,
+  tenantId: string,
+): Promise<Resolved | null> {
   const [draft] = await db
     .select({
       intakeId: bomDrafts.intakeId,
@@ -158,7 +165,7 @@ async function resolveIntake(id: string): Promise<Resolved | null> {
     })
     .from(bomDrafts)
     .innerJoin(intakes, eq(bomDrafts.intakeId, intakes.id))
-    .where(eq(bomDrafts.id, id))
+    .where(and(eq(bomDrafts.id, id), eq(intakes.tenantId, tenantId)))
     .limit(1);
   if (draft) {
     return {
@@ -175,7 +182,7 @@ async function resolveIntake(id: string): Promise<Resolved | null> {
       country: intakes.country,
     })
     .from(intakes)
-    .where(eq(intakes.id, id))
+    .where(and(eq(intakes.id, id), eq(intakes.tenantId, tenantId)))
     .limit(1);
   if (intake) {
     return {

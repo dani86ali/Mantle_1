@@ -14,6 +14,7 @@ import {
   parseFortinetPriceList,
   type FortinetProduct,
 } from "@/engines/e2/fortinet-catalog";
+import { requireAuth } from "@/lib/middleware/auth";
 
 let cachedCatalog: FortinetProduct[] | null = null;
 
@@ -40,6 +41,9 @@ function loadCatalog(): FortinetProduct[] {
 }
 
 export async function GET(request: NextRequest) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const sp = request.nextUrl.searchParams;
     const search = (sp.get("search") ?? "").trim().toLowerCase();

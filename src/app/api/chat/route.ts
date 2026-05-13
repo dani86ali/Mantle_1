@@ -18,6 +18,7 @@ import {
   GeminiLlm,
   type ToolResult,
 } from "@/lib/llm/provider";
+import { requireAuth } from "@/lib/middleware/auth";
 
 const MISSING_CREDS_MESSAGE =
   "Cisco catalog lookup requires API credentials. Please configure them in Settings > Integrations.";
@@ -94,6 +95,9 @@ const messageSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   let body: z.infer<typeof messageSchema>;
   try {
     const raw = await request.json();

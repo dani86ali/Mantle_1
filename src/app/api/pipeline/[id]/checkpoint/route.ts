@@ -11,6 +11,7 @@ import {
   loadPipelineState,
   savePipelineState,
 } from "@/lib/db/pipeline-store";
+import { requireAuth } from "@/lib/middleware/auth";
 
 const VALID_CHECKPOINT_IDS = [
   "e1-requirements",
@@ -30,6 +31,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   const data = await validateBody(request, checkpointSchema);
   if (data instanceof NextResponse) return data;
 

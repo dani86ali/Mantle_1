@@ -20,6 +20,7 @@ import type { IntakeMode } from "@/coordinator/types";
 import { devicesFromIntake } from "@/coordinator/intake-to-e2";
 import { enrichFileContent } from "@/coordinator/intake-file-loader";
 import { resolvePricingConfig } from "@/coordinator/intake-pricing";
+import { requireAuth } from "@/lib/middleware/auth";
 
 type IntakeRequirements = z.infer<typeof intakeFormSchema>;
 
@@ -97,6 +98,9 @@ async function runAndPersistPipeline(
 }
 
 export async function POST(request: NextRequest) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   const data = await validateBody(request, intakeFormSchema);
   if (data instanceof NextResponse) return data;
 
@@ -160,6 +164,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
   return NextResponse.json({ intakes: [] });
 }

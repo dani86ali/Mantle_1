@@ -8,16 +8,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/index";
 import { bomDrafts, intakes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   loadArtifacts,
   loadPipelineStateByIntake,
 } from "@/lib/db/pipeline-store";
+import { requireAuth } from "@/lib/middleware/auth";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const [draftRow] = await db
       .select({
@@ -41,7 +45,7 @@ export async function GET(
       })
       .from(bomDrafts)
       .innerJoin(intakes, eq(bomDrafts.intakeId, intakes.id))
-      .where(eq(bomDrafts.id, params.id))
+      .where(and(eq(bomDrafts.id, params.id), eq(intakes.tenantId, session.tenantId)))
       .limit(1);
 
     let estimate: Record<string, unknown> | null = draftRow ?? null;
@@ -60,7 +64,7 @@ export async function GET(
           status: intakes.status,
         })
         .from(intakes)
-        .where(eq(intakes.id, params.id))
+        .where(and(eq(intakes.id, params.id), eq(intakes.tenantId, session.tenantId)))
         .limit(1);
       if (intakeRow) {
         estimate = intakeRow;
@@ -106,6 +110,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = (await request.json()) as {
       status?: string;
@@ -123,7 +130,8 @@ export async function PATCH(
     const [draftRow] = await db
       .select({ id: bomDrafts.id, summary: bomDrafts.summary })
       .from(bomDrafts)
-      .where(eq(bomDrafts.id, params.id))
+      .innerJoin(intakes, eq(bomDrafts.intakeId, intakes.id))
+      .where(and(eq(bomDrafts.id, params.id), eq(intakes.tenantId, session.tenantId)))
       .limit(1);
     if (draftRow) {
       const summary = (draftRow.summary as Record<string, unknown>) ?? {};
@@ -141,7 +149,7 @@ export async function PATCH(
     const [intakeRow] = await db
       .select({ id: intakes.id, requirementsJson: intakes.requirementsJson })
       .from(intakes)
-      .where(eq(intakes.id, params.id))
+      .where(and(eq(intakes.id, params.id), eq(intakes.tenantId, session.tenantId)))
       .limit(1);
     if (intakeRow) {
       const reqs = (intakeRow.requirementsJson as Record<string, unknown>) ?? {};

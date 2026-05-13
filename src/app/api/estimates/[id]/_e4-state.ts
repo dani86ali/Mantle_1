@@ -7,7 +7,7 @@ import { mkdir, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { extname, join } from "path";
 import { v4 as uuid } from "uuid";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/index";
 import { bomDrafts, intakes } from "@/lib/db/schema";
 import type { PipelineState } from "@/coordinator/types";
@@ -50,6 +50,7 @@ export interface ResolvedIntake {
   intakeId: string;
   customerName: string;
   country: string;
+  tenantId: string;
   sector?: string;
   description?: string;
 }
@@ -69,17 +70,24 @@ function intakeContext(reqs: Record<string, unknown>): {
   };
 }
 
-export async function resolveIntake(id: string): Promise<ResolvedIntake | null> {
+export async function resolveIntake(
+  id: string,
+  tenantId?: string,
+): Promise<ResolvedIntake | null> {
+  const draftWhere = tenantId
+    ? and(eq(bomDrafts.id, id), eq(intakes.tenantId, tenantId))
+    : eq(bomDrafts.id, id);
   const [draft] = await db
     .select({
       intakeId: bomDrafts.intakeId,
       customerName: intakes.customerName,
       country: intakes.country,
+      tenantId: intakes.tenantId,
       requirementsJson: intakes.requirementsJson,
     })
     .from(bomDrafts)
     .innerJoin(intakes, eq(bomDrafts.intakeId, intakes.id))
-    .where(eq(bomDrafts.id, id))
+    .where(draftWhere)
     .limit(1);
   if (draft?.intakeId) {
     const reqs = (draft.requirementsJson as Record<string, unknown>) ?? {};
@@ -87,18 +95,23 @@ export async function resolveIntake(id: string): Promise<ResolvedIntake | null> 
       intakeId: draft.intakeId,
       customerName: draft.customerName ?? "estimate",
       country: draft.country ?? "",
+      tenantId: draft.tenantId,
       ...intakeContext(reqs),
     };
   }
+  const intakeWhere = tenantId
+    ? and(eq(intakes.id, id), eq(intakes.tenantId, tenantId))
+    : eq(intakes.id, id);
   const [intake] = await db
     .select({
       id: intakes.id,
       customerName: intakes.customerName,
       country: intakes.country,
+      tenantId: intakes.tenantId,
       requirementsJson: intakes.requirementsJson,
     })
     .from(intakes)
-    .where(eq(intakes.id, id))
+    .where(intakeWhere)
     .limit(1);
   if (intake) {
     const reqs = (intake.requirementsJson as Record<string, unknown>) ?? {};
@@ -106,6 +119,7 @@ export async function resolveIntake(id: string): Promise<ResolvedIntake | null> 
       intakeId: intake.id,
       customerName: intake.customerName ?? "estimate",
       country: intake.country ?? "",
+      tenantId: intake.tenantId,
       ...intakeContext(reqs),
     };
   }
