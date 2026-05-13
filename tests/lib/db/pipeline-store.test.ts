@@ -246,6 +246,24 @@ describe("pipeline-store", () => {
       const stored = rows.get(state.id)!;
       expect(stored.status).toBe("completed");
     });
+
+    it("marks status as failed when state.error is set", async () => {
+      const state = makeState({
+        timestamps: {
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          completedAt: new Date(),
+        },
+        error: { message: "E2 requires devices and pricingConfig" },
+      });
+      await savePipelineState(state);
+      const stored = rows.get(state.id)!;
+      expect(stored.status).toBe("failed");
+      const persisted = stored.state as { error?: { message: string } };
+      expect(persisted.error?.message).toBe(
+        "E2 requires devices and pricingConfig",
+      );
+    });
   });
 
   describe("saveE1Artifacts / saveE2Artifacts / loadArtifacts", () => {

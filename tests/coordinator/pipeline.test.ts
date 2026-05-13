@@ -236,4 +236,38 @@ describe('runPipeline', () => {
     // Checkpoint still invoked after failed engine call.
     expect(result.state.checkpoints[0].engine).toBe('e1');
   });
+
+  it('an unrecoverable error during checkpoint marks state.error and completes', async () => {
+    const onCheckpoint = vi.fn(async (_state: PipelineState, engine: EngineId) => {
+      if (engine === 'e1') throw new Error('checkpoint blew up');
+      return 'approved' as CheckpointStatus;
+    }) as PipelineInput['onCheckpoint'];
+
+    const result = await runPipeline(baseInput({ onCheckpoint }));
+
+    expect(result.state.error).toBeDefined();
+    expect(result.state.error?.message).toContain('checkpoint blew up');
+    expect(result.state.timestamps.completedAt).toBeInstanceOf(Date);
+    // Pipeline aborts — E2 should not have been run.
+    expect(mockRunE2).not.toHaveBeenCalled();
+  });
+
+  it('successful pipeline does not set state.error', async () => {
+    const result = await runPipeline(baseInput());
+    expect(result.state.error).toBeUndefined();
+  });
+
+  it("buildE2Input precondition failure flows to state.error (not silently swallowed)", async () => {
+    // RFP mode without devices/pricingConfig — buildE2Input throws inside the
+    // per-engine try/catch. The pipeline must still surface this as a failure
+    // so the intake row is marked FAILED instead of stuck PENDING.
+    const result = await runPipeline({
+      opportunityId: 'opp-no-devices', mode: 'rfp',
+      files: [{ path: 'rfp.docx', content: 'sample' }],
+    });
+    expect(result.state.error).toBeDefined();
+    expect(result.state.error?.message).toContain('E2 requires devices and pricingConfig');
+    const e2Call = result.state.engineCalls.find((c) => c.engine === 'e2');
+    expect(e2Call?.outcome).toBe('failed');
+  });
 });

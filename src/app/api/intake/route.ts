@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateBody, intakeFormSchema } from "@/lib/middleware/validate";
-import { createIntake, createAgentRun, getTenantConfig } from "@/lib/db/queries";
+import {
+  createIntake,
+  createAgentRun,
+  updateIntakeStatus,
+} from "@/lib/db/queries";
 import { db } from "@/lib/db/index";
 import { tenants } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -12,9 +16,10 @@ import {
   saveE2Artifacts,
   saveE3Artifacts,
 } from "@/lib/db/pipeline-store";
-import type { E2PricingConfig } from "@/engines/e2/orchestrator";
 import type { IntakeMode } from "@/coordinator/types";
 import { devicesFromIntake } from "@/coordinator/intake-to-e2";
+import { enrichFileContent } from "@/coordinator/intake-file-loader";
+import { resolvePricingConfig } from "@/coordinator/intake-pricing";
 
 type IntakeRequirements = z.infer<typeof intakeFormSchema>;
 
@@ -40,48 +45,6 @@ async function getDefaultTenantId(): Promise<string> {
   return tenant.id;
 }
 
-async function defaultPricingConfig(
-  tenantId: string,
-  country?: string,
-): Promise<E2PricingConfig> {
-  const fallback: E2PricingConfig = {
-    fxRate: 3.75,
-    partnerDiscountPct: 0.35,
-    dealRegDiscountPct: 0.08,
-    profitMode: "margin",
-    profitPct: 0.18,
-    vatRate: 0.15,
-    country: country ?? "SA",
-  };
-  try {
-    const cfg = await getTenantConfig(tenantId);
-    const p = cfg.pricingDefaults;
-    if (!p) return fallback;
-    return {
-      fxRate: p.fxRate,
-      partnerDiscountPct: p.partnerDiscountPct / 100,
-      dealRegDiscountPct: p.dealRegDiscountPct / 100,
-      profitMode: p.profitMode,
-      profitPct: p.profitPct / 100,
-      vatRate: p.vatRate / 100,
-      country: country ?? "SA",
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-async function resolvePricingConfig(
-  tenantId: string,
-  req: IntakeRequirements,
-): Promise<E2PricingConfig> {
-  if (!req.pricingConfig) return defaultPricingConfig(tenantId, req.country);
-  return {
-    ...req.pricingConfig,
-    country: req.country ?? "SA",
-  };
-}
-
 function resolveMode(req: IntakeRequirements): IntakeMode {
   if (req.mode) return req.mode;
   if (req.path === "path_a") return "quick_bom";
@@ -101,6 +64,10 @@ async function runAndPersistPipeline(
     const devices = devicesFromIntake(req);
     const pricingConfig = await resolvePricingConfig(tenantId, req);
     const mode = resolveMode(req);
+    const enriched = await enrichFileContent(req.uploadedFiles);
+    if (enriched.warnings.length > 0) {
+      console.warn(`[intake ${intakeId}] file extraction:`, enriched.warnings);
+    }
     const result = await runPipeline({
       opportunityId: `intake:${intakeId}`,
       mode,
@@ -109,15 +76,23 @@ async function runAndPersistPipeline(
       clientName: req.customerName,
       country: req.country,
       solutionContext: req.keyNeeds,
-      files: req.uploadedFiles?.map((f) => ({ path: f.path })),
+      files: enriched.files,
     });
     result.state.intakeId = intakeId;
     await savePipelineState(result.state);
     if (result.e1Output) await saveE1Artifacts(intakeId, result.e1Output);
     if (result.e2Output) await saveE2Artifacts(intakeId, result.e2Output);
     if (result.e3Output) await saveE3Artifacts(intakeId, result.e3Output);
+    if (result.state.error) {
+      await updateIntakeStatus(tenantId, intakeId, "FAILED");
+    }
   } catch (err) {
     console.error(`[intake ${intakeId}] pipeline failed:`, err);
+    try {
+      await updateIntakeStatus(tenantId, intakeId, "FAILED");
+    } catch (statusErr) {
+      console.error(`[intake ${intakeId}] failed to update status:`, statusErr);
+    }
   }
 }
 
@@ -169,6 +144,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         id: intake.id,
+        estimateId: intake.id,
         agentRunId: agentRun.id,
         status: "PENDING",
         message: "Your request has been received and is being processed.",

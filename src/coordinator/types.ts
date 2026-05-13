@@ -101,6 +101,8 @@ export interface PipelineState {
     updatedAt: Date;
     completedAt?: Date;
   };
+  /** Set when the pipeline aborts due to an unrecoverable error (not per-engine failures). */
+  error?: { message: string };
 }
 
 export interface EngineInput {

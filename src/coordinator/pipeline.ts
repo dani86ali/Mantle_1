@@ -56,45 +56,61 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   let e2Output: E2Output | undefined;
   let e3Output: E3Output | undefined;
 
-  for (const engine of sequence) {
-    state.currentEngine = engine;
-    let revisions = 0;
-    let decision: CheckpointStatus = 'approved';
+  let lastEngineError: string | undefined;
 
-    while (true) {
-      const call = startEngineCall(state, engine, revisions);
-      try {
-        if (engine === 'e1') {
-          e1Output = await runE1(buildE1Input(input));
-          state.artifacts.e1 = toE1Artifacts(e1Output);
-        } else if (engine === 'e2') {
-          e2Output = await runE2(buildE2Input(input, e1Output));
-          state.artifacts.e2 = toE2Artifacts(e2Output);
-        } else if (engine === 'e3') {
-          e3Output = await runE3Stage(input, state, e1Output, e2Output);
-          if (e3Output) state.artifacts.e3 = toE3Artifacts(e3Output);
-        } else if (STUB_ENGINES.includes(engine)) {
-          logEvent(state, engine, 'warn', 'engine_call', 'Engine not yet implemented');
+  try {
+    for (const engine of sequence) {
+      state.currentEngine = engine;
+      let revisions = 0;
+      let decision: CheckpointStatus = 'approved';
+
+      while (true) {
+        const call = startEngineCall(state, engine, revisions);
+        try {
+          if (engine === 'e1') {
+            e1Output = await runE1(buildE1Input(input));
+            state.artifacts.e1 = toE1Artifacts(e1Output);
+          } else if (engine === 'e2') {
+            e2Output = await runE2(buildE2Input(input, e1Output));
+            state.artifacts.e2 = toE2Artifacts(e2Output);
+          } else if (engine === 'e3') {
+            e3Output = await runE3Stage(input, state, e1Output, e2Output);
+            if (e3Output) state.artifacts.e3 = toE3Artifacts(e3Output);
+          } else if (STUB_ENGINES.includes(engine)) {
+            logEvent(state, engine, 'warn', 'engine_call', 'Engine not yet implemented');
+          }
+          call.outcome = 'pass';
+        } catch (err) {
+          call.outcome = 'failed';
+          const msg = err instanceof Error ? err.message : String(err);
+          lastEngineError = `${engine}: ${msg}`;
+          logEvent(state, engine, 'error', 'error', msg);
+        } finally {
+          call.completedAt = new Date();
+          state.timestamps.updatedAt = new Date();
         }
-        call.outcome = 'pass';
-      } catch (err) {
-        call.outcome = 'failed';
-        const msg = err instanceof Error ? err.message : String(err);
-        logEvent(state, engine, 'error', 'error', msg);
-      } finally {
-        call.completedAt = new Date();
-        state.timestamps.updatedAt = new Date();
+
+        decision = await runCheckpoint(state, engine, revisions, input.onCheckpoint);
+        if (decision === 'revision_requested' && revisions < MAX_REVISIONS) {
+          revisions++;
+          continue;
+        }
+        break;
       }
 
-      decision = await runCheckpoint(state, engine, revisions, input.onCheckpoint);
-      if (decision === 'revision_requested' && revisions < MAX_REVISIONS) {
-        revisions++;
-        continue;
-      }
-      break;
+      if (decision === 'rejected') break;
     }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    state.error = { message: msg };
+    logEvent(state, state.currentEngine, 'error', 'error', `Pipeline aborted: ${msg}`);
+  }
 
-    if (decision === 'rejected') break;
+  // Promote any per-engine failure to a pipeline failure so persistence layers
+  // mark the run FAILED rather than silently "completed". Outer-catch errors
+  // take precedence and are not overwritten.
+  if (!state.error && lastEngineError) {
+    state.error = { message: lastEngineError };
   }
 
   state.timestamps.completedAt = new Date();
