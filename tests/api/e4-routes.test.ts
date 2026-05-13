@@ -39,6 +39,7 @@ import {
 import {
   GET as rGET,
   POST as rPOST,
+  PATCH as rPATCH,
 } from "@/app/api/estimates/[id]/responses/route";
 import { NextRequest } from "next/server";
 
@@ -87,7 +88,7 @@ const emptyGaps = {
 
 beforeEach(() => {
   mockResolve.mockReset();
-  mockLoadState.mockReset();
+  mockLoadState.mockReset().mockResolvedValue({});
   mockSaveState.mockReset().mockResolvedValue(undefined);
   mockQuestionsToSections
     .mockReset()
@@ -254,6 +255,49 @@ describe("PATCH /api/estimates/[id]/questionnaire", () => {
     });
     expect(res.status).toBe(404);
   });
+
+  it("accepts status 'revision' with revisionNotes", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    mockLoadState.mockResolvedValue({
+      questionnaire: {
+        sections: [],
+        markdown: "",
+        projectType: "general",
+        status: "draft",
+        updatedAt: "t0",
+      },
+    });
+    const res = await qPATCH(
+      jsonReq({ status: "revision", revisionNotes: "add SLO targets" }),
+      { params: { id: "intake-1" } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("revision");
+    expect(body.revisionNotes).toBe("add SLO targets");
+    const saved = mockSaveState.mock.calls[0][1];
+    expect(saved.questionnaire.status).toBe("revision");
+    expect(saved.questionnaire.revisionNotes).toBe("add SLO targets");
+  });
+
+  it("returns 400 when status 'revision' is sent without notes", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    const res = await qPATCH(jsonReq({ status: "revision" }), {
+      params: { id: "intake-1" },
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/Validation failed/);
+  });
+
+  it("returns 400 when status 'revision' notes are blank", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    const res = await qPATCH(
+      jsonReq({ status: "revision", revisionNotes: "   " }),
+      { params: { id: "intake-1" } },
+    );
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("POST /api/estimates/[id]/responses", () => {
@@ -392,5 +436,119 @@ describe("GET /api/estimates/[id]/responses", () => {
     expect(body.status).toBe("processed");
     expect(body.gaps).toBeDefined();
     expect(body.baseline).toBeDefined();
+  });
+});
+
+describe("PATCH /api/estimates/[id]/responses", () => {
+  const storedResponses = {
+    list: [
+      { questionId: "A1", answer: "yes", confidence: 1, source: "free_text" as const },
+    ],
+    gaps: emptyGaps,
+    baseline: emptyBaseline,
+    status: "processed" as const,
+    updatedAt: "t0",
+  };
+
+  it("action 'validate' updates status to 'validated'", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    mockLoadState.mockResolvedValue({ responses: storedResponses });
+    const res = await rPATCH(jsonReq({ action: "validate" }), {
+      params: { id: "intake-1" },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("validated");
+    const saved = mockSaveState.mock.calls[0][1];
+    expect(saved.responses.status).toBe("validated");
+    expect(saved.responses.list).toEqual(storedResponses.list);
+    expect(mockRunE4).not.toHaveBeenCalled();
+  });
+
+  it("action 'reprocess' re-runs phase 2 with revision notes", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    mockLoadState.mockResolvedValue({
+      questionnaire: {
+        sections: [
+          {
+            id: "A",
+            title: "A",
+            description: "",
+            questions: [
+              { id: "A1", section: "A", priority: "required", responseType: "text", text: "Q1" },
+            ],
+          },
+        ],
+        markdown: "",
+        projectType: "general",
+        status: "approved",
+        updatedAt: "t0",
+      },
+      responses: storedResponses,
+    });
+    mockRunE4.mockResolvedValue({
+      output: { engine: "e4", artifacts: { requirementsBaseline: "{}" }, warnings: [] },
+      phase: "phase2",
+      logs: [],
+      phase2: {
+        baselineRef: "{}",
+        baseline: emptyBaseline,
+        gaps: emptyGaps,
+        responses: [
+          { questionId: "A1", answer: "updated", confidence: 0.9, source: "free_text" },
+        ],
+        format: "preparsed",
+        revisions: 1,
+      },
+    });
+
+    const res = await rPATCH(
+      jsonReq({ action: "reprocess", revisionNotes: "tighten SLOs" }),
+      { params: { id: "intake-1" } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.responses[0].answer).toBe("updated");
+    expect(body.status).toBe("processed");
+    expect(mockRunE4).toHaveBeenCalledTimes(1);
+    const call = mockRunE4.mock.calls[0][0];
+    expect(call.revisionNotes).toBe("tighten SLOs");
+    expect(call.inputData.clientResponses).toEqual(storedResponses.list);
+    expect(call.inputData.questions).toHaveLength(1);
+  });
+
+  it("action 'reprocess' without notes returns 400", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    const res = await rPATCH(jsonReq({ action: "reprocess" }), {
+      params: { id: "intake-1" },
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/Validation failed/);
+  });
+
+  it("returns 400 on invalid action", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    const res = await rPATCH(jsonReq({ action: "bogus" }), {
+      params: { id: "intake-1" },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 when responses not yet processed", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    mockLoadState.mockResolvedValue({});
+    const res = await rPATCH(jsonReq({ action: "validate" }), {
+      params: { id: "intake-1" },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when estimate does not exist", async () => {
+    mockResolve.mockResolvedValue(null);
+    const res = await rPATCH(jsonReq({ action: "validate" }), {
+      params: { id: "missing" },
+    });
+    expect(res.status).toBe(404);
   });
 });

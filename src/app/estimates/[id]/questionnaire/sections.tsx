@@ -15,12 +15,13 @@ const PRIORITY_BADGE: Record<QuestionPriority, string> = {
   optional: "bg-[var(--border)] text-text-tertiary",
 };
 
-export type QuestionnaireStatus = "draft" | "approved" | "sent";
+export type QuestionnaireStatus = "draft" | "approved" | "sent" | "revision";
 
 const STATUS_BADGE: Record<QuestionnaireStatus, string> = {
   draft: "bg-[var(--border)] text-text-tertiary",
   approved: "bg-success-muted text-success",
   sent: "bg-blue-muted text-blue",
+  revision: "bg-warning-muted text-warning",
 };
 
 export function StatusBadge({ status }: { status: QuestionnaireStatus }) {

@@ -101,7 +101,7 @@ export default function QuestionnairePage() {
     } finally { setBusy(null); }
   }
 
-  async function patch(status: "approved" | "sent", revisionNotes?: string) {
+  async function patch(status: "approved" | "sent" | "revision", revisionNotes?: string) {
     const res = await fetch(`/api/estimates/${id}/questionnaire`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -125,8 +125,13 @@ export default function QuestionnairePage() {
   async function requestRevision() {
     const notes = window.prompt("What revisions are required?");
     if (notes === null) return;
+    const trimmed = notes.trim();
+    if (trimmed.length === 0) {
+      setError("Revision notes cannot be empty.");
+      return;
+    }
     setBusy("revision"); setError(null);
-    try { await patch("approved", notes); setNotice("Revision notes saved."); }
+    try { await patch("revision", trimmed); setNotice("Revision requested."); }
     catch (e) { setError(e instanceof Error ? e.message : "Revision failed"); }
     finally { setBusy(null); }
   }

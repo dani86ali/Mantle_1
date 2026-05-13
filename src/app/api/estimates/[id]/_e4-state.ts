@@ -21,7 +21,7 @@ import {
 } from "@/engines/e4/types";
 import type { EnhancedGapAnalysis } from "@/engines/e4/gap-detector-ai";
 
-export type QuestionnaireStatus = "draft" | "approved" | "sent";
+export type QuestionnaireStatus = "draft" | "approved" | "sent" | "revision";
 export type ResponseStatus = "pending" | "processed" | "validated";
 
 export interface StoredQuestionnaire {

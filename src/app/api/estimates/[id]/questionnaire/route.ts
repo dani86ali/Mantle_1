@@ -26,10 +26,15 @@ const postSchema = z.object({
   vertical: z.string().max(200).optional(),
 });
 
-const patchSchema = z.object({
-  status: z.enum(["approved", "sent"]),
-  revisionNotes: z.string().max(5000).optional(),
-});
+const patchSchema = z
+  .object({
+    status: z.enum(["approved", "sent", "revision"]),
+    revisionNotes: z.string().max(5000).optional(),
+  })
+  .refine(
+    (d) => d.status !== "revision" || (typeof d.revisionNotes === "string" && d.revisionNotes.trim().length > 0),
+    { message: "revisionNotes is required when status is 'revision'", path: ["revisionNotes"] },
+  );
 
 export async function GET(
   _request: NextRequest,
@@ -69,6 +74,12 @@ export async function POST(
   const description = data.brief ?? resolved.description ?? "";
   const sector = data.sector ?? data.vertical ?? resolved.sector;
 
+  const existing = await loadE4State(resolved.intakeId);
+  const revisionNotes =
+    existing.questionnaire?.status === "revision"
+      ? existing.questionnaire.revisionNotes
+      : undefined;
+
   const input: EngineInput = {
     engine: "e4",
     pipelineState: minimalPipelineState(resolved.intakeId),
@@ -78,6 +89,7 @@ export async function POST(
       sector,
       description,
     },
+    revisionNotes,
   };
 
   const out = await runE4Detailed(input);

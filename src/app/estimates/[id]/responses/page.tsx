@@ -122,19 +122,52 @@ export default function ResponsesPage() {
     void submit(form);
   }
 
-  function validate() {
-    setBusy("validate");
-    setData((d) => (d ? { ...d, status: "validated" } : d));
-    setNotice("Requirements baseline validated.");
-    setBusy(null);
+  async function patch(body: { action: "validate" | "reprocess"; revisionNotes?: string }) {
+    const res = await fetch(`/api/estimates/${id}/responses`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error ?? `Failed (${res.status})`);
+    }
+    return (await res.json()) as PageData;
+  }
+
+  async function validate() {
+    setBusy("validate"); setError(null);
+    try {
+      const updated = await patch({ action: "validate" });
+      setData(updated);
+      setNotice("Requirements baseline validated.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Validate failed");
+    } finally { setBusy(null); }
+  }
+
+  async function reprocess() {
+    const notes = window.prompt("Revision notes for re-processing?");
+    if (notes === null) return;
+    const trimmed = notes.trim();
+    if (trimmed.length === 0) {
+      setError("Revision notes cannot be empty.");
+      return;
+    }
+    setBusy("reprocess"); setError(null);
+    try {
+      const updated = await patch({ action: "reprocess", revisionNotes: trimmed });
+      setData(updated);
+      setNotice("Responses re-processed with revision notes.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Re-process failed");
+    } finally { setBusy(null); }
   }
 
   function requestRevision() {
     const notes = window.prompt("What revisions are required?");
     if (notes === null) return;
-    setBusy("revision");
     setNotice(`Revision notes recorded: ${notes.slice(0, 60)}${notes.length > 60 ? "…" : ""}`);
-    setBusy(null);
   }
 
   if (loading) return <ResponsesSkeleton id={id} />;
@@ -189,7 +222,7 @@ export default function ResponsesPage() {
         busy={busy}
         onValidate={validate}
         onRequestRevision={requestRevision}
-        onReprocess={() => submitText("")}
+        onReprocess={reprocess}
       />
     </Shell>
   );
