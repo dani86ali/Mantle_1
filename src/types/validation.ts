@@ -18,7 +18,11 @@ export type ValidationRuleId =
   | "stacking"
   | "support"
   | "antenna-count"
-  | "fan-count";
+  | "fan-count"
+  | "dna-optout"
+  | "ap-only"
+  | "eox-check"
+  | "license-deps";
 
 export interface ValidationResult {
   ruleId: ValidationRuleId;
