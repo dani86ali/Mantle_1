@@ -159,6 +159,17 @@ export interface ComponentListItem {
   role: string;
   fromDesignStep: string;
 }
+export interface ValidationIssue {
+  rule: string;
+  device: string;
+  message: string;
+  severity: 'error' | 'warning';
+}
+export interface CompatibilityResult {
+  valid: boolean;
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
+}
 export interface E5Config {
   maxRevisions: number;
   vendor: 'cisco' | 'fortinet';
