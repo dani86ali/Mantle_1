@@ -31,7 +31,6 @@ const MODES: ModeCard[] = [
     title: "RFI / Proactive",
     icon: MessageSquare,
     description: "Build from discovery questionnaire",
-    disabled: true,
   },
 ];
 

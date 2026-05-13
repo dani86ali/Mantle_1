@@ -8,7 +8,11 @@ import type { E2Output } from "@/engines/e2/orchestrator";
 import type { E3Output } from "@/engines/e3/orchestrator";
 
 export async function savePipelineState(state: PipelineState): Promise<void> {
-  const status = state.timestamps.completedAt ? "completed" : "running";
+  const status = state.error
+    ? "failed"
+    : state.timestamps.completedAt
+    ? "completed"
+    : "running";
   const now = new Date();
   const stateJson = state as unknown as Record<string, unknown>;
   await db

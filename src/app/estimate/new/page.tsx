@@ -22,11 +22,17 @@ export default function NewEstimatePage() {
 
   function goNext() {
     setError(null);
-    setStep((s) => Math.min(s + 1, STEPS.length));
+    setStep((s) => {
+      const next = Math.min(s + 1, STEPS.length);
+      return state.mode === "rfi" && next === 2 ? 3 : next;
+    });
   }
   function goBack() {
     setError(null);
-    setStep((s) => Math.max(s - 1, 1));
+    setStep((s) => {
+      const prev = Math.max(s - 1, 1);
+      return state.mode === "rfi" && prev === 2 ? 1 : prev;
+    });
   }
 
   async function handleSubmit() {
@@ -75,7 +81,7 @@ export default function NewEstimatePage() {
             <ModeSelect
               onSelect={(mode) => {
                 update({ mode });
-                setStep(2);
+                setStep(mode === "rfi" ? 3 : 2);
               }}
             />
           )}
@@ -109,6 +115,7 @@ function canProceed(s: WizardState, step: number): boolean {
     if (s.mode === "rfp") return s.files.length >= 1;
     if (s.mode === "quick_bom")
       return s.bomFile !== null || parseBomText(s.bomText).length >= 1;
+    if (s.mode === "rfi") return true;
     return false;
   }
   if (step === 3)
@@ -151,6 +158,14 @@ function buildIntakeBody(
         sku: l.sku,
         quantity: l.quantity,
       })),
+    };
+  }
+  if (s.mode === "rfi") {
+    return {
+      ...base,
+      path: "path_b" as const,
+      keyNeeds: s.keyNeeds,
+      constraints: s.constraints,
     };
   }
   return {

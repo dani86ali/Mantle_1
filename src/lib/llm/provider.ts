@@ -63,7 +63,7 @@ export class AnthropicLlm {
     messages: Anthropic.MessageParam[]
   ): Promise<LlmResponse> {
     const response = await this.client.messages.create({
-      model: "claude-sonnet-4-5-20241022",
+      model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: systemPrompt,
       tools: AGENT_TOOLS,
@@ -150,7 +150,7 @@ export class GeminiLlm {
     contents: Content[]
   ): Promise<LlmResponse> {
     const model = this.genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL || "gemini-2.0-flash-lite",
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
       systemInstruction: systemPrompt,
       tools: [{ functionDeclarations: convertToolsToGemini() as never }],
     });

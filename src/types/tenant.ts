@@ -54,6 +54,30 @@ export interface StandardsConfig {
   requireRedundantPsu: boolean;
 }
 
+export interface TenantCompanyProfile {
+  tenantName: string;
+  legalEntity: string;
+  city: string;
+  country: string;
+  address: string;
+  phone: string;
+}
+
+export interface TenantPricingDefaults {
+  fxRate: number;
+  partnerDiscountPct: number;
+  dealRegDiscountPct: number;
+  profitMode: "margin" | "markup";
+  profitPct: number;
+  vatRate: number;
+}
+
+export interface TenantConfig {
+  companyProfile?: TenantCompanyProfile;
+  pricingDefaults?: TenantPricingDefaults;
+  boilerplateOverrides?: Record<string, string>;
+}
+
 export interface EngineeringRule {
   id: string;
   description: string;

@@ -133,3 +133,20 @@ export function toE3Artifacts(out: E3Output): E3Artifacts {
   if (out.financialPath) artifacts.financialProposal = out.financialPath;
   return artifacts;
 }
+
+export function syntheticE1ForRfi(): E1Output {
+  return {
+    fileClassifications: [], missingDocuments: [], requirements: [],
+    riskFlags: [], deadlines: [],
+    evalCriteria: { methodology: 'unknown', envelopes: [], iktvaRequired: false, source: 'rfi' },
+    vendorPreferences: [],
+    sectorDetection: { sector: 'general', confidence: 0, method: 'client_lookup', evidence: 'rfi' },
+    frameworks: [],
+    complianceMatrix: {
+      rows: [], gaps: { coverageGaps: [], orphanRequirements: [] },
+      stats: { total: 0, compliant: 0, partial: 0, nonCompliant: 0, alternative: 0 },
+    },
+    clarifications: { questions: [], stats: { total: 0, critical: 0, important: 0, niceToHave: 0 } },
+    stats: { totalFiles: 0, totalRequirements: 0, mandatoryCount: 0, criticalRisks: 0 },
+  };
+}
