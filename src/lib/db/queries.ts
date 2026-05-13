@@ -1,6 +1,7 @@
 import { eq, and, desc, sql } from "drizzle-orm";
 import { db } from "./index";
 import * as schema from "./schema";
+import type { TenantConfig } from "@/types/tenant";
 
 // ─── Tenant queries ──────────────────────────────────────────────────────
 
@@ -20,6 +21,27 @@ export async function getTenantBySlug(slug: string) {
     .where(eq(schema.tenants.slug, slug))
     .limit(1);
   return tenant ?? null;
+}
+
+export async function getTenantConfig(tenantId: string): Promise<TenantConfig> {
+  const [row] = await db
+    .select({ tenantConfig: schema.tenants.tenantConfig })
+    .from(schema.tenants)
+    .where(eq(schema.tenants.id, tenantId))
+    .limit(1);
+  return (row?.tenantConfig as TenantConfig | undefined) ?? {};
+}
+
+export async function updateTenantConfig(
+  tenantId: string,
+  config: Partial<TenantConfig>
+): Promise<void> {
+  const current = await getTenantConfig(tenantId);
+  const merged: TenantConfig = { ...current, ...config };
+  await db
+    .update(schema.tenants)
+    .set({ tenantConfig: merged })
+    .where(eq(schema.tenants.id, tenantId));
 }
 
 // ─── Intake queries ──────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateBody, intakeFormSchema } from "@/lib/middleware/validate";
-import { createIntake, createAgentRun } from "@/lib/db/queries";
+import { createIntake, createAgentRun, getTenantConfig } from "@/lib/db/queries";
 import { db } from "@/lib/db/index";
 import { tenants } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -12,12 +12,9 @@ import {
   saveE2Artifacts,
   saveE3Artifacts,
 } from "@/lib/db/pipeline-store";
-import type {
-  E2Device,
-  E2DeviceConfig,
-  E2PricingConfig,
-} from "@/engines/e2/orchestrator";
+import type { E2PricingConfig } from "@/engines/e2/orchestrator";
 import type { IntakeMode } from "@/coordinator/types";
+import { devicesFromIntake } from "@/coordinator/intake-to-e2";
 
 type IntakeRequirements = z.infer<typeof intakeFormSchema>;
 
@@ -43,8 +40,11 @@ async function getDefaultTenantId(): Promise<string> {
   return tenant.id;
 }
 
-function defaultPricingConfig(country?: string): E2PricingConfig {
-  return {
+async function defaultPricingConfig(
+  tenantId: string,
+  country?: string,
+): Promise<E2PricingConfig> {
+  const fallback: E2PricingConfig = {
     fxRate: 3.75,
     partnerDiscountPct: 0.35,
     dealRegDiscountPct: 0.08,
@@ -53,10 +53,29 @@ function defaultPricingConfig(country?: string): E2PricingConfig {
     vatRate: 0.15,
     country: country ?? "SA",
   };
+  try {
+    const cfg = await getTenantConfig(tenantId);
+    const p = cfg.pricingDefaults;
+    if (!p) return fallback;
+    return {
+      fxRate: p.fxRate,
+      partnerDiscountPct: p.partnerDiscountPct / 100,
+      dealRegDiscountPct: p.dealRegDiscountPct / 100,
+      profitMode: p.profitMode,
+      profitPct: p.profitPct / 100,
+      vatRate: p.vatRate / 100,
+      country: country ?? "SA",
+    };
+  } catch {
+    return fallback;
+  }
 }
 
-function resolvePricingConfig(req: IntakeRequirements): E2PricingConfig {
-  if (!req.pricingConfig) return defaultPricingConfig(req.country);
+async function resolvePricingConfig(
+  tenantId: string,
+  req: IntakeRequirements,
+): Promise<E2PricingConfig> {
+  if (!req.pricingConfig) return defaultPricingConfig(tenantId, req.country);
   return {
     ...req.pricingConfig,
     country: req.country ?? "SA",
@@ -73,47 +92,14 @@ function modeToPath(mode: IntakeMode): "path_a" | "path_b" {
   return mode === "quick_bom" ? "path_a" : "path_b";
 }
 
-function buildDeviceConfig(req: IntakeRequirements): E2DeviceConfig {
-  const dnaMap: Record<string, E2DeviceConfig["dnaTier"]> = {
-    essentials: "essentials",
-    advantage: "advantage",
-    opt_out: "optout",
-  };
-  const termMap: Record<string, 3 | 5 | 7> = {
-    "3yr": 3, "3": 3, "5yr": 5, "5": 5, "7yr": 7, "7": 7,
-  };
-  return {
-    redundantPsu: req.redundancyRequired,
-    dnaTier: req.dnaTier ? dnaMap[req.dnaTier] : "advantage",
-    networkTier: req.licenseTier ?? "advantage",
-    licenseTerm: req.supportTerm ? (termMap[req.supportTerm] ?? 5) : 5,
-    supportCriticality: "standard",
-    vendor: "cisco",
-  };
-}
-
-function devicesFromIntake(req: IntakeRequirements): E2Device[] {
-  const config = buildDeviceConfig(req);
-  if (req.uploadedBomLines && req.uploadedBomLines.length > 0) {
-    return req.uploadedBomLines.map((l) => ({
-      model: l.sku, qty: l.quantity, config,
-    }));
-  }
-  if (req.quantities && req.quantities.length > 0) {
-    return req.quantities.map((q) => ({
-      model: q.description, qty: q.quantity, config,
-    }));
-  }
-  return [];
-}
-
 async function runAndPersistPipeline(
+  tenantId: string,
   intakeId: string,
   req: IntakeRequirements,
 ): Promise<void> {
   try {
     const devices = devicesFromIntake(req);
-    const pricingConfig = resolvePricingConfig(req);
+    const pricingConfig = await resolvePricingConfig(tenantId, req);
     const mode = resolveMode(req);
     const result = await runPipeline({
       opportunityId: `intake:${intakeId}`,
@@ -178,7 +164,7 @@ export async function POST(request: NextRequest) {
       status: "PENDING",
     });
 
-    void runAndPersistPipeline(intake.id, data);
+    void runAndPersistPipeline(tenantId, intake.id, data);
 
     return NextResponse.json(
       {

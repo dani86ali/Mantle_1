@@ -24,6 +24,7 @@ export const tenants = pgTable("tenants", {
     .default("Global Price List Emerging (USD)"),
   brandingConfig: jsonb("branding_config").notNull().default({}),
   standardsConfig: jsonb("standards_config").notNull().default({}),
+  tenantConfig: jsonb("tenant_config").notNull().default({}),
   onboardingState: varchar("onboarding_state", { length: 50 })
     .notNull()
     .default("LEAD"),
