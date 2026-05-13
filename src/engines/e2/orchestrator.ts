@@ -24,6 +24,7 @@ import {
 } from "@/engines/e2/similar-deal-finder";
 import { runValidation } from "@/lib/validation/engine";
 import { readExcelFile } from "@/lib/io/excel-reader";
+import { writeBomWorkbook } from "@/engines/e2/bom-workbook-writer";
 import {
   buildPricedLines, buildTotals, buildValidationContext,
   type PricedBomLine, type RawLine, type E2Totals,
@@ -46,6 +47,7 @@ export interface E2PricingConfig {
 }
 export interface E2ProjectContext {
   sector?: string; siteCount?: number; userCount?: number; description?: string;
+  customerName?: string; estimateId?: string;
 }
 export interface E2Input {
   filePath?: string;
@@ -56,6 +58,10 @@ export interface E2Input {
   historicalDeals?: DealSummary[];
   /** Spec extension: callers supply per-SKU USD list prices until catalog adapter is wired. */
   listPrices?: Record<string, number>;
+  /** Directory for the BoM XLSX. Defaults to a per-run temp directory. */
+  outputDir?: string;
+  /** If false, skip XLSX emission (used by tests / dry runs). */
+  emitFiles?: boolean;
 }
 export interface E2Output {
   bom: PricedBomLine[];
@@ -115,7 +121,22 @@ export async function runE2(input: E2Input): Promise<E2Output> {
   }
 
   // (9) Totals by category.
-  return { bom: priced, validationResults, anomalies, similarDeals, totals: buildTotals(priced) };
+  const totals = buildTotals(priced);
+
+  // (10) Emit BoM XLSX unless dry-run.
+  let exportPath: string | undefined;
+  if (input.emitFiles !== false && priced.length > 0) {
+    exportPath = await writeBomWorkbook({
+      priced, totals, validationResults,
+      vatRate: input.pricingConfig.vatRate,
+      country: input.pricingConfig.country,
+      customerName: input.projectContext?.customerName,
+      estimateId: input.projectContext?.estimateId,
+      outputDir: input.outputDir,
+    });
+  }
+
+  return { bom: priced, validationResults, anomalies, similarDeals, totals, exportPath };
 }
 
 function parseByType(type: BoQType, sheets: Record<string, string[][]>): BoQLineItem[] {

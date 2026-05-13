@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { writeFile } from "fs/promises";
+import { buildSummarySheet } from "./excel-summary-sheet";
 
 export interface BoMExportLine {
   sku: string;
@@ -10,6 +11,19 @@ export interface BoMExportLine {
   unitSellPrice: number;
   extendedSell: number;
   currency: string;
+  /** Per-line validation rollup ("pass" / "warn" / "fail"). Optional. */
+  validationStatus?: string;
+}
+
+export interface BoMSummaryTotals {
+  hardwareTotal?: number;
+  softwareTotal?: number;
+  serviceTotal?: number;
+  subscriptionTotal?: number;
+  subtotalExVat: number;
+  vatRate?: number;
+  vatAmount: number;
+  grandTotalIncVat: number;
 }
 
 export interface BoMExportMetadata {
@@ -17,6 +31,9 @@ export interface BoMExportMetadata {
   estimateId: string;
   date: string;
   country: string;
+  /** Optional totals — when present, the writer emits a Summary sheet and a
+   *  VAT + Grand Total Inc VAT row in the Price Estimate footer. */
+  summary?: BoMSummaryTotals;
 }
 
 type CategoryGroup = "product" | "service" | "subscription";
@@ -42,6 +59,7 @@ const COL_HEADERS = [
   "Disc%",
   "Extended Net Price",
 ];
+const VALIDATION_HEADER = "Validation";
 
 export async function writeBoMExport(
   bom: BoMExportLine[],
@@ -78,7 +96,10 @@ export async function writeBoMExport(
     grouped[classify(line.category)].push(line);
   }
 
-  rows.push(COL_HEADERS);
+  const hasValidationCol = bom.some((l) => typeof l.validationStatus === "string" && l.validationStatus.length > 0);
+  const headerRow: (string | null)[] = [...COL_HEADERS];
+  if (hasValidationCol) headerRow.push(VALIDATION_HEADER);
+  rows.push(headerRow);
   const headerRowIdx = rows.length - 1;
 
   for (const group of GROUP_ORDER) {
@@ -90,7 +111,7 @@ export async function writeBoMExport(
         line.unitListPrice > 0
           ? ((line.unitListPrice - line.unitSellPrice) / line.unitListPrice) * 100
           : 0;
-      rows.push([
+      const row: (string | number | null)[] = [
         line.sku,
         line.description,
         line.qty,
@@ -98,7 +119,9 @@ export async function writeBoMExport(
         line.unitSellPrice,
         Number(disc.toFixed(2)),
         line.extendedSell,
-      ]);
+      ];
+      if (hasValidationCol) row.push(line.validationStatus ?? "");
+      rows.push(row);
       totals[group] += line.extendedSell;
     }
   }
@@ -108,15 +131,12 @@ export async function writeBoMExport(
   rows.push([null, null, null, null, null, "Product Total:", totals.product]);
   rows.push([null, null, null, null, null, "Service Total:", totals.service]);
   rows.push([null, null, null, null, null, "Subscription Total:", totals.subscription]);
-  rows.push([
-    null,
-    null,
-    null,
-    null,
-    null,
-    "Grand Total:",
-    totals.product + totals.service + totals.subscription,
-  ]);
+  const grandExVat = totals.product + totals.service + totals.subscription;
+  rows.push([null, null, null, null, null, "Grand Total:", grandExVat]);
+  if (metadata.summary) {
+    rows.push([null, null, null, null, null, "VAT:", metadata.summary.vatAmount]);
+    rows.push([null, null, null, null, null, "Grand Total Inc VAT:", metadata.summary.grandTotalIncVat]);
+  }
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws["!cols"] = [
@@ -133,6 +153,9 @@ export async function writeBoMExport(
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Price Estimate");
+  if (metadata.summary) {
+    XLSX.utils.book_append_sheet(wb, buildSummarySheet(metadata.summary, currency), "Summary");
+  }
 
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
   await writeFile(outputPath, buf);

@@ -43,6 +43,8 @@ export interface E5Artifacts {
   diagrams?: string[];
   ipVlanPlan?: string;
   componentList?: string;
+  /** JSON: { designApproach, sizing, hldSections } from phase1 — for E3 grounding. */
+  designSummary?: string;
 }
 
 /** Indexed by engine — engines write here, downstream engines read from here */

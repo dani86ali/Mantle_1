@@ -84,7 +84,11 @@ export async function runE5Detailed(input: EngineInput): Promise<E5OrchestratorR
       return {
         output: {
           engine: 'e5',
-          artifacts: { hldDocument: p1.hldDocPath, diagrams: p1.diagramXml ? [p1.diagramXml] : [] },
+          artifacts: {
+            hldDocument: p1.hldDocPath,
+            diagrams: p1.diagramXml ? [p1.diagramXml] : [],
+            designSummary: buildDesignSummary(p1),
+          },
           warnings,
         },
         phase, logs, phase1: p1,
@@ -129,6 +133,7 @@ export async function runE5Detailed(input: EngineInput): Promise<E5OrchestratorR
           diagrams: p1.diagramXml ? [p1.diagramXml] : [],
           ipVlanPlan: JSON.stringify(p2.ipVlanPlan),
           componentList: JSON.stringify(componentList),
+          designSummary: buildDesignSummary(p1),
         },
         warnings,
       },
@@ -141,6 +146,18 @@ export async function runE5Detailed(input: EngineInput): Promise<E5OrchestratorR
       phase, logs,
     };
   }
+}
+
+function buildDesignSummary(p1: Phase1Result): string {
+  return JSON.stringify({
+    designApproach: p1.designApproach,
+    sizing: p1.sizing,
+    hldSections: p1.hldSections.map((s) => ({
+      sectionNumber: s.sectionNumber,
+      title: s.title,
+      content: s.content,
+    })),
+  });
 }
 
 async function buildComponentListStep(

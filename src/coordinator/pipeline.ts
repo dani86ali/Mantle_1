@@ -154,5 +154,8 @@ async function runE3Stage(
     intakeId: state.intakeId, clientName: input.clientName, country: input.country,
   };
   const outputDir = await resolveOutputDir(ctx);
-  return runE3(buildE3Input(ctx, e1 ?? syntheticE1ForRfi(), e2, input.pricingConfig, outputDir));
+  return runE3(buildE3Input(
+    ctx, e1 ?? syntheticE1ForRfi(), e2, input.pricingConfig, outputDir,
+    state.artifacts.e4, state.artifacts.e5,
+  ));
 }

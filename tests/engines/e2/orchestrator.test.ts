@@ -1,4 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from "vitest";
+import { mkdtemp, rm, readFile, stat } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
+import * as XLSX from "xlsx";
 
 vi.mock("@/lib/ai/client", () => ({
   callAI: vi.fn(),
@@ -150,5 +154,70 @@ describe("runE2 — orchestrator", () => {
       historicalDeals: undefined,
     });
     expect(result.similarDeals).toBeUndefined();
+  });
+});
+
+describe("runE2 — BoM XLSX emission", () => {
+  let outDir: string;
+
+  beforeAll(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "bomatic-e2-xlsx-"));
+  });
+
+  afterAll(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  it("sets exportPath and writes a valid XLSX (PK zip header) to that path", async () => {
+    const result = await runE2({ ...baseInput(), outputDir: outDir });
+    expect(result.exportPath).toBeTruthy();
+    expect(result.exportPath!.endsWith(".xlsx")).toBe(true);
+
+    const st = await stat(result.exportPath!);
+    expect(st.size).toBeGreaterThan(0);
+
+    const head = await readFile(result.exportPath!);
+    expect(head[0]).toBe(0x50); // 'P'
+    expect(head[1]).toBe(0x4b); // 'K'
+  });
+
+  it("XLSX contains BoM line items matching the priced BoM", async () => {
+    const result = await runE2({ ...baseInput(), outputDir: outDir });
+    const wb = XLSX.readFile(result.exportPath!);
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 }) as unknown[][];
+    const flat = rows
+      .flat()
+      .filter((c) => typeof c === "string")
+      .join("\n");
+    for (const line of result.bom) {
+      expect(flat).toContain(line.sku);
+    }
+    expect(flat).toContain("Grand Total");
+  });
+
+  it("skips XLSX emission when emitFiles=false", async () => {
+    const result = await runE2({ ...baseInput(), emitFiles: false });
+    expect(result.exportPath).toBeUndefined();
+  });
+
+  it("XLSX contains a Summary sheet with VAT and Grand Total Inc VAT", async () => {
+    const result = await runE2({ ...baseInput(), outputDir: outDir });
+    const wb = XLSX.readFile(result.exportPath!);
+    expect(wb.SheetNames).toContain("Summary");
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets["Summary"], { header: 1, raw: true }) as unknown[][];
+    const flat = rows.flat().map((c) => String(c)).join("|");
+    expect(flat).toContain("VAT");
+    expect(flat).toContain("Grand Total Inc VAT");
+    expect(flat).toContain("Subtotal (ex VAT)");
+  });
+
+  it("XLSX line-items sheet exposes a Validation column when statuses are computed", async () => {
+    const result = await runE2({ ...baseInput(), outputDir: outDir });
+    const wb = XLSX.readFile(result.exportPath!);
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets["Price Estimate"], { header: 1, raw: false }) as unknown[][];
+    const headerRow = rows.find((r) => r[0] === "Part Number");
+    expect(headerRow).toBeDefined();
+    expect(headerRow).toContain("Validation");
   });
 });

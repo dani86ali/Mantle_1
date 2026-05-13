@@ -88,6 +88,61 @@ export interface E3E2Data {
   validationResults: unknown[];
 }
 
+/** Structural mirrors of E4 RequirementsBaseline — re-declared so src/engines/e3
+ *  does not import from sibling engines (CLAUDE.md file-ownership rule). */
+export interface E3BaselineEntry {
+  id: string;
+  text: string;
+  source: string;
+  priority: 'critical' | 'high' | 'medium' | 'low' | string;
+  validated: boolean;
+}
+export interface E3RequirementsBaseline {
+  business: E3BaselineEntry[];
+  functional: E3BaselineEntry[];
+  nonFunctional: E3BaselineEntry[];
+  constraints: E3BaselineEntry[];
+  assumptions: E3BaselineEntry[];
+}
+export interface E3E4Data {
+  requirementsBaseline: E3RequirementsBaseline;
+}
+
+/** Structural mirrors of E5 design data. */
+export interface E3DesignDevice {
+  role: string;
+  model: string;
+  vendor: string;
+  quantity: number;
+  reasoning: string;
+}
+export interface E3DesignSizing {
+  coreDevices: E3DesignDevice[];
+  distributionDevices: E3DesignDevice[];
+  accessDevices: E3DesignDevice[];
+  firewalls: E3DesignDevice[];
+  wirelessControllers: E3DesignDevice[];
+  accessPoints: E3DesignDevice[];
+}
+export interface E3DesignApproach {
+  methodology: string;
+  approach: string;
+  frameworks: string[];
+  topologyPattern: string | null;
+  vendor: string;
+  projectType: string;
+}
+export interface E3HLDSection {
+  sectionNumber: number;
+  title: string;
+  content: string;
+}
+export interface E3E5Data {
+  designApproach?: E3DesignApproach;
+  sizing?: E3DesignSizing;
+  hldSections?: E3HLDSection[];
+}
+
 export interface E3Input {
   metadata: ProposalMetadata;
   e1: E3E1Data;
@@ -100,6 +155,10 @@ export interface E3Input {
   siteCount?: number;
   migrationApproach?: 'cutover' | 'parallel' | 'phased';
   keyStrengths?: string[];
+  /** Optional E4 baseline — when present, enriches the requirements section. */
+  e4?: E3E4Data;
+  /** Optional E5 design data — when present, enriches proposed_solution + implementation. */
+  e5?: E3E5Data;
   /** If false, skip docx + xlsx file emission (used by tests / dry runs). */
   emitFiles?: boolean;
 }

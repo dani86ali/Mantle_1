@@ -34,6 +34,7 @@ import {
   buildScopeInput,
   buildSolutionInput,
 } from './orchestrator-ai-inputs';
+import { applyEnrichments } from './section-enrichers';
 import type { ProposalSection, TierName } from './types';
 import type { E3Input, E3Output } from './orchestrator-types';
 
@@ -46,6 +47,14 @@ export type {
   E3BomLine,
   E3Totals,
   E3Requirement,
+  E3E4Data,
+  E3E5Data,
+  E3RequirementsBaseline,
+  E3BaselineEntry,
+  E3DesignApproach,
+  E3DesignSizing,
+  E3DesignDevice,
+  E3HLDSection,
 } from './orchestrator-types';
 
 const FILE_PREFIX_RE = /[^A-Za-z0-9_-]+/g;
@@ -112,7 +121,10 @@ export async function runE3(input: E3Input): Promise<E3Output> {
     generateScope(buildScopeInput(metadata, e1, e2, input.siteCount)),
   ]);
 
-  const sections = mergeAndSort(deterministic, [coverLetter, execSummary, proposedSolution, implementation, scope]);
+  const merged = mergeAndSort(deterministic, [coverLetter, execSummary, proposedSolution, implementation, scope]);
+
+  // (3a) Optional E4/E5 enrichment — appends discovery + design context to relevant sections.
+  const sections = applyEnrichments(merged, input.e4, input.e5);
 
   // (4) Emit artifacts.
   const emitFiles = input.emitFiles ?? true;

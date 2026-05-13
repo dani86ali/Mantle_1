@@ -162,6 +162,11 @@ describe('runE5 — full pipeline', () => {
     expect(out.output.artifacts.diagrams).toEqual(['<mx/>']);
     expect(out.output.artifacts.componentList).toBeDefined();
     expect(out.componentList).toHaveLength(1);
+    expect(out.output.artifacts.designSummary).toBeDefined();
+    const parsed = JSON.parse(out.output.artifacts.designSummary!);
+    expect(parsed.designApproach).toBeDefined();
+    expect(parsed.sizing).toBeDefined();
+    expect(Array.isArray(parsed.hldSections)).toBe(true);
   });
 });
 

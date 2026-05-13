@@ -16,7 +16,12 @@ import type {
 } from '@/engines/e3/orchestrator';
 import type { E1Output } from '@/engines/e1/orchestrator';
 import type { E2Output, E2PricingConfig } from '@/engines/e2/orchestrator';
-import type { E3Artifacts } from '@/coordinator/types';
+import type {
+  E3Artifacts, E4Artifacts, E5Artifacts,
+} from '@/coordinator/types';
+import { mapE4, mapE5 } from '@/coordinator/pipeline-e3-rfi';
+
+export { mapE4, mapE5 };
 
 interface ProposalContext {
   opportunityId: string;
@@ -106,10 +111,14 @@ export function buildE3Input(
   e2Output: E2Output,
   pricingConfig: E2PricingConfig,
   outputDir: string,
+  e4Artifacts?: E4Artifacts,
+  e5Artifacts?: E5Artifacts,
 ): E3Input {
   const customerName = ctx.clientName ?? 'Customer';
   const country = ctx.country ?? pricingConfig.country;
-  return {
+  const e4 = mapE4(e4Artifacts);
+  const e5 = mapE5(e5Artifacts);
+  const input: E3Input = {
     metadata: {
       customerName,
       projectName: `${customerName} Network Solution`,
@@ -125,6 +134,9 @@ export function buildE3Input(
     costStack: deriveCostStack(e2Output.totals, pricingConfig),
     outputDir,
   };
+  if (e4) input.e4 = e4;
+  if (e5) input.e5 = e5;
+  return input;
 }
 
 export function toE3Artifacts(out: E3Output): E3Artifacts {

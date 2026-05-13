@@ -260,6 +260,96 @@ describe('runE3 — emitFiles=false', () => {
   });
 });
 
+describe('runE3 — RFI enrichment (E4/E5 optional inputs)', () => {
+  const baseline = {
+    business: [
+      { id: 'RB-001', text: 'Reduce branch outages — Critical', source: 'A1', priority: 'critical' as const, validated: false },
+    ],
+    functional: [
+      { id: 'RB-002', text: 'SD-WAN with two ISPs', source: 'C1', priority: 'high' as const, validated: false },
+    ],
+    nonFunctional: [
+      { id: 'RB-003', text: 'RTO ≤ 4 hours', source: 'D4', priority: 'high' as const, validated: false },
+    ],
+    constraints: [
+      { id: 'RB-004', text: 'SAMA CSF compliance', source: 'E1', priority: 'critical' as const, validated: false },
+    ],
+    assumptions: [
+      { id: 'RB-005', text: 'Cisco preferred vendor', source: 'F1', priority: 'medium' as const, validated: false },
+    ],
+  };
+
+  const designApproach = {
+    methodology: 'ppdioo',
+    approach: 'top_down',
+    frameworks: ['ppdioo', 'cisco_safe'],
+    topologyPattern: 'two_tier_collapsed_core',
+    vendor: 'cisco',
+    projectType: 'campus_refresh',
+  };
+  const sizing = {
+    coreDevices: [
+      { role: 'core', model: 'C9500-32QC', vendor: 'cisco', quantity: 2, reasoning: 'Collapsed core for 4 sites' },
+    ],
+    distributionDevices: [],
+    accessDevices: [
+      { role: 'access', model: 'C9300-48P', vendor: 'cisco', quantity: 10, reasoning: '480 ports across branches' },
+    ],
+    firewalls: [],
+    wirelessControllers: [],
+    accessPoints: [],
+  };
+  const hldSections = [
+    { sectionNumber: 1, title: 'Executive Summary', content: 'HLD exec summary text...' },
+    { sectionNumber: 2, title: 'Network Architecture', content: 'Two-tier collapsed core...' },
+  ];
+
+  it('appends E4 baseline content to the requirements section when e4 is supplied', async () => {
+    mockAllAiSuccess();
+    const out = await runE3(buildInput({ e4: { requirementsBaseline: baseline } }));
+    const req = out.sections.find((s) => s.slug === 'requirements');
+    expect(req).toBeDefined();
+    expect(req!.content).toContain('Discovery Requirements Baseline (E4)');
+    expect(req!.content).toContain('RB-001');
+    expect(req!.content).toContain('SAMA CSF compliance');
+    expect(req!.content).toContain('Non-Functional');
+  });
+
+  it('appends E5 design context to the proposed_solution section when e5 is supplied', async () => {
+    mockAllAiSuccess();
+    const out = await runE3(buildInput({ e5: { designApproach, sizing, hldSections } }));
+    const sol = out.sections.find((s) => s.slug === 'proposed_solution');
+    expect(sol).toBeDefined();
+    expect(sol!.content).toContain('Design Approach (E5)');
+    expect(sol!.content).toContain('two_tier_collapsed_core');
+    expect(sol!.content).toContain('Sizing Decisions (E5)');
+    expect(sol!.content).toContain('C9500-32QC');
+    expect(sol!.content).toContain('HLD Section Highlights (E5)');
+    expect(sol!.content).toContain('Network Architecture');
+  });
+
+  it('appends E5 inputs to the implementation section when e5 is supplied', async () => {
+    mockAllAiSuccess();
+    const out = await runE3(buildInput({ e5: { designApproach, sizing } }));
+    const impl = out.sections.find((s) => s.slug === 'implementation');
+    expect(impl).toBeDefined();
+    expect(impl!.content).toContain('Design-Driven Implementation Inputs (E5)');
+    expect(impl!.content).toContain('two_tier_collapsed_core');
+    expect(impl!.content).toContain('Distinct device roles to install: 2');
+  });
+
+  it('RFP mode (no e4/e5) leaves all sections unchanged', async () => {
+    mockAllAiSuccess();
+    const out = await runE3(buildInput());
+    const req = out.sections.find((s) => s.slug === 'requirements');
+    const sol = out.sections.find((s) => s.slug === 'proposed_solution');
+    const impl = out.sections.find((s) => s.slug === 'implementation');
+    expect(req!.content).not.toContain('Discovery Requirements Baseline (E4)');
+    expect(sol!.content).not.toContain('Design Approach (E5)');
+    expect(impl!.content).not.toContain('Design-Driven Implementation Inputs (E5)');
+  });
+});
+
 describe('runE3 — deterministic sections', () => {
   it('cover page mentions customer and project', async () => {
     mockAllAiSuccess();
