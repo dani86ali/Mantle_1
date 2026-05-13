@@ -36,6 +36,10 @@ export interface FinancialProposalInput {
   margin: MarginAnalysis;
   costStack: FinancialCostStack;
   paymentTerms?: string;
+  /** When 'unvalidated' or 'partial', a disclaimer row is prepended to the
+   *  Investment Summary sheet stating that list prices were not verified
+   *  against the vendor catalog. */
+  validationStatus?: "validated" | "unvalidated" | "partial";
 }
 
 const VAT_BY_COUNTRY: Record<string, number> = {
@@ -63,7 +67,14 @@ function buildInvestmentSummary(input: FinancialProposalInput): Row[] {
   const tierList = tiers.tiers;
   const rate = vatRate(metadata.country);
   const sharedExtras = costStack.travelCost + costStack.trainingCost + costStack.contingency;
-  const rows: Row[] = [
+  const rows: Row[] = [];
+  if (input.validationStatus && input.validationStatus !== 'validated') {
+    rows.push([
+      'Pricing is indicative only. List prices have not been verified against vendor catalog.',
+    ]);
+    rows.push([]);
+  }
+  rows.push(
     ['Investment Summary'],
     [`Customer: ${metadata.customerName}`],
     [`Project: ${metadata.projectName}`],
@@ -71,7 +82,7 @@ function buildInvestmentSummary(input: FinancialProposalInput): Row[] {
     [`Currency: ${metadata.currency}`, null, `Country: ${metadata.country}`, null, `VAT: ${(rate * 100).toFixed(0)}%`],
     [],
     ['Item', ...tierColumns(tierList)],
-  ];
+  );
   const tot = tierList.map((t) => t.totals);
   rows.push(['Hardware', ...tot.map((t) => t.hardwareTotal)]);
   rows.push(['Software', ...tot.map((t) => t.softwareTotal)]);

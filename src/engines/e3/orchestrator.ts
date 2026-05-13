@@ -143,6 +143,7 @@ export async function runE3(input: E3Input): Promise<E3Output> {
         tiers,
         margin,
         costStack: buildFinancialCostStack(costStack),
+        validationStatus: e2.validationStatus,
       },
       join(outputDir, `${prefix}-financial.xlsx`),
     );

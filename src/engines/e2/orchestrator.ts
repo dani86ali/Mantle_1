@@ -26,7 +26,9 @@ import { runValidation } from "@/lib/validation/engine";
 import { readExcelFile } from "@/lib/io/excel-reader";
 import { writeBomWorkbook } from "@/engines/e2/bom-workbook-writer";
 import {
+  assessValidationStatus,
   buildPricedLines, buildTotals, buildValidationContext,
+  type E2ValidationStatus,
   type PricedBomLine, type RawLine, type E2Totals,
 } from "@/engines/e2/orchestrator-helpers";
 
@@ -70,8 +72,13 @@ export interface E2Output {
   similarDeals?: SimilarDealResult;
   totals: E2Totals;
   exportPath?: string;
+  /** Honesty signal: whether prices and EoX were verified against a real catalog.
+   *  Until a live catalog adapter is wired, this is always 'unvalidated' or 'partial'. */
+  validationStatus: E2ValidationStatus;
+  /** Human-readable advisories (EoX stub, missing prices, etc.). */
+  validationWarnings: string[];
 }
-export type { PricedBomLine, E2Totals };
+export type { PricedBomLine, E2Totals, E2ValidationStatus };
 
 const SUPPORT_TERM_MONTHS: Record<3 | 5 | 7, 12 | 36 | 60> = { 3: 36, 5: 60, 7: 60 };
 
@@ -123,6 +130,9 @@ export async function runE2(input: E2Input): Promise<E2Output> {
   // (9) Totals by category.
   const totals = buildTotals(priced);
 
+  // (9a) Honesty pass — flag that prices and EoX were not catalog-verified.
+  const { validationStatus, validationWarnings } = assessValidationStatus(priced);
+
   // (10) Emit BoM XLSX unless dry-run.
   let exportPath: string | undefined;
   if (input.emitFiles !== false && priced.length > 0) {
@@ -133,10 +143,15 @@ export async function runE2(input: E2Input): Promise<E2Output> {
       customerName: input.projectContext?.customerName,
       estimateId: input.projectContext?.estimateId,
       outputDir: input.outputDir,
+      validationStatus,
+      validationWarnings,
     });
   }
 
-  return { bom: priced, validationResults, anomalies, similarDeals, totals, exportPath };
+  return {
+    bom: priced, validationResults, anomalies, similarDeals, totals, exportPath,
+    validationStatus, validationWarnings,
+  };
 }
 
 function parseByType(type: BoQType, sheets: Record<string, string[][]>): BoQLineItem[] {

@@ -34,6 +34,11 @@ export interface BoMExportMetadata {
   /** Optional totals — when present, the writer emits a Summary sheet and a
    *  VAT + Grand Total Inc VAT row in the Price Estimate footer. */
   summary?: BoMSummaryTotals;
+  /** When 'unvalidated' or 'partial', the writer prepends an UNVALIDATED
+   *  watermark header row so the reader knows prices were not catalog-verified. */
+  validationStatus?: "validated" | "unvalidated" | "partial";
+  /** Optional advisories rendered alongside the watermark. */
+  validationWarnings?: string[];
 }
 
 type CategoryGroup = "product" | "service" | "subscription";
@@ -72,6 +77,18 @@ export async function writeBoMExport(
 
   const currency = bom[0]?.currency || "USD";
   const rows: (string | number | null)[][] = [];
+
+  // Honesty watermark — flag that prices/EoX were not catalog-verified.
+  if (metadata.validationStatus && metadata.validationStatus !== "validated") {
+    const label = metadata.validationStatus.toUpperCase();
+    rows.push([
+      `*** ${label} — Prices have not been verified against vendor catalog. ***`,
+    ]);
+    for (const w of metadata.validationWarnings ?? []) {
+      rows.push([`Warning: ${w}`]);
+    }
+    rows.push([]);
+  }
 
   // Header section
   rows.push(["Price Estimate"]);

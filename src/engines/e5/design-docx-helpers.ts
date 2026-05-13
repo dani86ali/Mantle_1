@@ -19,7 +19,8 @@ import {
   TableOfContents,
   TextRun,
 } from 'docx';
-import { writeFile } from 'fs/promises';
+import { mkdir, writeFile } from 'fs/promises';
+import { dirname } from 'path';
 
 export interface DesignDocMetadata {
   customerName: string;
@@ -190,6 +191,7 @@ export async function generateDesignDocx(
     }],
   });
   const buf = await Packer.toBuffer(doc);
+  await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, buf);
   return outputPath;
 }

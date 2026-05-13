@@ -86,6 +86,8 @@ export interface E3E2Data {
   bom: E3BomLine[];
   totals: E3Totals;
   validationResults: unknown[];
+  /** Honesty signal from E2 — drives the disclaimer in the financial proposal. */
+  validationStatus?: "validated" | "unvalidated" | "partial";
 }
 
 /** Structural mirrors of E4 RequirementsBaseline — re-declared so src/engines/e3

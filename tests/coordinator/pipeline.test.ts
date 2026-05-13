@@ -58,6 +58,8 @@ function makeE2Output(): E2Output {
       grandTotalExVat: 200, vatAmount: 30, grandTotalIncVat: 230,
     },
     exportPath: '/tmp/bomatic-e2/x/bom.xlsx',
+    validationStatus: 'unvalidated',
+    validationWarnings: ['EoX status not verified — stub lookup used'],
   };
 }
 

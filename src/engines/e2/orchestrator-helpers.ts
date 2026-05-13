@@ -94,6 +94,28 @@ function mapToBomCategory(c: string): LineCategory {
   return "other";
 }
 
+export type E2ValidationStatus = "validated" | "unvalidated" | "partial";
+
+export function assessValidationStatus(
+  priced: PricedBomLine[],
+): { validationStatus: E2ValidationStatus; validationWarnings: string[] } {
+  const warnings: string[] = ["EoX status not verified — stub lookup used"];
+  const zeroPriceSkus: string[] = [];
+  const seen = new Set<string>();
+  for (const p of priced) {
+    if ((!p.unitListUsd || p.unitListUsd === 0) && !seen.has(p.sku)) {
+      seen.add(p.sku);
+      zeroPriceSkus.push(p.sku);
+    }
+  }
+  for (const sku of zeroPriceSkus) {
+    warnings.push(`No list price available for ${sku}`);
+  }
+  // No catalog adapter is wired yet, so prices are always caller-supplied:
+  // mark the run unvalidated until a real catalog is consulted.
+  return { validationStatus: "unvalidated", validationWarnings: warnings };
+}
+
 export function buildValidationContext(priced: PricedBomLine[], country: string): ValidationContext {
   const lines: BomLine[] = priced.map((p) => ({
     id: p.id, lineNumber: p.lineNumber, sku: p.sku, description: p.description,

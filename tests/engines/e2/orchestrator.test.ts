@@ -220,4 +220,37 @@ describe("runE2 — BoM XLSX emission", () => {
     expect(headerRow).toBeDefined();
     expect(headerRow).toContain("Validation");
   });
+
+  it("XLSX includes an UNVALIDATED watermark row when validationStatus is not 'validated'", async () => {
+    const result = await runE2({ ...baseInput(), outputDir: outDir });
+    expect(result.validationStatus).toBe("unvalidated");
+    const wb = XLSX.readFile(result.exportPath!);
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets["Price Estimate"], { header: 1, raw: false }) as unknown[][];
+    const flat = rows
+      .flat()
+      .filter((c) => typeof c === "string")
+      .join("\n");
+    expect(flat).toMatch(/UNVALIDATED/);
+    expect(flat).toMatch(/not been verified against vendor catalog/i);
+  });
+});
+
+describe("runE2 — validationStatus honesty signal", () => {
+  it("returns validationStatus='unvalidated' and EoX stub warning when using caller-supplied prices", async () => {
+    const result = await runE2({ ...baseInput(), emitFiles: false });
+    expect(result.validationStatus).toBe("unvalidated");
+    expect(result.validationWarnings.some((w) => /EoX status not verified/.test(w))).toBe(true);
+  });
+
+  it("emits 'No list price available' warnings for SKUs missing from listPrices", async () => {
+    const partial = { ...PRICES };
+    delete partial["C9120AXE-E"];
+    const result = await runE2({
+      ...baseInput(),
+      listPrices: partial,
+      emitFiles: false,
+    });
+    expect(result.validationStatus).toBe("unvalidated");
+    expect(result.validationWarnings.some((w) => /No list price available for C9120AXE-E/.test(w))).toBe(true);
+  });
 });

@@ -72,6 +72,8 @@ export function buildE2Input(
 export function toE2Artifacts(out: E2Output): ArtifactRegistry['e2'] {
   const artifacts: ArtifactRegistry['e2'] = {
     pricingSummary: `grandTotalIncVat=${out.totals.grandTotalIncVat}`,
+    validationStatus: out.validationStatus,
+    validationWarnings: out.validationWarnings,
   };
   if (out.exportPath) artifacts.bomWorkbook = out.exportPath;
   return artifacts;

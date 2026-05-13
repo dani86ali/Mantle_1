@@ -168,6 +168,8 @@ function makeE2Output(): E2Output {
       hardwareTotal: 100, softwareTotal: 50, serviceTotal: 25, subscriptionTotal: 25,
       grandTotalExVat: 200, vatAmount: 30, grandTotalIncVat: 230,
     },
+    validationStatus: "unvalidated",
+    validationWarnings: ["EoX status not verified — stub lookup used"],
   };
 }
 

@@ -9,7 +9,11 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 import { writeBoMExport, type BoMExportLine } from "@/lib/io/excel-writer";
 import type { ValidationResult } from "@/types/validation";
-import type { PricedBomLine, E2Totals } from "@/engines/e2/orchestrator-helpers";
+import type {
+  E2ValidationStatus,
+  PricedBomLine,
+  E2Totals,
+} from "@/engines/e2/orchestrator-helpers";
 
 export interface BomWorkbookInputs {
   priced: PricedBomLine[];
@@ -20,6 +24,8 @@ export interface BomWorkbookInputs {
   customerName?: string;
   estimateId?: string;
   outputDir?: string;
+  validationStatus?: E2ValidationStatus;
+  validationWarnings?: string[];
 }
 
 const CURRENCY_BY_COUNTRY: Record<string, string> = {
@@ -73,6 +79,8 @@ export async function writeBomWorkbook(inputs: BomWorkbookInputs): Promise<strin
     estimateId: inputs.estimateId ?? `EST-${Date.now()}`,
     date: new Date().toISOString().slice(0, 10),
     country,
+    validationStatus: inputs.validationStatus,
+    validationWarnings: inputs.validationWarnings,
     summary: {
       hardwareTotal: totals.hardwareTotal,
       softwareTotal: totals.softwareTotal,

@@ -95,6 +95,7 @@ function mapE2(out: E2Output): E3E2Data {
     })),
     totals: out.totals,
     validationResults: out.validationResults,
+    validationStatus: out.validationStatus,
   };
 }
 

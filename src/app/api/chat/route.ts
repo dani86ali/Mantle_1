@@ -7,14 +7,39 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { executeTool, type ToolContext } from "@/lib/agent/steps/tool-executor";
 import { DEFAULT_STANDARDS } from "@/types/tenant";
+import { db } from "@/lib/db/index";
+import { tenantCredentials } from "@/lib/db/schema";
 import {
   getProvider,
   AnthropicLlm,
   GeminiLlm,
   type ToolResult,
 } from "@/lib/llm/provider";
+
+const MISSING_CREDS_MESSAGE =
+  "Cisco catalog lookup requires API credentials. Please configure them in Settings > Integrations.";
+
+async function loadChatCredentials(): Promise<ToolContext["credentials"] | null> {
+  const tenantId = process.env.CHAT_TENANT_ID;
+  const rows = await (tenantId
+    ? db
+        .select()
+        .from(tenantCredentials)
+        .where(eq(tenantCredentials.tenantId, tenantId))
+        .limit(1)
+    : db.select().from(tenantCredentials).limit(1));
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    clientId: row.clientIdEnc,
+    clientSecret: row.clientSecretEnc,
+    username: row.ccoUsernameEnc,
+    password: row.ccoPasswordEnc,
+  };
+}
 
 const SYSTEM_PROMPT = `You are BOMatic, an AI-powered Cisco presales engineer assistant.
 
@@ -80,15 +105,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const credentials = await loadChatCredentials();
+  if (!credentials) {
+    return NextResponse.json({
+      response: MISSING_CREDS_MESSAGE,
+      provider: getProvider(),
+      ciscoCalls: 0,
+    });
+  }
+
   const toolContext: ToolContext = {
-    tenantId: "chat-session",
+    tenantId: process.env.CHAT_TENANT_ID ?? "chat-session",
     priceListId: "Global Price List Emerging (USD)",
-    credentials: {
-      clientId: "mock",
-      clientSecret: "mock",
-      username: "mock",
-      password: "mock",
-    },
+    credentials,
     standards: DEFAULT_STANDARDS,
     region: "EMEAR",
     country: "SA",

@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { mkdtemp, rm, writeFile } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
 
 const {
   mockResolve,
@@ -391,20 +394,76 @@ describe("GET /api/estimates/[id]/design/documents", () => {
     expect(body.error).toMatch(/not generated/);
   });
 
-  it("returns the file path when generated", async () => {
-    mockResolve.mockResolvedValue(resolved);
-    mockLoadState.mockResolvedValue({
-      phase: "hld_complete",
-      hldDocxPath: "./out/Acme-Refresh-hld.docx",
-      updatedAt: "t0",
+  describe("streaming", () => {
+    let docxTmp: string;
+    let docxPath: string;
+
+    beforeEach(async () => {
+      docxTmp = await mkdtemp(join(tmpdir(), "bomatic-docs-"));
+      docxPath = join(docxTmp, "Acme-Refresh-hld.docx");
+      // Minimal valid PK-zip header (DOCX is a zip).
+      const PK_BYTES = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x00]);
+      await writeFile(docxPath, PK_BYTES);
     });
-    const res = await docsGET(
-      urlReq("http://localhost/api/estimates/x/design/documents?type=hld"),
-      { params: { id: "intake-1" } },
-    );
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.type).toBe("hld");
-    expect(body.path).toBe("./out/Acme-Refresh-hld.docx");
+
+    afterAll(async () => {
+      if (docxTmp) await rm(docxTmp, { recursive: true, force: true });
+    });
+
+    it("streams DOCX bytes for HLD with the correct content-type and disposition", async () => {
+      mockResolve.mockResolvedValue(resolved);
+      mockLoadState.mockResolvedValue({
+        phase: "hld_complete",
+        hldDocxPath: docxPath,
+        updatedAt: "t0",
+      });
+      const res = await docsGET(
+        urlReq("http://localhost/api/estimates/x/design/documents?type=hld"),
+        { params: { id: "intake-1" } },
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      );
+      expect(res.headers.get("Content-Disposition")).toMatch(/attachment/);
+      expect(res.headers.get("Content-Disposition")).toMatch(/\.docx/);
+      const buf = Buffer.from(await res.arrayBuffer());
+      expect(buf[0]).toBe(0x50); // 'P'
+      expect(buf[1]).toBe(0x4b); // 'K'
+    });
+
+    it("returns XML for diagram type with application/xml content-type", async () => {
+      mockResolve.mockResolvedValue(resolved);
+      mockLoadState.mockResolvedValue({
+        phase: "hld_complete",
+        diagramXml: "<mxfile><diagram/></mxfile>",
+        updatedAt: "t0",
+      });
+      const res = await docsGET(
+        urlReq("http://localhost/api/estimates/x/design/documents?type=diagram"),
+        { params: { id: "intake-1" } },
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("application/xml");
+      expect(res.headers.get("Content-Disposition")).toMatch(/diagram\.drawio\.xml/);
+      const text = await res.text();
+      expect(text).toBe("<mxfile><diagram/></mxfile>");
+    });
+
+    it("returns 404 when the docx file is missing from disk", async () => {
+      mockResolve.mockResolvedValue(resolved);
+      mockLoadState.mockResolvedValue({
+        phase: "hld_complete",
+        hldDocxPath: join(docxTmp, "does-not-exist.docx"),
+        updatedAt: "t0",
+      });
+      const res = await docsGET(
+        urlReq("http://localhost/api/estimates/x/design/documents?type=hld"),
+        { params: { id: "intake-1" } },
+      );
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toMatch(/not found on disk/);
+    });
   });
 });

@@ -24,6 +24,9 @@ export interface E2Artifacts {
   filledClientBoq?: string;
   distributorExport?: string;
   pricingSummary?: string;
+  /** Honesty signal surfaced to UI/downstream consumers. Mirrors E2Output. */
+  validationStatus?: "validated" | "unvalidated" | "partial";
+  validationWarnings?: string[];
 }
 
 export interface E3Artifacts {
