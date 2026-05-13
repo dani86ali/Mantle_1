@@ -76,5 +76,6 @@ export function toE2Artifacts(out: E2Output): ArtifactRegistry['e2'] {
     validationWarnings: out.validationWarnings,
   };
   if (out.exportPath) artifacts.bomWorkbook = out.exportPath;
+  if (out.filledClientBoqPath) artifacts.filledClientBoq = out.filledClientBoqPath;
   return artifacts;
 }

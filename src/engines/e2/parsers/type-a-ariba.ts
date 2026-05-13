@@ -1,48 +1,10 @@
 import { z } from "zod";
 import { BoQLineItem } from "@/engines/e2/boq-types";
+import {
+  ColMap, detectVersion, findCommercialSheetName,
+} from "@/engines/e2/parsers/type-a-cols";
 
 const SheetsSchema = z.record(z.string(), z.array(z.array(z.string())));
-
-type ColMap = {
-  itemNum: number;
-  description: number;
-  currency: number;
-  uom: number;
-  qty: number;
-  unitPrice: number;
-  leadTime: number;
-  manufacturer: number;
-  modelPartNum: number;
-  countryOfOrigin: number;
-};
-
-// 2024+ (42 cols): O=Discount%, P=ChinaVAT%, then Q=ReqDelivery, R=LeadTime, ..., Z=Country
-const COLS_2024: ColMap = {
-  itemNum: 0,          // A
-  description: 5,      // F
-  currency: 8,         // I
-  uom: 9,              // J
-  qty: 11,             // L
-  unitPrice: 13,       // N
-  leadTime: 17,        // R
-  manufacturer: 21,    // V
-  modelPartNum: 23,    // X
-  countryOfOrigin: 25, // Z
-};
-
-// 2022 (41 cols): O=HSCode only — everything after N shifts left by 1 vs 2024+
-const COLS_2022: ColMap = {
-  itemNum: 0,          // A
-  description: 5,      // F
-  currency: 8,         // I
-  uom: 9,              // J
-  qty: 11,             // L
-  unitPrice: 13,       // N
-  leadTime: 16,        // Q (was R in 2024+)
-  manufacturer: 20,    // U (was V in 2024+)
-  modelPartNum: 22,    // W (was X in 2024+)
-  countryOfOrigin: 24, // Y (was Z in 2024+)
-};
 
 const ITEM_NUM_RE = /^\d+\.\d+$/;
 const OEM_PART_HASH_RE = /Part#\s+(\S+)/i;
@@ -57,8 +19,11 @@ function extractOemPartNumber(description: string): string | undefined {
 }
 
 function parseNum(s: string): number | undefined {
-  if (!s || s.trim() === "") return undefined;
-  const n = Number(s);
+  if (!s) return undefined;
+  // Aramco templates use locale-formatted numbers in some cells (e.g. "6,410").
+  const cleaned = s.replace(/,/g, "").trim();
+  if (cleaned === "") return undefined;
+  const n = Number(cleaned);
   return isNaN(n) ? undefined : n;
 }
 
@@ -66,21 +31,13 @@ function findCommercialSheet(sheets: Record<string, string[][]>): {
   name: string;
   rows: string[][];
 } {
-  const name = Object.keys(sheets).find((s) => s.includes("Commercial Envelope"));
+  const name = findCommercialSheetName(Object.keys(sheets));
   if (!name) {
     throw new Error(
       `No sheet containing "Commercial Envelope" found; available: ${Object.keys(sheets).join(", ")}`
     );
   }
   return { name, rows: sheets[name] };
-}
-
-// Detect version by sheet name prefix first; fall back to header row width.
-function detectVersion(sheetName: string, rows: string[][]): ColMap {
-  if (sheetName.startsWith("6 ")) return COLS_2022;
-  if (sheetName.startsWith("7 ")) return COLS_2024;
-  const headerWidth = rows[0]?.length ?? 0;
-  return headerWidth >= 42 ? COLS_2024 : COLS_2022;
 }
 
 function rowToLineItem(row: string[], cols: ColMap): BoQLineItem | null {
@@ -116,7 +73,7 @@ export function parseTypeA(sheets: Record<string, string[][]>): BoQLineItem[] {
   SheetsSchema.parse(sheets);
 
   const { name, rows } = findCommercialSheet(sheets);
-  const cols = detectVersion(name, rows);
+  const cols = detectVersion(name, rows[0]?.length ?? 0);
 
   // Rows 1–4 are system rows (0-indexed: 0–3); data starts at index 4
   const items: BoQLineItem[] = [];

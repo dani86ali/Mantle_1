@@ -42,18 +42,19 @@ const DATA_ROW_2024 = row42({
   25: "US",                                           // Z  countryOfOrigin
 });
 
-// 2022 data row (41 cols): same item but column map shifted left after N
+// 2022 data row (41 cols): different L/M/N layout — L=Helper, M=Price, N=Quantity
+// (verified against real fixture Aramco_4203079088.xlsx — NOT a simple "shift left").
 const DATA_ROW_2022 = row41({
   0: "6.1",                                           // A  itemNumber
   5: "Catalyst 9300-48P-E",                           // F  description (no OEM pattern)
   8: "SAR",                                           // I  currency
   9: "each",                                          // J  UOM
-  11: "5",                                            // L  qty
-  13: "8000",                                         // N  unitPrice
-  16: "45",                                           // Q  leadTime (2022 shift)
-  20: "Cisco",                                        // U  manufacturer (2022 shift)
-  22: "C9300-48P-E",                                  // W  modelPartNum (2022 shift)
-  24: "SG",                                           // Y  countryOfOrigin (2022 shift)
+  12: "8000",                                         // M  unitPrice (2022 layout)
+  13: "5",                                            // N  qty (2022 layout)
+  15: "45",                                           // P  leadTime
+  19: "Cisco",                                        // T  manufacturer
+  21: "C9300-48P-E",                                  // V  modelPartNum
+  23: "SG",                                           // X  countryOfOrigin
 });
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -106,15 +107,15 @@ describe("parseTypeA — 2022 sheet ('6 Commercial Envelope', 41 cols)", () => {
     ],
   };
 
-  it("uses 2022 column map (shifted left by 1 after col N)", () => {
+  it("uses 2022 column map (L=Helper, M=Price, N=Quantity, P=LeadTime, ...)", () => {
     const [item] = parseTypeA(sheets);
     expect(item.itemNumber).toBe("6.1");
-    expect(item.qty).toBe(5);
-    expect(item.unitPrice).toBe(8000);
-    expect(item.leadTime).toBe("45");       // col Q (idx 16)
-    expect(item.manufacturer).toBe("Cisco"); // col U (idx 20)
-    expect(item.metadata?.modelPartNumber).toBe("C9300-48P-E"); // col W (idx 22)
-    expect(item.metadata?.countryOfOrigin).toBe("SG"); // col Y (idx 24)
+    expect(item.qty).toBe(5);                  // col N (idx 13) — Quantity in 2022
+    expect(item.unitPrice).toBe(8000);         // col M (idx 12) — * Price in 2022
+    expect(item.leadTime).toBe("45");          // col P (idx 15)
+    expect(item.manufacturer).toBe("Cisco");   // col T (idx 19)
+    expect(item.metadata?.modelPartNumber).toBe("C9300-48P-E"); // col V (idx 21)
+    expect(item.metadata?.countryOfOrigin).toBe("SG"); // col X (idx 23)
   });
 
   it("returns undefined partNumber when no OEM pattern in description", () => {

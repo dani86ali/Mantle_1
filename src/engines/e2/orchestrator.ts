@@ -25,6 +25,7 @@ import {
 import { runValidation } from "@/lib/validation/engine";
 import { readExcelFile } from "@/lib/io/excel-reader";
 import { writeBomWorkbook } from "@/engines/e2/bom-workbook-writer";
+import { fillFromPriced } from "@/engines/e2/fill-from-priced";
 import {
   assessValidationStatus,
   buildPricedLines, buildTotals, buildValidationContext,
@@ -72,6 +73,9 @@ export interface E2Output {
   similarDeals?: SimilarDealResult;
   totals: E2Totals;
   exportPath?: string;
+  /** Path to the client's original BoQ workbook with prices filled in
+   *  (RFP mode only — set when a parseable client BoQ was provided). */
+  filledClientBoqPath?: string;
   /** Honesty signal: whether prices and EoX were verified against a real catalog.
    *  Until a live catalog adapter is wired, this is always 'unvalidated' or 'partial'. */
   validationStatus: E2ValidationStatus;
@@ -93,7 +97,10 @@ export async function runE2(input: E2Input): Promise<E2Output> {
   }
 
   // (2)+(3) Device expansion + BoQ-parsed lines fold into a single raw-line list.
-  const rawLines = expandDevices(input.devices);
+  // Track the device-line count so we can pair BoQ priced lines back to their
+  // source BoQLineItem (by index) when filling the client template (step 11).
+  const deviceLines = expandDevices(input.devices);
+  const rawLines = [...deviceLines];
   for (const b of boqLines) {
     rawLines.push({
       sku: b.partNumber || b.itemNumber || b.description,
@@ -148,9 +155,21 @@ export async function runE2(input: E2Input): Promise<E2Output> {
     });
   }
 
+  // (11) Fill the client's original BoQ template with the priced values
+  // (RFP mode: source file path provided AND we parsed line items from it).
+  let filledClientBoqPath: string | undefined;
+  if (input.emitFiles !== false && input.filePath && boqLines.length > 0) {
+    filledClientBoqPath = await fillFromPriced({
+      sourceFilePath: input.filePath,
+      boqLines,
+      pricedBoqLines: priced.slice(deviceLines.length),
+      outputDir: input.outputDir,
+    });
+  }
+
   return {
     bom: priced, validationResults, anomalies, similarDeals, totals, exportPath,
-    validationStatus, validationWarnings,
+    filledClientBoqPath, validationStatus, validationWarnings,
   };
 }
 
