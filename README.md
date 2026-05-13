@@ -1,84 +1,64 @@
-# BOMatic
+# BOMATIC — Multi-Vendor Pre-Sales Deliverable Generation Platform
 
-AI-powered Cisco presales automation. Takes customer requirements in, produces validated CCW Estimates out.
+BOMATIC ingests RFPs, RFIs, and raw requirements and produces the artifacts a pre-sales team owes the customer: compliance matrices, priced Bills of Materials, technical proposals, and HLD/LLD design documents. First tenant is **STC Solutions**; first supported vendors are **Cisco** and **Fortinet**.
 
-**Independent ISV. Not affiliated with or endorsed by Cisco Systems.**
+## Five Sweet Spots
 
-## What it does
+| ID  | Sweet Spot                | Gate | Engine | Intake Path     | Automation       |
+|-----|---------------------------|------|--------|-----------------|------------------|
+| SS1 | RFP Parser + Compliance   | 2    | E1     | RFP             | AI + validation  |
+| SS2 | BoM Construction          | 4    | E2     | RFP / Quick / RFI | Deterministic  |
+| SS3 | Proposal Authorship       | 5    | E3     | RFP / Quick / RFI | AI + templates |
+| SS4 | RFI Questionnaire         | 2    | E4     | RFI             | AI + validation  |
+| SS5 | Design (HLD/LLD)          | 3    | E5     | RFI             | AI + tool-use    |
 
-BOMatic automates the repetitive work Cisco presales engineers do daily:
-- Accepts intake via UI form, pasted email, file upload, or monitored mailbox
-- Looks up SKUs from Cisco's catalog via Commerce APIs
-- Assembles Bills of Materials with correct licenses, services, and accessories
-- Validates configurations deterministically (PoE math, EoX, region, stacking, and more)
-- Creates draft Estimates in Cisco Commerce Workspace (CCW)
-- Presents everything to a human engineer for review and approval
-- Exports to CCW, CSV, CRM/CPQ, and directly to the customer via the SI's own email
+## Three Intake Modes
 
-It complements CCW — it doesn't replace it. CCW remains the source of truth.
+- **RFP** — `E1 → E2 → E3`. Parse RFP package, build BoM against the client BoQ, author proposal.
+- **Quick BoM** — `E2 → E3`. Skip discovery; price a known component list and wrap a short proposal.
+- **RFI** — `E4 → E5 → E2 → E3`. Generate questionnaire, design from responses, build BoM, author proposal.
 
-## Phased build
+## Architecture
 
-- **Phase 1:** Core estimate automation (Access Switching + Wireless)
-- **Phase 2:** Authoritative Cisco validation, email intake, send-to-customer, Security/Meraki domains
-- **Phase 3:** CRM/CPQ integrations, deal workflows, self-serve admin
-- **Phase 4:** Additional domains, architecture diagrams, multi-vendor expansion
+- **5 engines** (`src/engines/e1`…`e5`) — each owns one Sweet Spot, never imports from another engine.
+- **Pipeline coordinator** (`src/coordinator/`) — routes by intake mode, passes typed pipeline state between engines.
+- **Deterministic-first** — 65% TypeScript functions, 26% AI-with-validation, 9% pure AI. E2 has zero pure-AI tasks.
+- **5 human checkpoints** — one per engine, where an engineer reviews/edits/approves before the next stage runs.
 
-No customer approach until Phase 3 or Phase 4 is complete.
+## Tech Stack
 
-## Tech stack
+- **Next.js 14** (App Router, TypeScript)
+- **PostgreSQL** — tenant-isolated pipeline + catalog data
+- **Anthropic Claude** via the `callAI` wrapper (single chokepoint for all AI calls, with retry + post-gate validation)
+- **Zod** — runtime validation at every engine boundary
 
-- **Framework:** Next.js 14 (TypeScript)
-- **Database:** PostgreSQL + pgvector (multi-tenant via RLS)
-- **Cache:** Redis
-- **Background jobs:** BullMQ
-- **LLM:** Anthropic Claude (Haiku + Sonnet via tool-use)
-- **Cisco APIs:** Catalog v2.0, Estimate v1.0, Customer Registry v2.0, Prepare Configuration v2.0, Quote v2.0
+## Key Principles
 
-## Repo structure
+- **No LLM math.** Arithmetic, catalog lookups, and rule checks are TypeScript functions or DB queries — never Claude calls.
+- **200-line file cap.** Split when longer. Engines compose small pure functions.
+- **Typed I/O.** Every public function has explicit input and output types; no `any` at engine boundaries.
+- **Graceful AI degradation.** AI failure never halts the pipeline: retry once with the error injected, then flag for the engineer and proceed.
+
+## Repository Layout
 
 ```
-docs/           Product definition, scope, flows, architecture, backlog, progress
-reference/      Research findings, CCW workflow patterns, business strategy, ground truth data
 src/
-  app/          Next.js pages and API routes
-  lib/
-    agent/      AI agent runtime (tool-use loop)
-    adapters/   Cisco API adapters (Catalog, Estimate, Customer Registry, + Phase 2)
-    validation/ Deterministic validation engine (9 rules)
-    db/         Database schema and queries
-    queue/      Background job definitions
-    tenant/     Multi-tenant utilities (context, credentials, standards, onboarding)
-    email/      Email intake + send-to-customer (Phase 2)
-    export/     CSV, PDF, CRM write-back
-  components/   React components (portal, console, admin, dashboard)
-  types/        Shared TypeScript types
-tests/
-  benchmark/    90% match benchmark harness
-  adapters/     Cisco API adapter tests
-  validation/   Validation rule tests
-  agent/        Agent integration tests
+  engines/
+    e1/   RFP Parser + Compliance Matrix
+    e2/   BoM Construction (BoQ parsers, validation, cost stack)
+    e3/   Proposal Authorship (boilerplate + narrative sections)
+    e4/   RFI Discovery (questionnaire + response interpretation)
+    e5/   Design (topology, HLD, LLD, diagrams)
+  coordinator/   Pipeline router, state types, per-engine drivers
+  app/           Next.js routes (API + UI)
+  lib/           Shared adapters, validation rules, DB, AI wrapper
+tests/           Vitest suites alongside engine implementations
+docs/            Runtime + build architecture, data inventory
 ```
-
-## Documentation
-
-| Document | Purpose |
-|---|---|
-| [AGENTS.md](./AGENTS.md) | Rules and guardrails for AI agents working in this repo |
-| [docs/prd.md](./docs/prd.md) | Product requirements |
-| [docs/mvp-scope.md](./docs/mvp-scope.md) | Phased scope (Phase 1–4) |
-| [docs/user-flow.md](./docs/user-flow.md) | How the product works end to end |
-| [docs/architecture.md](./docs/architecture.md) | System architecture and tech stack |
-| [docs/backlog.md](./docs/backlog.md) | Prioritized backlog by phase |
-| [docs/progress.md](./docs/progress.md) | Current build status |
-| [reference/phase1_research_findings.md](./reference/phase1_research_findings.md) | Market research and competitive analysis |
-| [reference/ccw_workflow_patterns.md](./reference/ccw_workflow_patterns.md) | CCW mechanics from Cisco engineer tutorials |
-| [reference/business-strategy.md](./reference/business-strategy.md) | Pricing, GTM, competitive matrix, risk analysis |
-| [reference/shahid-ground-truth.md](./reference/shahid-ground-truth.md) | Real estimate outputs and daily workflow |
 
 ## Team
 
-- **Danish** — Partner, developer
-- **Claude** — AI developer (primary build)
-- **Mohammad** — Partner, business strategy
-- **Shahid Khan** — Partner, Cisco-certified network engineer, domain expert
+- **Danish** — architect
+- **Claude** — AI developer
+- **Mohammad** — business strategy
+- **Shahid Khan** — domain expert (pre-sales / network engineering)
