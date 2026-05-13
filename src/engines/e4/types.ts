@@ -91,6 +91,8 @@ export interface E4Config {
   country: string;
   sector?: string;
   existingVendors?: string[];
+  /** Free-text project description used by detectProjectType when projectType is absent. */
+  description?: string;
 }
 
 /**
