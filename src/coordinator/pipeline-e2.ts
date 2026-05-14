@@ -60,11 +60,8 @@ export function buildE2Input(
   if ((!devices || devices.length === 0) && e5?.componentList) {
     devices = devicesFromComponentList(e5.componentList, input.deviceConfigOverrides);
   }
-  if (!devices || devices.length === 0) {
-    throw new Error('E2 requires devices and pricingConfig');
-  }
   return {
-    devices,
+    devices: devices ?? [],
     pricingConfig: input.pricingConfig,
     projectContext: {
       sector: e1?.sectorDetection.sector,
