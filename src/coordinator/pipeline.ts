@@ -6,7 +6,7 @@ import { runE5 } from '@/engines/e5/orchestrator';
 import { getEngineSequence } from '@/coordinator/router';
 import { buildE1Input, toE1Artifacts } from '@/coordinator/pipeline-e1';
 import { buildE2Input, toE2Artifacts } from '@/coordinator/pipeline-e2';
-import { buildDeviceConfig } from '@/coordinator/intake-to-e2';
+import { buildDeviceConfig, parseBomFromUploadedFiles } from '@/coordinator/intake-to-e2';
 import {
   buildE3Input, resolveOutputDir, syntheticE1ForRfi, toE3Artifacts,
 } from '@/coordinator/pipeline-e3';
@@ -137,8 +137,24 @@ async function runEngine(
       supportTerm: input.supportTerm,
       redundancyRequired: input.redundancyRequired,
     });
+    let devices = input.devices;
+    if (
+      (!devices || devices.length === 0)
+      && input.mode === 'quick_bom'
+      && input.files && input.files.length > 0
+    ) {
+      const lines = await parseBomFromUploadedFiles(input.files);
+      if (lines.length > 0) {
+        devices = lines.map((l) => ({
+          model: l.sku, qty: l.quantity,
+          config: { ...deviceConfigOverrides, vendor: 'cisco' as const },
+        }));
+        logEvent(state, 'e2', 'info', 'engine_call',
+          `Parsed ${lines.length} BoM line(s) from uploaded file`);
+      }
+    }
     out.e2Output = await runE2(buildE2Input(
-      { ...input, deviceConfigOverrides }, out.e1Output, state.artifacts.e5,
+      { ...input, devices, deviceConfigOverrides }, out.e1Output, state.artifacts.e5,
     ));
     state.artifacts.e2 = toE2Artifacts(out.e2Output);
   } else if (engine === 'e3') {
