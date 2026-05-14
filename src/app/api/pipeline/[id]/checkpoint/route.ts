@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { validateBody } from "@/lib/middleware/validate";
 import {
-  loadPipelineState,
+  loadPipelineStateForTenant,
   savePipelineState,
 } from "@/lib/db/pipeline-store";
 import { requireAuth } from "@/lib/middleware/auth";
@@ -37,7 +37,7 @@ export async function POST(
   const data = await validateBody(request, checkpointSchema);
   if (data instanceof NextResponse) return data;
 
-  const state = await loadPipelineState(params.id);
+  const state = await loadPipelineStateForTenant(params.id, session.tenantId);
   if (!state) {
     return NextResponse.json(
       { error: "Pipeline not found" },

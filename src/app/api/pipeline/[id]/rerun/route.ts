@@ -17,7 +17,7 @@ import { db } from "@/lib/db/index";
 import { intakes } from "@/lib/db/schema";
 import {
   loadArtifacts,
-  loadPipelineState,
+  loadPipelineStateForTenant,
   savePipelineState,
   saveE2Artifacts,
 } from "@/lib/db/pipeline-store";
@@ -67,7 +67,7 @@ export async function POST(
     );
   }
 
-  const state = await loadPipelineState(params.id);
+  const state = await loadPipelineStateForTenant(params.id, session.tenantId);
   if (!state) {
     return NextResponse.json({ error: "Pipeline not found" }, { status: 404 });
   }
