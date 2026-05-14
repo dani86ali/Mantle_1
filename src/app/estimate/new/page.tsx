@@ -35,9 +35,15 @@ export default function NewEstimatePage() {
     setError(null);
     try {
       let uploadedFiles: { filename: string; path: string }[] | undefined;
-      if (state.mode === "rfp" && state.files.length > 0) {
+      const filesToUpload: File[] =
+        state.mode === "rfp"
+          ? state.files
+          : state.mode === "quick_bom" && state.bomFile
+            ? [state.bomFile]
+            : [];
+      if (filesToUpload.length > 0) {
         const fd = new FormData();
-        for (const f of state.files) fd.append("files", f);
+        for (const f of filesToUpload) fd.append("files", f);
         const up = await fetch("/api/upload", { method: "POST", body: fd });
         const upData = await up.json();
         if (!up.ok) throw new Error(upData.error ?? "File upload failed");
@@ -156,6 +162,7 @@ function buildIntakeBody(
         sku: l.sku,
         quantity: l.quantity,
       })),
+      uploadedFiles,
     };
   }
   if (s.mode === "rfi") {
