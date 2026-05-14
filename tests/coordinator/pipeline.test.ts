@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { resolve } from 'path';
 
 vi.mock('@/engines/e1/orchestrator', () => ({
   runE1: vi.fn(),
@@ -272,6 +273,24 @@ describe('runPipeline', () => {
     expect(result.state.error?.message).toContain('E2 requires devices and pricingConfig');
     const e2Call = result.state.engineCalls.find((c) => c.engine === 'e2');
     expect(e2Call?.outcome).toBe('failed');
+  });
+
+  it("quick_bom mode parses uploaded XLSX BoQ into E2 devices when intake devices are empty", async () => {
+    const xlsxPath = resolve(__dirname, '../fixtures/boq/Aramco_4203079088.xlsx');
+    const result = await runPipeline({
+      opportunityId: 'opp-quick-bom-xlsx',
+      mode: 'quick_bom',
+      files: [{ path: xlsxPath }],
+      pricingConfig: PRICING,
+    });
+    expect(result.state.error).toBeUndefined();
+    expect(mockRunE2).toHaveBeenCalledWith(
+      expect.objectContaining({
+        devices: expect.arrayContaining([
+          expect.objectContaining({ model: 'CS-DESKPRO-K9', qty: 2 }),
+        ]),
+      }),
+    );
   });
 
   it("empty devices with pricingConfig is accepted — E2 runs with devices=[]", async () => {

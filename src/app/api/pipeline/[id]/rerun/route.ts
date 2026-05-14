@@ -24,6 +24,7 @@ import {
 import { runE2, type E2Input, type E2PricingConfig } from "@/engines/e2/orchestrator";
 import {
   devicesFromIntake,
+  parseBomFromUploadedFiles,
   type IntakeRequirementsForE2,
 } from "@/coordinator/intake-to-e2";
 import type { PipelineState } from "@/coordinator/types";
@@ -105,7 +106,13 @@ async function rerunE2(
     await savePipelineState(state);
 
     const req = await loadIntakeRequirements(intakeId);
-    const devices = devicesFromIntake(req);
+    let devices = devicesFromIntake(req);
+    if (devices.length === 0 && req.uploadedFiles && req.uploadedFiles.length > 0) {
+      const lines = await parseBomFromUploadedFiles(req.uploadedFiles);
+      if (lines.length > 0) {
+        devices = devicesFromIntake({ ...req, uploadedBomLines: lines });
+      }
+    }
     if (devices.length === 0) {
       throw new Error("Intake has no devices to re-price");
     }
