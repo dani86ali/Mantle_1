@@ -6,6 +6,7 @@ import { runE5 } from '@/engines/e5/orchestrator';
 import { getEngineSequence } from '@/coordinator/router';
 import { buildE1Input, toE1Artifacts } from '@/coordinator/pipeline-e1';
 import { buildE2Input, toE2Artifacts } from '@/coordinator/pipeline-e2';
+import { buildDeviceConfig } from '@/coordinator/intake-to-e2';
 import {
   buildE3Input, resolveOutputDir, syntheticE1ForRfi, toE3Artifacts,
 } from '@/coordinator/pipeline-e3';
@@ -60,6 +61,11 @@ export interface PipelineInput {
   hasVideo?: boolean;
   hasRedundancy?: boolean;
   downTimeToleranceHours?: number;
+  /** E2 device config overrides sourced from intake. */
+  dnaTier?: string;
+  licenseTier?: 'essentials' | 'advantage';
+  supportTerm?: string;
+  redundancyRequired?: boolean;
   onCheckpoint?: CheckpointCallback;
 }
 
@@ -125,7 +131,15 @@ async function runEngine(
     out.e1Output = await runE1(buildE1Input(input));
     state.artifacts.e1 = toE1Artifacts(out.e1Output);
   } else if (engine === 'e2') {
-    out.e2Output = await runE2(buildE2Input(input, out.e1Output, state.artifacts.e5));
+    const deviceConfigOverrides = buildDeviceConfig({
+      dnaTier: input.dnaTier,
+      licenseTier: input.licenseTier,
+      supportTerm: input.supportTerm,
+      redundancyRequired: input.redundancyRequired,
+    });
+    out.e2Output = await runE2(buildE2Input(
+      { ...input, deviceConfigOverrides }, out.e1Output, state.artifacts.e5,
+    ));
     state.artifacts.e2 = toE2Artifacts(out.e2Output);
   } else if (engine === 'e3') {
     out.e3Output = await runE3Stage(input, state, out.e1Output, out.e2Output);

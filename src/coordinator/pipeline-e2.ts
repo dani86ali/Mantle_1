@@ -15,6 +15,7 @@ export interface E2BuildInput {
   pricingConfig?: E2Input['pricingConfig'];
   solutionContext?: string;
   historicalDeals?: E2Input['historicalDeals'];
+  deviceConfigOverrides?: Partial<E2DeviceConfig>;
 }
 
 const DEFAULT_DEVICE_CONFIG: E2DeviceConfig = {
@@ -25,7 +26,10 @@ const DEFAULT_DEVICE_CONFIG: E2DeviceConfig = {
   vendor: 'cisco',
 };
 
-function devicesFromComponentList(json: string): E2Device[] {
+function devicesFromComponentList(
+  json: string,
+  configOverrides?: Partial<E2DeviceConfig>,
+): E2Device[] {
   let items: ComponentListItem[];
   try {
     items = JSON.parse(json) as ComponentListItem[];
@@ -38,6 +42,7 @@ function devicesFromComponentList(json: string): E2Device[] {
     qty: c.quantity,
     config: {
       ...DEFAULT_DEVICE_CONFIG,
+      ...configOverrides,
       vendor: c.vendor === 'fortinet' ? 'fortinet' : 'cisco',
     },
   }));
@@ -53,7 +58,7 @@ export function buildE2Input(
   }
   let devices = input.devices;
   if ((!devices || devices.length === 0) && e5?.componentList) {
-    devices = devicesFromComponentList(e5.componentList);
+    devices = devicesFromComponentList(e5.componentList, input.deviceConfigOverrides);
   }
   if (!devices || devices.length === 0) {
     throw new Error('E2 requires devices and pricingConfig');

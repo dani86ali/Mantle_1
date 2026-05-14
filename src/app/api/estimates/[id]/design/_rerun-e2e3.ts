@@ -16,6 +16,7 @@ import {
 import { runE2, type E2PricingConfig } from "@/engines/e2/orchestrator";
 import { runE3 } from "@/engines/e3/orchestrator";
 import { buildE2Input, toE2Artifacts } from "@/coordinator/pipeline-e2";
+import { buildDeviceConfig } from "@/coordinator/intake-to-e2";
 import {
   buildE3Input,
   resolveOutputDir,
@@ -80,14 +81,25 @@ export async function rerunE2E3AfterDesign(
     const req = (intake.requirementsJson ?? {}) as {
       pricingConfig?: Omit<E2PricingConfig, "country">;
       keyNeeds?: string;
+      dnaTier?: string;
+      licenseTier?: "essentials" | "advantage";
+      supportTerm?: string;
+      redundancyRequired?: boolean;
     };
     const pricingConfig = await resolvePricingConfig(intake.tenantId, {
       country: intake.country ?? undefined,
       pricingConfig: req.pricingConfig,
     });
 
+    const deviceConfigOverrides = buildDeviceConfig({
+      dnaTier: req.dnaTier,
+      licenseTier: req.licenseTier,
+      supportTerm: req.supportTerm,
+      redundancyRequired: req.redundancyRequired,
+    });
+
     const e2Input = buildE2Input(
-      { pricingConfig, solutionContext: req.keyNeeds },
+      { pricingConfig, solutionContext: req.keyNeeds, deviceConfigOverrides },
       undefined,
       state.artifacts.e5,
     );
