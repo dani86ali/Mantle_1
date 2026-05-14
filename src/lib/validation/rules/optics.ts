@@ -10,6 +10,17 @@ export const opticsRule: ValidationRule = {
   description: "Transceiver count must not exceed chassis SFP/QSFP slots",
 
   run(context: ValidationContext): ValidationResult[] {
+    if (context.catalogData.size === 0 && context.lines.length > 0) {
+      return [{
+        ruleId: "optics",
+        ruleName: "Optics Count",
+        severity: "warning",
+        passed: false,
+        message: "Optics count not verified — no catalog data available",
+        affectedLineIds: [],
+      }];
+    }
+
     const results: ValidationResult[] = [];
 
     // Find chassis lines that have optics data

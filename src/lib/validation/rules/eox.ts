@@ -7,6 +7,17 @@ export const eoxRule: ValidationRule = {
   description: "No EoX (end-of-life or end-of-sale) SKUs in the BoM",
 
   run(context: ValidationContext): ValidationResult[] {
+    if (context.catalogData.size === 0 && context.lines.length > 0) {
+      return [{
+        ruleId: "eox",
+        ruleName: "End-of-Life/Sale Status",
+        severity: "warning",
+        passed: false,
+        message: "EoX status not verified — no catalog data available",
+        affectedLineIds: context.lines.map((l) => l.id),
+      }];
+    }
+
     const results: ValidationResult[] = [];
 
     for (const line of context.lines) {

@@ -124,13 +124,9 @@ export function buildValidationContext(priced: PricedBomLine[], country: string)
     category: mapToBomCategory(p.category),
     smartAccountMandatory: false, validationFlags: [], decision: "pending", catalogVerified: false,
   }));
+  // No catalog adapter is wired yet — pass an empty map so catalog-dependent
+  // rules can honestly report "unverified" rather than rubber-stamping every SKU.
   const catalogData = new Map<string, CatalogItemForValidation>();
-  for (const l of lines) {
-    catalogData.set(l.sku, {
-      sku: l.sku, exists: true, eoxStatus: { isEox: false },
-      regionAvailability: ["*"], category: l.category,
-    });
-  }
   return {
     lines, requirements: {}, region: "global", country,
     tenantStandards: {

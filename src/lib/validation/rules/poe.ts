@@ -18,6 +18,17 @@ export const poeRule: ValidationRule = {
   description: "PSU PoE budget must cover connected device power requirements",
 
   run(context: ValidationContext): ValidationResult[] {
+    if (context.catalogData.size === 0 && context.lines.length > 0) {
+      return [{
+        ruleId: "poe",
+        ruleName: "PoE Budget",
+        severity: "warning",
+        passed: false,
+        message: "PoE budget not verified — no catalog data available",
+        affectedLineIds: [],
+      }];
+    }
+
     const results: ValidationResult[] = [];
 
     // Only check hardware lines that have PoE data

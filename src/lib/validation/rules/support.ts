@@ -14,6 +14,17 @@ export const supportRule: ValidationRule = {
   description: "Hardware SKUs should have SmartNet or equivalent support attached",
 
   run(context: ValidationContext): ValidationResult[] {
+    if (context.catalogData.size === 0 && context.lines.length > 0) {
+      return [{
+        ruleId: "support",
+        ruleName: "Support Attachment",
+        severity: "warning",
+        passed: false,
+        message: "Support attachment not verified — no catalog data available",
+        affectedLineIds: [],
+      }];
+    }
+
     const results: ValidationResult[] = [];
 
     const hardwareLines = context.lines.filter((line) => {

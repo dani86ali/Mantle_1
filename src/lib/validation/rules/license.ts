@@ -12,6 +12,17 @@ export const licenseRule: ValidationRule = {
   description: "Every hardware SKU must have a license attached (or explicit opt-out)",
 
   run(context: ValidationContext): ValidationResult[] {
+    if (context.catalogData.size === 0 && context.lines.length > 0) {
+      return [{
+        ruleId: "license",
+        ruleName: "License Attachment",
+        severity: "warning",
+        passed: false,
+        message: "License attachment not verified — no catalog data available",
+        affectedLineIds: [],
+      }];
+    }
+
     const results: ValidationResult[] = [];
 
     const hardwareLines = context.lines.filter((line) => {

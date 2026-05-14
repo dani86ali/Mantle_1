@@ -7,6 +7,17 @@ export const regionRule: ValidationRule = {
   description: "Every SKU must be available in the intake region",
 
   run(context: ValidationContext): ValidationResult[] {
+    if (context.catalogData.size === 0 && context.lines.length > 0) {
+      return [{
+        ruleId: "region",
+        ruleName: "Region Availability",
+        severity: "warning",
+        passed: false,
+        message: "Region availability not verified — no catalog data available",
+        affectedLineIds: context.lines.map((l) => l.id),
+      }];
+    }
+
     const results: ValidationResult[] = [];
     const region = context.region.toUpperCase();
 

@@ -13,6 +13,17 @@ export const psuRule: ValidationRule = {
   description: "If redundancy requested, PSU count must be ≥ 2× chassis count",
 
   run(context: ValidationContext): ValidationResult[] {
+    if (context.catalogData.size === 0 && context.lines.length > 0) {
+      return [{
+        ruleId: "psu",
+        ruleName: "PSU Redundancy",
+        severity: "warning",
+        passed: false,
+        message: "PSU redundancy not verified — no catalog data available",
+        affectedLineIds: [],
+      }];
+    }
+
     const results: ValidationResult[] = [];
 
     const redundancyRequired =
