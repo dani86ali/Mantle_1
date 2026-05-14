@@ -7,7 +7,7 @@ const { mockLoad, mockSave } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db/pipeline-store", () => ({
-  loadPipelineState: mockLoad,
+  loadPipelineStateForTenant: mockLoad,
   savePipelineState: mockSave,
 }));
 

@@ -1,7 +1,7 @@
 import { v4 as uuid } from "uuid";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "./index";
-import { pipelineRuns } from "./schema";
+import { intakes, pipelineRuns } from "./schema";
 import type { PipelineState } from "@/coordinator/types";
 import type { E1Output } from "@/engines/e1/orchestrator";
 import type { E2Output } from "@/engines/e2/orchestrator";
@@ -45,6 +45,23 @@ export async function loadPipelineState(
     .select({ state: pipelineRuns.state })
     .from(pipelineRuns)
     .where(eq(pipelineRuns.id, pipelineId))
+    .limit(1);
+  if (!row || !row.state) return null;
+  return reviveState(row.state as Record<string, unknown>);
+}
+
+// Tenant-scoped variant: returns the state only if the pipeline's intake
+// belongs to the given tenant. Pipelines without an intakeId cannot be
+// tenant-verified and resolve to null (treat as not found).
+export async function loadPipelineStateForTenant(
+  pipelineId: string,
+  tenantId: string,
+): Promise<PipelineState | null> {
+  const [row] = await db
+    .select({ state: pipelineRuns.state })
+    .from(pipelineRuns)
+    .innerJoin(intakes, eq(pipelineRuns.intakeId, intakes.id))
+    .where(and(eq(pipelineRuns.id, pipelineId), eq(intakes.tenantId, tenantId)))
     .limit(1);
   if (!row || !row.state) return null;
   return reviveState(row.state as Record<string, unknown>);
