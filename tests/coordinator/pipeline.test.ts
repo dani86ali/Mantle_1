@@ -261,16 +261,32 @@ describe('runPipeline', () => {
   });
 
   it("buildE2Input precondition failure flows to state.error (not silently swallowed)", async () => {
-    // RFP mode without devices/pricingConfig — buildE2Input throws inside the
-    // per-engine try/catch. The pipeline must still surface this as a failure
-    // so the intake row is marked FAILED instead of stuck PENDING.
+    // RFP mode without pricingConfig — buildE2Input throws inside the per-engine
+    // try/catch. The pipeline must still surface this as a failure so the intake
+    // row is marked FAILED instead of stuck PENDING.
     const result = await runPipeline({
-      opportunityId: 'opp-no-devices', mode: 'rfp',
+      opportunityId: 'opp-no-pricing', mode: 'rfp',
       files: [{ path: 'rfp.docx', content: 'sample' }],
     });
     expect(result.state.error).toBeDefined();
     expect(result.state.error?.message).toContain('E2 requires devices and pricingConfig');
     const e2Call = result.state.engineCalls.find((c) => c.engine === 'e2');
     expect(e2Call?.outcome).toBe('failed');
+  });
+
+  it("empty devices with pricingConfig is accepted — E2 runs with devices=[]", async () => {
+    // In RFP mode devices come from the parsed BoQ inside E2; intake-level
+    // devices can be empty. buildE2Input must NOT throw in this case.
+    const result = await runPipeline({
+      opportunityId: 'opp-empty-devices', mode: 'rfp',
+      files: [{ path: 'rfp.docx', content: 'sample' }],
+      pricingConfig: PRICING,
+    });
+    expect(result.state.error).toBeUndefined();
+    expect(mockRunE2).toHaveBeenCalledWith(
+      expect.objectContaining({ devices: [] }),
+    );
+    const e2Call = result.state.engineCalls.find((c) => c.engine === 'e2');
+    expect(e2Call?.outcome).toBe('pass');
   });
 });
