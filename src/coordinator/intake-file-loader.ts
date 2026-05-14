@@ -33,6 +33,7 @@ export async function enrichFileContent(
     }
     try {
       const result = await readDocument(f.path);
+      for (const w of result.warnings) warnings.push(w);
       out.push({ path: f.path, content: result.text });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

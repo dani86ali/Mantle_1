@@ -6,6 +6,12 @@ import mammoth from "mammoth";
 export interface DocumentReadResult {
   text: string;
   format: string;
+  warnings: string[];
+}
+
+export interface ReaderResult {
+  text: string;
+  warnings: string[];
 }
 
 const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".doc"] as const;
@@ -19,53 +25,67 @@ async function isEmpty(filePath: string): Promise<boolean> {
   }
 }
 
-export async function readPdf(filePath: string): Promise<string> {
+export async function readPdf(filePath: string): Promise<ReaderResult> {
   if (!filePath || typeof filePath !== "string") {
     throw new Error("readPdf: filePath must be a non-empty string");
   }
+  const warnings: string[] = [];
   if (await isEmpty(filePath)) {
-    console.warn(`readPdf: file is empty (${filePath})`);
-    return "";
+    const msg = `readPdf: file is empty (${filePath})`;
+    console.warn(msg);
+    warnings.push(msg);
+    return { text: "", warnings };
   }
   let buffer: Buffer;
   try {
     buffer = await readFile(filePath);
   } catch (err) {
-    console.warn(`readPdf: unreadable file (${filePath}): ${(err as Error).message}`);
-    return "";
+    const msg = `readPdf: unreadable file (${filePath}): ${(err as Error).message}`;
+    console.warn(msg);
+    warnings.push(msg);
+    return { text: "", warnings };
   }
   try {
     const parser = new PDFParse({ data: new Uint8Array(buffer) });
     const result = await parser.getText();
     await parser.destroy();
-    return result.text ?? "";
+    return { text: result.text ?? "", warnings };
   } catch (err) {
-    console.warn(`readPdf: parse failed (${filePath}): ${(err as Error).message}`);
-    return "";
+    const msg = `readPdf: parse failed (${filePath}): ${(err as Error).message}`;
+    console.warn(msg);
+    warnings.push(msg);
+    return { text: "", warnings };
   }
 }
 
-export async function readDocx(filePath: string): Promise<string> {
+export async function readDocx(filePath: string): Promise<ReaderResult> {
   if (!filePath || typeof filePath !== "string") {
     throw new Error("readDocx: filePath must be a non-empty string");
   }
+  const warnings: string[] = [];
   if (await isEmpty(filePath)) {
-    console.warn(`readDocx: file is empty (${filePath})`);
-    return "";
+    const msg = `readDocx: file is empty (${filePath})`;
+    console.warn(msg);
+    warnings.push(msg);
+    return { text: "", warnings };
   }
   let buffer: Buffer;
   try {
     buffer = await readFile(filePath);
   } catch (err) {
-    console.warn(`readDocx: unreadable file (${filePath}): ${(err as Error).message}`);
-    return "";
+    const msg = `readDocx: unreadable file (${filePath}): ${(err as Error).message}`;
+    console.warn(msg);
+    warnings.push(msg);
+    return { text: "", warnings };
   }
   try {
     const result = await mammoth.extractRawText({ buffer });
-    return result.value ?? "";
+    return { text: result.value ?? "", warnings };
   } catch (err) {
-    console.warn(`readDocx: parse failed (${filePath}): ${(err as Error).message}`);
-    return "";
+    const msg = `readDocx: parse failed (${filePath}): ${(err as Error).message}`;
+    console.warn(msg);
+    warnings.push(msg);
+    return { text: "", warnings };
   }
 }
 
@@ -79,17 +99,15 @@ export async function readDocument(filePath: string): Promise<DocumentReadResult
   }
 
   if (ext === ".pdf") {
-    return { text: await readPdf(filePath), format: "pdf" };
+    const r = await readPdf(filePath);
+    return { text: r.text, format: "pdf", warnings: r.warnings };
   }
   if (ext === ".docx") {
-    return { text: await readDocx(filePath), format: "docx" };
+    const r = await readDocx(filePath);
+    return { text: r.text, format: "docx", warnings: r.warnings };
   }
   // .doc — mammoth only supports .docx; treat as legacy.
-  try {
-    const text = await readDocx(filePath);
-    if (text.length > 0) return { text, format: "doc" };
-    throw new Error("empty result");
-  } catch {
-    throw new Error("Legacy .doc format — convert to .docx");
-  }
+  const r = await readDocx(filePath);
+  if (r.text.length > 0) return { text: r.text, format: "doc", warnings: r.warnings };
+  throw new Error("Legacy .doc format — convert to .docx");
 }
