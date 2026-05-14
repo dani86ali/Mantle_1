@@ -16,10 +16,10 @@ import { enrichFileContent } from '@/coordinator/intake-file-loader';
 import { runE1 } from '@/engines/e1/orchestrator';
 import type { E1InputFile } from '@/engines/e1/orchestrator-types';
 
-const FIXTURE_PDF = resolve(__dirname, '../fixtures/rfp/Technical Bid Requirements.pdf');
+const FIXTURE_PDF = resolve(__dirname, '../fixtures/boq/Technical Bid Requirements.pdf');
 const FIXTURE_DOCX = resolve(
   __dirname,
-  '../fixtures/rfp/Aramco_6000181983_ Clarification Questions - STCS_R2.docx',
+  '../fixtures/boq/Aramco_6000181983_ Clarification Questions - STCS_R2.docx',
 );
 const FIXTURE_XLSX = resolve(__dirname, '../fixtures/boq/Aramco_4203164336.xlsx');
 
