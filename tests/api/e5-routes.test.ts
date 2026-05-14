@@ -10,6 +10,7 @@ const {
   mockMinimalState,
   mockParseJson,
   mockRunE5,
+  mockLoadE4State,
 } = vi.hoisted(() => ({
   mockResolve: vi.fn(),
   mockLoadState: vi.fn(),
@@ -17,6 +18,7 @@ const {
   mockMinimalState: vi.fn(),
   mockParseJson: vi.fn(),
   mockRunE5: vi.fn(),
+  mockLoadE4State: vi.fn(),
 }));
 
 vi.mock("@/app/api/estimates/[id]/_e5-state", () => ({
@@ -25,6 +27,10 @@ vi.mock("@/app/api/estimates/[id]/_e5-state", () => ({
   saveE5State: mockSaveState,
   minimalPipelineState: mockMinimalState,
   parseJson: mockParseJson,
+}));
+
+vi.mock("@/app/api/estimates/[id]/_e4-state", () => ({
+  loadE4State: mockLoadE4State,
 }));
 
 vi.mock("@/engines/e5/orchestrator", () => ({
@@ -120,6 +126,7 @@ beforeEach(() => {
     try { return JSON.parse(s); } catch { return null; }
   });
   mockRunE5.mockReset();
+  mockLoadE4State.mockReset().mockResolvedValue({});
 });
 
 describe("POST /api/estimates/[id]/design", () => {
