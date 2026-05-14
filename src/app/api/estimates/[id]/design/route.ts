@@ -20,6 +20,7 @@ import {
 } from "@/app/api/estimates/[id]/_e5-state";
 import { handlePatchAction } from "./_actions";
 import { requireAuth } from "@/lib/middleware/auth";
+import { resolveE5OutputDir } from "@/coordinator/pipeline-e5";
 
 const designInputSchema = z.object({
   vendor: z.enum(["cisco", "fortinet"]),
@@ -121,10 +122,14 @@ export async function POST(
     return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
   }
 
+  const outputDir = await resolveE5OutputDir({
+    intakeId: resolved.intakeId,
+    pipelineId: `e5-route-${resolved.intakeId}`,
+  });
   const input: EngineInput = {
     engine: "e5",
     pipelineState: minimalPipelineState(resolved.intakeId),
-    inputData: { ...data, phase: "hld" },
+    inputData: { ...data, phase: "hld", outputDir },
   };
   const out = await runE5Detailed(input);
   if (out.output.error || !out.phase1) {

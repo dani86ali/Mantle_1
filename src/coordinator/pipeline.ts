@@ -10,7 +10,7 @@ import {
   buildE3Input, resolveOutputDir, syntheticE1ForRfi, toE3Artifacts,
 } from '@/coordinator/pipeline-e3';
 import { buildE4Input, toE4Artifacts } from '@/coordinator/pipeline-e4';
-import { buildE5Input, toE5Artifacts } from '@/coordinator/pipeline-e5';
+import { buildE5Input, resolveE5OutputDir, toE5Artifacts } from '@/coordinator/pipeline-e5';
 import {
   createInitialState, logEvent, runCheckpoint, startEngineCall,
   type CheckpointCallback,
@@ -135,7 +135,8 @@ async function runEngine(
     state.artifacts.e4 = toE4Artifacts(out.e4Output);
     if (out.e4Output.error) throw new Error(out.e4Output.error);
   } else if (engine === 'e5') {
-    out.e5Output = await runE5(buildE5Input(input, state, state.artifacts.e4));
+    const e5OutputDir = await resolveE5OutputDir({ intakeId: state.intakeId, pipelineId: state.id });
+    out.e5Output = await runE5(buildE5Input(input, state, state.artifacts.e4, e5OutputDir));
     state.artifacts.e5 = toE5Artifacts(out.e5Output);
     if (out.e5Output.error) throw new Error(out.e5Output.error);
   }

@@ -4,10 +4,22 @@
  *  E5Artifacts the coordinator tracks.
  */
 
+import { mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type {
   E4Artifacts, E5Artifacts, EngineInput, EngineOutput, PipelineState,
 } from '@/coordinator/types';
 import type { E5InputData } from '@/engines/e5/orchestrator-types';
+
+export async function resolveE5OutputDir(
+  ctx: { intakeId?: string; pipelineId: string },
+): Promise<string> {
+  const slug = ctx.intakeId ?? ctx.pipelineId;
+  const dir = join(tmpdir(), 'bomatic-e5', slug);
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
 
 export interface E5BuildInput {
   clientName?: string;
@@ -45,6 +57,7 @@ export function buildE5Input(
   input: E5BuildInput,
   state: PipelineState,
   e4Artifacts?: E4Artifacts,
+  outputDir?: string,
 ): EngineInput {
   const customerName = input.clientName ?? 'Customer';
   const data: E5InputData = {
@@ -74,6 +87,7 @@ export function buildE5Input(
     hasRedundancy: input.hasRedundancy,
     downTimeToleranceHours: input.downTimeToleranceHours,
     phase: 'full',
+    outputDir,
   };
   return {
     engine: 'e5',

@@ -11,6 +11,7 @@ import { validateCompatibility } from '@/engines/e5/compatibility-validator';
 import { generateHLDNarrative } from '@/engines/e5/hld-narrative-generator';
 import { generateHLDDocx } from '@/engines/e5/hld-docx-generator';
 import { generateDiagrams } from '@/engines/e5/diagram-generator';
+import { join } from 'node:path';
 import { recordSkip, runStep, type E5StepLog } from './orchestrator-helpers';
 import type { EngineInput } from '@/coordinator/types';
 import type {
@@ -36,9 +37,9 @@ export interface Phase1Result {
   hldRevisions: number;
 }
 
-function buildOutputPath(data: E5InputData, kind: 'hld' | 'lld'): string {
+function buildOutputPath(data: E5InputData, kind: 'hld' | 'lld', outputDir: string): string {
   const safe = `${data.customerName}-${data.projectName}`.replace(/[^A-Za-z0-9_-]+/g, '_');
-  return `./out/${safe}-${kind}.docx`;
+  return join(outputDir, `${safe}-${kind}.docx`);
 }
 
 async function runStepsOneAndTwo(
@@ -80,6 +81,7 @@ async function runStepsFiveSixSeven(
   logs: E5StepLog[],
   input: EngineInput,
   warnings: string[],
+  outputDir: string,
 ): Promise<{ sections: HLDSection[]; docPath: string; diagramXml: string }> {
   const step5 = await runStep(5, 'generateHLDNarrative', () =>
     generateHLDNarrative({
@@ -89,7 +91,7 @@ async function runStepsFiveSixSeven(
   const sections: HLDSection[] = step5.ok && step5.result ? step5.result : [];
   if (!step5.ok) warnings.push('Step 5 generateHLDNarrative failed; emitting empty HLD sections');
 
-  const docPath = buildOutputPath(data, 'hld');
+  const docPath = buildOutputPath(data, 'hld', outputDir);
   const step6 = await runStep(6, 'generateHLDDocx', () =>
     generateHLDDocx(sections, {
       customerName: data.customerName, projectName: data.projectName,
@@ -111,6 +113,7 @@ export async function runPhase1(
   logs: E5StepLog[],
   warnings: string[],
   input: EngineInput,
+  outputDir: string = './out',
 ): Promise<Phase1Result> {
   // Steps 1-2 loop with e5-design-approach checkpoint.
   let approach!: DesignApproach;
@@ -157,7 +160,7 @@ export async function runPhase1(
   let diagramXml = '';
   let hldRevisions = 0;
   while (true) {
-    const r = await runStepsFiveSixSeven(data, topology, sizing, logs, input, warnings);
+    const r = await runStepsFiveSixSeven(data, topology, sizing, logs, input, warnings, outputDir);
     sections = r.sections;
     hldDocPath = r.docPath;
     diagramXml = r.diagramXml;

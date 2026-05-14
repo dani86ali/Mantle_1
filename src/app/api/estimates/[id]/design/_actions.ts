@@ -18,6 +18,7 @@ import {
   saveE5State,
   type E5StoredState,
 } from "@/app/api/estimates/[id]/_e5-state";
+import { resolveE5OutputDir } from "@/coordinator/pipeline-e5";
 import { rerunE2E3AfterDesign } from "./_rerun-e2e3";
 
 export type DesignAction =
@@ -48,10 +49,14 @@ async function runHld(
   revisionNotes: string | undefined,
 ): Promise<E5StoredState | NextResponse> {
   if (!state.inputData) return inputError();
+  const outputDir = await resolveE5OutputDir({
+    intakeId,
+    pipelineId: `e5-route-${intakeId}`,
+  });
   const input: EngineInput = {
     engine: "e5",
     pipelineState: minimalPipelineState(intakeId),
-    inputData: { ...state.inputData, phase: "hld" },
+    inputData: { ...state.inputData, phase: "hld", outputDir },
     revisionNotes,
   };
   const out = await runE5Detailed(input);
@@ -89,12 +94,17 @@ async function runLld(
       { status: 400 },
     );
   }
+  const outputDir = await resolveE5OutputDir({
+    intakeId,
+    pipelineId: `e5-route-${intakeId}`,
+  });
   const input: EngineInput = {
     engine: "e5",
     pipelineState: minimalPipelineState(intakeId),
     inputData: {
       ...state.inputData,
       phase: "lld",
+      outputDir,
       hldHandoff: { designApproach, topology, sizing, compatibility },
     },
     revisionNotes,

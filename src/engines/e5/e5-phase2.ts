@@ -13,6 +13,7 @@ import { generateLLDNarrative } from '@/engines/e5/lld-narrative-generator';
 import { generateLLDDocx } from '@/engines/e5/lld-docx-generator';
 import { generateRackElevations } from '@/engines/e5/rack-elevation-generator';
 import { validateCompatibility } from '@/engines/e5/compatibility-validator';
+import { join } from 'node:path';
 import { recordSkip, runStep, type E5StepLog } from './orchestrator-helpers';
 import type { EngineInput } from '@/coordinator/types';
 import type {
@@ -43,9 +44,9 @@ const EMPTY_MIGRATION: MigrationApproach = {
   method: 'cutover', phases: [], riskLevel: 'low', reasoning: 'fallback',
 };
 
-function buildOutputPath(data: E5InputData): string {
+function buildOutputPath(data: E5InputData, outputDir: string): string {
   const safe = `${data.customerName}-${data.projectName}`.replace(/[^A-Za-z0-9_-]+/g, '_');
-  return `./out/${safe}-lld.docx`;
+  return join(outputDir, `${safe}-lld.docx`);
 }
 
 async function runStepsFourteenFifteenSixteen(
@@ -58,6 +59,7 @@ async function runStepsFourteenFifteenSixteen(
   logs: E5StepLog[],
   input: EngineInput,
   warnings: string[],
+  outputDir: string,
 ): Promise<{ sections: LLDSection[]; docPath: string; racks: RackElevation[] }> {
   const step14 = await runStep(14, 'generateLLDNarrative', () =>
     generateLLDNarrative({
@@ -67,7 +69,7 @@ async function runStepsFourteenFifteenSixteen(
   const sections: LLDSection[] = step14.ok && step14.result ? step14.result : [];
   if (!step14.ok) warnings.push('Step 14 generateLLDNarrative failed; emitting empty LLD sections');
 
-  const docPath = buildOutputPath(data);
+  const docPath = buildOutputPath(data, outputDir);
   const step15 = await runStep(15, 'generateLLDDocx', () =>
     generateLLDDocx(sections, {
       customerName: data.customerName, projectName: data.projectName,
@@ -91,6 +93,7 @@ export async function runPhase2(
   logs: E5StepLog[],
   warnings: string[],
   input: EngineInput,
+  outputDir: string = './out',
 ): Promise<Phase2Result> {
   // Step 9 — IP/VLAN plan.
   const step9 = await runStep(9, 'planIPVlans', () =>
@@ -146,7 +149,7 @@ export async function runPhase2(
   while (true) {
     const r = await runStepsFourteenFifteenSixteen(
       data, topology, sizing, ipVlanPlan, qosPolicy, migrationApproach,
-      logs, input, warnings,
+      logs, input, warnings, outputDir,
     );
     sections = r.sections;
     lldDocPath = r.docPath;

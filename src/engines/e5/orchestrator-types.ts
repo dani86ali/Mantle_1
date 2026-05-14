@@ -49,6 +49,9 @@ export interface E5InputData {
   downTimeToleranceHours?: number;
   phase?: E5Phase;
 
+  /** Per-intake directory where HLD/LLD .docx files should be written. Falls back to './out'. */
+  outputDir?: string;
+
   /** Optional engineer review hook — return revision_requested to trigger an internal retry. */
   onCheckpoint?: CheckpointCallback;
 

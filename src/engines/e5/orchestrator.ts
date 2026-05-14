@@ -76,11 +76,12 @@ export async function runE5Detailed(input: EngineInput): Promise<E5OrchestratorR
 
   const logs: E5StepLog[] = [];
   const warnings: string[] = [];
+  const outputDir = data.outputDir ?? './out';
   logEngineStart(input, phase);
 
   try {
     if (phase === 'hld') {
-      const p1 = await runPhase1(data, logs, warnings, input);
+      const p1 = await runPhase1(data, logs, warnings, input, outputDir);
       return {
         output: {
           engine: 'e5',
@@ -104,7 +105,7 @@ export async function runE5Detailed(input: EngineInput): Promise<E5OrchestratorR
           phase, logs,
         };
       }
-      const p2 = await runPhase2(data, handoff.topology, handoff.sizing, logs, warnings, input);
+      const p2 = await runPhase2(data, handoff.topology, handoff.sizing, logs, warnings, input, outputDir);
       const componentList = await buildComponentListStep(handoff.sizing, logs, input, warnings);
       return {
         output: {
@@ -121,8 +122,8 @@ export async function runE5Detailed(input: EngineInput): Promise<E5OrchestratorR
     }
 
     // full
-    const p1 = await runPhase1(data, logs, warnings, input);
-    const p2 = await runPhase2(data, p1.topology, p1.sizing, logs, warnings, input);
+    const p1 = await runPhase1(data, logs, warnings, input, outputDir);
+    const p2 = await runPhase2(data, p1.topology, p1.sizing, logs, warnings, input, outputDir);
     const componentList = await buildComponentListStep(p1.sizing, logs, input, warnings);
     return {
       output: {
