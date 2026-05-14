@@ -89,13 +89,26 @@ describe("Rule: SKU Existence", () => {
 
   it("fails when SKU not found in catalog", () => {
     const line = makeLine({ sku: "FAKE-SKU-999" });
-    const catalog = new Map<string, CatalogItemForValidation>();
+    // Populated catalog (with a different SKU) — distinguishes "no catalog data"
+    // from "catalog consulted but SKU missing".
+    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
     const ctx = makeContext({ lines: [line], catalogData: catalog });
 
     const results = skuExistsRule.run(ctx);
     expect(results[0].passed).toBe(false);
     expect(results[0].severity).toBe("error");
     expect(results[0].message).toContain("FAKE-SKU-999");
+  });
+
+  it("returns 'unverified' warning when catalog data is empty", () => {
+    const line = makeLine({ sku: "ANY-SKU" });
+    const catalog = new Map<string, CatalogItemForValidation>();
+    const ctx = makeContext({ lines: [line], catalogData: catalog });
+
+    const results = skuExistsRule.run(ctx);
+    expect(results[0].passed).toBe(false);
+    expect(results[0].severity).toBe("warning");
+    expect(results[0].message).toMatch(/not verified/i);
   });
 
   it("fails when SKU exists but marked as not found", () => {
