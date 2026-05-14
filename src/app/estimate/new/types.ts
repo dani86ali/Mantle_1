@@ -9,6 +9,7 @@ export type LicenseTier = "essentials" | "advantage";
 export type DnaTier = "essentials" | "advantage" | "opt_out";
 export type SupportTerm = "3yr" | "5yr";
 export type ProfitMode = "margin" | "markup";
+export type Vendor = "cisco" | "fortinet";
 
 export interface ParsedBomLine {
   sku: string;
@@ -39,6 +40,21 @@ export interface WizardState {
   profitMode: ProfitMode;
   profitPct: number;
   vatRate: number;
+  vendor: Vendor;
+  projectType: string;
+  siteCount: number;
+  buildingCount: number;
+  portCount: number;
+  userCount: number;
+  bandwidthGbps: number;
+  isGreenfield: boolean;
+  hasOT: boolean;
+  hasHPC: boolean;
+  hasGPON: boolean;
+  hasWireless: boolean;
+  hasVoice: boolean;
+  hasDC: boolean;
+  vrfEnabled: boolean;
 }
 
 export const initialState: WizardState = {
@@ -65,6 +81,21 @@ export const initialState: WizardState = {
   profitMode: "margin",
   profitPct: 18,
   vatRate: 15,
+  vendor: "cisco",
+  projectType: "",
+  siteCount: 1,
+  buildingCount: 1,
+  portCount: 48,
+  userCount: 50,
+  bandwidthGbps: 1,
+  isGreenfield: false,
+  hasOT: false,
+  hasHPC: false,
+  hasGPON: false,
+  hasWireless: false,
+  hasVoice: false,
+  hasDC: false,
+  vrfEnabled: false,
 };
 
 export function parseBomText(text: string): ParsedBomLine[] {

@@ -7,6 +7,7 @@ import { ActionBar, STEPS, StepIndicator } from "./chrome";
 import ModeSelect from "./steps/mode-select";
 import FileUpload from "./steps/file-upload";
 import BomUpload from "./steps/bom-upload";
+import RfiSizing from "./steps/rfi-sizing";
 import ProjectDetails from "./steps/project-details";
 import PricingDefaults from "./steps/pricing-defaults";
 
@@ -22,17 +23,11 @@ export default function NewEstimatePage() {
 
   function goNext() {
     setError(null);
-    setStep((s) => {
-      const next = Math.min(s + 1, STEPS.length);
-      return state.mode === "rfi" && next === 2 ? 3 : next;
-    });
+    setStep((s) => Math.min(s + 1, STEPS.length));
   }
   function goBack() {
     setError(null);
-    setStep((s) => {
-      const prev = Math.max(s - 1, 1);
-      return state.mode === "rfi" && prev === 2 ? 1 : prev;
-    });
+    setStep((s) => Math.max(s - 1, 1));
   }
 
   async function handleSubmit() {
@@ -81,7 +76,7 @@ export default function NewEstimatePage() {
             <ModeSelect
               onSelect={(mode) => {
                 update({ mode });
-                setStep(mode === "rfi" ? 3 : 2);
+                setStep(2);
               }}
             />
           )}
@@ -90,6 +85,9 @@ export default function NewEstimatePage() {
           )}
           {step === 2 && state.mode === "quick_bom" && (
             <BomUpload state={state} update={update} />
+          )}
+          {step === 2 && state.mode === "rfi" && (
+            <RfiSizing state={state} update={update} />
           )}
           {step === 3 && <ProjectDetails state={state} update={update} />}
           {step === 4 && <PricingDefaults state={state} update={update} />}
@@ -166,6 +164,21 @@ function buildIntakeBody(
       path: "path_b" as const,
       keyNeeds: s.keyNeeds,
       constraints: s.constraints,
+      vendor: s.vendor,
+      projectType: s.projectType || undefined,
+      siteCount: s.siteCount,
+      buildingCount: s.buildingCount,
+      portCount: s.portCount,
+      userCount: s.userCount,
+      bandwidthGbps: s.bandwidthGbps,
+      isGreenfield: s.isGreenfield,
+      hasOT: s.hasOT,
+      hasHPC: s.hasHPC,
+      hasGPON: s.hasGPON,
+      hasWireless: s.hasWireless,
+      hasVoice: s.hasVoice,
+      hasDC: s.hasDC,
+      vrfEnabled: s.vrfEnabled,
     };
   }
   return {
