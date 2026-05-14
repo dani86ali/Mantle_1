@@ -52,6 +52,18 @@ function resolveMode(req: IntakeRequirements): IntakeMode {
   return "rfp";
 }
 
+function pickRfiFields(req: IntakeRequirements) {
+  return {
+    vendor: req.vendor, projectType: req.projectType,
+    siteCount: req.siteCount, buildingCount: req.buildingCount,
+    portCount: req.portCount, userCount: req.userCount,
+    bandwidthGbps: req.bandwidthGbps, isGreenfield: req.isGreenfield,
+    hasOT: req.hasOT, hasHPC: req.hasHPC, hasGPON: req.hasGPON,
+    hasWireless: req.hasWireless, hasVoice: req.hasVoice,
+    hasDC: req.hasDC, vrfEnabled: req.vrfEnabled,
+  };
+}
+
 function modeToPath(mode: IntakeMode): "path_a" | "path_b" {
   return mode === "quick_bom" ? "path_a" : "path_b";
 }
@@ -78,6 +90,7 @@ async function runAndPersistPipeline(
       country: req.country,
       solutionContext: req.keyNeeds,
       files: enriched.files,
+      ...pickRfiFields(req),
     });
     result.state.intakeId = intakeId;
     await savePipelineState(result.state);
@@ -125,6 +138,7 @@ export async function POST(request: NextRequest) {
         poeClass: data.poeClass,
         redundancyRequired: data.redundancyRequired,
         stackingRequired: data.stackingRequired,
+        ...pickRfiFields(data),
         licenseTier: data.licenseTier,
         dnaTier: data.dnaTier,
         supportTerm: data.supportTerm,
