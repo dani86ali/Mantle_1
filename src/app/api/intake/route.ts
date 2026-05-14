@@ -90,6 +90,10 @@ async function runAndPersistPipeline(
       country: req.country,
       solutionContext: req.keyNeeds,
       files: enriched.files,
+      dnaTier: req.dnaTier,
+      licenseTier: req.licenseTier,
+      supportTerm: req.supportTerm,
+      redundancyRequired: req.redundancyRequired,
       ...pickRfiFields(req),
     });
     result.state.intakeId = intakeId;
