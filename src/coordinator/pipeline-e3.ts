@@ -128,7 +128,7 @@ export function buildE3Input(
       validityDays: 30,
       country,
       currency: deriveCurrency(country),
-      tenantName: 'MantelTech',
+      tenantName: 'STC Solutions',
     },
     e1: mapE1(e1Output),
     e2: mapE2(e2Output),

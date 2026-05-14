@@ -25,7 +25,7 @@ import { requireAuth } from "@/lib/middleware/auth";
 type IntakeRequirements = z.infer<typeof intakeFormSchema>;
 
 async function getDefaultTenantId(): Promise<string> {
-  const DEFAULT_SLUG = "default-chat";
+  const DEFAULT_SLUG = "stc-solutions";
   let [tenant] = await db
     .select()
     .from(tenants)
@@ -36,7 +36,7 @@ async function getDefaultTenantId(): Promise<string> {
     [tenant] = await db
       .insert(tenants)
       .values({
-        name: "MantelTech",
+        name: "STC Solutions",
         slug: DEFAULT_SLUG,
         region: "EMEAR",
         onboardingState: "LIVE",

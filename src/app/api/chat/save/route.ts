@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // Ensure a default tenant exists for chat sessions
-    const DEFAULT_SLUG = "default-chat";
+    const DEFAULT_SLUG = "stc-solutions";
     let [tenant] = await db
       .select()
       .from(tenants)
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
       [tenant] = await db
         .insert(tenants)
         .values({
-          name: "BOMatic Chat",
+          name: "STC Solutions",
           slug: DEFAULT_SLUG,
           region: body.region,
           onboardingState: "LIVE",

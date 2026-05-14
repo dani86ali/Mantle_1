@@ -13,7 +13,7 @@ import {
 } from "./sections";
 
 const DEFAULT_PROFILE: CompanyProfile = {
-  tenantName: "MantelTech", legalEntity: "MantelTech Solutions LLC",
+  tenantName: "STC Solutions", legalEntity: "STC Solutions LLC",
   city: "Riyadh", country: "Saudi Arabia",
   address: "King Fahd Road, Olaya District", phone: "+966 11 000 0000",
 };

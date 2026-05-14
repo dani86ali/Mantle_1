@@ -152,7 +152,7 @@ function buildProposalMetadata(meta: Resolved): ProposalMetadata {
     validityDays: 30,
     country: meta.country,
     currency: deriveCurrency(meta.country),
-    tenantName: "MantelTech",
+    tenantName: "STC Solutions",
   };
 }
 

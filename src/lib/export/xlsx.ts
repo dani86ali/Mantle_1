@@ -4,7 +4,7 @@
  *
  * Header shows:
  *   - "Price Estimate" title
- *   - Tenant/SI name (e.g., "MantelTech") — the company using BOMatic
+ *   - Tenant/SI name (e.g., "STC Solutions") — the company using BOMatic
  *   - Customer name (e.g., "Al Rajhi Bank") — the end customer
  *   - Cisco legal disclaimer
  *   - Date, Estimate ID, Price List
@@ -14,7 +14,7 @@ import * as XLSX from "xlsx";
 import { readFileSync } from "fs";
 import { join } from "path";
 
-const TENANT_NAME = "MantelTech";
+const TENANT_NAME = "STC Solutions";
 
 interface ExportOptions {
   customerName: string;

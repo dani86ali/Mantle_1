@@ -35,7 +35,7 @@ export function generateCsv(
   // Header section — matches Shahid's real estimate format
   const customerDisplay = options.customerName || "Customer";
   rows.push("Price Estimate");
-  rows.push("MantelTech");
+  rows.push("STC Solutions");
   rows.push(`"Customer: ${customerDisplay}"`);
   rows.push(
     `"Price Estimate for planning and information purposes only and is not a binding offer from Cisco."`
