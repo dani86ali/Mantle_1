@@ -23,15 +23,12 @@ import { requireAuth } from "@/lib/middleware/auth";
 const MISSING_CREDS_MESSAGE =
   "Cisco catalog lookup requires API credentials. Please configure them in Settings > Integrations.";
 
-async function loadChatCredentials(): Promise<ToolContext["credentials"] | null> {
-  const tenantId = process.env.CHAT_TENANT_ID;
-  const rows = await (tenantId
-    ? db
-        .select()
-        .from(tenantCredentials)
-        .where(eq(tenantCredentials.tenantId, tenantId))
-        .limit(1)
-    : db.select().from(tenantCredentials).limit(1));
+async function loadChatCredentials(tenantId: string): Promise<ToolContext["credentials"] | null> {
+  const rows = await db
+    .select()
+    .from(tenantCredentials)
+    .where(eq(tenantCredentials.tenantId, tenantId))
+    .limit(1);
   const row = rows[0];
   if (!row) return null;
   return {
@@ -109,7 +106,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const credentials = await loadChatCredentials();
+  const credentials = await loadChatCredentials(session.tenantId);
   if (!credentials) {
     return NextResponse.json({
       response: MISSING_CREDS_MESSAGE,
@@ -119,7 +116,7 @@ export async function POST(request: NextRequest) {
   }
 
   const toolContext: ToolContext = {
-    tenantId: process.env.CHAT_TENANT_ID ?? "chat-session",
+    tenantId: session.tenantId,
     priceListId: "Global Price List Emerging (USD)",
     credentials,
     standards: DEFAULT_STANDARDS,
