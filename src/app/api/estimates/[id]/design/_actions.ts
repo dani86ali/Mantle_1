@@ -18,6 +18,7 @@ import {
   saveE5State,
   type E5StoredState,
 } from "@/app/api/estimates/[id]/_e5-state";
+import { rerunE2E3AfterDesign } from "./_rerun-e2e3";
 
 export type DesignAction =
   | "approve_design"
@@ -143,6 +144,7 @@ export async function handlePatchAction(
     if (state.phase !== "lld_complete") return badPhase(state.phase, action);
     const next: E5StoredState = { ...state, phase: "complete", updatedAt: now };
     await saveE5State(intakeId, next);
+    void rerunE2E3AfterDesign(intakeId, next);
     return NextResponse.json({ status: next.phase, updatedAt: now });
   }
   if (action === "revise_design" || action === "revise_hld") {
