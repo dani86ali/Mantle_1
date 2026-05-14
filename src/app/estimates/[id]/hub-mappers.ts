@@ -148,7 +148,13 @@ export function buildNavItems(
 ): NavItem[] {
   const base = `/estimates/${estimateId}`;
   const items: NavItem[] = [{ label: "Overview", href: base, state: "not_started" }];
-  if (mode !== "quick_bom") {
+  if (mode === "rfi") {
+    items.push(
+      { label: "Questionnaire", href: `${base}/questionnaire`, state: checkpointState(pipeline, "e4-questionnaire") },
+      { label: "Responses", href: `${base}/responses`, state: checkpointState(pipeline, "e4-requirements") },
+      { label: "Design", href: `${base}/design`, state: engineState(pipeline, "e5") }
+    );
+  } else if (mode !== "quick_bom") {
     items.push(
       { label: "Requirements", href: `${base}/checkpoint`, state: checkpointState(pipeline, "e1-requirements") },
       { label: "Compliance", href: `${base}/compliance`, state: checkpointState(pipeline, "e1-compliance") },
