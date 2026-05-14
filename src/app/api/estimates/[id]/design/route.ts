@@ -18,6 +18,7 @@ import {
   saveE5State,
   type E5StoredState,
 } from "@/app/api/estimates/[id]/_e5-state";
+import { loadE4State } from "@/app/api/estimates/[id]/_e4-state";
 import { handlePatchAction } from "./_actions";
 import { requireAuth } from "@/lib/middleware/auth";
 import { resolveE5OutputDir } from "@/coordinator/pipeline-e5";
@@ -126,10 +127,12 @@ export async function POST(
     intakeId: resolved.intakeId,
     pipelineId: `e5-route-${resolved.intakeId}`,
   });
+  const e4State = await loadE4State(resolved.intakeId);
+  const requirementsBaseline = e4State?.responses?.baseline ?? {};
   const input: EngineInput = {
     engine: "e5",
     pipelineState: minimalPipelineState(resolved.intakeId),
-    inputData: { ...data, phase: "hld", outputDir },
+    inputData: { ...data, phase: "hld", outputDir, requirementsBaseline },
   };
   const out = await runE5Detailed(input);
   if (out.output.error || !out.phase1) {
@@ -141,7 +144,7 @@ export async function POST(
 
   const next: E5StoredState = {
     phase: "hld_in_progress",
-    inputData: { ...data, requirementsBaseline: {} },
+    inputData: { ...data, requirementsBaseline },
     designApproach: JSON.stringify(out.phase1.designApproach),
     topology: out.phase1.topology,
     sizingResult: JSON.stringify(out.phase1.sizing),
