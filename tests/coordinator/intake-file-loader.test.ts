@@ -23,7 +23,7 @@ describe("enrichFileContent", () => {
   });
 
   it("populates content for PDF files", async () => {
-    mockReadDocument.mockResolvedValueOnce({ text: "PDF body text", format: "pdf" });
+    mockReadDocument.mockResolvedValueOnce({ text: "PDF body text", format: "pdf", warnings: [] });
     const r = await enrichFileContent([{ path: "/uploads/spec.pdf", filename: "spec.pdf" }]);
     expect(mockReadDocument).toHaveBeenCalledWith("/uploads/spec.pdf");
     expect(r.files).toEqual([{ path: "/uploads/spec.pdf", content: "PDF body text" }]);
@@ -31,7 +31,7 @@ describe("enrichFileContent", () => {
   });
 
   it("populates content for DOCX files", async () => {
-    mockReadDocument.mockResolvedValueOnce({ text: "DOCX paragraph", format: "docx" });
+    mockReadDocument.mockResolvedValueOnce({ text: "DOCX paragraph", format: "docx", warnings: [] });
     const r = await enrichFileContent([{ path: "/uploads/rfp.docx" }]);
     expect(mockReadDocument).toHaveBeenCalledWith("/uploads/rfp.docx");
     expect(r.files[0].content).toBe("DOCX paragraph");
@@ -54,8 +54,8 @@ describe("enrichFileContent", () => {
   });
 
   it("processes a mix of extractable and pass-through files", async () => {
-    mockReadDocument.mockResolvedValueOnce({ text: "pdf1", format: "pdf" });
-    mockReadDocument.mockResolvedValueOnce({ text: "doc1", format: "docx" });
+    mockReadDocument.mockResolvedValueOnce({ text: "pdf1", format: "pdf", warnings: [] });
+    mockReadDocument.mockResolvedValueOnce({ text: "doc1", format: "docx", warnings: [] });
     const r = await enrichFileContent([
       { path: "/u/a.pdf" },
       { path: "/u/b.xlsx" },
@@ -69,7 +69,7 @@ describe("enrichFileContent", () => {
   });
 
   it("is case-insensitive on extensions", async () => {
-    mockReadDocument.mockResolvedValueOnce({ text: "upper", format: "pdf" });
+    mockReadDocument.mockResolvedValueOnce({ text: "upper", format: "pdf", warnings: [] });
     const r = await enrichFileContent([{ path: "/uploads/SPEC.PDF" }]);
     expect(mockReadDocument).toHaveBeenCalledWith("/uploads/SPEC.PDF");
     expect(r.files[0].content).toBe("upper");

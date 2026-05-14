@@ -84,18 +84,21 @@ afterAll(async () => {
 
 describe("readPdf", () => {
   it("extracts text from a PDF", async () => {
-    const text = await readPdf(pdfPath);
-    expect(text).toContain(PDF_TEXT);
+    const r = await readPdf(pdfPath);
+    expect(r.text).toContain(PDF_TEXT);
+    expect(r.warnings).toEqual([]);
   });
 
   it("returns empty string for an empty file", async () => {
-    const text = await readPdf(emptyPdfPath);
-    expect(text).toBe("");
+    const r = await readPdf(emptyPdfPath);
+    expect(r.text).toBe("");
+    expect(r.warnings.length).toBeGreaterThan(0);
   });
 
   it("returns empty string for a corrupt PDF", async () => {
-    const text = await readPdf(unknownPath);
-    expect(text).toBe("");
+    const r = await readPdf(unknownPath);
+    expect(r.text).toBe("");
+    expect(r.warnings.length).toBeGreaterThan(0);
   });
 
   it("throws on empty filePath", async () => {
@@ -105,18 +108,21 @@ describe("readPdf", () => {
 
 describe("readDocx", () => {
   it("extracts text from a DOCX", async () => {
-    const text = await readDocx(docxPath);
-    expect(text).toContain(DOCX_TEXT);
+    const r = await readDocx(docxPath);
+    expect(r.text).toContain(DOCX_TEXT);
+    expect(r.warnings).toEqual([]);
   });
 
   it("returns empty string for an empty file", async () => {
-    const text = await readDocx(emptyDocxPath);
-    expect(text).toBe("");
+    const r = await readDocx(emptyDocxPath);
+    expect(r.text).toBe("");
+    expect(r.warnings.length).toBeGreaterThan(0);
   });
 
   it("returns empty string for a non-docx file", async () => {
-    const text = await readDocx(unknownPath);
-    expect(text).toBe("");
+    const r = await readDocx(unknownPath);
+    expect(r.text).toBe("");
+    expect(r.warnings.length).toBeGreaterThan(0);
   });
 });
 
