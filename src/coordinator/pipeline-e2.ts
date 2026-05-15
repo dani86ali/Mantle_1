@@ -18,6 +18,8 @@ export interface E2BuildInput {
   deviceConfigOverrides?: Partial<E2DeviceConfig>;
   /** Client BoQ workbook for E2 to parse + fill (RFP mode). */
   filePath?: string;
+  /** Catalog-loaded USD list prices keyed by SKU. */
+  listPrices?: Record<string, number>;
 }
 
 const BOQ_FILE_EXTS = new Set(['.xlsx', '.xls', '.csv']);
@@ -68,6 +70,19 @@ function devicesFromComponentList(
   }));
 }
 
+/** Resolve the final device list E2 will price: explicit devices first, then
+ *  the E5 component list (RFI mode). Returns [] when neither is available. */
+export function resolveE2Devices(
+  input: E2BuildInput,
+  e5?: E5Artifacts,
+): E2Device[] {
+  if (input.devices && input.devices.length > 0) return input.devices;
+  if (e5?.componentList) {
+    return devicesFromComponentList(e5.componentList, input.deviceConfigOverrides);
+  }
+  return [];
+}
+
 export function buildE2Input(
   input: E2BuildInput,
   e1?: E1Output,
@@ -76,14 +91,12 @@ export function buildE2Input(
   if (!input.pricingConfig) {
     throw new Error('E2 requires devices and pricingConfig');
   }
-  let devices = input.devices;
-  if ((!devices || devices.length === 0) && e5?.componentList) {
-    devices = devicesFromComponentList(e5.componentList, input.deviceConfigOverrides);
-  }
+  const devices = resolveE2Devices(input, e5);
   return {
-    devices: devices ?? [],
+    devices,
     pricingConfig: input.pricingConfig,
     filePath: input.filePath,
+    listPrices: input.listPrices,
     projectContext: {
       sector: e1?.sectorDetection.sector,
       description: input.solutionContext,

@@ -27,6 +27,7 @@ import {
   parseBomFromUploadedFiles,
   type IntakeRequirementsForE2,
 } from "@/coordinator/intake-to-e2";
+import { collectCiscoSkus, loadListPrices } from "@/coordinator/pipeline-e2-pricing";
 import type { PipelineState } from "@/coordinator/types";
 import { requireAuth } from "@/lib/middleware/auth";
 
@@ -79,7 +80,7 @@ export async function POST(
     );
   }
 
-  void rerunE2(state, body.pricingConfig);
+  void rerunE2(state, session.tenantId, body.pricingConfig);
 
   return NextResponse.json(
     {
@@ -94,6 +95,7 @@ export async function POST(
 
 async function rerunE2(
   state: PipelineState,
+  tenantId: string,
   newPricingConfig: E2PricingConfig
 ): Promise<void> {
   const intakeId = state.intakeId!;
@@ -117,9 +119,13 @@ async function rerunE2(
       throw new Error("Intake has no devices to re-price");
     }
 
+    const { listPrices } = await loadListPrices(collectCiscoSkus(devices), tenantId);
+
     const e2Input: E2Input = {
       devices,
       pricingConfig: newPricingConfig,
+      filePath: state.artifacts.e2?.clientBoqInputPath,
+      listPrices,
       projectContext: {
         sector: state.artifacts.e1?.sector,
         description: req.keyNeeds,

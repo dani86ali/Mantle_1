@@ -15,7 +15,8 @@ import {
 } from "@/lib/db/pipeline-store";
 import { runE2, type E2PricingConfig } from "@/engines/e2/orchestrator";
 import { runE3 } from "@/engines/e3/orchestrator";
-import { buildE2Input, toE2Artifacts } from "@/coordinator/pipeline-e2";
+import { buildE2Input, resolveE2Devices, toE2Artifacts } from "@/coordinator/pipeline-e2";
+import { collectCiscoSkus, loadListPrices } from "@/coordinator/pipeline-e2-pricing";
 import { buildDeviceConfig } from "@/coordinator/intake-to-e2";
 import {
   buildE3Input,
@@ -98,8 +99,18 @@ export async function rerunE2E3AfterDesign(
       redundancyRequired: req.redundancyRequired,
     });
 
+    const e2BuildInput = {
+      pricingConfig,
+      solutionContext: req.keyNeeds,
+      deviceConfigOverrides,
+    };
+    const resolvedDevices = resolveE2Devices(e2BuildInput, state.artifacts.e5);
+    const { listPrices } = await loadListPrices(
+      collectCiscoSkus(resolvedDevices),
+      intake.tenantId,
+    );
     const e2Input = buildE2Input(
-      { pricingConfig, solutionContext: req.keyNeeds, deviceConfigOverrides },
+      { ...e2BuildInput, listPrices },
       undefined,
       state.artifacts.e5,
     );

@@ -5,7 +5,8 @@ import { runE4 } from '@/engines/e4/orchestrator';
 import { runE5 } from '@/engines/e5/orchestrator';
 import { getEngineSequence } from '@/coordinator/router';
 import { buildE1Input, toE1Artifacts } from '@/coordinator/pipeline-e1';
-import { buildE2Input, selectBoQFilePath, toE2Artifacts } from '@/coordinator/pipeline-e2';
+import { buildE2Input, resolveE2Devices, selectBoQFilePath, toE2Artifacts } from '@/coordinator/pipeline-e2';
+import { collectCiscoSkus, loadListPrices } from '@/coordinator/pipeline-e2-pricing';
 import { buildDeviceConfig, parseBomFromUploadedFiles } from '@/coordinator/intake-to-e2';
 import {
   buildE3Input, resolveOutputDir, syntheticE1ForRfi, toE3Artifacts,
@@ -24,6 +25,8 @@ const MAX_REVISIONS = 3;
 
 export interface PipelineInput {
   opportunityId: string;
+  /** Tenant scope for catalog credentials + price list lookup. */
+  tenantId?: string;
   mode: IntakeMode;
   files?: { path: string; content?: string }[];
   devices?: E2Input['devices'];
@@ -154,8 +157,19 @@ async function runEngine(
       }
     }
     const boqFilePath = input.mode === 'rfp' ? selectBoQFilePath(out.e1Output) : undefined;
+    const e2BuildInput = { ...input, devices, deviceConfigOverrides, filePath: boqFilePath };
+    const resolvedDevices = resolveE2Devices(e2BuildInput, state.artifacts.e5);
+    let listPrices: Record<string, number> | undefined;
+    if (input.tenantId) {
+      const skus = collectCiscoSkus(resolvedDevices);
+      const priced = await loadListPrices(skus, input.tenantId);
+      listPrices = priced.listPrices;
+      for (const w of priced.warnings) {
+        logEvent(state, 'e2', 'warn', 'engine_call', w);
+      }
+    }
     out.e2Output = await runE2(buildE2Input(
-      { ...input, devices, deviceConfigOverrides, filePath: boqFilePath },
+      { ...e2BuildInput, listPrices },
       out.e1Output, state.artifacts.e5,
     ));
     state.artifacts.e2 = toE2Artifacts(out.e2Output, boqFilePath);
