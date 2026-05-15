@@ -83,6 +83,7 @@ export const intakeFormSchema = z.object({
   supportTerm: z.string().optional(),
   constraints: z.string().max(5000).optional(),
   pastedText: z.string().max(10000).optional(),
+  bomText: z.string().max(10000).optional(),
   uploadedBomLines: z
     .array(
       z.object({

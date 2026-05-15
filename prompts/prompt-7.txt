@@ -1,0 +1,15 @@
+Fix: There is no UI signal when CISCO_API_MODE equals mock. Users and demo viewers have no way to know prices are from test mocks.
+
+Problem: src/lib/env.ts defaults CISCO_API_MODE to mock. When running in mock mode, all Cisco catalog prices come from test fixtures, not real data. There is no visual indicator anywhere in the UI.
+
+What to build:
+
+1. API endpoint for mode status. Create src/app/api/health/route.ts with a GET handler that returns JSON with ciscoApiMode set to either mock or live, and a timestamp field. Read CISCO_API_MODE from process.env and default to mock if not set. No auth required since this is a health check and not sensitive data.
+
+2. UI banner component. Create src/components/shared/MockModeBanner.tsx. Build a thin yellow amber banner fixed at the top of the page. The text should say: DEMO MODE - Cisco catalog prices are simulated. Set CISCO_API_MODE=live for production pricing. Only render when ciscoApiMode equals mock. Make it dismissable with an X button that stores dismissed state in React state only so it returns on page reload. Keep it small and non-intrusive, max 40px height. Use existing CSS variables: var(--warning) for text, var(--warning-muted) for background.
+
+3. Wire into layout. Read src/app/layout.tsx which is the root layout. Add MockModeBanner near the top of the body content. It should be a client component that uses useState and useEffect for the fetch call. It should fetch /api/health on mount and conditionally render the banner.
+
+Constraints: Do NOT change lib/env.ts. Do NOT add authentication to the health endpoint. Keep each new file under 100 lines.
+Run: npx tsc --noEmit 2>&1 | Select-Object -Last 10
+Show me tsc output and list all files changed or created.

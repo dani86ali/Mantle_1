@@ -293,6 +293,55 @@ describe('runPipeline', () => {
     );
   });
 
+  it("RFP mode threads BoQ-classified file path into E2 input and e2 artifacts", async () => {
+    const boqPath = '/uploads/Aramco_BoQ_pricing.xlsx';
+    mockRunE1.mockResolvedValueOnce({
+      ...makeE1Output(),
+      fileClassifications: [
+        {
+          type: 'commercial', subtype: 'boq_template', confidence: 0.9,
+          stage: 1, format: 'xlsx',
+          path: boqPath, filename: 'Aramco_BoQ_pricing.xlsx',
+        },
+        {
+          type: 'technical', subtype: 'requirements', confidence: 0.8,
+          stage: 1, format: 'pdf',
+          path: '/uploads/rfp.pdf', filename: 'rfp.pdf',
+        },
+      ],
+    });
+    const result = await runPipeline({
+      opportunityId: 'opp-rfp-boq', mode: 'rfp',
+      files: [{ path: boqPath }, { path: '/uploads/rfp.pdf' }],
+      pricingConfig: PRICING,
+    });
+    expect(mockRunE2).toHaveBeenCalledWith(
+      expect.objectContaining({ filePath: boqPath }),
+    );
+    expect(result.state.artifacts.e2.clientBoqInputPath).toBe(boqPath);
+  });
+
+  it("RFP mode without a BoQ-classified file passes filePath=undefined to E2", async () => {
+    mockRunE1.mockResolvedValueOnce({
+      ...makeE1Output(),
+      fileClassifications: [
+        {
+          type: 'technical', subtype: 'requirements', confidence: 0.8,
+          stage: 1, format: 'pdf',
+          path: '/uploads/rfp.pdf', filename: 'rfp.pdf',
+        },
+      ],
+    });
+    await runPipeline({
+      opportunityId: 'opp-rfp-no-boq', mode: 'rfp',
+      files: [{ path: '/uploads/rfp.pdf' }],
+      pricingConfig: PRICING,
+    });
+    expect(mockRunE2).toHaveBeenCalledWith(
+      expect.objectContaining({ filePath: undefined }),
+    );
+  });
+
   it("empty devices with pricingConfig is accepted — E2 runs with devices=[]", async () => {
     // In RFP mode devices come from the parsed BoQ inside E2; intake-level
     // devices can be empty. buildE2Input must NOT throw in this case.

@@ -1,0 +1,19 @@
+Fix: Generated proposal DOCX contains literal placeholder strings in appendices.
+
+Problem: src/engines/e3/section-generators.ts around lines 174-176 hardcodes three appendix entries with literal '(placeholder)' text that end up in the final customer-facing DOCX. Also check src/engines/e5/lld-deterministic-sections.ts around lines 31 and 36 for 'Diagram placeholder' strings in LLD sections.
+
+What to fix in src/engines/e3/section-generators.ts: Replace the three placeholder appendix entries with real content stubs that do not contain the word placeholder. Use these replacements:
+Appendix C Network Diagrams: 'Network topology and design diagrams are provided as separate deliverables. Refer to the HLD/LLD document package.'
+Appendix D Vendor Datasheets: 'Relevant vendor datasheets for specified equipment are available upon request.'
+Appendix E Team CVs: 'Project team qualifications and certifications are provided under separate cover upon request.'
+
+What to fix in src/engines/e5/lld-deterministic-sections.ts: Replace any strings containing the word 'placeholder' with professional content:
+For physical diagram section: 'Physical topology diagrams are generated as draw.io XML files. See the diagram attachment in the design package.'
+For logical diagram section: 'Logical topology diagrams are generated as draw.io XML files. See the diagram attachment in the design package.'
+
+Also update any tests that assert on the old placeholder strings. Run: grep -rn 'placeholder' tests/engines/e3/ tests/engines/e5/ --include='*.ts' | head -20. If tests assert on the literal placeholder text, update them to match the new wording.
+
+Constraints: Do NOT change section structure or section IDs. Do NOT add new dependencies. Keep files under 200 lines.
+Run: npx vitest run tests/engines/e3/ tests/engines/e5/ 2>&1 | Select-Object -Last 20
+Run: npx tsc --noEmit 2>&1 | Select-Object -Last 10
+Show me test and tsc output.

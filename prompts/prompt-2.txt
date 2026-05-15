@@ -1,0 +1,20 @@
+Fix: Quick BoM pasted text is stored in requirementsJson but never parsed into devices on the server side.
+
+Problem: The wizard client-side parses pasted text via parseBomText into uploadedBomLines before sending. But if a caller sends raw pastedText or bomText via the API without pre-parsing, it is stored in requirementsJson but never converted to devices. The server should defensively parse it.
+
+Step 1: Read these files
+Read src/app/api/intake/route.ts to see how quick_bom body is handled and what fields are stored.
+Read src/coordinator/intake-to-e2.ts to see how devicesFromIntake reads uploadedBomLines.
+Read src/app/estimate/new/types.ts to see the parseBomText function (client-side parser).
+
+Step 2: Fix server-side parsing
+In src/app/api/intake/route.ts, in the quick_bom handling path, if uploadedBomLines is empty or missing but bomText or pastedText exists in the request body, parse it server-side into uploadedBomLines before storing in requirementsJson and passing to runPipeline.
+
+Create a simple server-side parseBomText function in src/coordinator/intake-to-e2.ts. The parser should split text by newlines, and for each non-empty line extract SKU and quantity. Supported formats: 'SKU qty' or 'SKU,qty' or 'SKU\tqty'. Default quantity to 1 if not found. Return { sku: string; quantity: number }[].
+
+Store the parsed lines in requirementsJson.uploadedBomLines so devicesFromIntake picks them up.
+
+Constraints: Do NOT change client-side parseBomText. Do NOT change devicesFromIntake. Keep files under 200 lines.
+Run: npx tsc --noEmit 2>&1 | Select-Object -Last 10
+Run: npx vitest run tests/coordinator/ tests/api/ 2>&1 | Select-Object -Last 20
+Show me the tsc and test output.

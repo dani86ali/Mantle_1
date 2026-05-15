@@ -1,0 +1,23 @@
+Fix: E2Output.bom the PricedBomLine array is not persisted in E2Artifacts. Re-runs and late E3 that rehydrate from DB lose the BoM data.
+
+Problem: src/coordinator/pipeline-e2.ts toE2Artifacts function only stores pricingSummary string, validationStatus, validationWarnings, bomWorkbook path, filledClientBoq path, and clientBoqInputPath. It does NOT store the actual bom array of PricedBomLine objects. This means the in-process pipeline run works fine because E3 reads bom directly from E2Output, but re-runs that load from DB via loadArtifacts have no bom line-item data. The _rerun-e2e3.ts background task may produce an E3 with empty BoM context.
+
+Step 1: Read these files.
+Read src/coordinator/pipeline-e2.ts for the toE2Artifacts function.
+Read src/coordinator/types.ts for the E2Artifacts interface in ArtifactRegistry.
+Read src/coordinator/pipeline-e3.ts for the mapE2 function that reads E2Output.bom.
+Read src/lib/db/pipeline-store.ts for how artifacts are saved and loaded.
+
+Step 2: Add bom to E2Artifacts.
+In src/coordinator/types.ts add 'bom' as an optional string field to the E2 section of ArtifactRegistry. It will hold JSON-stringified PricedBomLine array.
+In src/coordinator/pipeline-e2.ts toE2Artifacts, add: if out.bom.length is greater than 0, set artifacts.bom to JSON.stringify(out.bom).
+In src/coordinator/pipeline-e2.ts add a helper function parseBomFromArtifacts that takes e2 artifacts as optional ArtifactRegistry e2 type and returns PricedBomLine array. If e2 or e2.bom is missing return empty array. Otherwise try JSON.parse and return the result, catching any errors and returning empty array.
+Re-export PricedBomLine type if needed for the helper return type.
+
+Step 3: Use in re-run paths.
+Check src/app/api/estimates/[id]/proposal/route.ts. If it regenerates E3 from stored artifacts and needs bom data, use parseBomFromArtifacts to recover it.
+
+Constraints: bom is stored as JSON string consistent with existing artifact storage pattern. Do NOT change E2Output or runE2. Do NOT change how the in-process pipeline passes data since it already works. Keep files under 200 lines.
+Run: npx vitest run tests/coordinator/ 2>&1 | Select-Object -Last 20
+Run: npx tsc --noEmit 2>&1 | Select-Object -Last 10
+Show me test and tsc output.

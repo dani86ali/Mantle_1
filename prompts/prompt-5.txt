@@ -1,0 +1,19 @@
+Fix: Proposal route divides margin ratios by 100 during financial XLSX regeneration, producing wrong cost figures.
+
+Problem: src/app/api/estimates/[id]/proposal/route.ts reportedly divides margin values by 100 when regenerating the financial XLSX. If the margin is already stored as a decimal like 0.25 for 25 percent, dividing by 100 again makes it 0.0025, corrupting the financial spreadsheet.
+
+Step 1: Read and trace the margin data flow.
+Read src/app/api/estimates/[id]/proposal/route.ts and find the financial regeneration logic. Locate any division by 100 operations on margin or profit values.
+Read src/engines/e3/margin-analyzer.ts to see what format it produces margins in, whether decimal 0 to 1 or percentage 0 to 100.
+Read src/engines/e3/financial-proposal-writer.ts to see what format it expects margins in.
+Read src/engines/e3/pricing-tiers.ts to see how it passes margins.
+
+Step 2: Fix the math.
+Determine the correct format chain from marginAnalyzer through pricingTiers to financialWriter. If the proposal route converts between formats unnecessarily such as dividing a decimal by 100, remove the conversion. If there is a genuine format mismatch, fix it at the boundary with a clear comment.
+
+Step 3: Verify with existing tests. Run the margin analyzer and financial writer tests to confirm they agree on format. If the division by 100 was there to fix a previous bug, the tests will reveal the correct behavior.
+
+Constraints: Do NOT change margin-analyzer or financial-proposal-writer unless they are the actual source of the mismatch. Keep file under 250 lines.
+Run: npx vitest run tests/api/estimates/ tests/engines/e3/ 2>&1 | Select-Object -Last 20
+Run: npx tsc --noEmit 2>&1 | Select-Object -Last 10
+Show me test and tsc output.
