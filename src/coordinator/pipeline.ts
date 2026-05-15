@@ -5,7 +5,7 @@ import { runE4 } from '@/engines/e4/orchestrator';
 import { runE5 } from '@/engines/e5/orchestrator';
 import { getEngineSequence } from '@/coordinator/router';
 import { buildE1Input, toE1Artifacts } from '@/coordinator/pipeline-e1';
-import { buildE2Input, toE2Artifacts } from '@/coordinator/pipeline-e2';
+import { buildE2Input, selectBoQFilePath, toE2Artifacts } from '@/coordinator/pipeline-e2';
 import { buildDeviceConfig, parseBomFromUploadedFiles } from '@/coordinator/intake-to-e2';
 import {
   buildE3Input, resolveOutputDir, syntheticE1ForRfi, toE3Artifacts,
@@ -153,10 +153,12 @@ async function runEngine(
           `Parsed ${lines.length} BoM line(s) from uploaded file`);
       }
     }
+    const boqFilePath = input.mode === 'rfp' ? selectBoQFilePath(out.e1Output) : undefined;
     out.e2Output = await runE2(buildE2Input(
-      { ...input, devices, deviceConfigOverrides }, out.e1Output, state.artifacts.e5,
+      { ...input, devices, deviceConfigOverrides, filePath: boqFilePath },
+      out.e1Output, state.artifacts.e5,
     ));
-    state.artifacts.e2 = toE2Artifacts(out.e2Output);
+    state.artifacts.e2 = toE2Artifacts(out.e2Output, boqFilePath);
   } else if (engine === 'e3') {
     out.e3Output = await runE3Stage(input, state, out.e1Output, out.e2Output);
     if (out.e3Output) state.artifacts.e3 = toE3Artifacts(out.e3Output);

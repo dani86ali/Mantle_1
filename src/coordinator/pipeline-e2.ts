@@ -16,6 +16,26 @@ export interface E2BuildInput {
   solutionContext?: string;
   historicalDeals?: E2Input['historicalDeals'];
   deviceConfigOverrides?: Partial<E2DeviceConfig>;
+  /** Client BoQ workbook for E2 to parse + fill (RFP mode). */
+  filePath?: string;
+}
+
+const BOQ_FILE_EXTS = new Set(['.xlsx', '.xls', '.csv']);
+
+/** Pick the uploaded BoQ workbook path from E1's file classifications.
+ *  Matches subtype='boq_template' (filename/folder rules produce
+ *  type='commercial', subtype='boq_template'); only spreadsheet
+ *  extensions are returned since E2's parser reads Excel/CSV. */
+export function selectBoQFilePath(e1?: E1Output): string | undefined {
+  const classified = e1?.fileClassifications;
+  if (!classified || classified.length === 0) return undefined;
+  const boq = classified.find((f) => {
+    if (f.subtype !== 'boq_template') return false;
+    const dot = f.filename.lastIndexOf('.');
+    const ext = dot >= 0 ? f.filename.slice(dot).toLowerCase() : '';
+    return BOQ_FILE_EXTS.has(ext);
+  });
+  return boq?.path;
 }
 
 const DEFAULT_DEVICE_CONFIG: E2DeviceConfig = {
@@ -63,6 +83,7 @@ export function buildE2Input(
   return {
     devices: devices ?? [],
     pricingConfig: input.pricingConfig,
+    filePath: input.filePath,
     projectContext: {
       sector: e1?.sectorDetection.sector,
       description: input.solutionContext,
@@ -71,7 +92,10 @@ export function buildE2Input(
   };
 }
 
-export function toE2Artifacts(out: E2Output): ArtifactRegistry['e2'] {
+export function toE2Artifacts(
+  out: E2Output,
+  inputFilePath?: string,
+): ArtifactRegistry['e2'] {
   const artifacts: ArtifactRegistry['e2'] = {
     pricingSummary: `grandTotalIncVat=${out.totals.grandTotalIncVat}`,
     validationStatus: out.validationStatus,
@@ -79,5 +103,6 @@ export function toE2Artifacts(out: E2Output): ArtifactRegistry['e2'] {
   };
   if (out.exportPath) artifacts.bomWorkbook = out.exportPath;
   if (out.filledClientBoqPath) artifacts.filledClientBoq = out.filledClientBoqPath;
+  if (inputFilePath) artifacts.clientBoqInputPath = inputFilePath;
   return artifacts;
 }
