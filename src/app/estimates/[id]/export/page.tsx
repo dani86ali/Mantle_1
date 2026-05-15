@@ -13,6 +13,13 @@ import {
   type ArtifactRow,
 } from "./export-components";
 
+interface DesignState {
+  hldDocxPath?: string | null;
+  lldDocxPath?: string | null;
+  diagramXml?: string | null;
+  componentList?: unknown;
+}
+
 interface PageData {
   pipeline: ApiResponse["pipeline"];
   mode: IntakeMode;
@@ -23,18 +30,18 @@ interface PageData {
 function row(
   artifact: string,
   name: string,
-  format: "xlsx" | "docx" | "pdf",
+  format: "xlsx" | "docx" | "pdf" | "xml" | "json",
   ready: boolean,
   comingSoon = false
 ): ArtifactRow {
   return { artifact, name, format, ready, comingSoon };
 }
 
-function buildGroups(json: ApiResponse): PageData["groups"] {
+function buildGroups(json: ApiResponse, design: DesignState | null): PageData["groups"] {
   const e1 = json.e1 as { complianceMatrix?: unknown; requirements?: unknown[] } | null;
-  const e2 = json.e2 as { bom?: unknown[] } | null;
+  const e2 = json.e2 as { bom?: unknown[]; filledClientBoqPath?: string } | null;
   const e3 = json.e3 as { proposalPath?: string; financialPath?: string } | null;
-  return [
+  const groups: PageData["groups"] = [
     {
       title: "Analysis",
       rows: [
@@ -46,8 +53,8 @@ function buildGroups(json: ApiResponse): PageData["groups"] {
       title: "Commercial",
       rows: [
         row("bom", "Priced BoM Workbook", "xlsx", !!e2?.bom?.length),
+        row("filled_boq", "Filled Client BoQ", "xlsx", !!e2?.filledClientBoqPath),
         row("distributor", "Distributor Export", "xlsx", false, true),
-        row("client-boq", "Filled Client BoQ", "xlsx", false, true),
       ],
     },
     {
@@ -59,14 +66,24 @@ function buildGroups(json: ApiResponse): PageData["groups"] {
       ],
     },
   ];
+  if (design) {
+    const designRows: ArtifactRow[] = [];
+    if (design.hldDocxPath) designRows.push(row("hld", "HLD Document", "docx", true));
+    if (design.lldDocxPath) designRows.push(row("lld", "LLD Document", "docx", true));
+    if (design.diagramXml) designRows.push(row("diagram", "Network Diagram", "xml", true));
+    if (design.componentList)
+      designRows.push(row("component_list", "Component List", "json", true));
+    if (designRows.length > 0) groups.push({ title: "Design", rows: designRows });
+  }
+  return groups;
 }
 
-function toPageData(json: ApiResponse): PageData {
+function toPageData(json: ApiResponse, design: DesignState | null): PageData {
   return {
     pipeline: json.pipeline,
     mode: json.pipeline?.mode ?? "rfp",
     status: json.estimate.status ?? "DRAFT",
-    groups: buildGroups(json),
+    groups: buildGroups(json, design),
   };
 }
 
@@ -82,11 +99,15 @@ export default function ExportCenterPage() {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch(`/api/estimates/${id}`);
+        const [res, designRes] = await Promise.all([
+          fetch(`/api/estimates/${id}`),
+          fetch(`/api/estimates/${id}/design`),
+        ]);
         if (!res.ok) throw new Error(`Failed to load (${res.status})`);
         const json = (await res.json()) as ApiResponse;
+        const design = designRes.ok ? ((await designRes.json()) as DesignState) : null;
         if (cancelled) return;
-        setData(toPageData(json));
+        setData(toPageData(json, design));
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
       } finally {

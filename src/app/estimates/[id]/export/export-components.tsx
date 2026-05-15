@@ -3,6 +3,8 @@
 import { useState } from "react";
 import {
   Download,
+  FileCode,
+  FileJson,
   FileSpreadsheet,
   FileText,
   FileType,
@@ -10,7 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type ArtifactFormat = "xlsx" | "docx" | "pdf";
+export type ArtifactFormat = "xlsx" | "docx" | "pdf" | "xml" | "json";
 
 export interface ArtifactRow {
   artifact: string;
@@ -24,12 +26,16 @@ const FORMAT_ICON: Record<ArtifactFormat, typeof FileSpreadsheet> = {
   xlsx: FileSpreadsheet,
   docx: FileText,
   pdf: FileType,
+  xml: FileCode,
+  json: FileJson,
 };
 
 const FORMAT_BADGE: Record<ArtifactFormat, string> = {
   xlsx: "bg-success-muted text-success",
   docx: "bg-blue-muted text-blue",
   pdf: "bg-destructive-muted text-destructive",
+  xml: "bg-warning-muted text-warning",
+  json: "bg-blue-muted text-blue",
 };
 
 function ArtifactRowView({
