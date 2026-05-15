@@ -171,9 +171,9 @@ export function generateAppendices(
   const items = [
     'Appendix A — Bill of Materials',
     'Appendix B — Compliance Matrix',
-    'Appendix C — Network Diagrams (placeholder)',
-    'Appendix D — Vendor Datasheets (placeholder)',
-    'Appendix E — Team CVs (placeholder)',
+    'Appendix C — Network Diagrams: Network topology and design diagrams are provided as separate deliverables. Refer to the HLD/LLD document package.',
+    'Appendix D — Vendor Datasheets: Relevant vendor datasheets for specified equipment are available upon request.',
+    'Appendix E — Team CVs: Project team qualifications and certifications are provided under separate cover upon request.',
   ];
   const content = '## Appendices\n\n' + items.map((i) => `- ${i}`).join('\n');
   return makeSection('appendices', content);

@@ -28,12 +28,12 @@ export function lldHldReference(): LLDSection {
 
 export function physicalTopology(): LLDSection {
   return { sectionNumber: 3, title: 'Detailed Physical Topology',
-    content: 'Diagram placeholder: per-site, per-rack physical topology from diagram engine.' };
+    content: 'Physical topology diagrams are generated as draw.io XML files. See the diagram attachment in the design package.' };
 }
 
 export function logicalTopology(): LLDSection {
   return { sectionNumber: 4, title: 'Detailed Logical Topology',
-    content: 'Diagram placeholder: per-VRF, per-VLAN, per-fabric logical topology from diagram engine.' };
+    content: 'Logical topology diagrams are generated as draw.io XML files. See the diagram attachment in the design package.' };
 }
 
 export function deviceInventory(sizing: SizingResult): LLDSection {
