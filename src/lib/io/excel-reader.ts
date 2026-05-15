@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { readFileSync } from "fs";
 import { basename } from "path";
 
 export interface ExcelReadResult {
@@ -19,7 +20,8 @@ export function readExcelFile(filePath: string): ExcelReadResult {
     throw new Error("readExcelFile: filePath must be a non-empty string");
   }
 
-  const wb = XLSX.readFile(filePath, { cellDates: true });
+  const buf = readFileSync(filePath);
+  const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
   const sheetNames = wb.SheetNames.slice();
   const sheets: Record<string, string[][]> = {};
 
