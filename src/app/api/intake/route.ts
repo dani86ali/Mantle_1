@@ -83,6 +83,7 @@ async function runAndPersistPipeline(
     }
     const result = await runPipeline({
       opportunityId: `intake:${intakeId}`,
+      tenantId,
       mode,
       devices,
       pricingConfig,
