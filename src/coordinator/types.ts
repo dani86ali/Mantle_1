@@ -29,6 +29,8 @@ export interface E2Artifacts {
   /** Honesty signal surfaced to UI/downstream consumers. Mirrors E2Output. */
   validationStatus?: "validated" | "unvalidated" | "partial";
   validationWarnings?: string[];
+  /** JSON-stringified PricedBomLine[] — needed when E3 rehydrates from DB. */
+  bom?: string;
 }
 
 export interface E3Artifacts {

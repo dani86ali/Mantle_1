@@ -5,10 +5,12 @@
 
 import type { E1Output } from '@/engines/e1/orchestrator';
 import type {
-  E2Device, E2DeviceConfig, E2Input, E2Output,
+  E2Device, E2DeviceConfig, E2Input, E2Output, PricedBomLine,
 } from '@/engines/e2/orchestrator';
 import type { ArtifactRegistry, E5Artifacts } from '@/coordinator/types';
 import type { ComponentListItem } from '@/engines/e5/types';
+
+export type { PricedBomLine };
 
 export interface E2BuildInput {
   devices?: E2Device[];
@@ -117,5 +119,18 @@ export function toE2Artifacts(
   if (out.exportPath) artifacts.bomWorkbook = out.exportPath;
   if (out.filledClientBoqPath) artifacts.filledClientBoq = out.filledClientBoqPath;
   if (inputFilePath) artifacts.clientBoqInputPath = inputFilePath;
+  if (out.bom.length > 0) artifacts.bom = JSON.stringify(out.bom);
   return artifacts;
+}
+
+export function parseBomFromArtifacts(
+  e2?: ArtifactRegistry['e2'],
+): PricedBomLine[] {
+  if (!e2 || !e2.bom) return [];
+  try {
+    const parsed = JSON.parse(e2.bom);
+    return Array.isArray(parsed) ? (parsed as PricedBomLine[]) : [];
+  } catch {
+    return [];
+  }
 }
