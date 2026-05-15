@@ -17,7 +17,7 @@ import {
   saveE3Artifacts,
 } from "@/lib/db/pipeline-store";
 import type { IntakeMode } from "@/coordinator/types";
-import { devicesFromIntake } from "@/coordinator/intake-to-e2";
+import { devicesFromIntake, parseBomText } from "@/coordinator/intake-to-e2";
 import { enrichFileContent } from "@/coordinator/intake-file-loader";
 import { resolvePricingConfig } from "@/coordinator/intake-pricing";
 import { requireAuth } from "@/lib/middleware/auth";
@@ -126,6 +126,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const mode = resolveMode(data);
+    const rawBomText = data.bomText ?? data.pastedText;
+    if (
+      mode === "quick_bom" &&
+      !data.uploadedBomLines?.length &&
+      rawBomText
+    ) {
+      data.uploadedBomLines = parseBomText(rawBomText);
+    }
     const intake = await createIntake({
       tenantId,
       path: data.path ?? modeToPath(mode),
@@ -149,6 +157,7 @@ export async function POST(request: NextRequest) {
         supportTerm: data.supportTerm,
         constraints: data.constraints,
         pastedText: data.pastedText,
+        bomText: data.bomText,
         uploadedBomLines: data.uploadedBomLines,
         uploadedFiles: data.uploadedFiles,
         pricingConfig: data.pricingConfig,

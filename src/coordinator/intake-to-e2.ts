@@ -65,6 +65,26 @@ export function devicesFromIntake(req: IntakeRequirementsForE2): E2Device[] {
   return [];
 }
 
+/**
+ * Parse raw pasted BoM text into { sku, quantity } lines.
+ * Supports 'SKU qty', 'SKU,qty', and 'SKU\tqty' per line; defaults qty to 1.
+ */
+export function parseBomText(text: string): { sku: string; quantity: number }[] {
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/[,\t\s]+/).map((p) => p.trim()).filter(Boolean);
+      const qty = parseInt(parts[1] ?? "1", 10);
+      return {
+        sku: parts[0] ?? "",
+        quantity: Number.isFinite(qty) && qty > 0 ? qty : 1,
+      };
+    })
+    .filter((l) => l.sku.length > 0);
+}
+
 const BOM_FILE_EXTS = new Set([".xlsx", ".xls", ".csv"]);
 
 function parseByType(
