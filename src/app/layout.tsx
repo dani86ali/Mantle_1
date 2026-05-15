@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/shared/AppSidebar";
 import { TopBar } from "@/components/shared/TopBar";
 import { ChatWidget } from "@/components/shared/ChatPanel";
 import { GlobalProviders } from "@/components/shared/GlobalProviders";
+import { MockModeBanner } from "@/components/shared/MockModeBanner";
 
 export const metadata: Metadata = {
   title: "BOMatic",
@@ -18,6 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="min-h-screen bg-bg-primary text-text-primary antialiased">
+        <MockModeBanner />
         <GlobalProviders>
           <div className="flex h-screen">
             <AppSidebar />
