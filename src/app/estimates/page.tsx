@@ -170,7 +170,7 @@ export default function EstimatesPage() {
   async function handleDelete(id: string) {
     if (!confirm("Delete this estimate? This cannot be undone.")) return;
     try {
-      await fetch(`/api/review/${id}`, { method: "DELETE" });
+      await fetch(`/api/estimates/${id}`, { method: "DELETE" });
       refresh();
     } catch { /* ignore */ }
   }

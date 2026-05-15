@@ -7,7 +7,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/index";
-import { bomDrafts, intakes } from "@/lib/db/schema";
+import {
+  agentRuns,
+  bomDrafts,
+  exports as exportsTable,
+  intakes,
+  pipelineRuns,
+  reviews,
+} from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import {
   loadArtifacts,
@@ -168,5 +175,62 @@ export async function PATCH(
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/estimates/[id] — remove either a bomDraft-backed estimate
+ * (with its review/export/agent_run/intake) or an intake-backed wizard
+ * estimate (with its pipelineRun). 204 on success, 404 when neither
+ * resolves under the caller's tenant.
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
+  try {
+    const [draft] = await db
+      .select({
+        id: bomDrafts.id,
+        intakeId: bomDrafts.intakeId,
+        agentRunId: bomDrafts.agentRunId,
+      })
+      .from(bomDrafts)
+      .innerJoin(intakes, eq(bomDrafts.intakeId, intakes.id))
+      .where(
+        and(eq(bomDrafts.id, params.id), eq(intakes.tenantId, session.tenantId))
+      )
+      .limit(1);
+
+    if (draft) {
+      await db.delete(exportsTable).where(eq(exportsTable.bomDraftId, draft.id));
+      await db.delete(reviews).where(eq(reviews.bomDraftId, draft.id));
+      await db.delete(bomDrafts).where(eq(bomDrafts.id, draft.id));
+      await db.delete(pipelineRuns).where(eq(pipelineRuns.intakeId, draft.intakeId));
+      await db.delete(agentRuns).where(eq(agentRuns.id, draft.agentRunId));
+      await db.delete(intakes).where(eq(intakes.id, draft.intakeId));
+      return new NextResponse(null, { status: 204 });
+    }
+
+    const [intakeRow] = await db
+      .select({ id: intakes.id })
+      .from(intakes)
+      .where(and(eq(intakes.id, params.id), eq(intakes.tenantId, session.tenantId)))
+      .limit(1);
+
+    if (intakeRow) {
+      await db.delete(pipelineRuns).where(eq(pipelineRuns.intakeId, intakeRow.id));
+      await db.delete(agentRuns).where(eq(agentRuns.intakeId, intakeRow.id));
+      await db.delete(intakes).where(eq(intakes.id, intakeRow.id));
+      return new NextResponse(null, { status: 204 });
+    }
+
+    return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: `Delete failed: ${message}` }, { status: 500 });
   }
 }
