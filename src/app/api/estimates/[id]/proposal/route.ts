@@ -185,8 +185,8 @@ function deriveCostStack(e3: E3Output): FinancialCostStack {
   const better = e3.tiers.tiers.find((t) => t.name === "better") ?? e3.tiers.tiers[0];
   const hwSell = better?.totals.hardwareTotal ?? 0;
   const svcSell = better?.totals.serviceTotal ?? 0;
-  const hwCost = hwSell * (1 - (e3.margin.hardwareMarginPct ?? 0) / 100);
-  const svcCost = svcSell * (1 - (e3.margin.servicesMarginPct ?? 0) / 100);
+  const hwCost = hwSell * (1 - (e3.margin.hardwareMarginPct ?? 0));
+  const svcCost = svcSell * (1 - (e3.margin.servicesMarginPct ?? 0));
   const swCost = Math.max(0, e3.margin.totalCost - hwCost - svcCost);
   return {
     hardwareCost: hwCost,
