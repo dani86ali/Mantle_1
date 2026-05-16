@@ -68,7 +68,17 @@ function mapE1(out: E1Output): E3E1Data {
       mandatoryCount: out.stats.mandatoryCount,
       criticalRisks: out.stats.criticalRisks,
     },
-    complianceMatrix: { stats: out.complianceMatrix.stats },
+    complianceMatrix: {
+      stats: out.complianceMatrix.stats,
+      rows: (out.complianceMatrix.rows ?? []).map((r) => ({
+        requirementId: r.requirementId,
+        requirementText: r.requirementText,
+        frameworkId: r.frameworkId,
+        controlId: r.controlId,
+        controlName: r.controlName,
+        status: r.status,
+      })),
+    },
     riskFlags: out.riskFlags.map((r) => ({
       severity: r.severity, category: r.category, matchedText: r.matchedText,
     })),

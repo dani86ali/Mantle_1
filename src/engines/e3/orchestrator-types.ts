@@ -31,8 +31,18 @@ export interface E3ComplianceStats {
   alternative: number;
 }
 
+export interface E3MatrixRow {
+  requirementId?: string;
+  requirementText: string;
+  frameworkId: string;
+  controlId?: string;
+  controlName: string;
+  status: string;
+}
+
 export interface E3ComplianceMatrix {
   stats: E3ComplianceStats;
+  rows?: E3MatrixRow[];
 }
 
 export interface E3SectorDetection {

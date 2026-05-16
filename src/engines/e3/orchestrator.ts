@@ -47,6 +47,7 @@ export type {
   E3BomLine,
   E3Totals,
   E3Requirement,
+  E3MatrixRow,
   E3E4Data,
   E3E5Data,
   E3RequirementsBaseline,
@@ -112,7 +113,10 @@ export async function runE3(input: E3Input): Promise<E3Output> {
   const deterministicCore = generateAllDeterministicSections(
     {
       requirements: toSectionRequirements(e1.requirements),
-      complianceMatrix: { stats: e1.complianceMatrix.stats },
+      complianceMatrix: {
+        stats: e1.complianceMatrix.stats,
+        rows: e1.complianceMatrix.rows,
+      },
     },
     { bom: e2.bom, totals: e2.totals },
     metadata,

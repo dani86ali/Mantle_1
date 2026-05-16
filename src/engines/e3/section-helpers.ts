@@ -40,6 +40,15 @@ export interface SectionComplianceStats {
   alternative: number;
 }
 
+export interface SectionMatrixRow {
+  requirementId?: string;
+  requirementText: string;
+  frameworkId: string;
+  controlId?: string;
+  controlName: string;
+  status: string;
+}
+
 const SUPPORT_PREFIXES = ['CON-', 'FC-'] as const;
 
 const SUPPORT_TIER_MAP: ReadonlyArray<{ prefix: string; tier: string }> = [

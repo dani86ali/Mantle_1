@@ -17,6 +17,7 @@ import {
   capitalize,
   type SectionBomLine,
   type SectionComplianceStats,
+  type SectionMatrixRow,
   type SectionRequirement,
   type SectionTotals,
 } from './section-helpers';
@@ -24,6 +25,7 @@ import {
 export type {
   SectionBomLine,
   SectionComplianceStats,
+  SectionMatrixRow,
   SectionRequirement,
   SectionTotals,
 } from './section-helpers';
@@ -46,7 +48,10 @@ export interface CommercialInput {
 }
 
 export interface ComplianceInput {
-  complianceMatrix: { stats: SectionComplianceStats };
+  complianceMatrix: {
+    stats: SectionComplianceStats;
+    rows?: SectionMatrixRow[];
+  };
 }
 
 export interface AllSectionsE1Input extends RequirementsInput, ComplianceInput {}
@@ -148,6 +153,7 @@ export function generateComplianceSection(
   e1: ComplianceInput,
 ): ProposalSection {
   const s = e1.complianceMatrix.stats;
+  const rows = e1.complianceMatrix.rows ?? [];
   const coverage = s.total === 0 ? 0 : (s.compliant + s.alternative) / s.total;
   const out: string[] = [
     '## Compliance Matrix',
@@ -159,8 +165,21 @@ export function generateComplianceSection(
     `Alternative: ${s.alternative}`,
     `Coverage: ${(coverage * 100).toFixed(1)}%`,
     '',
-    'The full line-by-line compliance matrix is provided in Appendix B.',
   ];
+  if (rows.length > 0) {
+    out.push('| Requirement | Framework | Control | Status |');
+    out.push('|---|---|---|---|');
+    for (const r of rows) {
+      const reqLabel = r.requirementId
+        ? `${escapeCell(r.requirementId)}: ${escapeCell(r.requirementText)}`
+        : escapeCell(r.requirementText);
+      out.push(
+        `| ${reqLabel} | ${escapeCell(r.frameworkId)} | ${escapeCell(r.controlName)} | ${escapeCell(r.status)} |`,
+      );
+    }
+  } else {
+    out.push('The full line-by-line compliance matrix is provided in Appendix B.');
+  }
   return makeSection('compliance_matrix', out.join('\n'));
 }
 
