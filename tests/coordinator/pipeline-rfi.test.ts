@@ -7,6 +7,15 @@ vi.mock('@/engines/e2/orchestrator', () => ({ runE2: vi.fn() }));
 vi.mock('@/engines/e3/orchestrator', () => ({ runE3: vi.fn() }));
 vi.mock('@/engines/e4/orchestrator', () => ({ runE4: vi.fn() }));
 vi.mock('@/engines/e5/orchestrator', () => ({ runE5: vi.fn() }));
+vi.mock('@/lib/db/pipeline-store', () => ({
+  savePipelineState: vi.fn(async () => undefined),
+  saveE1Artifacts: vi.fn(async () => undefined),
+  saveE2Artifacts: vi.fn(async () => undefined),
+  saveE3Artifacts: vi.fn(async () => undefined),
+  loadArtifacts: vi.fn(async () => ({})),
+  loadPipelineStateByIntake: vi.fn(async () => null),
+  loadPipelineStateForTenant: vi.fn(async () => null),
+}));
 
 import { runE1 } from '@/engines/e1/orchestrator';
 import { runE2 } from '@/engines/e2/orchestrator';

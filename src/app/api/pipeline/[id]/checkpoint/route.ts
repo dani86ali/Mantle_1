@@ -2,6 +2,10 @@
  * POST /api/pipeline/[id]/checkpoint — record a human checkpoint decision.
  * When `checkpointId` is provided, updates that specific checkpoint by id.
  * When omitted, falls back to updating the latest checkpoint (backward compat).
+ *
+ * When the decision is 'approved' AND all checkpoints for the just-approved
+ * engine are now approved AND the pipeline is paused, kicks off
+ * resumeAndPersistPipeline so the next engine runs in the background.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -12,6 +16,7 @@ import {
   savePipelineState,
 } from "@/lib/db/pipeline-store";
 import { requireAuth } from "@/lib/middleware/auth";
+import { resumeAndPersistPipeline } from "@/coordinator/run-and-persist";
 
 const VALID_CHECKPOINT_IDS = [
   "e1-requirements",
@@ -61,10 +66,33 @@ export async function POST(
   target.decidedAt = new Date();
   state.timestamps.updatedAt = new Date();
 
+  // Decide whether this approval should advance the pipeline. All checkpoints
+  // for `target.engine` must now be 'approved' AND the pipeline must currently
+  // be paused. We flip status to 'running' here as the mutex so a concurrent
+  // approval that reads state after this save will see 'running' and won't
+  // double-fire the resume. The race is best-effort, not transactional — fine
+  // for human-driven UI clicks but would need a conditional UPDATE for true
+  // concurrent safety.
+  let willResume = false;
+  if (data.status === "approved" && state.intakeId && state.status === "paused_at_checkpoint") {
+    const engineCps = state.checkpoints.filter((c) => c.engine === target.engine);
+    const allApproved =
+      engineCps.length > 0 && engineCps.every((c) => c.status === "approved");
+    if (allApproved) {
+      state.status = "running";
+      willResume = true;
+    }
+  }
+
   await savePipelineState(state);
+
+  if (willResume && state.intakeId) {
+    void resumeAndPersistPipeline(session.tenantId, state.intakeId);
+  }
 
   return NextResponse.json({
     pipelineId: state.id,
     checkpoint: target,
+    advancing: willResume,
   });
 }

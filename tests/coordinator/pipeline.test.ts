@@ -10,6 +10,17 @@ vi.mock('@/engines/e2/orchestrator', () => ({
 vi.mock('@/engines/e3/orchestrator', () => ({
   runE3: vi.fn(),
 }));
+// The new pause/resume path persists state mid-run; tests don't run against a
+// real DB, so make persistence a no-op.
+vi.mock('@/lib/db/pipeline-store', () => ({
+  savePipelineState: vi.fn(async () => undefined),
+  saveE1Artifacts: vi.fn(async () => undefined),
+  saveE2Artifacts: vi.fn(async () => undefined),
+  saveE3Artifacts: vi.fn(async () => undefined),
+  loadArtifacts: vi.fn(async () => ({})),
+  loadPipelineStateByIntake: vi.fn(async () => null),
+  loadPipelineStateForTenant: vi.fn(async () => null),
+}));
 
 import { runE1 } from '@/engines/e1/orchestrator';
 import { runE2 } from '@/engines/e2/orchestrator';
@@ -94,11 +105,18 @@ const PRICING: PipelineInput['pricingConfig'] = {
   profitMode: 'margin', profitPct: 0.18, vatRate: 0.15, country: 'SA',
 };
 
+// Default an auto-approve onCheckpoint so existing tests exercise the
+// end-to-end run path. Production callers omit onCheckpoint, which triggers
+// the new pause-after-first-engine behavior; tests that need to verify that
+// path can explicitly omit it via `{ onCheckpoint: undefined }`.
+const autoApproveCheckpoint: PipelineInput['onCheckpoint'] = async () => 'approved';
+
 function baseInput(overrides: Partial<PipelineInput> = {}): PipelineInput {
   return {
     opportunityId: 'opp-abc', mode: 'rfp',
     files: [{ path: 'rfp.docx', content: 'sample' }],
     devices: DEVICES, pricingConfig: PRICING,
+    onCheckpoint: autoApproveCheckpoint,
     ...overrides,
   };
 }
@@ -269,6 +287,7 @@ describe('runPipeline', () => {
     const result = await runPipeline({
       opportunityId: 'opp-no-pricing', mode: 'rfp',
       files: [{ path: 'rfp.docx', content: 'sample' }],
+      onCheckpoint: autoApproveCheckpoint,
     });
     expect(result.state.error).toBeDefined();
     expect(result.state.error?.message).toContain('E2 requires devices and pricingConfig');
@@ -283,6 +302,7 @@ describe('runPipeline', () => {
       mode: 'quick_bom',
       files: [{ path: xlsxPath }],
       pricingConfig: PRICING,
+      onCheckpoint: autoApproveCheckpoint,
     });
     expect(result.state.error).toBeUndefined();
     expect(mockRunE2).toHaveBeenCalledWith(
@@ -315,6 +335,7 @@ describe('runPipeline', () => {
       opportunityId: 'opp-rfp-boq', mode: 'rfp',
       files: [{ path: boqPath }, { path: '/uploads/rfp.pdf' }],
       pricingConfig: PRICING,
+      onCheckpoint: autoApproveCheckpoint,
     });
     expect(mockRunE2).toHaveBeenCalledWith(
       expect.objectContaining({ filePath: boqPath }),
@@ -337,6 +358,7 @@ describe('runPipeline', () => {
       opportunityId: 'opp-rfp-no-boq', mode: 'rfp',
       files: [{ path: '/uploads/rfp.pdf' }],
       pricingConfig: PRICING,
+      onCheckpoint: autoApproveCheckpoint,
     });
     expect(mockRunE2).toHaveBeenCalledWith(
       expect.objectContaining({ filePath: undefined }),
@@ -350,6 +372,8 @@ describe('runPipeline', () => {
       opportunityId: 'opp-empty-devices', mode: 'rfp',
       files: [{ path: 'rfp.docx', content: 'sample' }],
       pricingConfig: PRICING,
+      devices: [],
+      onCheckpoint: autoApproveCheckpoint,
     });
     expect(result.state.error).toBeUndefined();
     expect(mockRunE2).toHaveBeenCalledWith(

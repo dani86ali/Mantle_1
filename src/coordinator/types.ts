@@ -113,9 +113,11 @@ export interface PipelineState {
   };
   /** Set when the pipeline aborts due to an unrecoverable error (not per-engine failures). */
   error?: { message: string };
-  /** Lifecycle flag set when the pipeline is suspended awaiting external input
-   *  (e.g. RFI E4 phase1 → wait for client responses before continuing). */
-  status?: 'paused_at_checkpoint';
+  /** Lifecycle flag. 'running' = an engine is in flight; 'paused_at_checkpoint'
+   *  = stopped awaiting human approval of one or more checkpoints (also reused
+   *  for the older RFI E4 phase1 wait); 'completed' = all engines done and all
+   *  checkpoints approved. Undefined = freshly created, no engine has started. */
+  status?: 'running' | 'paused_at_checkpoint' | 'completed';
 }
 
 export interface EngineInput<T = unknown> {

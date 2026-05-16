@@ -64,8 +64,12 @@ export async function runCheckpoint(
 ): Promise<CheckpointStatus> {
   const defs = ENGINE_CHECKPOINTS[engine];
   if (defs.length === 0) return 'approved';
-  const decision: CheckpointStatus = cb ? await cb(state, engine) : 'approved';
-  const decidedAt = new Date();
+  const decision: CheckpointStatus = cb ? await cb(state, engine) : 'pending';
+  const now = new Date();
+  // decidedAt means "when a human decided" — only stamp it for terminal
+  // decisions (approved/rejected/revision_requested). 'pending' leaves it
+  // undefined so the UI can show "awaiting review" honestly.
+  const decidedAt = decision === 'pending' ? undefined : now;
   for (const def of defs) {
     const existing = state.checkpoints.find((c: Checkpoint) => c.id === def.id);
     if (existing) {
@@ -79,7 +83,7 @@ export async function runCheckpoint(
       });
     }
     logEntry({
-      timestamp: decidedAt, pipelineId: state.id, opportunityId: state.opportunityId,
+      timestamp: now, pipelineId: state.id, opportunityId: state.opportunityId,
       level: 'info', category: 'checkpoint', engine, checkpointId: def.id, decision,
     });
   }
