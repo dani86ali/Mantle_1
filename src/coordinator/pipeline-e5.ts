@@ -10,7 +10,11 @@ import { join } from 'node:path';
 import type {
   E4Artifacts, E5Artifacts, EngineInput, EngineOutput, PipelineState,
 } from '@/coordinator/types';
-import type { E5InputData } from '@/engines/e5/orchestrator-types';
+import {
+  RequirementsBaselineSchema,
+  type E5InputData,
+  type RequirementsBaseline,
+} from '@/engines/e5/orchestrator-types';
 
 export async function resolveE5OutputDir(
   ctx: { intakeId?: string; pipelineId: string },
@@ -48,9 +52,28 @@ export interface E5BuildInput {
   downTimeToleranceHours?: number;
 }
 
-function parseBaseline(ref?: string): unknown {
-  if (!ref) return {};
-  try { return JSON.parse(ref); } catch { return ref; }
+const EMPTY_BASELINE: RequirementsBaseline = {
+  business: [], functional: [], nonFunctional: [], constraints: [], assumptions: [],
+};
+
+function parseBaseline(ref?: string): RequirementsBaseline {
+  if (!ref) return EMPTY_BASELINE;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(ref);
+  } catch {
+    console.warn('[pipeline-e5] requirementsBaseline JSON.parse failed; returning empty categories');
+    return EMPTY_BASELINE;
+  }
+  const result = RequirementsBaselineSchema.safeParse(raw);
+  if (!result.success) {
+    console.warn(
+      '[pipeline-e5] requirementsBaseline failed Zod validation; returning empty categories',
+      result.error.issues,
+    );
+    return EMPTY_BASELINE;
+  }
+  return result.data;
 }
 
 export function buildE5Input(
