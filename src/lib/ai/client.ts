@@ -9,6 +9,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { logEntry } from '@/coordinator/logger';
+import { UNTRUSTED_SYSTEM_PROLOGUE } from './wrap-untrusted';
 
 const MODEL = 'claude-sonnet-4-6-20250514';
 const DEFAULT_MAX_TOKENS = 4096;
@@ -23,6 +24,7 @@ export interface CallAIConfig<T> {
   maxTokens?: number;
   temperature?: number;
   taskId: string;
+  untrustedContent?: boolean;
 }
 
 export type AIResult<T> =
@@ -82,12 +84,15 @@ async function singleAttempt<T>(
   prompt: string,
 ): Promise<AttemptResult<T>> {
   let response: Anthropic.Message;
+  const systemPrompt = config.untrustedContent
+    ? `${UNTRUSTED_SYSTEM_PROLOGUE}\n\n${config.systemPrompt}`
+    : config.systemPrompt;
   try {
     response = await getClient().messages.create({
       model: MODEL,
       max_tokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
       temperature: config.temperature ?? DEFAULT_TEMPERATURE,
-      system: config.systemPrompt,
+      system: systemPrompt,
       messages: [{ role: 'user', content: prompt }],
     });
   } catch (err) {

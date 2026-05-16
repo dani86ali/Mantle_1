@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
+import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
 import { extractReferences } from '@/engines/e1/missing-doc-detector';
 
 export type RequirementClassification = 'mandatory' | 'optional' | 'conditional';
@@ -146,11 +147,12 @@ async function escalateToAI(sentence: string): Promise<ClassifiedSentence | null
       'the requirement language used. Return strict JSON only.',
     prompt:
       `Classify this RFP sentence and return strict JSON.\n\n` +
-      `Sentence: "${sentence}"\n\n` +
+      `Sentence: ${wrapUntrusted(sentence, 'rfp-sentence')}\n\n` +
       `Respond with: {"classification": "mandatory"|"optional"|"conditional", ` +
       `"confidence": <0..1>, "reasoning": "<short explanation>"}.`,
     outputSchema: AIClassificationSchema,
     taskId: `requirements-extractor:${sentence.slice(0, 40)}`,
+    untrustedContent: true,
   });
   if (!result.success) return null;
   return {

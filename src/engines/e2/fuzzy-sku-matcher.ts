@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
+import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
 
 export interface CatalogEntry {
   sku: string;
@@ -44,7 +45,7 @@ function buildPrompt(input: FuzzyMatchInput, catalog: CatalogEntry[]): string {
 
   return (
     `Find the best matching catalog SKU for this BoQ line item description.\n\n` +
-    `Description: "${input.description}"${hintBlock}\n\n` +
+    `Description: ${wrapUntrusted(input.description, 'boq-description')}${hintBlock}\n\n` +
     `Catalog (sku | family | description):\n${catalogLines}\n\n` +
     `Respond with JSON: {"sku": "<exact SKU from catalog>", ` +
     `"confidence": <0..1>, "reasoning": "<short explanation>"}.\n` +
@@ -90,6 +91,7 @@ export async function fuzzyMatchSku(
     systemPrompt: SYSTEM_PROMPT,
     outputSchema: AIOutputSchema,
     taskId: `fuzzy-sku-match:${desc.slice(0, 40)}`,
+    untrustedContent: true,
   });
 
   if (!aiResult.success) {

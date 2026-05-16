@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
+import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
 import { matchResponseToQuestion } from './response-parser';
 import type { ClientResponse, Question } from './types';
 
@@ -45,13 +46,14 @@ export async function interpretFreeText(
         'The client wrote in free form. For each question, extract the answer from ' +
         'the text if present. Return null if the question is not addressed.',
       prompt:
-        `Client response text:\n${text}\n\n` +
+        `Client response text:\n${wrapUntrusted(text, 'client-response')}\n\n` +
         `Questions to extract answers for:\n` +
         batch.map((q) => `${q.id}: ${q.text}`).join('\n') +
         `\n\nReturn strict JSON: an array with one object per question shaped as ` +
         `{"questionId": <id>, "answer": <string or null>, "confidence": <0..1>}.`,
       outputSchema: AIMatchSchema,
       taskId: `free-text-interpreter:batch-${i}`,
+      untrustedContent: true,
     });
 
     if (!result.success) continue;

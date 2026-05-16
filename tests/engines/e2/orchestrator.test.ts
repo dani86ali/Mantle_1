@@ -236,10 +236,10 @@ describe("runE2 — BoM XLSX emission", () => {
 });
 
 describe("runE2 — validationStatus honesty signal", () => {
-  it("returns validationStatus='unvalidated' and EoX stub warning when using caller-supplied prices", async () => {
+  it("returns validationStatus='unvalidated' when using caller-supplied prices (no catalog adapter)", async () => {
     const result = await runE2({ ...baseInput(), emitFiles: false });
     expect(result.validationStatus).toBe("unvalidated");
-    expect(result.validationWarnings.some((w) => /EoX status not verified/.test(w))).toBe(true);
+    expect(result.validationWarnings.some((w) => /EoX status not verified/.test(w))).toBe(false);
   });
 
   it("emits 'No list price available' warnings for SKUs missing from listPrices", async () => {

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
+import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
 import {
   findEvalSheet,
   parseEvaluationSheet,
@@ -113,12 +114,13 @@ async function escalateToAI(excerpt: string): Promise<EvalCriteriaResult | null>
       'Return strict JSON only.',
     prompt:
       `Extract the evaluation structure from this RFP excerpt and return strict JSON.\n\n` +
-      `Excerpt:\n"""${excerpt}"""\n\n` +
+      `Excerpt:\n${wrapUntrusted(excerpt, 'rfp-excerpt')}\n\n` +
       `Respond with: {"methodology": "sequential_envelope"|"weighted_score"|"pass_fail"|"best_value"|"unknown", ` +
       `"envelopes": [{"name": string, "weight": number, "passThreshold": number, "criteria": string[]}], ` +
       `"iktvaRequired": boolean}.`,
     outputSchema: EvalCriteriaSchema,
     taskId: `eval-criteria-analyzer:${excerpt.slice(0, 40)}`,
+    untrustedContent: true,
   });
   if (!result.success) return null;
   return {

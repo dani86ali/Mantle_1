@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
+import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
 import { analyzeGaps } from './requirements-baseline-builder';
 import type {
   ClientResponse,
@@ -65,18 +66,19 @@ export async function enhancedGapDetection(
       'that need clarification, contradictory answers, unstated assumptions the ' +
       'client may be making, and critical scope items not covered by the questionnaire.',
     prompt:
-      `Project context: ${projectContext ?? '(unspecified)'}\n\n` +
+      `Project context: ${wrapUntrusted(projectContext ?? '(unspecified)', 'project-context')}\n\n` +
       `Deterministic gap analysis already produced:\n` +
       `- Missing required answers: ${deterministic.incompleteQuestions.join(', ') || '(none)'}\n` +
       `- Already-flagged vague answers: ${deterministic.vagueAnswers.map((v) => v.questionId).join(', ') || '(none)'}\n` +
       `- Missing baseline categories: ${deterministic.missingCategories.join(', ') || '(none)'}\n\n` +
-      `Client responses:\n${responseSummary || '(none)'}\n\n` +
+      `Client responses:\n${wrapUntrusted(responseSummary || '(none)', 'client-responses')}\n\n` +
       `Return strict JSON shaped as ` +
       `{"additionalGaps":[{"questionId":<id>,"reason":<string>}],` +
       `"contradictions":[{"questionIds":[<ids>],"description":<string>}],` +
       `"unstatedAssumptions":[<string>]}.`,
     outputSchema: AIGapSchema,
     taskId: `gap-detector-ai:${responses.length}`,
+    untrustedContent: true,
   });
 
   if (!result.success) {

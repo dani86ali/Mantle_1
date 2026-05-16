@@ -116,13 +116,26 @@ describe('runPipeline RFI integration', () => {
     expect(src.includes('STUB_ENGINES')).toBe(false);
   });
 
-  it('RFI mode runs e4, e5, e2, e3 in sequence (no e1)', async () => {
+  it('RFI phase1 (no client responses) pauses at E4 — E5/E2/E3 do not run', async () => {
     const result = await runPipeline(rfiInput());
+    expect(mockRunE1).not.toHaveBeenCalled();
+    expect(mockRunE4).toHaveBeenCalledTimes(1);
+    expect(mockRunE5).not.toHaveBeenCalled();
+    expect(mockRunE2).not.toHaveBeenCalled();
+    expect(mockRunE3).not.toHaveBeenCalled();
+    expect(result.state.status).toBe('paused_at_checkpoint');
+    expect(result.state.currentEngine).toBe('e4');
+    expect(result.state.engineCalls.map((c) => c.engine)).toEqual(['e4']);
+  });
+
+  it('RFI phase2 (with responseText) runs e4, e5, e2, e3 in sequence (no e1)', async () => {
+    const result = await runPipeline(rfiInput({ responseText: 'client answers here' }));
     expect(mockRunE1).not.toHaveBeenCalled();
     expect(mockRunE4).toHaveBeenCalledTimes(1);
     expect(mockRunE5).toHaveBeenCalledTimes(1);
     expect(mockRunE2).toHaveBeenCalledTimes(1);
     expect(mockRunE3).toHaveBeenCalledTimes(1);
+    expect(result.state.status).not.toBe('paused_at_checkpoint');
     expect(result.state.engineCalls.map((c) => c.engine)).toEqual(['e4', 'e5', 'e2', 'e3']);
   });
 
@@ -133,14 +146,14 @@ describe('runPipeline RFI integration', () => {
   });
 
   it('stores E5 artifacts in state.artifacts.e5 with real paths', async () => {
-    const result = await runPipeline(rfiInput());
+    const result = await runPipeline(rfiInput({ responseText: 'client answers here' }));
     expect(result.state.artifacts.e5.hldDocument).toBe('/tmp/bomatic-e5/x/hld.docx');
     expect(result.state.artifacts.e5.lldDocument).toBe('/tmp/bomatic-e5/x/lld.docx');
     expect(result.state.artifacts.e5.componentList).toContain('C9300-48P-A');
   });
 
   it('E5 receives E4 requirementsBaseline as parsed object', async () => {
-    await runPipeline(rfiInput());
+    await runPipeline(rfiInput({ responseText: 'client answers here' }));
     const e5Args = mockRunE5.mock.calls[0][0];
     const data = e5Args.inputData as { requirementsBaseline: { business: { id: string }[] } };
     expect(data.requirementsBaseline.business[0].id).toBe('b1');
@@ -159,7 +172,7 @@ describe('runPipeline RFI integration', () => {
   });
 
   it('E2 receives devices derived from E5 componentList when none supplied', async () => {
-    await runPipeline(rfiInput());
+    await runPipeline(rfiInput({ responseText: 'client answers here' }));
     const e2Args = mockRunE2.mock.calls[0][0];
     expect(e2Args.devices).toHaveLength(1);
     expect(e2Args.devices[0].model).toBe('C9300-48P-A');

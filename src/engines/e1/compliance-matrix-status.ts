@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
+import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
 import type { Requirement } from '@/engines/e1/requirements-extractor';
 import type { ControlRef } from '@/engines/e1/compliance-matrix-controls';
 
@@ -67,13 +68,14 @@ export async function assignStatuses(
         'Use the requirementId we provide verbatim — it is a composite key. ' +
         'Return strict JSON only.',
       prompt:
-        `Solution context:\n"""${solutionContext}"""\n\n` +
+        `Solution context:\n${wrapUntrusted(solutionContext, 'solution-context')}\n\n` +
         `Pairs to assess (assign status + concise notes for each):\n` +
-        `${JSON.stringify(items, null, 2)}\n\n` +
+        `${wrapUntrusted(JSON.stringify(items, null, 2), 'rfp-pairs')}\n\n` +
         `Respond with a JSON array of objects, one per pair: ` +
         `[{"requirementId": "<echo verbatim>", "status": "...", "notes": "..."}].`,
       outputSchema: StatusBatchSchema,
       taskId: `compliance-matrix-status:batch-${i}`,
+      untrustedContent: true,
     });
 
     if (aiResult.success) {

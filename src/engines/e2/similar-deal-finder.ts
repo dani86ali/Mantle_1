@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
+import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
 
 export interface DealProfile {
   sector: string;
@@ -140,13 +141,14 @@ async function aiSupplement(
       'e.g. different sector but same technical requirements, adjacent product categories, ' +
       'comparable buyer profile. Return strict JSON only.',
     prompt:
-      `Current deal:\n${JSON.stringify(current, null, 2)}\n\n` +
+      `Current deal:\n${wrapUntrusted(JSON.stringify(current, null, 2), 'current-deal')}\n\n` +
       `Historical deals:\n${JSON.stringify(recent, null, 2)}\n\n` +
       `Respond with a JSON array of similar deals: ` +
       `[{"opportunityId": "...", "similarityScore": <0..1>, "matchFactors": ["..."]}]. ` +
       `Only include deals not trivially matched by sector/country/vendor overlap.`,
     outputSchema: AIOutputSchema,
     taskId: 'similar-deal-finder',
+    untrustedContent: true,
   });
 
   if (!result.success) return [];

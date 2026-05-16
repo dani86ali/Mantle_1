@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
+import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
 import type { Requirement } from '@/engines/e1/requirements-extractor';
 import type { MissingDocument } from '@/engines/e1/missing-doc-detector';
 import type { EvalCriteriaResult } from '@/engines/e1/eval-criteria-types';
@@ -123,10 +124,10 @@ async function questionsFromAI(
       'assumptions, and commercial ambiguities. Skip questions already covered by ' +
       'flagged missing documents or low-confidence requirements. Return strict JSON only.',
     prompt:
-      `Project context: ${input.projectContext ?? '(none provided)'}\n\n` +
-      `Requirements:\n${JSON.stringify(reqDigest, null, 2)}\n\n` +
+      `Project context: ${wrapUntrusted(input.projectContext ?? '(none provided)', 'project-context')}\n\n` +
+      `Requirements:\n${wrapUntrusted(JSON.stringify(reqDigest, null, 2), 'rfp-requirements')}\n\n` +
       `Missing documents (already flagged, do not duplicate):\n` +
-      `${JSON.stringify(missingDigest, null, 2)}\n\n` +
+      `${wrapUntrusted(JSON.stringify(missingDigest, null, 2), 'missing-docs')}\n\n` +
       `Evaluation criteria:\n${JSON.stringify(evalDigest, null, 2)}\n\n` +
       `Respond with a JSON array: [{"question": "...", "priority": ` +
       `"critical"|"important"|"nice_to_have", "category": "missing_document"|` +
@@ -134,6 +135,7 @@ async function questionsFromAI(
       `"relatedRequirementIds": ["R-001"], "reasoning": "..."}].`,
     outputSchema: AIQuestionsSchema,
     taskId: 'clarification-generator',
+    untrustedContent: true,
   });
 
   return result.success ? result.data : [];

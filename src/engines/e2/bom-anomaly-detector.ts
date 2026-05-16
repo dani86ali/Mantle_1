@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
+import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
 
 export interface BomLineItem {
   sku: string;
@@ -190,8 +191,9 @@ async function aiReview(
 ): Promise<RawAnomaly[]> {
   const riskSection =
     options?.riskFlags && options.riskFlags.length > 0
-      ? `RFP risk flags (${options.riskFlags.length}):\n${summarizeRiskFlags(
-          options.riskFlags,
+      ? `RFP risk flags (${options.riskFlags.length}):\n${wrapUntrusted(
+          summarizeRiskFlags(options.riskFlags),
+          'rfp-risk-flags',
         )}\n\n`
       : '';
   const result = await callAI({
@@ -204,12 +206,13 @@ async function aiReview(
       'conflicts with them. Do NOT repeat purely arithmetic checks. Return ' +
       'strict JSON only.',
     prompt:
-      `Project context:\n${JSON.stringify(ctx, null, 2)}\n\n` +
+      `Project context:\n${wrapUntrusted(JSON.stringify(ctx, null, 2), 'project-context')}\n\n` +
       riskSection +
-      `BoM (${bom.length} lines):\n${summarizeBom(bom)}\n\n` +
+      `BoM (${bom.length} lines):\n${wrapUntrusted(summarizeBom(bom), 'customer-boq')}\n\n` +
       `Respond with JSON: {"anomalies":[{"type":"missing_component|quantity_mismatch|oversized|undersized|unusual_combination|cost_outlier","description":"...","severity":"warning|error","affectedSkus":["..."],"suggestion":"..."}],"riskLevel":"low|medium|high","summary":"..."}`,
     outputSchema: AIOutputSchema,
     taskId: 'bom-anomaly-detector',
+    untrustedContent: true,
   });
 
   if (!result.success) return [];

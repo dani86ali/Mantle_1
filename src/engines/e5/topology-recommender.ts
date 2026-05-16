@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
+import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
 import {
   TopologyPatternSchema,
   type TopologyPattern,
@@ -119,7 +120,9 @@ const SYSTEM_PROMPT =
 function buildPrompt(input: TopologyInput, prelim: DeterministicPick): string {
   const idf = input.idfRoomsPerFloor ?? 'unspecified';
   const nvidia = input.isNvidia === undefined ? 'unspecified' : String(input.isNvidia);
-  const desc = input.description ? `\nDescription: ${input.description}` : '';
+  const desc = input.description
+    ? `\nDescription: ${wrapUntrusted(input.description, 'project-description')}`
+    : '';
   return (
     `Project requirements:\n` +
     `- Project type: ${input.projectType}\n` +
@@ -165,6 +168,7 @@ export async function recommendTopology(
     systemPrompt: SYSTEM_PROMPT,
     outputSchema: AIOutputSchema,
     taskId: `topology-recommender:${input.projectType.slice(0, 40)}`,
+    untrustedContent: true,
   });
 
   if (!aiResult.success) {

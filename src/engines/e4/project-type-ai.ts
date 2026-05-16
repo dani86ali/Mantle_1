@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
+import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
 import {
   ProjectTypeDetectionSchema,
   detectProjectType,
@@ -43,13 +44,14 @@ export async function enhancedProjectTypeDetection(
       'cloud_connectivity, ot_network, general. Return your classification with reasoning.',
     prompt:
       `Classify this project request and return strict JSON.\n\n` +
-      `Description: ${description}\n` +
-      `Client: ${clientName ?? '(unknown)'}\n` +
-      `Sector: ${sector ?? '(unknown)'}\n\n` +
+      `Description: ${wrapUntrusted(description, 'project-description')}\n` +
+      `Client: ${wrapUntrusted(clientName ?? '(unknown)', 'client-name')}\n` +
+      `Sector: ${wrapUntrusted(sector ?? '(unknown)', 'sector')}\n\n` +
       `Respond with: {"type": <one of the listed types>, ` +
       `"confidence": <0..1>, "evidence": [<short reasoning strings>]}`,
     outputSchema: AIDetectionSchema,
     taskId: `project-type-ai:${description.slice(0, 40)}`,
+    untrustedContent: true,
   });
 
   if (!result.success) return deterministic;
