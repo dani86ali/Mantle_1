@@ -52,6 +52,41 @@ export interface E2ProjectContext {
   sector?: string; siteCount?: number; userCount?: number; description?: string;
   customerName?: string; estimateId?: string;
 }
+/** Structural mirror of selected E1Output fields the coordinator threads into E2.
+ *  Defined here (not imported from E1) to keep engine directories independent
+ *  per the architecture rule. */
+export interface E1SignalsForE2 {
+  vendorPreferences?: Array<{
+    vendor: string;
+    category: string;
+    status: 'required' | 'preferred' | 'or_equivalent';
+    source: string;
+    specificModels: string[];
+  }>;
+  riskFlags?: Array<{
+    category: 'disqualification' | 'discretionary' | 'breach';
+    severity: 'critical' | 'high' | 'medium';
+    pattern: string;
+    matchedText: string;
+    source: string;
+  }>;
+  evalCriteria?: {
+    methodology: 'sequential_envelope' | 'weighted_score' | 'pass_fail' | 'best_value' | 'unknown';
+    envelopes: Array<{ name: string; weight: number; passThreshold: number; criteria: string[] }>;
+    passingThreshold?: number;
+    iktvaRequired: boolean;
+    source: string;
+  };
+  mandatoryRequirements?: Array<{
+    id: string;
+    text: string;
+    classification: 'mandatory' | 'optional' | 'conditional';
+    confidence: number;
+    sourceFile: string;
+    indicators: string[];
+    relatedStandards: string[];
+  }>;
+}
 export interface E2Input {
   filePath?: string;
   parsedLines?: BoQLineItem[];
@@ -65,6 +100,9 @@ export interface E2Input {
   outputDir?: string;
   /** If false, skip XLSX emission (used by tests / dry runs). */
   emitFiles?: boolean;
+  /** E1 analysis signals (RFP mode). Undefined for Quick BoM / RFI flows.
+   *  Currently consumed by the AI sanity check in the anomaly detector. */
+  e1Signals?: E1SignalsForE2;
 }
 export interface E2Output {
   bom: PricedBomLine[];
@@ -87,6 +125,16 @@ export type { PricedBomLine, E2Totals, E2ValidationStatus };
 const SUPPORT_TERM_MONTHS: Record<3 | 5 | 7, 12 | 36 | 60> = { 3: 36, 5: 60, 7: 60 };
 
 export async function runE2(input: E2Input): Promise<E2Output> {
+  if (input.e1Signals) {
+    const s = input.e1Signals;
+    console.info(
+      `E2 received e1Signals: ${s.vendorPreferences?.length ?? 0} vendor prefs, ` +
+        `${s.riskFlags?.length ?? 0} risk flags, ` +
+        `${s.mandatoryRequirements?.length ?? 0} mandatory requirements, ` +
+        `evalCriteria=${s.evalCriteria ? s.evalCriteria.methodology : 'none'}`,
+    );
+  }
+
   // (1) Parse Excel if filePath provided and no parsedLines supplied.
   let boqLines: BoQLineItem[] = input.parsedLines ?? [];
   if (input.filePath && boqLines.length === 0) {
@@ -126,7 +174,14 @@ export async function runE2(input: E2Input): Promise<E2Output> {
     userCount: input.projectContext?.userCount,
     description: input.projectContext?.description,
   };
-  const anomalies = await detectAnomalies(anomalyBom, projectContext);
+  const anomalies = await detectAnomalies(anomalyBom, projectContext, {
+    riskFlags: input.e1Signals?.riskFlags?.map((r) => ({
+      severity: r.severity,
+      pattern: r.pattern,
+      matchedText: r.matchedText,
+      source: r.source,
+    })),
+  });
 
   // (8) Similar-deal finder — only if historical deals supplied.
   let similarDeals: SimilarDealResult | undefined;

@@ -104,6 +104,49 @@ export function buildE2Input(
       description: input.solutionContext,
     },
     historicalDeals: input.historicalDeals,
+    e1Signals: e1 ? buildE1Signals(e1) : undefined,
+  };
+}
+
+function buildE1Signals(e1: E1Output): E2Input['e1Signals'] {
+  return {
+    vendorPreferences: e1.vendorPreferences.map((v) => ({
+      vendor: v.vendor,
+      category: v.category,
+      status: v.status,
+      source: v.source,
+      specificModels: v.specificModels,
+    })),
+    riskFlags: e1.riskFlags.map((r) => ({
+      category: r.category,
+      severity: r.severity,
+      pattern: r.pattern,
+      matchedText: r.matchedText,
+      source: r.source,
+    })),
+    evalCriteria: {
+      methodology: e1.evalCriteria.methodology,
+      envelopes: e1.evalCriteria.envelopes.map((env) => ({
+        name: env.name,
+        weight: env.weight,
+        passThreshold: env.passThreshold,
+        criteria: env.criteria,
+      })),
+      passingThreshold: e1.evalCriteria.passingThreshold,
+      iktvaRequired: e1.evalCriteria.iktvaRequired,
+      source: e1.evalCriteria.source,
+    },
+    mandatoryRequirements: e1.requirements
+      .filter((r) => r.classification === 'mandatory')
+      .map((r) => ({
+        id: r.id,
+        text: r.text,
+        classification: r.classification,
+        confidence: r.confidence,
+        sourceFile: r.sourceFile,
+        indicators: r.indicators,
+        relatedStandards: r.relatedStandards,
+      })),
   };
 }
 
