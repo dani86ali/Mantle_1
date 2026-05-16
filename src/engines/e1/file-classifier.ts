@@ -129,6 +129,14 @@ export function scanContentKeywords(content: string): FileClassification {
   return { type: "unknown", subtype: "unknown", confidence: 0.3, stage: 3, format: "unknown", needsReview: true };
 }
 
+const SPREADSHEET_EXTS = new Set([".xlsx", ".xls", ".csv"]);
+
+function hasSpreadsheetExtension(filename: string): boolean {
+  const dot = filename.lastIndexOf(".");
+  if (dot < 0) return false;
+  return SPREADSHEET_EXTS.has(filename.slice(dot).toLowerCase());
+}
+
 export function classifyFile(
   filename: string,
   folder: string,
@@ -143,6 +151,25 @@ export function classifyFile(
   if (stage2.confidence > 0.7) return { ...stage2, format };
 
   const stage3 = scanContentKeywords(content ?? "");
+
+  // Spreadsheet fallback: BoQ workbooks frequently arrive with PO/RTR
+  // filenames (e.g. Aramco_4203079088.xlsx) that match no filename or
+  // folder rule, and enrichFileContent skips XLSX/CSV so the content
+  // scan can never fire. Without this fallback, every such file ends as
+  // "unknown" — selectBoQFilePath returns undefined and E2 produces an
+  // empty BoM. Mark needsReview so the UI's classification dropdown can
+  // override when the heuristic is wrong (e.g. a non-BoQ spreadsheet).
+  if (stage3.type === "unknown" && hasSpreadsheetExtension(filename)) {
+    return {
+      type: "commercial",
+      subtype: "boq_template",
+      confidence: 0.4,
+      stage: 3,
+      format,
+      needsReview: true,
+    };
+  }
+
   const result = { ...stage3, format };
   return result.confidence < 0.5 ? { ...result, needsReview: true } : result;
 }
