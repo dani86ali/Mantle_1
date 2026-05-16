@@ -1,0 +1,23 @@
+Fix: Boilerplate placeholder substitution warns on unresolved placeholders but still ships them in customer-facing DOCX.
+
+Step 1: Read these files:
+Read src/engines/e3/boilerplate-kb.ts. The renderBoilerplate function (line 138-157) currently uses console.warn on unresolved placeholders but returns the text with them intact. Note the RenderResult interface at line 133-136 with { text: string; missing: string[] } which already exists but is not used.
+Read src/engines/e3/orchestrator.ts to see where renderBoilerplate is called and how sections are assembled.
+Read src/engines/e3/docx-generator.ts to see where the final DOCX is built from section content.
+
+Step 2: Fix renderBoilerplate in boilerplate-kb.ts.
+Change renderBoilerplate to return a RenderResult object instead of a string. The RenderResult interface already exists at line 133-136. Change the return from the raw rendered string to { text: rendered, missing: unique }. Keep the console.warn calls.
+
+Step 3: Update all callers of renderBoilerplate.
+Read every file that imports renderBoilerplate. Each caller now receives { text, missing } instead of a string. Update them to use result.text for the section content and collect result.missing.
+
+Step 4: Collect unresolved placeholders in E3 orchestrator.
+In the E3 orchestrator, after all sections are rendered, collect all missing placeholders from all RenderResults. Add the unresolved placeholder names to the E3Output warnings array so they surface in the API response.
+
+Step 5: Add a post-render scan in docx-generator.ts.
+Before Packer.toBuffer, scan the concatenated section text for the pattern /\{\{[^}]+\}\}/g. If any matches found AND process.env.STRICT_PROPOSAL is set to '1', throw an Error listing the placeholder names. Otherwise, log a warning. This is a defense-in-depth check.
+
+Constraints: Do NOT remove console.warn calls. Do NOT break existing tests. If tests use renderBoilerplate and expect a string return, update the test assertions to use .text. Keep all files under 200 lines.
+Run: npx vitest run tests/engines/e3/ 2>&1 | Select-Object -Last 20
+Run: npx tsc --noEmit 2>&1 | Select-Object -Last 10
+Show me test and tsc output.

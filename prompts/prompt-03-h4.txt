@@ -1,0 +1,41 @@
+Fix: EoX validation is a stub that always returns not-end-of-life for every SKU. Replace with a curated CSV lookup.
+
+Step 1: Read these files:
+Read src/lib/validation/rules/eox-check.ts where stubEoxLookup always returns { isEox: false }.
+Read src/lib/validation/engine.ts and find where eox-check is registered with the "(stub)" label.
+Read src/engines/e2/orchestrator-helpers.ts and find where assessValidationStatus pushes the "EoX status not verified" warning.
+
+Step 2: Create a curated EoX CSV file at data/cisco-eox.csv with columns: sku,status,eosDate,eolDate,replacement. Include real EoX data for common SKU families. Use Cisco public EoX bulletins as source. Include at least these families with realistic dates:
+WS-C3650-24PS (eol, 2022-10-31, 2027-10-31, C9300L-24P-4G)
+WS-C3650-48PS (eol, 2022-10-31, 2027-10-31, C9300L-48P-4G)
+WS-C3850-24P (eol, 2022-10-31, 2027-10-31, C9300-24P-A)
+WS-C3850-48P (eol, 2022-10-31, 2027-10-31, C9300-48P-A)
+ISR4321/K9 (eos_announced, 2025-04-01, 2030-04-01, C8300-1N1S-4T2X)
+ISR4331/K9 (eos_announced, 2025-04-01, 2030-04-01, C8300-2N2S-4T2X)
+ISR4351/K9 (eos_announced, 2025-04-01, 2030-04-01, C8300-2N2S-6T)
+AIR-AP1815I-x-K9 (eol, 2023-01-31, 2028-01-31, CW9164I-x)
+AIR-AP2802I-x-K9 (eol, 2023-07-31, 2028-07-31, CW9166I-x)
+C9200L-24P-4G (active, none, none, none)
+C9300-24P-A (active, none, none, none)
+FG-60E (eol, 2023-06-30, 2028-06-30, FG-60F)
+FG-100E (eol, 2023-06-30, 2028-06-30, FG-100F)
+FG-200E (eol, 2024-03-31, 2029-03-31, FG-200F)
+Add 15-20 more entries covering C9500, C9800, Meraki MR series, and FortiSwitch families with realistic dates. Total 30-50 rows.
+
+Step 3: Create src/lib/data/eox-loader.ts that:
+Reads data/cisco-eox.csv on first call using fs.readFileSync and papaparse.
+Parses into a Map keyed by sku with values { isEox: boolean; eoxDate?: string; replacement?: string }.
+Caches the Map at module scope so it loads once.
+Exports loadEoxLookup() that returns an object implementing the EoxLookup interface from eox-check.ts.
+For status "eol" or "eos_announced", set isEox = true and eoxDate = eolDate. For "active", set isEox = false.
+
+Step 4: Wire the real lookup into the validation engine.
+In src/lib/validation/engine.ts: change the eox-check registration to use loadEoxLookup() instead of stubEoxLookup. Remove "(stub)" from the label.
+In src/engines/e2/orchestrator-helpers.ts: remove the hardcoded "EoX status not verified" warning. Only push that warning if loadEoxLookup returns null or fails.
+
+Step 5: Keep stubEoxLookup export in eox-check.ts for backward compatibility with tests. Do NOT change the EoxLookup interface.
+
+Constraints: Do NOT call any external API. Keep new files under 200 lines. The CSV is reference data committed to the repo.
+Run: npx vitest run tests/validation/ tests/engines/e2/ 2>&1 | Select-Object -Last 20
+Run: npx tsc --noEmit 2>&1 | Select-Object -Last 10
+Show me test and tsc output.

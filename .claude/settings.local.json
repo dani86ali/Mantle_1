@@ -65,7 +65,10 @@
       "Bash(mv docs/prd.md ../bomatic_planning/)",
       "Bash(mv docs/mvp-scope.md ../bomatic_planning/)",
       "Bash(mv docs/user-flow.md ../bomatic_planning/)",
-      "Bash(mv docs/backlog.md ../bomatic_planning/)"
+      "Bash(mv docs/backlog.md ../bomatic_planning/)",
+      "Bash(npx tsc *)",
+      "Bash(npx vitest *)",
+      "Bash(xargs wc -l)"
     ]
   }
 }

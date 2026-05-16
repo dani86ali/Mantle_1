@@ -1,0 +1,44 @@
+Fix: The intake pipeline runs as void runAndPersistPipeline (fire-and-forget) with no retry, no queue, no crash recovery. If the pipeline fails mid-engine the intake stays stuck in PENDING forever. BullMQ and Redis are already in dependencies and worker.ts exists for the chat agent path.
+
+Step 1: Read these files:
+Read src/app/api/intake/route.ts around line 174 where void runAndPersistPipeline is called.
+Read worker.ts at the repo root for the existing BullMQ worker pattern (AGENT_QUEUE_NAME, Job type, Worker config).
+Read src/lib/queue/agent-job.ts for the existing queue definition pattern.
+Read src/lib/redis.ts for the existing Redis connection export.
+Read src/coordinator/pipeline.ts for the runPipeline and runAndPersistPipeline function signatures.
+
+Step 2: Create src/lib/queue/pipeline-job.ts following the same pattern as agent-job.ts.
+Export PIPELINE_QUEUE_NAME set to 'intake-pipeline'.
+Export an interface PipelineJobData with fields: tenantId string, intakeId string, mode string, requirements Record<string, unknown>.
+Export a Queue instance of type PipelineJobData using the shared Redis connection from src/lib/redis.ts.
+Keep under 50 lines.
+
+Step 3: Create src/lib/queue/pipeline-worker.ts with the processor function.
+Export an async function processPipelineJob(job: Job<PipelineJobData>): Promise<void> that:
+Loads the intake row from DB by intakeId.
+Reconstructs the PipelineInput from the job data and intake row (mode, files from intake, pricingConfig from requirementsJson, client metadata).
+Calls runAndPersistPipeline with the reconstructed input.
+On failure: updates intake status to FAILED and logs the error.
+Keep under 150 lines.
+
+Step 4: Update worker.ts to process both queues.
+Add a second Worker instance that processes PIPELINE_QUEUE_NAME using processPipelineJob from pipeline-worker.ts. Keep the existing agent Worker unchanged. Both workers run in the same process. Log: "Pipeline worker started".
+
+Step 5: Update intake route to use the queue conditionally.
+In src/app/api/intake/route.ts, replace the void runAndPersistPipeline call:
+Read process.env.INTAKE_INLINE. If INTAKE_INLINE equals '1', keep current behavior (void runAndPersistPipeline) for dev convenience.
+Otherwise, import the pipeline queue and call queue.add('intake-pipeline', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } }).
+When queued, return status 202 instead of 201.
+Add a response field queued: true when queued, queued: false when inline.
+
+Step 6: Add INTAKE_INLINE=1 to .env.example and .env if it exists.
+Add a comment: Set to 1 to run pipeline inline without Redis/BullMQ. Remove or unset for queued execution.
+Default behavior when INTAKE_INLINE is not set: attempt to queue. If the queue connection fails (Redis not running), fall back to inline with a console.warn.
+
+Step 7: Update pipeline-resume.ts (from H1 fix) to also use the queue when available.
+If INTAKE_INLINE is not '1', queue the resume as a job instead of calling it inline. Use a different job name like 'pipeline-resume' on the same queue.
+
+Constraints: Do NOT change runAndPersistPipeline function. Do NOT change the existing agent queue or worker logic. Do NOT make Redis required for npm run dev. The INTAKE_INLINE=1 flag protects local dev. Keep all new files under 200 lines.
+Run: npx tsc --noEmit 2>&1 | Select-Object -Last 10
+Run: npx vitest run tests/api/ tests/coordinator/ 2>&1 | Select-Object -Last 20
+Show me tsc and test output.

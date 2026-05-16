@@ -1,0 +1,33 @@
+Fix: E1 produces requirements, riskFlags, vendorPreferences, and evalCriteria but E2 only receives sector. All other E1 analysis is silently discarded at the coordinator boundary.
+
+Step 1: Read these files:
+Read src/coordinator/pipeline-e2.ts around line 103 where only sector is extracted from E1.
+Read src/engines/e2/orchestrator.ts for the E2Input type definition and what fields it accepts.
+Read src/engines/e1/orchestrator.ts or orchestrator-types.ts for E1Output type to confirm field names: requirements, riskFlags, vendorPreferences, evalCriteria, sectorDetection.
+Read src/engines/e2/bom-anomaly-detector.ts to understand its input type and where AI sanity check context could include risk flags.
+Read src/coordinator/types.ts for E1Artifacts type.
+
+Step 2: Add e1Signals to E2Input.
+In the E2 input type (find where E2Input is defined in orchestrator.ts or a types file), add an optional field:
+e1Signals?: {
+  vendorPreferences?: Array<{ vendor: string; confidence: number; source: string }>;
+  riskFlags?: Array<{ severity: string; pattern: string; text: string }>;
+  evalCriteria?: { sections: Array<{ section: string; weight: number; description: string }> };
+  mandatoryRequirements?: Array<{ id: string; text: string; priority: string }>;
+}
+Read the actual E1Output field types first and match the structure.
+
+Step 3: Populate e1Signals in buildE2Input in pipeline-e2.ts.
+When e1Output is available, map from E1Output into the new field. Read the actual E1Output property names and use the correct ones. When e1Output is undefined (Quick BoM, RFI), leave e1Signals undefined.
+
+Step 4: Consume e1Signals in the anomaly detector only.
+In src/engines/e2/orchestrator.ts, find where detectAnomalies is called. If the anomaly detector accepts a context or options parameter, pass e1Signals.riskFlags as additional context so the AI sanity check sees RFP risk flags when assessing BoM anomalies. If the anomaly detector does not accept extra context, add an optional riskContext parameter to it.
+Do NOT change device selection, accessory selection, or licensing based on e1Signals. Just thread the data and consume it in anomaly detection for now.
+
+Step 5: Log the signals.
+In the E2 orchestrator, after receiving e1Signals, add an info log: "E2 received E1 signals: N vendor preferences, M risk flags, K eval criteria, J mandatory requirements".
+
+Constraints: e1Signals is optional so E2 works without it. Do NOT change E1 output or E1 orchestrator. Do NOT modify accessory-selector or licensing-calculator. Keep all files under 200 lines.
+Run: npx vitest run tests/engines/e2/ tests/coordinator/ 2>&1 | Select-Object -Last 20
+Run: npx tsc --noEmit 2>&1 | Select-Object -Last 10
+Show me test and tsc output.
