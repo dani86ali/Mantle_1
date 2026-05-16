@@ -151,7 +151,7 @@ describe('runE5 — full pipeline', () => {
     expect(mPort).toHaveBeenCalledTimes(1);
     expect(mCable).toHaveBeenCalledTimes(1);
     expect(mQos).toHaveBeenCalledTimes(1);
-    expect(mMig).toHaveBeenCalledTimes(1);
+    expect(mMig).toHaveBeenCalledTimes(2); // phase 1 (for HLD §10) + phase 2 step 13
     expect(mLldNarr).toHaveBeenCalledTimes(1);
     expect(mLldDocx).toHaveBeenCalledTimes(1);
     expect(mRack).toHaveBeenCalledTimes(1);

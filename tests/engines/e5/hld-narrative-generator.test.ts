@@ -7,7 +7,7 @@ import {
   generateHLDNarrative,
   type HLDNarrativeInput,
 } from '@/engines/e5/hld-narrative-generator';
-import type { SizingResult } from '@/engines/e5/types';
+import type { MigrationApproach, SizingResult } from '@/engines/e5/types';
 
 const mockCallAI = vi.mocked(callAI);
 
@@ -107,6 +107,32 @@ describe('generateHLDNarrative', () => {
     const sections = await generateHLDNarrative(baseInput);
     const sec6 = sections.find((s) => s.sectionNumber === 6)!;
     expect(sec6.content.toLowerCase()).toContain('two-tier collapsed core');
+  });
+
+  it('migration section renders phases when migrationApproach provided', async () => {
+    mockCallAI.mockResolvedValue(aiFail());
+    const migration: MigrationApproach = {
+      method: 'parallel_run',
+      riskLevel: 'medium',
+      reasoning: 'Brownfield with redundancy.',
+      phases: [
+        { name: 'Parallel Install', description: 'Install alongside', durationDays: 10, rollbackPlan: 'decommission new gear' },
+        { name: 'Traffic Migration', description: 'Move VLANs', durationDays: 14, rollbackPlan: 'reroute via legacy trunks' },
+      ],
+    };
+    const sections = await generateHLDNarrative({ ...baseInput, migrationApproach: migration });
+    const mig = sections.find((s) => s.sectionNumber === 10)!;
+    expect(mig.content).toContain('parallel_run');
+    expect(mig.content).toContain('Parallel Install');
+    expect(mig.content).toContain('Traffic Migration');
+    expect(mig.content).not.toMatch(/selectMigrationApproach/);
+  });
+
+  it('migration section falls back when migrationApproach is missing', async () => {
+    mockCallAI.mockResolvedValue(aiFail());
+    const sections = await generateHLDNarrative(baseInput);
+    const mig = sections.find((s) => s.sectionNumber === 10)!;
+    expect(mig.content).toMatch(/to be determined/i);
   });
 
   it('resilience section adapts to three-tier topology', async () => {

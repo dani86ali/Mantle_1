@@ -8,7 +8,8 @@ import {
   type LLDNarrativeInput,
 } from '@/engines/e5/lld-narrative-generator';
 import type {
-  IPVlanPlan, MigrationApproach, QoSPolicy, SizingResult,
+  CableScheduleEntry, IPVlanPlan, MigrationApproach, QoSPolicy,
+  RackElevation, SizingResult,
 } from '@/engines/e5/types';
 
 const mockCallAI = vi.mocked(callAI);
@@ -57,6 +58,22 @@ const migration: MigrationApproach = {
   reasoning: 'Greenfield single staged cutover.',
 };
 
+const cableSchedule: CableScheduleEntry[] = [
+  {
+    cableId: 'CBL-001', type: 'fiber_mm',
+    fromDevice: 'access-1', fromPort: 'Gi1/49',
+    toDevice: 'core-1', toPort: '?',
+    lengthMeters: 30, label: 'access-1:Gi1/49 <-> core-1:?',
+  },
+];
+
+const rackElevations: RackElevation[] = [
+  {
+    rackId: 'MDF-R1', totalU: 42,
+    devices: [{ deviceModel: 'C9500-48Y4C', startU: 40, heightU: 1, side: 'front', label: 'C9500-48Y4C (core#1)' }],
+  },
+];
+
 const baseInput: LLDNarrativeInput = {
   topology: 'two_tier_collapsed_core',
   sizing,
@@ -64,6 +81,8 @@ const baseInput: LLDNarrativeInput = {
   ipVlanPlan,
   qosPolicy,
   migrationApproach: migration,
+  cableSchedule,
+  rackElevations,
   customerName: 'Acme Corp',
   siteCount: 1,
 };
@@ -170,6 +189,39 @@ describe('generateLLDNarrative', () => {
     expect(cut.content).toContain('Staging');
     expect(cut.content).toContain('Go-Live');
     expect(cut.content).toContain('cutover');
+  });
+
+  it('cable schedule section renders entries when present', async () => {
+    mockCallAI.mockResolvedValue(aiFail());
+    const sections = await generateLLDNarrative(baseInput);
+    const cable = sections.find((s) => s.sectionNumber === 16)!;
+    expect(cable.content).toContain('CBL-001');
+    expect(cable.content).toContain('access-1');
+    expect(cable.content).toContain('fiber_mm');
+    expect(cable.content).not.toMatch(/generateCableSchedule/);
+  });
+
+  it('cable schedule falls back to survey message when empty', async () => {
+    mockCallAI.mockResolvedValue(aiFail());
+    const sections = await generateLLDNarrative({ ...baseInput, cableSchedule: [] });
+    const cable = sections.find((s) => s.sectionNumber === 16)!;
+    expect(cable.content).toMatch(/site survey/i);
+  });
+
+  it('rack elevations section renders racks and devices when present', async () => {
+    mockCallAI.mockResolvedValue(aiFail());
+    const sections = await generateLLDNarrative(baseInput);
+    const racks = sections.find((s) => s.sectionNumber === 17)!;
+    expect(racks.content).toContain('MDF-R1');
+    expect(racks.content).toContain('C9500-48Y4C');
+    expect(racks.content).not.toMatch(/generateRackElevation/);
+  });
+
+  it('rack elevations falls back to survey message when empty', async () => {
+    mockCallAI.mockResolvedValue(aiFail());
+    const sections = await generateLLDNarrative({ ...baseInput, rackElevations: [] });
+    const racks = sections.find((s) => s.sectionNumber === 17)!;
+    expect(racks.content).toMatch(/site survey/i);
   });
 
   it('fortinet vendor: security fallback names FortiGate', async () => {
