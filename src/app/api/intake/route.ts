@@ -9,6 +9,7 @@ import type { IntakeMode } from "@/coordinator/types";
 import { parseBomText } from "@/coordinator/intake-to-e2";
 import { requireAuth } from "@/lib/middleware/auth";
 import { runAndPersistPipeline } from "@/coordinator/run-and-persist";
+import { enqueuePipelineJob } from "@/lib/queue/pipeline-job";
 
 type IntakeRequirements = z.infer<typeof intakeFormSchema>;
 
@@ -112,7 +113,27 @@ export async function POST(request: NextRequest) {
       status: "PENDING",
     });
 
-    void runAndPersistPipeline(tenantId, intake.id, data);
+    const inline = process.env.INTAKE_INLINE === "1";
+    let queued = false;
+
+    if (inline) {
+      void runAndPersistPipeline(tenantId, intake.id, data);
+    } else {
+      try {
+        await enqueuePipelineJob({
+          tenantId,
+          intakeId: intake.id,
+          mode,
+          requirements: data as unknown as Record<string, unknown>,
+        });
+        queued = true;
+      } catch {
+        console.warn(
+          "Pipeline queue unavailable, falling back to inline execution"
+        );
+        void runAndPersistPipeline(tenantId, intake.id, data);
+      }
+    }
 
     return NextResponse.json(
       {
@@ -120,9 +141,10 @@ export async function POST(request: NextRequest) {
         estimateId: intake.id,
         agentRunId: agentRun.id,
         status: "PENDING",
+        queued,
         message: "Your request has been received and is being processed.",
       },
-      { status: 201 }
+      { status: queued ? 202 : 201 }
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
