@@ -16,6 +16,17 @@ export interface ProjectContext {
   description?: string;
 }
 
+export interface AnomalyRiskContext {
+  severity: string;
+  pattern: string;
+  matchedText: string;
+  source: string;
+}
+
+export interface AnomalyDetectionOptions {
+  riskFlags?: AnomalyRiskContext[];
+}
+
 export type AnomalyType =
   | 'quantity_mismatch'
   | 'missing_component'
@@ -166,19 +177,35 @@ function summarizeBom(bom: BomLineItem[]): string {
     .join('\n');
 }
 
+function summarizeRiskFlags(flags: AnomalyRiskContext[]): string {
+  return flags
+    .map((f) => `[${f.severity}] ${f.pattern}: ${f.matchedText} (${f.source})`)
+    .join('\n');
+}
+
 async function aiReview(
   bom: BomLineItem[],
   ctx: ProjectContext,
+  options?: AnomalyDetectionOptions,
 ): Promise<RawAnomaly[]> {
+  const riskSection =
+    options?.riskFlags && options.riskFlags.length > 0
+      ? `RFP risk flags (${options.riskFlags.length}):\n${summarizeRiskFlags(
+          options.riskFlags,
+        )}\n\n`
+      : '';
   const result = await callAI({
     systemPrompt:
       'You are a senior pre-sales engineer reviewing a Bill of Materials for ' +
       'scope and sanity issues a junior engineer might miss. Focus on missing ' +
       'categories for the project type, mismatched quantities between related ' +
-      'components, and over/under-provisioning vs the stated user count. Do NOT ' +
-      'repeat purely arithmetic checks. Return strict JSON only.',
+      'components, and over/under-provisioning vs the stated user count. When ' +
+      'RFP risk flags are supplied, consider whether the BoM addresses or ' +
+      'conflicts with them. Do NOT repeat purely arithmetic checks. Return ' +
+      'strict JSON only.',
     prompt:
       `Project context:\n${JSON.stringify(ctx, null, 2)}\n\n` +
+      riskSection +
       `BoM (${bom.length} lines):\n${summarizeBom(bom)}\n\n` +
       `Respond with JSON: {"anomalies":[{"type":"missing_component|quantity_mismatch|oversized|undersized|unusual_combination|cost_outlier","description":"...","severity":"warning|error","affectedSkus":["..."],"suggestion":"..."}],"riskLevel":"low|medium|high","summary":"..."}`,
     outputSchema: AIOutputSchema,
@@ -207,9 +234,10 @@ function assignIds(raws: RawAnomaly[]): Anomaly[] {
 export async function detectAnomalies(
   bom: BomLineItem[],
   projectContext: ProjectContext,
+  options?: AnomalyDetectionOptions,
 ): Promise<AnomalyResult> {
   const deterministic = deterministicChecks(bom);
-  const ai = await aiReview(bom, projectContext);
+  const ai = await aiReview(bom, projectContext, options);
   const merged = assignIds([...deterministic, ...ai]);
   const riskLevel = computeRiskLevel(merged);
   const summary =
