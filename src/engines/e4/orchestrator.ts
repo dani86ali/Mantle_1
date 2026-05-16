@@ -10,6 +10,7 @@ import { logEntry } from '@/coordinator/logger';
 import type { EngineInput, EngineOutput } from '@/coordinator/types';
 import { runPhase1, type Phase1Result } from './phase1';
 import { runPhase2, type Phase2Result } from './phase2';
+import { buildPreliminaryBaselineFromProjectType } from './preliminary-baseline';
 import type { E4StepLog } from './orchestrator-helpers';
 import type { E4InputData } from './orchestrator-types';
 
@@ -78,10 +79,14 @@ export async function runE4Detailed(input: EngineInput): Promise<E4OrchestratorR
   try {
     if (phase === 'phase1') {
       const r = await runPhase1(data, logs, warnings, input);
+      const preliminaryBaseline = buildPreliminaryBaselineFromProjectType(r.projectType, data);
       return {
         output: {
           engine: 'e4',
-          artifacts: { questionnaire: r.questionnaireMd },
+          artifacts: {
+            questionnaire: r.questionnaireMd,
+            requirementsBaseline: JSON.stringify(preliminaryBaseline),
+          },
           warnings,
         },
         phase,

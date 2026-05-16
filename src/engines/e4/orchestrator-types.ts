@@ -35,6 +35,22 @@ export interface E4InputData {
   questions?: Question[];
   projectContext?: string;
 
+  /** Sizing hints from intake — feed phase-1 preliminary baseline so E5 can design
+   *  before customer responses arrive. Phase-2 baseline (built from real responses)
+   *  supersedes these. */
+  siteCount?: number;
+  portCount?: number;
+  userCount?: number;
+  bandwidthGbps?: number;
+  vendor?: 'cisco' | 'fortinet';
+  isGreenfield?: boolean;
+  hasWireless?: boolean;
+  hasVoice?: boolean;
+  hasDC?: boolean;
+  hasOT?: boolean;
+  hasGPON?: boolean;
+  hasHPC?: boolean;
+
   /** Optional engineer review hook — return revision_requested to trigger an internal retry. */
   onCheckpoint?: CheckpointCallback;
 }
