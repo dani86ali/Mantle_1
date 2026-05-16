@@ -174,7 +174,7 @@ async function getMockSearchCustomer(
 
   await new Promise((r) => setTimeout(r, 50));
 
-  const { getCustomerMock } = await import("../../../tests/mocks/index");
+  const { getCustomerMock } = await import("./_customer-mock-data");
   const mockData = getCustomerMock();
 
   const searchTerm = request.companyName.toLowerCase();
@@ -210,7 +210,7 @@ async function getMockValidateCustomer(
 ): Promise<CiscoApiCallResult<CiscoCustomerValidateResponse>> {
   await new Promise((r) => setTimeout(r, 50));
 
-  const { getCustomerMock } = await import("../../../tests/mocks/index");
+  const { getCustomerMock } = await import("./_customer-mock-data");
   const mockData = getCustomerMock();
 
   const isKnown = customerId.startsWith("CUST-");

@@ -387,7 +387,7 @@ async function getMockCreateEstimate(
 
   await new Promise((r) => setTimeout(r, 50));
 
-  const { getEstimateMock } = await import("../../../tests/mocks/index");
+  const { getEstimateMock } = await import("./_estimate-mock-data");
   const mockData = getEstimateMock();
 
   // Generate a unique mock estimate ID
@@ -415,7 +415,7 @@ async function getMockUpdateEstimate(
 ): Promise<CiscoApiCallResult<CiscoEstimateResponse>> {
   await new Promise((r) => setTimeout(r, 50));
 
-  const { getEstimateMock } = await import("../../../tests/mocks/index");
+  const { getEstimateMock } = await import("./_estimate-mock-data");
   const mockData = getEstimateMock();
 
   const response: CiscoEstimateResponse = {
@@ -440,7 +440,7 @@ async function getMockAcquireEstimate(
 ): Promise<CiscoApiCallResult<CiscoEstimateResponse>> {
   await new Promise((r) => setTimeout(r, 50));
 
-  const { getEstimateMock } = await import("../../../tests/mocks/index");
+  const { getEstimateMock } = await import("./_estimate-mock-data");
   const mockData = getEstimateMock();
 
   const response: CiscoEstimateResponse = {

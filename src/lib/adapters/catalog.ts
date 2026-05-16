@@ -228,7 +228,7 @@ async function getMockCatalogItems(
   // Simulate latency
   await new Promise((r) => setTimeout(r, 50));
 
-  const { getCatalogMock } = await import("../../../tests/mocks/index");
+  const { getCatalogMock } = await import("./_catalog-mock-data");
   const mockData = getCatalogMock();
 
   const items: CiscoCatalogItem[] = [];
@@ -265,7 +265,7 @@ async function getMockMappedServices(
 ): Promise<CiscoApiCallResult<CiscoMappedServicesResponse>> {
   await new Promise((r) => setTimeout(r, 50));
 
-  const { getMappedServicesMock } = await import("../../../tests/mocks/index");
+  const { getMappedServicesMock } = await import("./_catalog-mock-data");
   const mockData = getMappedServicesMock();
 
   const data = mockData[hardwareSku];
