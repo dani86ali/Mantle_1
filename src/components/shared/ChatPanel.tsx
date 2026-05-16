@@ -1,69 +1,17 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  MessageSquare, X, Minus, Send, Paperclip, FileSpreadsheet,
-  Loader2, ExternalLink, ChevronRight,
+  ChevronRight, ExternalLink, FileSpreadsheet, Loader2, MessageSquare, Minus, Paperclip, Send, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "./ChatPanel/empty-state";
+import { MessageBubble } from "./ChatPanel/message-bubble";
+import { extractBom, extractCustomerName, extractQuickReplies } from "./ChatPanel/extractors";
+import { usePersistentMessages } from "./ChatPanel/use-persistent-messages";
+import type { ChatMessage } from "./ChatPanel/types";
 
-// ─── Types ──────────────────────────────────────────────────────────────
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  fileName?: string;
-  bom?: BomLineData[];
-  bomDraftId?: string;
-  quickReplies?: string[];
-  timestamp: Date;
-}
-
-interface BomLineData {
-  sku: string;
-  description: string;
-  quantity: number;
-  unitListPrice: number;
-  category: string;
-  serviceDurationMonths?: number | null;
-  leadTimeDays?: number | null;
-}
-
-// ─── Main export: FAB + Panel ───────────────────────────────────────────
-
-// Persist chat messages to sessionStorage (hydration-safe)
-function usePersistentMessages() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loaded, setLoaded] = useState(false);
-
-  // Load from sessionStorage after mount (avoids hydration mismatch)
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem("bomatic-chat");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setMessages(parsed.map((m: ChatMessage) => ({ ...m, timestamp: new Date(m.timestamp) })));
-      }
-    } catch { /* ignore */ }
-    setLoaded(true);
-  }, []);
-
-  // Save to sessionStorage on change (skip initial empty write)
-  useEffect(() => {
-    if (!loaded) return;
-    try {
-      sessionStorage.setItem("bomatic-chat", JSON.stringify(messages));
-    } catch { /* ignore */ }
-  }, [messages, loaded]);
-
-  const clearMessages = () => {
-    setMessages([]);
-    sessionStorage.removeItem("bomatic-chat");
-  };
-
-  return { messages, setMessages, clearMessages };
-}
+type PanelSize = "compact" | "expanded" | "full";
 
 export function ChatWidget() {
   const [open, setOpen] = useState(false);
@@ -74,17 +22,11 @@ export function ChatWidget() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-
-  // Resizable panel: compact (400), expanded (700), full
-  type PanelSize = "compact" | "expanded" | "full";
   const [panelSize, setPanelSize] = useState<PanelSize>("compact");
 
-  // Load saved size after mount (hydration-safe)
   useEffect(() => {
     const saved = sessionStorage.getItem("bomatic-chat-size") as PanelSize;
-    if (saved && ["compact", "expanded", "full"].includes(saved)) {
-      setPanelSize(saved);
-    }
+    if (saved && ["compact", "expanded", "full"].includes(saved)) setPanelSize(saved);
   }, []);
 
   function cycleSize() {
@@ -103,16 +45,12 @@ export function ChatWidget() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+  useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height =
-        Math.min(textareaRef.current.scrollHeight, 120) + "px";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
     }
   }, [input]);
 
@@ -146,10 +84,7 @@ export function ChatWidget() {
     setUploadedFile(null);
     setSending(true);
 
-    const history = [...messages, userMsg].map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
+    const history = [...messages, userMsg].map((m) => ({ role: m.role, content: m.content }));
 
     try {
       const res = await fetch("/api/chat", {
@@ -167,24 +102,19 @@ export function ChatWidget() {
 
       const bom = extractBom(data.response);
       const quickReplies = extractQuickReplies(data.response);
-      // Strip ALL code blocks and bare JSON arrays from display text
       let cleanContent = data.response
         .replace(/```(?:bom|json)?\n[\s\S]*?```/g, "")
         .replace(/```[\s\S]*?```/g, "")
         .replace(/\[\s*\{[^]*?"sku"\s*:[^]*?\}\s*\]/g, "")
         .replace(/\[quick-replies:.*?\]/g, "")
         .trim();
-      // Remove lines that are just whitespace after stripping
       cleanContent = cleanContent.replace(/\n{3,}/g, "\n\n").trim();
 
-      // Auto-save BoM to database if one was produced
       let bomDraftId: string | undefined;
       if (bom && bom.length > 0) {
         try {
-          // Extract customer name from conversation history
           const allText = [...messages, userMsg].map((m) => m.content).join(" ");
           const customerName = extractCustomerName(allText);
-
           const saveRes = await fetch("/api/chat/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -198,9 +128,7 @@ export function ChatWidget() {
             const saveData = await saveRes.json();
             bomDraftId = saveData.bomDraftId;
           }
-        } catch {
-          // Save failed silently — BoM still shows in chat
-        }
+        } catch { /* save failed silently — BoM still shows in chat */ }
       }
 
       setMessages((prev) => [
@@ -238,8 +166,6 @@ export function ChatWidget() {
     }
   }
 
-  // ─── Floating Action Button ─────────────────────────────────────────
-
   if (!open) {
     return (
       <button
@@ -256,44 +182,29 @@ export function ChatWidget() {
     );
   }
 
-  // ─── Minimized bar ──────────────────────────────────────────────────
-
   if (minimized) {
     return (
       <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full border border-[var(--border)] bg-bg-card px-4 py-2 shadow-lg">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-xs font-bold text-text-primary">
-          B
-        </div>
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-xs font-bold text-text-primary">B</div>
         <span className="text-sm font-medium text-text-primary">BOMatic AI</span>
-        <button
-          onClick={() => setMinimized(false)}
-          className="ml-2 text-text-tertiary hover:text-text-primary"
-        >
+        <button onClick={() => setMinimized(false)} className="ml-2 text-text-tertiary hover:text-text-primary">
           <ChevronRight size={16} className="rotate-[-90deg]" />
         </button>
-        <button
-          onClick={() => setOpen(false)}
-          className="text-text-tertiary hover:text-text-primary"
-        >
+        <button onClick={() => setOpen(false)} className="text-text-tertiary hover:text-text-primary">
           <X size={14} />
         </button>
       </div>
     );
   }
 
-  // ─── Full Panel ─────────────────────────────────────────────────────
-
   return (
     <div
       className="fixed bottom-0 right-0 top-0 z-50 flex flex-col border-l border-[var(--border)] bg-bg-primary shadow-2xl shadow-black/50 transition-all duration-200"
       style={{ width: panelWidth }}
     >
-      {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] bg-bg-card px-4 py-3">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-sm font-bold text-text-primary">
-            B
-          </div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-sm font-bold text-text-primary">B</div>
           <div>
             <p className="text-sm font-semibold text-text-primary">BOMatic AI</p>
             <p className="text-[11px] text-text-tertiary">Cisco presales assistant</p>
@@ -305,9 +216,7 @@ export function ChatWidget() {
               onClick={clearMessages}
               className="flex h-7 items-center gap-1 rounded px-1.5 text-[10px] text-text-tertiary hover:bg-[var(--bg-elevated)] hover:text-text-secondary"
               title="Clear chat"
-            >
-              Clear
-            </button>
+            >Clear</button>
           )}
           <button
             onClick={cycleSize}
@@ -319,23 +228,18 @@ export function ChatWidget() {
           <button
             onClick={() => setMinimized(true)}
             className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[var(--bg-elevated)] hover:text-text-secondary"
-          >
-            <Minus size={14} />
-          </button>
+          ><Minus size={14} /></button>
           <button
             onClick={() => setOpen(false)}
             className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary hover:bg-[var(--bg-elevated)] hover:text-text-secondary"
-          >
-            <X size={14} />
-          </button>
+          ><X size={14} /></button>
         </div>
       </div>
 
-      {/* Messages area with drop zone */}
       <div
         className={cn(
           "flex-1 overflow-y-auto px-4 py-3 transition-colors",
-          dragOver && "bg-accent/5 ring-2 ring-inset ring-accent/30"
+          dragOver && "bg-accent/5 ring-2 ring-inset ring-accent/30",
         )}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
@@ -351,18 +255,12 @@ export function ChatWidget() {
         ) : (
           <div className="space-y-3">
             {messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                onQuickReply={(text) => handleSend(text)}
-              />
+              <MessageBubble key={msg.id} message={msg} onQuickReply={(text) => handleSend(text)} />
             ))}
 
             {sending && (
               <div className="flex items-start gap-2.5">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-text-primary">
-                  B
-                </div>
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-text-primary">B</div>
                 <div className="rounded-lg rounded-tl-sm bg-bg-card px-3 py-2">
                   <div className="flex items-center gap-2 text-xs text-text-secondary">
                     <Loader2 size={12} className="animate-spin text-accent" />
@@ -384,9 +282,7 @@ export function ChatWidget() {
         )}
       </div>
 
-      {/* Input area */}
       <div className="border-t border-[var(--border)] bg-bg-card px-3 py-2.5">
-        {/* File chip */}
         {uploadedFile && (
           <div className="mb-2 flex items-center gap-2 rounded bg-bg-primary px-2.5 py-1.5 text-xs">
             <FileSpreadsheet size={12} className="text-accent" />
@@ -394,9 +290,7 @@ export function ChatWidget() {
             <button
               onClick={() => { setUploadedFile(null); setFileContent(null); }}
               className="ml-auto text-text-tertiary hover:text-text-primary"
-            >
-              <X size={12} />
-            </button>
+            ><X size={12} /></button>
           </div>
         )}
 
@@ -405,9 +299,7 @@ export function ChatWidget() {
             onClick={() => fileInputRef.current?.click()}
             className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded text-text-tertiary hover:bg-[var(--bg-elevated)] hover:text-text-secondary"
             title="Attach CSV, XLSX, or PDF"
-          >
-            <Paperclip size={15} />
-          </button>
+          ><Paperclip size={15} /></button>
           <input
             ref={fileInputRef}
             type="file"
@@ -419,7 +311,6 @@ export function ChatWidget() {
               e.target.value = "";
             }}
           />
-
           <textarea
             ref={textareaRef}
             value={input}
@@ -430,387 +321,13 @@ export function ChatWidget() {
             rows={1}
             disabled={sending}
           />
-
           <button
             onClick={() => handleSend()}
             disabled={sending || (!input.trim() && !uploadedFile)}
             className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded bg-accent text-text-primary hover:bg-accent-hover disabled:opacity-30"
-          >
-            <Send size={14} />
-          </button>
+          ><Send size={14} /></button>
         </div>
       </div>
     </div>
   );
-}
-
-// ─── Sub-components ─────────────────────────────────────────────────────
-
-function EmptyState({ onSelect }: { onSelect: (p: string) => void }) {
-  const starters = [
-    "2x C9300L-24UXG switches, DNA Advantage, stacking, Saudi Arabia",
-    "8x C9120AX external antenna APs, no DNA",
-    "Look up SKU C9300-48P-A",
-    "Validate my BoM (I'll upload a CSV)",
-  ];
-
-  return (
-    <div className="flex h-full flex-col items-center justify-center px-4 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-muted">
-        <MessageSquare size={20} className="text-accent" />
-      </div>
-      <p className="mt-3 text-sm font-medium text-text-primary">
-        How can I help?
-      </p>
-      <p className="mt-1 text-xs text-text-tertiary">
-        Describe requirements, upload a BoM, or ask about any Cisco SKU
-      </p>
-      <div className="mt-5 w-full space-y-1.5">
-        {starters.map((s, i) => (
-          <button
-            key={i}
-            onClick={() => onSelect(s)}
-            className="w-full rounded-lg border border-[var(--border)] bg-bg-card px-3 py-2 text-left text-xs text-text-secondary transition-colors hover:border-[var(--border-hover)] hover:text-text-primary"
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MessageBubble({
-  message,
-  onQuickReply,
-}: {
-  message: ChatMessage;
-  onQuickReply: (text: string) => void;
-}) {
-  const isUser = message.role === "user";
-
-  return (
-    <div className={cn("flex items-start gap-2.5", isUser && "flex-row-reverse")}>
-      {!isUser && (
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-text-primary">
-          B
-        </div>
-      )}
-
-      <div className={cn("max-w-[85%] space-y-2", isUser && "items-end")}>
-        {/* File indicator */}
-        {message.fileName && (
-          <span className="inline-flex items-center gap-1 rounded bg-bg-elevated px-2 py-0.5 text-[11px] text-text-secondary">
-            <FileSpreadsheet size={10} /> {message.fileName}
-          </span>
-        )}
-
-        {/* Text bubble */}
-        {message.content && (
-          <div
-            className={cn(
-              "rounded-lg px-3 py-2 text-[13px] leading-relaxed",
-              isUser
-                ? "rounded-tr-sm bg-accent text-text-primary"
-                : "rounded-tl-sm bg-bg-card text-text-primary"
-            )}
-          >
-            {message.content.split("\n").map((line, i) => (
-              <p key={i} className={line.trim() === "" ? "h-1.5" : ""}>
-                {line}
-              </p>
-            ))}
-          </div>
-        )}
-
-        {/* Inline BoM table */}
-        {message.bom && message.bom.length > 0 && (
-          <InlineBom lines={message.bom} bomDraftId={message.bomDraftId} />
-        )}
-
-        {/* Quick reply buttons */}
-        {message.quickReplies && message.quickReplies.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {message.quickReplies.map((reply, i) => (
-              <button
-                key={i}
-                onClick={() => onQuickReply(reply)}
-                className="rounded-full border border-accent/30 bg-accent-muted px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent hover:text-text-primary"
-              >
-                {reply}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Timestamp */}
-        <p className={cn("text-[10px] text-text-tertiary", isUser && "text-right")}>
-          {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function InlineBom({ lines, bomDraftId }: { lines: BomLineData[]; bomDraftId?: string }) {
-  const total = lines.reduce((s, l) => s + l.unitListPrice * l.quantity, 0);
-
-  function downloadCsv() {
-    const header = "Part Number,Description,Qty,Unit List Price,Extended Price,Category\n";
-    const rows = lines
-      .map((l) =>
-        `${l.sku},"${(l.description ?? "").replace(/"/g, '""')}",${l.quantity},${l.unitListPrice.toFixed(2)},${(l.unitListPrice * l.quantity).toFixed(2)},${l.category}`
-      )
-      .join("\n");
-    const csv = "\uFEFF" + header + rows;
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    triggerDownload(blob, `BOMatic_Estimate_${bomDraftId ?? Date.now()}.csv`);
-  }
-
-  function downloadXlsx() {
-    // Build a simple XLSX via the export API if we have a saved ID
-    if (bomDraftId) {
-      window.open(`/api/export?bomDraftId=${bomDraftId}&format=xlsx`, "_blank");
-      return;
-    }
-    // Fallback: download as CSV if not saved
-    downloadCsv();
-  }
-
-  function triggerDownload(blob: Blob, filename: string) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <div className="rounded-lg border border-[var(--border)] bg-bg-card">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-1.5">
-        <span className="text-[11px] font-medium text-text-secondary">
-          BoM — {lines.length} items
-        </span>
-        {bomDraftId && (
-          <span className="rounded bg-success-muted px-1.5 py-0.5 text-[10px] text-success">
-            Saved
-          </span>
-        )}
-      </div>
-
-      {/* Table */}
-      <div className="max-h-48 overflow-y-auto">
-        <table className="min-w-full text-[11px]">
-          <thead>
-            <tr className="border-b border-[var(--border)] text-text-tertiary">
-              <th className="px-2 py-1.5 text-left font-medium">SKU</th>
-              <th className="px-2 py-1.5 text-right font-medium">Qty</th>
-              <th className="px-2 py-1.5 text-right font-medium">Price</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--border)]/50">
-            {lines.map((l, i) => (
-              <tr key={i} className="hover:bg-bg-elevated">
-                <td className="px-2 py-1 font-mono text-text-primary">{l.sku}</td>
-                <td className="px-2 py-1 text-right text-text-secondary">{l.quantity}</td>
-                <td className="px-2 py-1 text-right font-mono text-text-secondary">
-                  {l.unitListPrice > 0 ? fmtUSD(l.unitListPrice) : "-"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Total */}
-      <div className="flex items-center justify-between border-t border-[var(--border)] px-3 py-1.5">
-        <span className="text-[11px] text-text-tertiary">Total</span>
-        <span className="font-mono text-xs font-medium text-accent">{fmtUSD(total)}</span>
-      </div>
-
-      {/* Action buttons */}
-      <div className="flex items-center gap-1.5 border-t border-[var(--border)] px-3 py-2">
-        {bomDraftId && (
-          <a
-            href={`/estimates/${bomDraftId}`}
-            className="flex items-center gap-1 rounded bg-accent px-2.5 py-1 text-[11px] font-medium text-text-primary hover:bg-accent-hover"
-          >
-            <ExternalLink size={10} /> Review Console
-          </a>
-        )}
-        <button
-          onClick={downloadCsv}
-          className="rounded border border-[var(--border)] px-2.5 py-1 text-[11px] text-text-secondary hover:border-[var(--border-hover)] hover:text-text-primary"
-        >
-          CSV
-        </button>
-        <button
-          onClick={downloadXlsx}
-          className="rounded border border-[var(--border)] px-2.5 py-1 text-[11px] text-text-secondary hover:border-[var(--border-hover)] hover:text-text-primary"
-        >
-          XLSX
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────
-
-function extractBom(text: string): BomLineData[] | null {
-  // Try ```bom block first (our preferred format)
-  const bomMatch = text.match(/```bom\n([\s\S]*?)```/);
-  if (bomMatch) {
-    try {
-      const parsed = JSON.parse(bomMatch[1]);
-      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].sku) return parsed;
-    } catch { /* not JSON */ }
-  }
-
-  // Try ```json block (Gemini often uses this)
-  const jsonMatch = text.match(/```json\n([\s\S]*?)```/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[1]);
-      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].sku) return parsed;
-    } catch { /* not JSON */ }
-  }
-
-  // Try any ``` code block containing JSON array with SKUs
-  const codeMatch = text.match(/```\n?([\s\S]*?)```/);
-  if (codeMatch) {
-    try {
-      const parsed = JSON.parse(codeMatch[1]);
-      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].sku) return parsed;
-    } catch { /* not JSON */ }
-  }
-
-  // Try bare JSON array in the text (no code fence)
-  const bareMatch = text.match(/\[\s*\{[^]*"sku"\s*:[^]*\}\s*\]/);
-  if (bareMatch) {
-    try {
-      const parsed = JSON.parse(bareMatch[0]);
-      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].sku) return parsed;
-    } catch { /* not JSON */ }
-  }
-
-  // ─── Fallback: keyword-triggered markdown table parsing ─────────────
-  // Detect completion signals in the response
-  const TRIGGER_KEYWORDS = [
-    "Estimate Saved",
-    "BoM Submitted",
-    "Total List Price",
-    "CCW Estimate ID",
-    "MOCK-",
-  ];
-  const hasTrigger = TRIGGER_KEYWORDS.some((kw) => text.includes(kw));
-  if (!hasTrigger) return null;
-
-  // Parse all markdown tables that contain SKU-like data
-  // Matches rows like: | C9300L-24UXG-4X-A | Description... | 2 | $5,200.00 | ... |
-  const lines: BomLineData[] = [];
-  const SKU_PATTERN = /^[A-Z][A-Z0-9]+-[A-Z0-9/._-]+$/;
-  const tableRows = text.match(/\|.*\|/g);
-  if (!tableRows) return null;
-
-  for (const row of tableRows) {
-    const cells = row.split("|").map((c) => c.trim()).filter(Boolean);
-    if (cells.length < 3) continue;
-
-    // Find which cell contains a SKU
-    const skuIdx = cells.findIndex((c) => SKU_PATTERN.test(c));
-    if (skuIdx === -1) continue;
-
-    const sku = cells[skuIdx];
-    // Skip header separator rows (---) or header labels
-    if (sku.includes("---") || sku.toLowerCase() === "sku" || sku.toLowerCase() === "part number") continue;
-
-    // Parse quantity — look for a pure integer cell
-    let quantity = 1;
-    let unitListPrice = 0;
-    let description = "";
-    let category: string = "hardware";
-
-    for (let i = 0; i < cells.length; i++) {
-      if (i === skuIdx) continue;
-      const cell = cells[i];
-
-      // Pure integer → quantity
-      if (/^\d+$/.test(cell) && parseInt(cell) > 0 && parseInt(cell) <= 9999) {
-        quantity = parseInt(cell);
-        continue;
-      }
-
-      // Price-like: $1,234.56 or 1234.56
-      const priceMatch = cell.match(/^\$?([\d,]+(?:\.\d{1,2})?)$/);
-      if (priceMatch) {
-        const val = parseFloat(priceMatch[1].replace(/,/g, ""));
-        if (val >= 0) {
-          unitListPrice = val;
-          continue;
-        }
-      }
-
-      // Category keywords
-      const lower = cell.toLowerCase();
-      if (["hardware", "license", "subscription", "service", "accessory", "software"].includes(lower)) {
-        category = lower;
-        continue;
-      }
-
-      // Otherwise treat as description (take the longest text cell)
-      if (cell.length > description.length && !cell.match(/^\d/) && cell.length > 3) {
-        description = cell;
-      }
-    }
-
-    // Avoid duplicates (same SKU already added)
-    const existing = lines.find((l) => l.sku === sku);
-    if (existing) {
-      existing.quantity += quantity;
-    } else {
-      lines.push({
-        sku,
-        description,
-        quantity,
-        unitListPrice,
-        category,
-        serviceDurationMonths: null,
-        leadTimeDays: null,
-      });
-    }
-  }
-
-  return lines.length > 0 ? lines : null;
-}
-
-function extractQuickReplies(text: string): string[] {
-  // Look for [quick-replies: "opt1", "opt2", "opt3"] in the response
-  const match = text.match(/\[quick-replies:\s*(.*?)\]/);
-  if (!match) return [];
-  try {
-    const items = match[1].match(/"([^"]+)"/g);
-    return items ? items.map((s) => s.replace(/"/g, "")) : [];
-  } catch { return []; }
-}
-
-function extractCustomerName(text: string): string {
-  // Try common patterns: "for [Customer]", "[Customer]'s", "customer: [Customer]"
-  const patterns = [
-    /\bfor\s+([A-Z][A-Za-z\s&'-]+(?:Bank|Corp|Inc|Ltd|LLC|Group|Machines|Data|Tech|Enterprise|Services|Solutions))/i,
-    /\bcustomer[:\s]+([A-Z][A-Za-z\s&'-]+)/i,
-    /\bclient[:\s]+([A-Z][A-Za-z\s&'-]+)/i,
-    /([A-Z][A-Za-z\s&'-]+(?:Bank|Corp|Inc|Ltd|LLC|Group|Machines|Data|Tech|Enterprise|Services|Solutions))/i,
-  ];
-  for (const p of patterns) {
-    const match = text.match(p);
-    if (match) return match[1].trim();
-  }
-  return "Customer";
-}
-
-function fmtUSD(v: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
 }
