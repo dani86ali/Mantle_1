@@ -81,7 +81,7 @@ export function buildE5Input(
   state: PipelineState,
   e4Artifacts?: E4Artifacts,
   outputDir?: string,
-): EngineInput {
+): EngineInput<E5InputData> {
   const customerName = input.clientName ?? 'Customer';
   const data: E5InputData = {
     requirementsBaseline: parseBaseline(e4Artifacts?.requirementsBaseline),
@@ -115,7 +115,7 @@ export function buildE5Input(
   return {
     engine: 'e5',
     pipelineState: state,
-    inputData: data as unknown as Record<string, unknown>,
+    inputData: data,
   };
 }
 

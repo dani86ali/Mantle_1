@@ -25,7 +25,7 @@ export interface E4BuildInput {
 export function buildE4Input(
   input: E4BuildInput,
   state: PipelineState,
-): EngineInput {
+): EngineInput<E4InputData> {
   const data: E4InputData = {
     clientName: input.clientName ?? 'Customer',
     country: input.country ?? 'KSA',
@@ -39,7 +39,7 @@ export function buildE4Input(
   return {
     engine: 'e4',
     pipelineState: state,
-    inputData: data as unknown as Record<string, unknown>,
+    inputData: data,
   };
 }
 

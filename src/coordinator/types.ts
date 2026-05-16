@@ -118,10 +118,10 @@ export interface PipelineState {
   status?: 'paused_at_checkpoint';
 }
 
-export interface EngineInput {
+export interface EngineInput<T = unknown> {
   engine: EngineId;
   pipelineState: PipelineState;
-  inputData: Record<string, unknown>;
+  inputData: T;
   revisionNotes?: string;
 }
 
