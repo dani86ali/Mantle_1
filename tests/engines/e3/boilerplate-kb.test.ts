@@ -30,8 +30,9 @@ describe('renderBoilerplate', () => {
       variables: ['customerName', 'date', 'tenantName'],
     };
     const out = renderBoilerplate(entry, FULL_VARS);
-    expect(out).toBe('Hello Aramco from NexusGlobal on 2026-05-11');
-    expect(out).not.toContain('{{');
+    expect(out.text).toBe('Hello Aramco from NexusGlobal on 2026-05-11');
+    expect(out.text).not.toContain('{{');
+    expect(out.missing).toEqual([]);
   });
 
   it('replaces repeated occurrences of the same variable', () => {
@@ -41,7 +42,7 @@ describe('renderBoilerplate', () => {
       content: '{{tenantName}} / {{tenantName}}',
       variables: ['tenantName'],
     };
-    expect(renderBoilerplate(entry, { tenantName: 'Nx' })).toBe('Nx / Nx');
+    expect(renderBoilerplate(entry, { tenantName: 'Nx' }).text).toBe('Nx / Nx');
   });
 
   it('leaves missing placeholders as-is and emits a warning', () => {
@@ -53,7 +54,8 @@ describe('renderBoilerplate', () => {
       variables: ['customerName', 'tenantName'],
     };
     const out = renderBoilerplate(entry, { customerName: 'Aramco' });
-    expect(out).toBe('Hello Aramco, signed by {{tenantName}}');
+    expect(out.text).toBe('Hello Aramco, signed by {{tenantName}}');
+    expect(out.missing).toEqual(['tenantName']);
     expect(warn).toHaveBeenCalledOnce();
     const warnArg = warn.mock.calls[0][0] as string;
     expect(warnArg).toContain('tenantName');

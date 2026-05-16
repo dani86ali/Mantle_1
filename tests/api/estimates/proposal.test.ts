@@ -60,6 +60,7 @@ function makeE3(): E3Output {
     },
     proposalPath: "/tmp/p.docx",
     financialPath: "/tmp/p.xlsx",
+    warnings: [],
   };
 }
 

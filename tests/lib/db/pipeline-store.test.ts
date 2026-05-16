@@ -187,6 +187,7 @@ function makeE3Output(): E3Output {
     },
     proposalPath: "/tmp/proposal.docx",
     financialPath: "/tmp/financial.xlsx",
+    warnings: [],
   };
 }
 

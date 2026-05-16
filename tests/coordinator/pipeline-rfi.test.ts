@@ -54,6 +54,7 @@ function makeE3Output(): E3Output {
     },
     proposalPath: '/tmp/bomatic-e3/x/proposal.docx',
     financialPath: '/tmp/bomatic-e3/x/financial.xlsx',
+    warnings: [],
   };
 }
 
