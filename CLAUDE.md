@@ -22,14 +22,11 @@ E2 (BoM) has ZERO pure-AI tasks — all TypeScript.
 - src/types/ — Existing type definitions. EXTEND with new types, don't break existing.
 - src/lib/db/ — Drizzle ORM schema. EXTEND with pipeline tables.
 
-## File Ownership (when both devs are active)
-- src/coordinator/, src/engines/e3/, src/engines/e5/, src/ui/ → Lead only
-- src/engines/e1/, src/engines/e2/, src/engines/e4/, knowledge-packs/ → Junior only
-- src/lib/ → coordinate before editing
-
 ## Code Rules
-- Max 200 lines per file. Split if longer.
+- File size budget: 200 lines for engines/, lib/, coordinator/, db schemas. 400 lines for UI page/component files. Split if longer.
 - Every function has typed input and output — no `any` in public interfaces.
 - Engine directories never import from other engine directories.
 - All inter-engine data flows through the pipeline state types.
 - Tests written in same session as implementation, not deferred.
+- One task per session: start with a verifiable success criterion; end when met. Tangential work becomes a new task, not session sprawl.
+- Each task gets its own git worktree (see ../bomatic_planning/BOMATIC_Build_Architecture.md §5).
