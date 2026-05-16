@@ -29,6 +29,7 @@ import { checkDnaOptout } from "./rules/dna-optout";
 import { checkApOnly } from "./rules/ap-only";
 import { checkEox } from "./rules/eox-check";
 import { checkLicenseDeps } from "./rules/license-deps";
+import { loadEoxLookup } from "@/lib/data/eox-loader";
 import { adaptSimpleRule } from "./adapter";
 
 const ALL_RULES: ValidationRule[] = [
@@ -58,9 +59,9 @@ const ALL_RULES: ValidationRule[] = [
     "Detects AP-only BoMs without a wireless controller"
   ),
   adaptSimpleRule(
-    (lines) => checkEox(lines),
+    (lines) => checkEox(lines, loadEoxLookup()),
     "eox-check",
-    "EoX Check (stub)",
+    "EoX Check",
     "Checks for end-of-life SKUs using the configured EoX lookup"
   ),
   adaptSimpleRule(

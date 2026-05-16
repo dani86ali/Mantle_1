@@ -99,7 +99,7 @@ export type E2ValidationStatus = "validated" | "unvalidated" | "partial";
 export function assessValidationStatus(
   priced: PricedBomLine[],
 ): { validationStatus: E2ValidationStatus; validationWarnings: string[] } {
-  const warnings: string[] = ["EoX status not verified — stub lookup used"];
+  const warnings: string[] = [];
   const zeroPriceSkus: string[] = [];
   const seen = new Set<string>();
   for (const p of priced) {
