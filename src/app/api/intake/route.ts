@@ -64,9 +64,8 @@ export async function POST(request: NextRequest) {
   const data = await validateBody(request, intakeFormSchema);
   if (data instanceof NextResponse) return data;
 
-  const tenantId = await getDefaultTenantId();
-
   try {
+    const tenantId = await getDefaultTenantId();
     const mode = resolveMode(data);
     const rawBomText = data.bomText ?? data.pastedText;
     if (
@@ -147,7 +146,13 @@ export async function POST(request: NextRequest) {
       { status: queued ? 202 : 201 }
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[POST /api/intake] failed:", err);
+    const message =
+      err instanceof Error && err.message
+        ? err.message
+        : err && typeof err === "object"
+          ? JSON.stringify(err, Object.getOwnPropertyNames(err))
+          : String(err);
     return NextResponse.json(
       { error: `Intake failed: ${message}` },
       { status: 500 }

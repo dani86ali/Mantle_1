@@ -37,7 +37,7 @@ describe("getSession — dev mode default", () => {
     const session = getSession(mkRequest());
     expect(session).not.toBeNull();
     expect(session).toEqual(DEFAULT_DEV_SESSION);
-    expect(session?.tenantId).toBe("stc-solutions");
+    expect(session?.tenantId).toBe("00000000-0000-0000-0000-000000000001");
     expect(session?.role).toBe("engineer");
   });
 

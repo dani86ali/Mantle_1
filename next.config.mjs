@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ["pg", "bullmq", "ioredis"],
+    serverComponentsExternalPackages: ["pg", "bullmq", "ioredis", "pdf-parse", "pdfjs-dist"],
   },
   headers: async () => [
     {

@@ -23,7 +23,7 @@ export interface AuthSession {
  */
 export const DEFAULT_DEV_SESSION: AuthSession = {
   userId: "dev-user",
-  tenantId: "stc-solutions",
+  tenantId: "00000000-0000-0000-0000-000000000001",
   email: "dev@bomatic.ai",
   name: "Dev User",
   role: "engineer",

@@ -117,7 +117,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ estimates: merged });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[GET /api/estimates] failed:", err);
+    const message =
+      err instanceof Error && err.message
+        ? err.message
+        : err && typeof err === "object"
+          ? JSON.stringify(err, Object.getOwnPropertyNames(err))
+          : String(err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
