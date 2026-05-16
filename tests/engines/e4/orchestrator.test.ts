@@ -12,6 +12,7 @@ vi.mock('@/engines/e4/questionnaire-generator', () => ({
 }));
 vi.mock('@/engines/e4/emphasis-matrix', () => ({
   getPrioritizedSections: vi.fn(),
+  getEmphasis: vi.fn(),
 }));
 vi.mock('@/engines/e4/question-customizer', () => ({
   customizeQuestions: vi.fn(),
@@ -35,7 +36,7 @@ import {
   generateQuestionnaire,
   questionnaireToMarkdown,
 } from '@/engines/e4/questionnaire-generator';
-import { getPrioritizedSections } from '@/engines/e4/emphasis-matrix';
+import { getPrioritizedSections, getEmphasis } from '@/engines/e4/emphasis-matrix';
 import { customizeQuestions } from '@/engines/e4/question-customizer';
 import { parseResponse } from '@/engines/e4/response-parser';
 import { interpretFreeText } from '@/engines/e4/free-text-interpreter';
@@ -55,6 +56,7 @@ const mDetectAI = vi.mocked(enhancedProjectTypeDetection);
 const mGenerate = vi.mocked(generateQuestionnaire);
 const mToMarkdown = vi.mocked(questionnaireToMarkdown);
 const mPrioritized = vi.mocked(getPrioritizedSections);
+const mEmphasis = vi.mocked(getEmphasis);
 const mCustomize = vi.mocked(customizeQuestions);
 const mParse = vi.mocked(parseResponse);
 const mInterpret = vi.mocked(interpretFreeText);
@@ -97,6 +99,7 @@ function defaultMockSetup(): void {
     emphasis: { A: 'high', B: 'high', C: 'medium', D: 'medium', E: 'medium', F: 'medium' },
   });
   mPrioritized.mockReturnValue(['A', 'B', 'C', 'D', 'E', 'F']);
+  mEmphasis.mockReturnValue({ A: 'medium', B: 'high', C: 'medium', D: 'medium', E: 'medium', F: 'medium' });
   mToMarkdown.mockReturnValue('# Questionnaire\n\nMOCK');
   mCustomize.mockResolvedValue([Q_A1, Q_B1]);
   mParse.mockResolvedValue({
@@ -130,7 +133,11 @@ describe('runE4 — phase detection', () => {
     const out = await runE4Detailed(makeInput({ clientName: 'Acme', country: 'SA' }));
     expect(out.phase).toBe('phase1');
     expect(out.output.artifacts.questionnaire).toBeDefined();
-    expect(out.output.artifacts.requirementsBaseline).toBeUndefined();
+    // Phase 1 now emits a preliminary requirementsBaseline so E5 has something to design against.
+    expect(out.output.artifacts.requirementsBaseline).toBeDefined();
+    const baseline = JSON.parse(out.output.artifacts.requirementsBaseline!);
+    expect(baseline.business.length).toBeGreaterThan(0);
+    expect(baseline.business[0].source).toBe('preliminary');
   });
 
   it('routes phase 2 when clientResponses are present', async () => {
