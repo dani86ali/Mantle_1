@@ -24,7 +24,6 @@ export interface E2Artifacts {
   filledClientBoq?: string;
   /** Path to the client BoQ XLSX that fed E2 (so re-runs can re-fill it). */
   clientBoqInputPath?: string;
-  distributorExport?: string;
   pricingSummary?: string;
   /** Honesty signal surfaced to UI/downstream consumers. Mirrors E2Output. */
   validationStatus?: "validated" | "unvalidated" | "partial";
