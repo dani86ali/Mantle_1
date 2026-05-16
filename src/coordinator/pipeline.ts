@@ -17,6 +17,7 @@ import {
   createInitialState, logEvent, runCheckpoint, startEngineCall,
   type CheckpointCallback,
 } from '@/coordinator/pipeline-state';
+import { savePipelineState } from '@/lib/db/pipeline-store';
 import type {
   CheckpointStatus, EngineId, EngineOutput, IntakeMode, PipelineState,
 } from '@/coordinator/types';
@@ -115,6 +116,22 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
         break;
       }
       if (decision === 'rejected') break;
+
+      if (
+        input.mode === 'rfi'
+        && engine === 'e4'
+        && !input.responseText
+        && !input.responseFilePath
+        && state.artifacts.e4.questionnaire
+      ) {
+        state.status = 'paused_at_checkpoint';
+        state.currentEngine = 'e4';
+        state.timestamps.updatedAt = new Date();
+        logEvent(state, 'e4', 'info', 'engine_call',
+          'RFI pipeline paused at E4 phase1 — awaiting client responses');
+        await savePipelineState(state);
+        return out;
+      }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

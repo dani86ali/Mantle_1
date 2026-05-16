@@ -112,6 +112,9 @@ export interface PipelineState {
   };
   /** Set when the pipeline aborts due to an unrecoverable error (not per-engine failures). */
   error?: { message: string };
+  /** Lifecycle flag set when the pipeline is suspended awaiting external input
+   *  (e.g. RFI E4 phase1 → wait for client responses before continuing). */
+  status?: 'paused_at_checkpoint';
 }
 
 export interface EngineInput {

@@ -17,8 +17,15 @@ export const ENGINE_CHECKPOINTS: Record<EngineId, { id: string; label: string }[
     { id: 'e2-pricing-review', label: 'Pricing review' },
   ],
   e3: [{ id: 'e3-proposal', label: 'Proposal review' }],
-  e4: [],
-  e5: [],
+  e4: [
+    { id: 'e4-questionnaire', label: 'Questionnaire review' },
+    { id: 'e4-baseline', label: 'Requirements baseline review' },
+  ],
+  e5: [
+    { id: 'e5-design-approach', label: 'Design approach review' },
+    { id: 'e5-hld', label: 'HLD review' },
+    { id: 'e5-lld', label: 'LLD review' },
+  ],
 };
 
 export function createInitialState(opportunityId: string, mode: IntakeMode): PipelineState {
