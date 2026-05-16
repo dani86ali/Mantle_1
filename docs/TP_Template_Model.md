@@ -501,7 +501,7 @@ These are vendor-sourced boilerplate blocks inserted into the Proposed Solution 
 
 ## 6. Mapping to Playbook Section 6.1
 
-The playbook defines a 14-section TP structure. Below is how the actual STCS TPs map to it.
+The playbook defines a 15-section TP structure (ids 0–14). Below is how the actual STCS TPs map to it.
 
 | Playbook 6.1 Section | Playbook Description | STCS TP Equivalent | Classification | Notes |
 |----------------------|---------------------|-------------------|---------------|-------|
