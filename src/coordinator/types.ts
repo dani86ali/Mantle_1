@@ -30,6 +30,8 @@ export interface E2Artifacts {
   validationWarnings?: string[];
   /** JSON-stringified PricedBomLine[] — needed when E3 rehydrates from DB. */
   bom?: string;
+  /** JSON-stringified ValidationResult[] — per-rule detail for DB rehydration. */
+  validationResults?: string;
 }
 
 export interface E3Artifacts {

@@ -9,6 +9,7 @@ import type {
 } from '@/engines/e2/orchestrator';
 import type { ArtifactRegistry, E5Artifacts } from '@/coordinator/types';
 import type { ComponentListItem } from '@/engines/e5/types';
+import type { ValidationResult } from '@/types/validation';
 
 export type { PricedBomLine };
 
@@ -163,6 +164,9 @@ export function toE2Artifacts(
   if (out.filledClientBoqPath) artifacts.filledClientBoq = out.filledClientBoqPath;
   if (inputFilePath) artifacts.clientBoqInputPath = inputFilePath;
   if (out.bom.length > 0) artifacts.bom = JSON.stringify(out.bom);
+  if (out.validationResults && out.validationResults.length > 0) {
+    artifacts.validationResults = JSON.stringify(out.validationResults);
+  }
   return artifacts;
 }
 
@@ -173,6 +177,18 @@ export function parseBomFromArtifacts(
   try {
     const parsed = JSON.parse(e2.bom);
     return Array.isArray(parsed) ? (parsed as PricedBomLine[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function parseValidationResultsFromArtifacts(
+  e2?: ArtifactRegistry['e2'],
+): ValidationResult[] {
+  if (!e2 || !e2.validationResults) return [];
+  try {
+    const parsed = JSON.parse(e2.validationResults);
+    return Array.isArray(parsed) ? (parsed as ValidationResult[]) : [];
   } catch {
     return [];
   }
