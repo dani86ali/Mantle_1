@@ -138,7 +138,7 @@ export interface RenderResult {
 export function renderBoilerplate(
   entry: BoilerplateEntry,
   variables: Record<string, string>,
-): string {
+): RenderResult {
   const missing: string[] = [];
   const rendered = entry.content.replace(PLACEHOLDER_RE, (match, name: string) => {
     const value = variables[name];
@@ -148,13 +148,13 @@ export function renderBoilerplate(
     }
     return value;
   });
-  if (missing.length > 0) {
-    const unique = Array.from(new Set(missing));
+  const unique = Array.from(new Set(missing));
+  if (unique.length > 0) {
     console.warn(
       `[boilerplate-kb] ${entry.key}: unresolved placeholders ${unique.join(', ')}`,
     );
   }
-  return rendered;
+  return { text: rendered, missing: unique };
 }
 
 export function getBoilerplate(

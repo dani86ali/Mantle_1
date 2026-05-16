@@ -26,6 +26,17 @@ const BODY_FONT = 'Calibri';
 const BODY_SIZE = 22; // half-points → 11pt
 const TITLE_SIZE = 56; // 28pt
 const SUBTITLE_SIZE = 32; // 16pt
+const PLACEHOLDER_SCAN_RE = /\{\{[^}]+\}\}/g;
+
+function scanForPlaceholders(sections: ProposalSection[]): string[] {
+  const found = new Set<string>();
+  for (const s of sections) {
+    const matches = s.content.match(PLACEHOLDER_SCAN_RE);
+    if (!matches) continue;
+    for (const m of matches) found.add(m.slice(2, -2).trim());
+  }
+  return Array.from(found).sort();
+}
 
 function centered(text: string, size: number, bold = false): Paragraph {
   return new Paragraph({
@@ -114,6 +125,14 @@ export async function generateProposalDocx(
     throw new Error('generateProposalDocx: outputPath must be a non-empty string');
   }
   const ordered = [...sections].sort((a, b) => a.id - b.id);
+  const unresolved = scanForPlaceholders(ordered);
+  if (unresolved.length > 0) {
+    const msg = `[docx-generator] unresolved placeholders in proposal: ${unresolved.join(', ')}`;
+    if (process.env.STRICT_PROPOSAL === '1') {
+      throw new Error(msg);
+    }
+    console.warn(msg);
+  }
   const body: (Paragraph | TableOfContents | import('docx').Table)[] = [
     ...titlePage(metadata),
     ...tocBlock(),

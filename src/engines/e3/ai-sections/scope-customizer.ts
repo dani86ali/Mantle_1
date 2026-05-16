@@ -78,7 +78,7 @@ export function buildDeterministicBrief(input: ScopeInput): string {
     projectSpecificExclusions,
   } = input;
 
-  const boilerplate = renderBoilerplate(
+  const { text: boilerplate } = renderBoilerplate(
     getBoilerplate('scope_assumptions'),
     { tenantName: 'the Systems Integrator' },
   );

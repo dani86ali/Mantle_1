@@ -58,6 +58,19 @@ export type {
 } from './orchestrator-types';
 
 const FILE_PREFIX_RE = /[^A-Za-z0-9_-]+/g;
+const PLACEHOLDER_SCAN_RE = /\{\{[^}]+\}\}/g;
+
+function collectUnresolvedPlaceholders(sections: ProposalSection[]): string[] {
+  const found = new Set<string>();
+  for (const s of sections) {
+    const matches = s.content.match(PLACEHOLDER_SCAN_RE);
+    if (!matches) continue;
+    for (const m of matches) {
+      found.add(m.slice(2, -2).trim());
+    }
+  }
+  return Array.from(found).sort();
+}
 
 function safeFilePrefix(meta: { projectName: string; estimateId: string }): string {
   const slug = `${meta.projectName}-${meta.estimateId}`.replace(FILE_PREFIX_RE, '_');
@@ -126,6 +139,11 @@ export async function runE3(input: E3Input): Promise<E3Output> {
   // (3a) Optional E4/E5 enrichment — appends discovery + design context to relevant sections.
   const sections = applyEnrichments(merged, input.e4, input.e5);
 
+  // (3b) Unresolved-placeholder scan — surface any `{{foo}}` tokens that
+  // survived rendering so they appear in the API response and don't silently
+  // ship to the customer. Mirrors the docx-generator defense-in-depth check.
+  const warnings = collectUnresolvedPlaceholders(sections);
+
   // (4) Emit artifacts.
   const emitFiles = input.emitFiles ?? true;
   let proposalPath: string | undefined;
@@ -149,5 +167,5 @@ export async function runE3(input: E3Input): Promise<E3Output> {
     );
   }
 
-  return { sections, tiers, margin, proposalPath, financialPath };
+  return { sections, tiers, margin, proposalPath, financialPath, warnings };
 }

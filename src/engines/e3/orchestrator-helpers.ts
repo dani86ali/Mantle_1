@@ -86,12 +86,12 @@ export function buildBoilerplateSection(
   meta: ProposalMetadata,
 ): ProposalSection {
   const entry = getBoilerplate(slug);
-  const content = renderBoilerplate(entry, {
+  const { text } = renderBoilerplate(entry, {
     customerName: meta.customerName,
     projectName: meta.projectName,
     tenantName: meta.tenantName,
   });
-  return makeSection(slug, content);
+  return makeSection(slug, text);
 }
 
 export function buildFinancialMetadata(meta: ProposalMetadata): FinancialProposalMetadata {

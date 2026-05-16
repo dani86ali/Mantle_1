@@ -54,13 +54,13 @@ export interface AllSectionsE2Input extends TechSpecsInput {}
 
 export function generateCoverPage(meta: ProposalMetadata): ProposalSection {
   const entry = getBoilerplate('cover_page');
-  const content = renderBoilerplate(entry, {
+  const { text } = renderBoilerplate(entry, {
     customerName: meta.customerName,
     projectName: meta.projectName,
     tenantName: meta.tenantName,
     date: meta.date,
   });
-  return makeSection('cover_page', content);
+  return makeSection('cover_page', text);
 }
 
 export function generateRequirementsSection(
@@ -181,12 +181,12 @@ export function generateAppendices(
 
 export function generateSignaturePage(meta: ProposalMetadata): ProposalSection {
   const entry = getBoilerplate('signature_page');
-  const content = renderBoilerplate(entry, {
+  const { text } = renderBoilerplate(entry, {
     customerName: meta.customerName,
     projectName: meta.projectName,
     tenantName: meta.tenantName,
   });
-  return makeSection('signature_page', content);
+  return makeSection('signature_page', text);
 }
 
 export function generateAllDeterministicSections(

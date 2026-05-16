@@ -171,4 +171,7 @@ export interface E3Output {
   margin: MarginAnalysis;
   proposalPath?: string;
   financialPath?: string;
+  /** Unresolved boilerplate placeholder names detected in the assembled proposal
+   *  (defense-in-depth: prevents shipping `{{foo}}` tokens to customers). */
+  warnings: string[];
 }
