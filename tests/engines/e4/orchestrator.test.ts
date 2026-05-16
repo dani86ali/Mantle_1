@@ -43,7 +43,7 @@ import { interpretFreeText } from '@/engines/e4/free-text-interpreter';
 import { enhancedGapDetection } from '@/engines/e4/gap-detector-ai';
 import { buildRequirementsBaseline } from '@/engines/e4/requirements-baseline-builder';
 import { runE4, runE4Detailed } from '@/engines/e4/orchestrator';
-import type { CheckpointCallback } from '@/engines/e4/orchestrator';
+import type { CheckpointCallback, E4InputData } from '@/engines/e4/orchestrator';
 import type { EngineInput, PipelineState } from '@/coordinator/types';
 import type {
   ClientResponse,
@@ -77,8 +77,13 @@ function makeState(): PipelineState {
   };
 }
 
-function makeInput(inputData: Record<string, unknown>, revisionNotes?: string): EngineInput {
-  return { engine: 'e4', pipelineState: makeState(), inputData, revisionNotes };
+function makeInput(inputData: Partial<E4InputData>, revisionNotes?: string): EngineInput<E4InputData> {
+  return {
+    engine: 'e4',
+    pipelineState: makeState(),
+    inputData: inputData as E4InputData,
+    revisionNotes,
+  };
 }
 
 const Q_A1: Question = { id: 'A1', section: 'A', priority: 'required', responseType: 'text', text: 'A1 text' };

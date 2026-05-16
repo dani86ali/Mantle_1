@@ -10,6 +10,7 @@ import { z } from "zod";
 import { validateBody } from "@/lib/middleware/validate";
 import { runE5Detailed } from "@/engines/e5/orchestrator";
 import type { EngineInput } from "@/coordinator/types";
+import type { E5InputData } from "@/engines/e5/orchestrator-types";
 import {
   loadE5State,
   minimalPipelineState,
@@ -129,7 +130,7 @@ export async function POST(
   });
   const e4State = await loadE4State(resolved.intakeId);
   const requirementsBaseline = e4State?.responses?.baseline ?? {};
-  const input: EngineInput = {
+  const input: EngineInput<E5InputData> = {
     engine: "e5",
     pipelineState: minimalPipelineState(resolved.intakeId),
     inputData: { ...data, phase: "hld", outputDir, requirementsBaseline },

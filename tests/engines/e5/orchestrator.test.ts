@@ -74,10 +74,10 @@ const baseInputData: E5InputData = {
   userCount: 200, bandwidthGbps: 5,
 };
 
-function makeInput(data: Partial<E5InputData> = {}): EngineInput {
+function makeInput(data: Partial<E5InputData> = {}): EngineInput<E5InputData> {
   return {
     engine: 'e5', pipelineState: makeState(),
-    inputData: { ...baseInputData, ...data } as unknown as Record<string, unknown>,
+    inputData: { ...baseInputData, ...data },
   };
 }
 
@@ -121,7 +121,11 @@ beforeEach(() => {
 
 describe('runE5 — input validation', () => {
   it('returns error EngineOutput when customerName is missing', async () => {
-    const out = await runE5({ engine: 'e5', pipelineState: makeState(), inputData: {} });
+    const out = await runE5({
+      engine: 'e5',
+      pipelineState: makeState(),
+      inputData: {} as E5InputData,
+    });
     expect(out.error).toBeDefined();
   });
   it('returns just the EngineOutput shape via runE5', async () => {

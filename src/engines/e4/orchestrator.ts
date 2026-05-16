@@ -39,7 +39,7 @@ function isPhase2(data: E4InputData): boolean {
   );
 }
 
-function logEngineStart(input: EngineInput, phase: 'phase1' | 'phase2'): void {
+function logEngineStart(input: EngineInput<E4InputData>, phase: 'phase1' | 'phase2'): void {
   logEntry({
     timestamp: new Date(),
     pipelineId: input.pipelineState.id,
@@ -51,13 +51,13 @@ function logEngineStart(input: EngineInput, phase: 'phase1' | 'phase2'): void {
   });
 }
 
-export async function runE4(input: EngineInput): Promise<EngineOutput<'e4'>> {
+export async function runE4(input: EngineInput<E4InputData>): Promise<EngineOutput<'e4'>> {
   const result = await runE4Detailed(input);
   return result.output;
 }
 
-export async function runE4Detailed(input: EngineInput): Promise<E4OrchestratorResult> {
-  const data = (input.inputData ?? {}) as unknown as E4InputData;
+export async function runE4Detailed(input: EngineInput<E4InputData>): Promise<E4OrchestratorResult> {
+  const data = input.inputData;
   if (!data.clientName || !data.country) {
     return {
       output: {

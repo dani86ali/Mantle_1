@@ -10,6 +10,7 @@ import { z } from "zod";
 import { validateBody } from "@/lib/middleware/validate";
 import { runE4Detailed } from "@/engines/e4/orchestrator";
 import type { EngineInput } from "@/coordinator/types";
+import type { E4InputData } from "@/engines/e4/orchestrator-types";
 import type { Question } from "@/engines/e4/types";
 import {
   loadE4State,
@@ -76,7 +77,7 @@ export async function POST(
   const questions: Question[] | undefined =
     state.questionnaire?.sections.flatMap((s) => s.questions);
 
-  const input: EngineInput = {
+  const input: EngineInput<E4InputData> = {
     engine: "e4",
     pipelineState: minimalPipelineState(resolved.intakeId),
     inputData: {
@@ -155,7 +156,7 @@ export async function PATCH(
 
   const questions: Question[] | undefined =
     state.questionnaire?.sections.flatMap((s) => s.questions);
-  const input: EngineInput = {
+  const input: EngineInput<E4InputData> = {
     engine: "e4",
     pipelineState: minimalPipelineState(resolved.intakeId),
     inputData: {

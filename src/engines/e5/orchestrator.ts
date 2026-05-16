@@ -46,7 +46,7 @@ function validateInput(data: E5InputData): string | null {
   return null;
 }
 
-function logEngineStart(input: EngineInput, phase: E5Phase): void {
+function logEngineStart(input: EngineInput<E5InputData>, phase: E5Phase): void {
   logEntry({
     timestamp: new Date(),
     pipelineId: input.pipelineState.id,
@@ -58,13 +58,13 @@ function logEngineStart(input: EngineInput, phase: E5Phase): void {
   });
 }
 
-export async function runE5(input: EngineInput): Promise<EngineOutput<'e5'>> {
+export async function runE5(input: EngineInput<E5InputData>): Promise<EngineOutput<'e5'>> {
   const result = await runE5Detailed(input);
   return result.output;
 }
 
-export async function runE5Detailed(input: EngineInput): Promise<E5OrchestratorResult> {
-  const data = (input.inputData ?? {}) as unknown as E5InputData;
+export async function runE5Detailed(input: EngineInput<E5InputData>): Promise<E5OrchestratorResult> {
+  const data = input.inputData;
   const phase = resolvePhase(data);
   const validationError = validateInput(data);
   if (validationError) {

@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { runE5Detailed } from "@/engines/e5/orchestrator";
 import type { EngineInput } from "@/coordinator/types";
+import type { E5InputData } from "@/engines/e5/orchestrator-types";
 import type {
   CompatibilityResult,
   DesignApproach,
@@ -53,7 +54,7 @@ async function runHld(
     intakeId,
     pipelineId: `e5-route-${intakeId}`,
   });
-  const input: EngineInput = {
+  const input: EngineInput<E5InputData> = {
     engine: "e5",
     pipelineState: minimalPipelineState(intakeId),
     inputData: { ...state.inputData, phase: "hld", outputDir },
@@ -98,7 +99,7 @@ async function runLld(
     intakeId,
     pipelineId: `e5-route-${intakeId}`,
   });
-  const input: EngineInput = {
+  const input: EngineInput<E5InputData> = {
     engine: "e5",
     pipelineState: minimalPipelineState(intakeId),
     inputData: {
