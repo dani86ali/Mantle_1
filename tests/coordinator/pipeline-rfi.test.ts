@@ -63,7 +63,9 @@ function makeE4Output(): EngineOutput<'e4'> {
     engine: 'e4',
     artifacts: {
       questionnaire: '# RFI questionnaire',
-      requirementsBaseline: JSON.stringify({ business: [{ id: 'b1' }] }),
+      requirementsBaseline: JSON.stringify({
+        business: [{ id: 'b1', text: 'Refresh aging core', priority: 'high' }],
+      }),
     },
     warnings: [],
   };
