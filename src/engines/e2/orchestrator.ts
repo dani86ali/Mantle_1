@@ -10,6 +10,7 @@ import { parseTypeE } from "@/engines/e2/parsers/type-e-telecom";
 import { selectAccessories } from "@/engines/e2/accessory-selector";
 import { calculateLicenses } from "@/engines/e2/licensing-calculator";
 import { selectSupport } from "@/engines/e2/support-selector";
+import { fuzzyMatchSku, type CatalogEntry } from "@/engines/e2/fuzzy-sku-matcher";
 import {
   detectAnomalies,
   type AnomalyResult,
@@ -156,7 +157,29 @@ export async function runE2(input: E2Input): Promise<E2Output> {
     });
   }
 
-  // (4) Fuzzy SKU matcher: skipped — no catalog source in E2Input.
+  // (4) Fuzzy SKU matcher — correct typos against the listPrices catalog so a
+  // line like "C9300-24P" maps to "C9300-24P-A" before the price lookup.
+  const knownPrices = input.listPrices ?? {};
+  const knownSkus = Object.keys(knownPrices);
+  if (knownSkus.length > 0) {
+    const catalog: CatalogEntry[] = knownSkus.map((sku) => ({
+      sku,
+      description: sku,
+      family: "",
+    }));
+    for (const line of rawLines) {
+      if (knownPrices[line.sku] !== undefined) continue;
+      const match = await fuzzyMatchSku({ description: line.sku }, catalog);
+      if (
+        match.matchType === "exact" ||
+        (match.matchType === "fuzzy" && match.confidence >= 0.85)
+      ) {
+        line.sku = match.matchedSku;
+      }
+    }
+  } else {
+    console.info("E2: skipping fuzzy SKU matcher — no listPrices catalog provided");
+  }
 
   // (5) CS-001 → CS-002 → CS-003 → CS-004 → CS-005 → CS-006 → CS-007 → CS-009 per line.
   const priced = buildPricedLines(rawLines, input.pricingConfig, input.listPrices ?? {});
