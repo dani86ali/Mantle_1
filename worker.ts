@@ -14,6 +14,11 @@ import {
   deadLetterQueue,
   type AgentJobData,
 } from "./src/lib/queue/agent-job";
+import {
+  PIPELINE_QUEUE_NAME,
+  type PipelineJobData,
+} from "./src/lib/queue/pipeline-job";
+import { processPipelineJob } from "./src/lib/queue/pipeline-worker";
 import { updateAgentRun, createBomDraft, updateIntakeStatus } from "./src/lib/db/queries";
 import { appendAuditLog } from "./src/lib/db/queries";
 import { getTenantById } from "./src/lib/db/queries";
@@ -207,3 +212,26 @@ function categorizeError(error: unknown): string {
 }
 
 console.log(`[Worker] BOMatic agent worker started (concurrency: ${DEFAULT_CONCURRENCY})`);
+
+const pipelineWorker = new Worker<PipelineJobData>(
+  PIPELINE_QUEUE_NAME,
+  processPipelineJob,
+  {
+    connection: redis,
+    concurrency: DEFAULT_CONCURRENCY,
+  }
+);
+
+pipelineWorker.on("completed", (job) => {
+  console.log(`[Pipeline] Job ${job.id} completed successfully`);
+});
+
+pipelineWorker.on("failed", (job, err) => {
+  console.error(`[Pipeline] Job ${job?.id} failed: ${err.message}`);
+});
+
+pipelineWorker.on("error", (err) => {
+  console.error(`[Pipeline] Error: ${err.message}`);
+});
+
+console.log(`[Pipeline] BOMatic pipeline worker started (concurrency: ${DEFAULT_CONCURRENCY})`);
