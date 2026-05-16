@@ -56,15 +56,23 @@ async function runStepsFourteenFifteenSixteen(
   ipVlanPlan: IPVlanPlan,
   qosPolicy: QoSPolicy,
   migrationApproach: MigrationApproach,
+  cableSchedule: CableScheduleEntry[],
   logs: E5StepLog[],
   input: EngineInput,
   warnings: string[],
   outputDir: string,
 ): Promise<{ sections: LLDSection[]; docPath: string; racks: RackElevation[] }> {
+  // Step 16 runs first — rack elevations feed the LLD narrative's §17.
+  const step16 = await runStep(16, 'generateRackElevations', () =>
+    generateRackElevations(sizing, topology), logs, input);
+  const racks: RackElevation[] = step16.ok && step16.result ? step16.result : [];
+  if (!step16.ok) warnings.push('Step 16 generateRackElevations failed; emitting empty rack list');
+
   const step14 = await runStep(14, 'generateLLDNarrative', () =>
     generateLLDNarrative({
       topology, sizing, vendor: data.vendor, ipVlanPlan, qosPolicy,
-      migrationApproach, customerName: data.customerName, siteCount: data.siteCount,
+      migrationApproach, cableSchedule, rackElevations: racks,
+      customerName: data.customerName, siteCount: data.siteCount,
     }), logs, input);
   const sections: LLDSection[] = step14.ok && step14.result ? step14.result : [];
   if (!step14.ok) warnings.push('Step 14 generateLLDNarrative failed; emitting empty LLD sections');
@@ -77,11 +85,6 @@ async function runStepsFourteenFifteenSixteen(
     }, docPath), logs, input);
   const resolvedDocPath: string = step15.ok && step15.result ? step15.result : '';
   if (!step15.ok) warnings.push('Step 15 generateLLDDocx failed; no LLD .docx produced');
-
-  const step16 = await runStep(16, 'generateRackElevations', () =>
-    generateRackElevations(sizing, topology), logs, input);
-  const racks: RackElevation[] = step16.ok && step16.result ? step16.result : [];
-  if (!step16.ok) warnings.push('Step 16 generateRackElevations failed; emitting empty rack list');
 
   return { sections, docPath: resolvedDocPath, racks };
 }
@@ -149,7 +152,7 @@ export async function runPhase2(
   while (true) {
     const r = await runStepsFourteenFifteenSixteen(
       data, topology, sizing, ipVlanPlan, qosPolicy, migrationApproach,
-      logs, input, warnings, outputDir,
+      cableSchedule, logs, input, warnings, outputDir,
     );
     sections = r.sections;
     lldDocPath = r.docPath;

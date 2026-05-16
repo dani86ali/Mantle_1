@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
 import type {
   HLDSection,
+  MigrationApproach,
   SizingResult,
   TopologyPattern,
 } from '@/engines/e5/types';
@@ -21,7 +22,7 @@ import {
   DESIGN_PRINCIPLES,
   documentControlSection,
   executiveFallback,
-  migrationPlaceholderSection,
+  migrationSection,
   requirementsFallback,
   resilienceSection,
   risksSection,
@@ -37,6 +38,7 @@ export interface HLDNarrativeInput {
   projectType: string;
   customerName: string;
   designPrinciples?: string[];
+  migrationApproach?: MigrationApproach;
 }
 
 const AISectionSchema = z.object({ content: z.string().min(50) });
@@ -153,7 +155,7 @@ export async function generateHLDNarrative(
       totalPortCount(input.sizing),
       totalUplinkGbps(input.sizing),
     ),
-    migrationPlaceholderSection(),
+    migrationSection(input.migrationApproach),
     risksSection(),
     appendicesSection(input.sizing),
   ];

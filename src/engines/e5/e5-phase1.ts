@@ -8,6 +8,7 @@ import { selectMethodology } from '@/engines/e5/methodology-selector';
 import { recommendTopology } from '@/engines/e5/topology-recommender';
 import { calculateSizing } from '@/engines/e5/sizing-calculator';
 import { validateCompatibility } from '@/engines/e5/compatibility-validator';
+import { selectMigrationApproach } from '@/engines/e5/migration-selector';
 import { generateHLDNarrative } from '@/engines/e5/hld-narrative-generator';
 import { generateHLDDocx } from '@/engines/e5/hld-docx-generator';
 import { generateDiagrams } from '@/engines/e5/diagram-generator';
@@ -18,6 +19,7 @@ import type {
   CompatibilityResult,
   DesignApproach,
   HLDSection,
+  MigrationApproach,
   SizingResult,
   TopologyPattern,
 } from '@/engines/e5/types';
@@ -30,6 +32,7 @@ export interface Phase1Result {
   topology: TopologyPattern;
   sizing: SizingResult;
   compatibility: CompatibilityResult;
+  migrationApproach: MigrationApproach;
   hldSections: HLDSection[];
   hldDocPath: string;
   diagramXml: string;
@@ -78,6 +81,7 @@ async function runStepsFiveSixSeven(
   data: E5InputData,
   topology: TopologyPattern,
   sizing: SizingResult,
+  migrationApproach: MigrationApproach,
   logs: E5StepLog[],
   input: EngineInput,
   warnings: string[],
@@ -86,7 +90,7 @@ async function runStepsFiveSixSeven(
   const step5 = await runStep(5, 'generateHLDNarrative', () =>
     generateHLDNarrative({
       topology, sizing, vendor: data.vendor, projectType: data.projectType,
-      customerName: data.customerName,
+      customerName: data.customerName, migrationApproach,
     }), logs, input);
   const sections: HLDSection[] = step5.ok && step5.result ? step5.result : [];
   if (!step5.ok) warnings.push('Step 5 generateHLDNarrative failed; emitting empty HLD sections');
@@ -154,13 +158,28 @@ export async function runPhase1(
     : { valid: true, errors: [], warnings: [] };
   if (!step4.ok) warnings.push('Step 4 validateCompatibility failed; using empty result');
 
+  // Pre-compute migration approach for HLD §10. Pure function — no runStep
+  // wrapper; the canonical "step 13" entry is logged in phase 2.
+  const totalDevices =
+    sizing.coreDevices.reduce((s, d) => s + d.quantity, 0) +
+    sizing.distributionDevices.reduce((s, d) => s + d.quantity, 0) +
+    sizing.accessDevices.reduce((s, d) => s + d.quantity, 0) +
+    sizing.firewalls.reduce((s, d) => s + d.quantity, 0);
+  const migrationApproach: MigrationApproach = selectMigrationApproach({
+    isGreenfield: !!data.isGreenfield,
+    siteCount: data.siteCount,
+    hasRedundancy: !!data.hasRedundancy,
+    downTimeToleranceHours: data.downTimeToleranceHours ?? 0,
+    deviceCount: totalDevices,
+  });
+
   // Steps 5-7 loop with e5-hld checkpoint.
   let sections: HLDSection[] = [];
   let hldDocPath = '';
   let diagramXml = '';
   let hldRevisions = 0;
   while (true) {
-    const r = await runStepsFiveSixSeven(data, topology, sizing, logs, input, warnings, outputDir);
+    const r = await runStepsFiveSixSeven(data, topology, sizing, migrationApproach, logs, input, warnings, outputDir);
     sections = r.sections;
     hldDocPath = r.docPath;
     diagramXml = r.diagramXml;
@@ -181,6 +200,7 @@ export async function runPhase1(
     topology,
     sizing,
     compatibility,
+    migrationApproach,
     hldSections: sections,
     hldDocPath,
     diagramXml,

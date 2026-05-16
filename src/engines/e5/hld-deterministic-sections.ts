@@ -7,6 +7,7 @@
  */
 import type {
   HLDSection,
+  MigrationApproach,
   SizingResult,
   TopologyPattern,
 } from '@/engines/e5/types';
@@ -124,11 +125,20 @@ export function capacitySection(sizing: SizingResult, portCount: number, bandwid
   };
 }
 
-export function migrationPlaceholderSection(): HLDSection {
+export function migrationSection(approach?: MigrationApproach): HLDSection {
+  const header = { sectionNumber: 10, title: 'Migration Approach' };
+  if (!approach || approach.phases.length === 0) {
+    return { ...header, content: 'Migration approach to be determined during detailed design.' };
+  }
+  const phases = approach.phases.map((p, i) =>
+    `${i + 1}. ${p.name} (${p.durationDays}d) — ${p.description}\n   Rollback: ${p.rollbackPlan}`,
+  ).join('\n');
   return {
-    sectionNumber: 10,
-    title: 'Migration Approach',
-    content: 'See LLD §19 cutover/runbook for detailed phases. Method, risk, and reasoning populated from selectMigrationApproach().',
+    ...header,
+    content:
+      `Method: ${approach.method} (risk: ${approach.riskLevel}).\n` +
+      `Reasoning: ${approach.reasoning}\n\nPhases:\n${phases}\n\n` +
+      'Detailed runbook: see LLD §19.',
   };
 }
 

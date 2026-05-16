@@ -8,13 +8,14 @@
 import { z } from 'zod';
 import { callAI } from '@/lib/ai/client';
 import type {
-  IPVlanPlan, LLDSection, MigrationApproach, QoSPolicy, SizingResult, TopologyPattern,
+  CableScheduleEntry, IPVlanPlan, LLDSection, MigrationApproach,
+  QoSPolicy, RackElevation, SizingResult, TopologyPattern,
 } from '@/engines/e5/types';
 import {
-  acceptanceCriteria, baseConfigs, cableSchedulePlaceholder, cutoverRunbook,
+  acceptanceCriteria, baseConfigs, cableScheduleSection, cutoverRunbook,
   deviceInventory, ipAddressingPlan, lldAppendices, lldDocumentControl,
   lldHldReference, logicalTopology, managementPlane, multicastDesign,
-  physicalTopology, qosDesign, rackElevationsPlaceholder, routingFallback,
+  physicalTopology, qosDesign, rackElevationsSection, routingFallback,
   securityFallbackLLD, testPlan, vlanVrfDesign, wanDesign, wirelessDesign,
 } from '@/engines/e5/lld-deterministic-sections';
 
@@ -25,6 +26,8 @@ export interface LLDNarrativeInput {
   ipVlanPlan: IPVlanPlan;
   qosPolicy: QoSPolicy;
   migrationApproach: MigrationApproach;
+  cableSchedule: CableScheduleEntry[];
+  rackElevations: RackElevation[];
   customerName: string;
   siteCount?: number;
 }
@@ -108,8 +111,8 @@ export async function generateLLDNarrative(
     wanDesign(siteCount),
     managementPlane(),
     baseConfigs(),
-    cableSchedulePlaceholder(),
-    rackElevationsPlaceholder(),
+    cableScheduleSection(input.cableSchedule),
+    rackElevationsSection(input.rackElevations),
     testPlan(),
     cutoverRunbook(input.migrationApproach),
     acceptanceCriteria(),

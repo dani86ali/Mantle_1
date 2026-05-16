@@ -5,7 +5,8 @@
  * Source: Playbook §3.7 (21-section LLD outline). No I/O, no AI calls.
  */
 import type {
-  IPVlanPlan, LLDSection, MigrationApproach, QoSPolicy, SizingResult, TopologyPattern,
+  CableScheduleEntry, IPVlanPlan, LLDSection, MigrationApproach,
+  QoSPolicy, RackElevation, SizingResult, TopologyPattern,
 } from '@/engines/e5/types';
 
 const today = (): string => new Date().toISOString().slice(0, 10);
@@ -116,14 +117,32 @@ export function baseConfigs(): LLDSection {
     content: 'Per-device base configs generated from Jinja templates (engineer-fill prior to staging).' };
 }
 
-export function cableSchedulePlaceholder(): LLDSection {
-  return { sectionNumber: 16, title: 'Cable Schedule',
-    content: 'Cable schedule populated from generateCableSchedule() output.' };
+export function cableScheduleSection(entries: CableScheduleEntry[]): LLDSection {
+  const header = { sectionNumber: 16, title: 'Cable Schedule' };
+  if (entries.length === 0) {
+    return { ...header, content: 'Cable schedule to be populated during site survey.' };
+  }
+  const rows = ['Cable ID | From Device | From Port | To Device | To Port | Type | Length (m)'];
+  for (const c of entries) {
+    rows.push(`${c.cableId} | ${c.fromDevice} | ${c.fromPort} | ${c.toDevice} | ${c.toPort} | ${c.type} | ${c.lengthMeters}`);
+  }
+  return { ...header, content: rows.join('\n') };
 }
 
-export function rackElevationsPlaceholder(): LLDSection {
-  return { sectionNumber: 17, title: 'Rack Elevations',
-    content: 'Rack elevations populated from generateRackElevation() output.' };
+export function rackElevationsSection(racks: RackElevation[]): LLDSection {
+  const header = { sectionNumber: 17, title: 'Rack Elevations' };
+  if (racks.length === 0) {
+    return { ...header, content: 'Rack elevations to be populated during site survey.' };
+  }
+  const blocks: string[] = [];
+  for (const r of racks) {
+    const rows = ['U | Device | Height (U) | Side | Label'];
+    for (const d of r.devices) {
+      rows.push(`${d.startU} | ${d.deviceModel} | ${d.heightU} | ${d.side} | ${d.label}`);
+    }
+    blocks.push(`Rack ${r.rackId} (${r.totalU}U):\n${rows.join('\n')}`);
+  }
+  return { ...header, content: blocks.join('\n\n') };
 }
 
 export function testPlan(): LLDSection {
