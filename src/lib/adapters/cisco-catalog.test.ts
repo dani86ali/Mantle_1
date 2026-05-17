@@ -16,6 +16,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { isPlaceholderSku } from "./catalog-polish";
 
 interface PriceObservation {
   opportunityId: string;
@@ -27,7 +28,10 @@ interface PriceObservation {
 interface CatalogItem {
   sku: string;
   vendor?: string;
+  description?: string;
+  productCategory?: string;
   listPrice: number;
+  bidFrequency?: number;
   priceObservations?: PriceObservation[];
 }
 
@@ -36,6 +40,7 @@ interface CatalogFile {
     workbooksProcessed?: number;
     workbooksSucceeded?: number;
     workbooksFailed?: Array<{ path: string; reason: string }>;
+    workbooksDrainedByPolish?: string[];
   };
   items: Record<string, CatalogItem>;
   errors?: unknown;
@@ -127,12 +132,21 @@ describe("Tier-1 catalog extraction", () => {
       }
     }
 
+    // Workbooks whose only entries were placeholder/junk dropped by the
+    // polish pass count as "logged" (not silent) — they appear in the
+    // polish report and in _metadata.workbooksDrainedByPolish.
+    const drainedSet = new Set(
+      catalog._metadata?.workbooksDrainedByPolish ?? [],
+    );
+
     for (const path of samples) {
       const basename = path.split(/[\\/]/).pop()!;
-      it(`${basename} contributes ≥1 catalog entry (literal spec)`, () => {
+      it(`${basename} contributes ≥1 catalog entry or is logged as polish-drained`, () => {
+        const inObs = basenameInObservations.has(basename);
+        const polished = drainedSet.has(basename);
         expect(
-          basenameInObservations.has(basename),
-          `succeeded TA file "${path}" produced no priceObservations`
+          inObs || polished,
+          `succeeded TA file "${path}" produced no observations and is not in workbooksDrainedByPolish (silent drop)`,
         ).toBe(true);
       });
     }
@@ -157,6 +171,122 @@ describe("Tier-1 catalog extraction", () => {
       const failed = (meta!.workbooksFailed ?? []).length;
       expect(processed).toBeGreaterThan(0);
       expect(succeeded + failed).toBe(processed);
+    });
+  });
+});
+
+// ─── Polish-pass criteria (post catalog-polish.ts transforms) ─────────────
+
+const VENDOR_NOISE_SET = new Set(["Blank", "Giza", "Edwards", ""]);
+const VALID_CATEGORIES = new Set([
+  "hardware",
+  "license",
+  "subscription",
+  "service",
+  "accessory",
+  "software",
+]);
+
+function distinctVendors(c: CatalogFile): string[] {
+  const s = new Set<string>();
+  for (const item of Object.values(c.items)) {
+    if (item.vendor) s.add(item.vendor);
+  }
+  return Array.from(s);
+}
+
+function categoryRatio(c: CatalogFile): Record<string, number> {
+  const cats: Record<string, number> = {};
+  let nonService = 0;
+  for (const item of Object.values(c.items)) {
+    const k = item.productCategory ?? "(none)";
+    cats[k] = (cats[k] || 0) + 1;
+    if (k !== "service") nonService++;
+  }
+  const ratio: Record<string, number> = {};
+  for (const [k, v] of Object.entries(cats)) {
+    ratio[k] = nonService > 0 ? v / nonService : 0;
+  }
+  return ratio;
+}
+
+describe("Tier-1 catalog polish criteria", () => {
+  describe("polish 1: zero placeholder SKUs survive", () => {
+    it("catalog contains no entries matching isPlaceholderSku", () => {
+      const offenders = Object.keys(catalog.items).filter((sku) => {
+        const item = catalog.items[sku];
+        return isPlaceholderSku(sku, item.vendor, item.description);
+      });
+      expect(
+        offenders.length,
+        `placeholder SKUs leaked: ${offenders.slice(0, 5).join(", ")}`,
+      ).toBe(0);
+    });
+  });
+
+  describe("polish 2: vendor normalization", () => {
+    it("at most 50 distinct vendors after canonicalization", () => {
+      expect(distinctVendors(catalog).length).toBeLessThanOrEqual(50);
+    });
+
+    it("no non-vendor strings appear as vendor", () => {
+      const offenders = Object.values(catalog.items).filter(
+        (it) => it.vendor != null && VENDOR_NOISE_SET.has(it.vendor),
+      );
+      expect(offenders.length).toBe(0);
+    });
+  });
+
+  describe("polish 3: category realism (license + subscription ≥ 20% of non-service)", () => {
+    it("combined license+subscription ratio is at least 0.20", () => {
+      const r = categoryRatio(catalog);
+      const combined = (r.license ?? 0) + (r.subscription ?? 0);
+      expect(combined).toBeGreaterThanOrEqual(0.2);
+    });
+  });
+
+  describe("polish 4: named-SKU snapshot still resolves after polish", () => {
+    const targets: Array<[string, number]> = [
+      ["CON-SNT-C9410R", 29773.5],
+      ["C9400-DNA-A-5Y", 25271.85],
+      ["C9400-PWR-2100AC", 2406.84],
+      ["C9400X-SUP-2XL", 28944.3],
+      ["C9400-LC-48XS", 46110.4],
+    ];
+    for (const [sku, expectedPrice] of targets) {
+      it(`${sku} still at ${expectedPrice}`, () => {
+        const item = catalog.items[sku];
+        expect(item, `${sku} dropped by polish`).toBeDefined();
+        expect(Math.abs(item.listPrice - expectedPrice)).toBeLessThan(0.01);
+      });
+    }
+  });
+
+  describe("polish 5: SKU count floor", () => {
+    it("at least 3500 entries survive polish", () => {
+      expect(Object.keys(catalog.items).length).toBeGreaterThanOrEqual(3500);
+    });
+  });
+
+  describe("polish 6: top-10 by bidFrequency are real products", () => {
+    it("all top-10 entries have valid category, non-empty vendor, and not in noise set", () => {
+      const top10 = Object.values(catalog.items)
+        .sort((a, b) => (b.bidFrequency ?? 0) - (a.bidFrequency ?? 0))
+        .slice(0, 10);
+      for (const item of top10) {
+        expect(
+          VALID_CATEGORIES.has(item.productCategory ?? ""),
+          `${item.sku}: invalid category ${item.productCategory}`,
+        ).toBe(true);
+        expect(
+          item.vendor != null && item.vendor !== "",
+          `${item.sku}: empty vendor`,
+        ).toBe(true);
+        expect(
+          VENDOR_NOISE_SET.has(item.vendor ?? ""),
+          `${item.sku}: vendor in noise set: ${item.vendor}`,
+        ).toBe(false);
+      }
     });
   });
 });
