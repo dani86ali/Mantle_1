@@ -1,8 +1,11 @@
 // Tier-1 post-extraction polish — pure transforms.
 // 1. Drop placeholder SKUs (STC BoQ-template leaks).
-// 2. Canonicalize vendor strings.
+// 2. Canonicalize vendor strings (table in _data/vendor-canonical.ts).
 // 3. Re-derive productCategory from SKU shape + keywords.
 // Wired by scripts/polish-catalog-tier1.ts.
+
+import { VENDOR_CANONICAL } from "./_data/vendor-canonical";
+export { VENDOR_CANONICAL };
 
 export type ProductCategory =
   | "hardware"
@@ -33,6 +36,10 @@ const PLACEHOLDER_REGEXES: ReadonlyArray<RegExp> = [
   // had crept into the top-10). Broaden to cover both forms.
   /^MS-(STCS|\d+)$/i,
   /^SVC-\d+$/i,
+  // Pass #3 (Tier 1.1): STCS is STC Solutions' internal code; drop any SKU
+  // prefixed or suffixed with STCS- / -STCS that escaped the narrower regexes.
+  /^STCS-/i,
+  /-STCS$/i,
 ];
 
 const NON_VENDOR_STRINGS = new Set([
@@ -62,67 +69,6 @@ export function isPlaceholderSku(
   if (vendor == null || NON_VENDOR_STRINGS.has(vendor)) return true;
   return false;
 }
-
-// Canonicalization table for known vendor strings.
-// `null` value = not a vendor; downstream substitutes "Unknown".
-// Vendors not in the table pass through; long-tail demote handles the rest.
-export const VENDOR_CANONICAL: Record<string, string | null> = {
-  // ── Non-vendor noise (demoted to Unknown) ──
-  Blank: null,
-  blank: null,
-  Giza: null,
-  Edwards: null,
-  STC: null,
-  // Pass #2 additions: STCS is STC's internal code; Others/Local/0 are
-  // BoQ template placeholders, not real vendors.
-  Others: null,
-  STCS: null,
-  STCs: null,
-  "STCS-UPL": null,
-  Local: null,
-  "0": null,
-
-  // ── Canonical vendor mappings ──
-  CISCO: "Cisco",
-  cisco: "Cisco",
-  HPE: "HPE",
-  hpe: "HPE",
-  FIREEYE: "FireEye",
-  fireeye: "FireEye",
-  FORTINET: "Fortinet",
-  fortinet: "Fortinet",
-  Microsoft: "Microsoft",
-  MICROSOFT: "Microsoft",
-  PaloAlto: "Palo Alto Networks",
-  "Palo Alto": "Palo Alto Networks",
-  "PALO ALTO": "Palo Alto Networks",
-  PaloAltoNetworks: "Palo Alto Networks",
-  "Palo Alto Networks": "Palo Alto Networks",
-
-  // Pass #2: case collapses (variants observed in the post-pass-#1 catalog).
-  XFUSION: "xFusion",
-  Xfusion: "xFusion",
-  xfusion: "xFusion",
-  POLY: "Poly",
-  Polycom: "Poly",
-  polycom: "Poly",
-  SYSTIMAX: "Systimax",
-  HIKVISION: "Hikvision",
-  LENSEC: "Lensec",
-  MOBOTIX: "Mobotix",
-  AXIS: "Axis",
-  ATTIVO: "Attivo",
-  GAMMA: "Gamma",
-  ADVANTECH: "Advantech",
-
-  // Pass #2: multi-word / spelling normalizations.
-  Comscope: "CommScope",
-  CRAY: "Cray",
-  RIBBON: "Ribbon",
-  NTTdata: "NTT Data",
-  "Symantec Corporation": "Symantec",
-  CONTEG: "Conteg",
-};
 
 // Maps raw vendor through the canonical table.
 // Returns null for explicitly-blocked non-vendor strings (caller substitutes
