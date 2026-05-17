@@ -294,4 +294,24 @@ describe("Tier-1 catalog polish criteria", () => {
       }
     });
   });
+
+  describe("polish 7: STCS-prefixed/suffixed remnants are dropped", () => {
+    it("no SKU matches ^STCS- or -STCS$ (case-insensitive)", () => {
+      const offenders = Object.keys(catalog.items).filter((sku) =>
+        /^STCS-|-STCS$/i.test(sku),
+      );
+      expect(
+        offenders.length,
+        `STCS remnants leaked: ${offenders.slice(0, 5).join(", ")}`,
+      ).toBe(0);
+    });
+  });
+
+  describe("polish 8: catalog-polish.ts size budget", () => {
+    it("catalog-polish.ts is within CLAUDE.md 200-LOC budget", () => {
+      const path = join(__dirname, "catalog-polish.ts");
+      const lines = readFileSync(path, "utf-8").split("\n").length;
+      expect(lines, `catalog-polish.ts is ${lines} LOC`).toBeLessThanOrEqual(200);
+    });
+  });
 });
