@@ -104,37 +104,36 @@ describe("Tier-1 catalog extraction", () => {
       return paths;
     }
 
-    const taPaths = loadTAPaths();
-    expect(taPaths.length).toBeGreaterThan(100); // sanity check inventory parsed
-
-    // Deterministic sample: every Nth file, 5 files total
-    const step = Math.max(1, Math.floor(taPaths.length / 5));
-    const samples = [0, 1, 2, 3, 4].map((i) => taPaths[i * step]);
+    const allTAPaths = loadTAPaths();
+    expect(allTAPaths.length).toBeGreaterThan(100); // sanity check inventory parsed
 
     const failedSet = new Set(
       (catalog._metadata?.workbooksFailed ?? []).map((f) => f.path)
     );
+    // Succeeded ≡ TA path NOT in failed list (extractor invariant: succeeded ⇒ ≥1 entry)
+    const succeededTAPaths = allTAPaths.filter((p) => !failedSet.has(p));
+    expect(succeededTAPaths.length).toBeGreaterThan(50);
 
-    // Precompute basenames → matching items index
+    // Deterministic sample of 5 succeeded files
+    const step = Math.max(1, Math.floor(succeededTAPaths.length / 5));
+    const samples = [0, 1, 2, 3, 4].map((i) => succeededTAPaths[i * step]);
+
+    // Precompute basenames present in any item's priceObservations
     const basenameInObservations = new Set<string>();
     for (const item of Object.values(catalog.items)) {
       for (const obs of item.priceObservations ?? []) {
-        // source is "TA <basename>" or "CCW <basename>"
         const match = obs.source.match(/^(?:TA|CCW)\s+(.+)$/);
         if (match) basenameInObservations.add(match[1]);
       }
     }
 
     for (const path of samples) {
-      it(`${path.split(/[\\/]/).pop()} is accounted for`, () => {
-        const basename = path.split(/[\\/]/).pop()!;
-        const hasObservation = basenameInObservations.has(basename);
-        const isLoggedFailure = failedSet.has(path);
-        if (!hasObservation && !isLoggedFailure) {
-          throw new Error(
-            `Silent drop: file "${path}" produced no observations AND is not in workbooksFailed`
-          );
-        }
+      const basename = path.split(/[\\/]/).pop()!;
+      it(`${basename} contributes ≥1 catalog entry (literal spec)`, () => {
+        expect(
+          basenameInObservations.has(basename),
+          `succeeded TA file "${path}" produced no priceObservations`
+        ).toBe(true);
       });
     }
   });
