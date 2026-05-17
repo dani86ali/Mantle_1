@@ -1,14 +1,8 @@
-/**
- * Catalog Tier-1 post-extraction polish — pure transforms.
- *
- * Three concerns:
- *   1. Drop placeholder/junk SKUs that leaked from STC's BoQ templates.
- *   2. Canonicalize vendor strings (case variants, drop non-vendor words).
- *   3. Re-derive productCategory from SKU shape + description keywords.
- *
- * Functions are pure and unit-testable. Wired together by
- * scripts/polish-catalog-tier1.ts.
- */
+// Tier-1 post-extraction polish — pure transforms.
+// 1. Drop placeholder SKUs (STC BoQ-template leaks).
+// 2. Canonicalize vendor strings.
+// 3. Re-derive productCategory from SKU shape + keywords.
+// Wired by scripts/polish-catalog-tier1.ts.
 
 export type ProductCategory =
   | "hardware"
@@ -35,7 +29,9 @@ const PLACEHOLDER_REGEXES: ReadonlyArray<RegExp> = [
   /^PS-/i,
   /^EXC-\d/i,
   /^TSS-?\d/i,
-  /^MS-\d+$/i,
+  // Pass #2: `^MS-\d+$` missed `MS-STCS` (the only STCS-prefixed entry that
+  // had crept into the top-10). Broaden to cover both forms.
+  /^MS-(STCS|\d+)$/i,
   /^SVC-\d+$/i,
 ];
 
@@ -45,14 +41,10 @@ const NON_VENDOR_STRINGS = new Set([
   "",
 ]);
 
-/**
- * Is this SKU a placeholder / non-product entry that should be dropped?
- *
- * Anchored, case-insensitive matches against known STC-internal markers
- * plus structural sanity checks (length, whitespace, description-equals-sku).
- * Conservative on real Cisco SKUs — note `^PM-STCS` is anchored to the
- * STCS suffix to avoid culling legitimate Cisco PM* part numbers.
- */
+// True when SKU is a placeholder / non-product entry that should be dropped.
+// Anchored, case-insensitive matches against STC-internal markers plus
+// structural sanity checks. `^PM-STCS` is anchored to avoid culling
+// legitimate Cisco PM* part numbers.
 export function isPlaceholderSku(
   sku: string | undefined | null,
   vendor?: string | null,
@@ -71,19 +63,26 @@ export function isPlaceholderSku(
   return false;
 }
 
-/**
- * Canonicalization table for known vendor strings.
- *
- * `null` value = "this string is not a vendor; demote downstream to Unknown".
- * Vendors not present in the table pass through unchanged at this layer;
- * the long-tail demote rule in normalizeVendor() handles the remainder.
- */
+// Canonicalization table for known vendor strings.
+// `null` value = not a vendor; downstream substitutes "Unknown".
+// Vendors not in the table pass through; long-tail demote handles the rest.
 export const VENDOR_CANONICAL: Record<string, string | null> = {
+  // ── Non-vendor noise (demoted to Unknown) ──
   Blank: null,
   blank: null,
   Giza: null,
   Edwards: null,
   STC: null,
+  // Pass #2 additions: STCS is STC's internal code; Others/Local/0 are
+  // BoQ template placeholders, not real vendors.
+  Others: null,
+  STCS: null,
+  STCs: null,
+  "STCS-UPL": null,
+  Local: null,
+  "0": null,
+
+  // ── Canonical vendor mappings ──
   CISCO: "Cisco",
   cisco: "Cisco",
   HPE: "HPE",
@@ -99,26 +98,45 @@ export const VENDOR_CANONICAL: Record<string, string | null> = {
   "PALO ALTO": "Palo Alto Networks",
   PaloAltoNetworks: "Palo Alto Networks",
   "Palo Alto Networks": "Palo Alto Networks",
+
+  // Pass #2: case collapses (variants observed in the post-pass-#1 catalog).
+  XFUSION: "xFusion",
+  Xfusion: "xFusion",
+  xfusion: "xFusion",
+  POLY: "Poly",
+  Polycom: "Poly",
+  polycom: "Poly",
+  SYSTIMAX: "Systimax",
+  HIKVISION: "Hikvision",
+  LENSEC: "Lensec",
+  MOBOTIX: "Mobotix",
+  AXIS: "Axis",
+  ATTIVO: "Attivo",
+  GAMMA: "Gamma",
+  ADVANTECH: "Advantech",
+
+  // Pass #2: multi-word / spelling normalizations.
+  Comscope: "CommScope",
+  CRAY: "Cray",
+  RIBBON: "Ribbon",
+  NTTdata: "NTT Data",
+  "Symantec Corporation": "Symantec",
+  CONTEG: "Conteg",
 };
 
-/**
- * Map a raw vendor string through the canonical table.
- * Returns null for explicitly-blocked non-vendor strings (caller should
- * substitute "Unknown"). Returns the input unchanged when not in the table.
- */
+// Maps raw vendor through the canonical table.
+// Returns null for explicitly-blocked non-vendor strings (caller substitutes
+// "Unknown"). Returns input unchanged when not in the table.
 export function normalizeVendor(raw: string | null | undefined): string | null {
   if (raw == null) return null;
   if (raw in VENDOR_CANONICAL) return VENDOR_CANONICAL[raw];
   return raw;
 }
 
-/**
- * Re-derive productCategory from SKU shape and description keywords.
- *
- * Rule chain — first match wins. Ordering is load-bearing:
- *   service → subscription (year-suffixed) → license (no year) →
- *   software → accessory → hardware → fall-through.
- */
+// Re-derive productCategory from SKU shape + description keywords.
+// First match wins; ordering is load-bearing:
+// service → subscription (year-suffixed) → license (no year) →
+// software → accessory → hardware → fall-through.
 export function inferCategory(
   sku: string,
   description: string,

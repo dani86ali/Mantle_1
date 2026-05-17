@@ -19,7 +19,11 @@ import {
 
 const CATALOG_PATH = "src/lib/adapters/_mock-data/catalog-responses.json";
 const REPORT_DIR = "../bomatic_planning/polish-reports";
-const LONG_TAIL_MIN_OCCURRENCES = 3;
+// Pass #2: raised from 3 to 8. Transform 1 (vendor canonicalization) alone
+// projected ~80 distinct vendors; spec requires ≤50. At threshold=8 the
+// long tail demotes to ~42, comfortably under the cap. SKU count is not
+// affected — demote relabels vendor to "Unknown", does not drop entries.
+const LONG_TAIL_MIN_OCCURRENCES = 8;
 
 interface CatalogItem {
   sku: string;
@@ -53,7 +57,7 @@ function dropReason(item: CatalogItem): string | null {
   if (/^PS-/i.test(sku)) return "regex:PS-";
   if (/^EXC-\d/i.test(sku)) return "regex:EXC-N";
   if (/^TSS-?\d/i.test(sku)) return "regex:TSS-N";
-  if (/^MS-\d+$/i.test(sku)) return "regex:MS-N";
+  if (/^MS-(STCS|\d+)$/i.test(sku)) return "regex:MS-N";
   if (/^SVC-\d+$/i.test(sku)) return "regex:SVC-N";
   if (sku.length > 30) return "sku-too-long";
   if (sku.includes(" ")) return "sku-has-space";
@@ -174,9 +178,17 @@ function main(): void {
       if (m) sourcesAfter.add(m[1]);
     }
   }
-  const drainedByPolish = Array.from(sourcesBefore)
-    .filter((s) => !sourcesAfter.has(s))
-    .sort();
+  // Union with any drained set from prior polish passes — pass N's
+  // "before" snapshot has already lost workbooks pass N-1 drained, so
+  // overwriting would silently lose that history.
+  const priorDrained = ((catalog._metadata as Record<string, unknown>)
+    ?.workbooksDrainedByPolish ?? []) as string[];
+  const drainedByPolish = Array.from(
+    new Set([
+      ...priorDrained,
+      ...Array.from(sourcesBefore).filter((s) => !sourcesAfter.has(s)),
+    ]),
+  ).sort();
 
   const newItems: Record<string, CatalogItem> = {};
   for (const it of polished) newItems[it.sku] = it;
@@ -232,10 +244,10 @@ function main(): void {
         .slice(0, 20) as Array<[string, number]>,
     ) || "  (none)",
     "",
-    "### Long-tail demoted to Unknown (vendors with <3 occurrences)",
+    `### Long-tail demoted to Unknown (vendors with <${LONG_TAIL_MIN_OCCURRENCES} occurrences)`,
     fmtTable([["Distinct vendor strings demoted", Object.keys(longTailDemoted).length]]),
     "",
-    "### Unmapped vendors with ≥3 occurrences (extend canonical table next pass)",
+    `### Unmapped vendors with ≥${LONG_TAIL_MIN_OCCURRENCES} occurrences (extend canonical table next pass)`,
     fmtTable(unmappedFrequent.slice(0, 80) as Array<[string, number]>) ||
       "  (none)",
     "",
