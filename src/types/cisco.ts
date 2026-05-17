@@ -48,8 +48,38 @@ export interface CiscoCatalogItem {
   smartAccountMandatory: boolean;
   productFamily: string;
   productCategory: string;
-  serviceDurationMonths?: number;
+  serviceDurationMonths?: number | null;
   specs?: CiscoCatalogSpecs;
+  // ─── Tier-1 catalog extraction extensions (optional) ────────────────
+  vendor?: string;
+  unit?: string;
+  supplier?: string | null;
+  supplierDiscountPercent?: number | null;
+  marginTargetPercent?: number | null;
+  otcMrc?: string | null;
+  leadTimeHint?: string | null;
+  l1Code?: string | null;
+  l2Code?: string | null;
+  l3Code?: string | null;
+  bidFrequency?: number;
+  priceObservations?: CiscoPriceObservation[];
+  priceDrift?: CiscoPriceDriftStats;
+  source?: string;
+}
+
+export interface CiscoPriceObservation {
+  opportunityId: string;
+  listPrice: number;
+  observedAt: string;
+  source: string;
+}
+
+export interface CiscoPriceDriftStats {
+  min: number;
+  median: number;
+  max: number;
+  stdev: number;
+  suspectedFxBug?: boolean;
 }
 
 export interface CiscoCatalogSpecs {
