@@ -12,6 +12,9 @@ export interface ProposalPageData {
   tiers: PricingTier[];
   projectName: string;
   validityDays: number;
+  /** Set when the pipeline skipped E3 (e.g. missing pricingConfig). Surfaces
+   *  the dispatcher's reason so the operator knows why no proposal exists. */
+  skipReason: string | null;
 }
 
 export function toProposalData(json: ApiResponse, fallbackId: string): ProposalPageData {
@@ -21,6 +24,7 @@ export function toProposalData(json: ApiResponse, fallbackId: string): ProposalP
   const tiersRaw = e3?.tiers as { tiers?: PricingTier[] } | PricingTier[] | undefined;
   const tiers = Array.isArray(tiersRaw) ? tiersRaw : (tiersRaw?.tiers ?? []);
   const reqJson = (json.estimate as Record<string, unknown>).requirementsJson as Record<string, unknown> | undefined;
+  const skipReason = typeof e3?.skipReason === "string" ? e3.skipReason : null;
   return {
     hub,
     pipelineId: json.pipeline?.id ?? null,
@@ -28,5 +32,6 @@ export function toProposalData(json: ApiResponse, fallbackId: string): ProposalP
     tiers,
     projectName: (reqJson?.projectName as string) ?? hub.customerName,
     validityDays: (reqJson?.validityDays as number | undefined) ?? DEFAULT_VALIDITY_DAYS,
+    skipReason,
   };
 }

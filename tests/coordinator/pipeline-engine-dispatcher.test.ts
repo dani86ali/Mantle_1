@@ -40,11 +40,13 @@ vi.mock('@/lib/adapters/catalog', () => ({
 }));
 
 import { runE2 } from '@/engines/e2/orchestrator';
-import { runE2Stage } from '@/coordinator/pipeline-engine-dispatcher';
+import { runE3 } from '@/engines/e3/orchestrator';
+import { runE2Stage, runE3Stage } from '@/coordinator/pipeline-engine-dispatcher';
 import { createInitialState } from '@/coordinator/pipeline-state';
 import type { PipelineInput, PipelineResult } from '@/coordinator/pipeline-types';
 import type { E1Output } from '@/engines/e1/orchestrator';
 import type { E2Output } from '@/engines/e2/orchestrator';
+import type { E3Output } from '@/engines/e3/orchestrator';
 
 const mockRunE2 = vi.mocked(runE2);
 
@@ -148,5 +150,62 @@ describe('runE2Stage — BoQ-driven pricing (RFP mode)', () => {
 
     const passed = mockRunE2.mock.calls[0][0];
     expect(passed.listPrices).toEqual({});
+  });
+});
+
+describe('runE3Stage — skip surfaces as artifact, not silent', () => {
+  const mockRunE3 = vi.mocked(runE3);
+
+  beforeEach(() => {
+    mockRunE3.mockReset();
+  });
+
+  it('sets skipReason on artifacts.e3 when pricingConfig is missing', async () => {
+    const input: PipelineInput = {
+      opportunityId: 'opp-no-pricing',
+      tenantId: 'tenant-x',
+      mode: 'rfp',
+    };
+    const state = createInitialState(input.opportunityId, input.mode);
+    const e2 = {} as E2Output;
+
+    const result = await runE3Stage(input, state, undefined, e2);
+
+    expect(result).toBeUndefined();
+    expect(state.artifacts.e3.skipReason).toBeTypeOf('string');
+    expect(state.artifacts.e3.skipReason).toContain('pricingConfig');
+    expect(mockRunE3).not.toHaveBeenCalled();
+  });
+
+  it('sets skipReason when E2 output is missing', async () => {
+    const input: PipelineInput = {
+      opportunityId: 'opp-no-e2',
+      tenantId: 'tenant-x',
+      mode: 'rfp',
+      pricingConfig: PRICING,
+    };
+    const state = createInitialState(input.opportunityId, input.mode);
+
+    const result = await runE3Stage(input, state, undefined, undefined);
+
+    expect(result).toBeUndefined();
+    expect(state.artifacts.e3.skipReason).toBeTypeOf('string');
+    expect(state.artifacts.e3.skipReason).toContain('E2');
+    expect(mockRunE3).not.toHaveBeenCalled();
+  });
+
+  it('mentions both inputs when both are missing', async () => {
+    const input: PipelineInput = {
+      opportunityId: 'opp-nothing',
+      tenantId: 'tenant-x',
+      mode: 'rfp',
+    };
+    const state = createInitialState(input.opportunityId, input.mode);
+
+    const result = await runE3Stage(input, state, undefined, undefined);
+
+    expect(result).toBeUndefined();
+    expect(state.artifacts.e3.skipReason).toContain('E2');
+    expect(state.artifacts.e3.skipReason).toContain('pricingConfig');
   });
 });

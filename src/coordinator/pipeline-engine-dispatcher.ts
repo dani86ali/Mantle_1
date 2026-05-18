@@ -108,7 +108,7 @@ export async function runE2Stage(
   state.artifacts.e2 = toE2Artifacts(out.e2Output, boqFilePath);
 }
 
-async function runE3Stage(
+export async function runE3Stage(
   input: PipelineInput, state: PipelineState,
   e1?: E1Output, e2?: E2Output,
 ): Promise<E3Output | undefined> {

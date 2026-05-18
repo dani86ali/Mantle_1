@@ -154,6 +154,22 @@ export default function ProposalReviewPage() {
           </div>
         )}
 
+        {data.skipReason && (
+          <div className="border-b border-[var(--border)] px-4 py-3 sm:px-6">
+            <div
+              role="alert"
+              data-testid="proposal-skip-banner"
+              className="rounded-card border border-destructive/30 bg-destructive-muted p-3 text-sm"
+            >
+              <p className="font-medium text-destructive">Proposal generation was skipped</p>
+              <p className="mt-1 text-destructive/90">{data.skipReason}</p>
+              <p className="mt-2 text-xs text-text-tertiary">
+                Provide the missing inputs and re-run the pipeline to generate the proposal.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-1 overflow-hidden pb-20">
           <ProposalSidebar
             selectedSection={selectedSection}
