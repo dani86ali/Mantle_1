@@ -102,12 +102,19 @@ describe('E1 Real File Integration', () => {
   );
 
   it(
-    'Test 3 — XLSX flows through E1 without extraction',
+    'Test 3 — XLSX extraction feeds E1',
     async () => {
       const input: E1InputFile = { path: FIXTURE_XLSX };
+      const enriched = await enrichFileContent([input]);
+
+      expect(enriched.files).toHaveLength(1);
+      const [file] = enriched.files;
+      expect(typeof file.content).toBe('string');
+      expect((file.content ?? '').length).toBeGreaterThan(0);
+      expect(file.content).toContain('--- Sheet:');
 
       const out = await runE1({
-        files: [input],
+        files: enriched.files,
         clientName: 'Saudi Aramco',
         country: 'SA',
       });
@@ -134,8 +141,9 @@ describe('E1 Real File Integration', () => {
       const byPath = new Map(enriched.files.map((f) => [f.path, f]));
       expect((byPath.get(FIXTURE_PDF)?.content ?? '').length).toBeGreaterThan(0);
       expect((byPath.get(FIXTURE_DOCX)?.content ?? '').length).toBeGreaterThan(0);
-      // XLSX is passthrough — enrichFileContent does not populate content for it.
-      expect(byPath.get(FIXTURE_XLSX)?.content).toBeUndefined();
+      // XLSX is now extracted via readExcelFile and flattened into a sheet-tagged blob.
+      expect((byPath.get(FIXTURE_XLSX)?.content ?? '').length).toBeGreaterThan(0);
+      expect(byPath.get(FIXTURE_XLSX)?.content).toContain('--- Sheet:');
 
       const out = await runE1({
         files: enriched.files,
