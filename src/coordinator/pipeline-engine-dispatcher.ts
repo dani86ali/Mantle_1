@@ -16,7 +16,7 @@ import { runE4 } from '@/engines/e4/orchestrator';
 import { runE5 } from '@/engines/e5/orchestrator';
 import { buildE1Input, toE1Artifacts } from '@/coordinator/pipeline-e1';
 import { buildE2Input, resolveE2Devices, selectBoQFilePath, toE2Artifacts } from '@/coordinator/pipeline-e2';
-import { collectCiscoSkus, loadListPrices } from '@/coordinator/pipeline-e2-pricing';
+import { collectCiscoSkus, extractBoqSkus, loadListPrices } from '@/coordinator/pipeline-e2-pricing';
 import { buildDeviceConfig, parseBomFromUploadedFiles } from '@/coordinator/intake-to-e2';
 import {
   buildE3Input, resolveOutputDir, syntheticE1ForRfi, toE3Artifacts,
@@ -57,7 +57,7 @@ export async function runEngine(
   }
 }
 
-async function runE2Stage(
+export async function runE2Stage(
   input: PipelineInput, state: PipelineState, out: PipelineResult,
 ): Promise<void> {
   const deviceConfigOverrides = buildDeviceConfig({
@@ -87,7 +87,14 @@ async function runE2Stage(
   const resolvedDevices = resolveE2Devices(e2BuildInput, state.artifacts.e5);
   let listPrices: Record<string, number> | undefined;
   if (input.tenantId) {
-    const skus = collectCiscoSkus(resolvedDevices);
+    const deviceSkus = collectCiscoSkus(resolvedDevices);
+    let boqSkus: string[] = [];
+    if (input.mode === 'rfp' && boqFilePath) {
+      boqSkus = await extractBoqSkus(boqFilePath);
+      logEvent(state, 'e2', 'info', 'engine_call',
+        `Loaded ${boqSkus.length} SKU(s) from BoQ workbook for pricing`);
+    }
+    const skus = Array.from(new Set([...deviceSkus, ...boqSkus]));
     const priced = await loadListPrices(skus, input.tenantId);
     listPrices = priced.listPrices;
     for (const w of priced.warnings) {

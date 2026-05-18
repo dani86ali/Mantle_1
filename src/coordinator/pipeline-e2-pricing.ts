@@ -15,6 +15,14 @@ import { db } from "@/lib/db/index";
 import { tenantCredentials, tenants } from "@/lib/db/schema";
 import { getItems } from "@/lib/adapters/catalog";
 import type { E2Device } from "@/engines/e2/orchestrator";
+import { detectBoQType } from "@/engines/e2/boq-detector";
+import { readExcelFile } from "@/lib/io/excel-reader";
+import { parseTypeA } from "@/engines/e2/parsers/type-a-ariba";
+import { parseTypeB } from "@/engines/e2/parsers/type-b-nrm2";
+import { parseTypeC } from "@/engines/e2/parsers/type-c-vendor-quote";
+import { parseTypeD } from "@/engines/e2/parsers/type-d-bom";
+import { parseTypeE } from "@/engines/e2/parsers/type-e-telecom";
+import { BoQType, type BoQLineItem } from "@/engines/e2/boq-types";
 
 const DEFAULT_PRICE_LIST_ID = "Global Price List Emerging (USD)";
 
@@ -32,6 +40,44 @@ export function collectCiscoSkus(devices: E2Device[] | undefined): string[] {
     if (d.model) set.add(d.model);
   }
   return Array.from(set);
+}
+
+function parseByType(
+  type: BoQType,
+  sheets: Record<string, string[][]>,
+): BoQLineItem[] {
+  switch (type) {
+    case BoQType.TYPE_A_ARIBA: return parseTypeA(sheets);
+    case BoQType.TYPE_B_NRM2: return parseTypeB(sheets, "base");
+    case BoQType.TYPE_B_NRM2_ADDOMMIT: return parseTypeB(sheets, "addommit");
+    case BoQType.TYPE_C_VENDOR_QUOTE: return parseTypeC(sheets);
+    case BoQType.TYPE_D_BOM_NO_PRICE: return parseTypeD(sheets);
+    case BoQType.TYPE_E_TELECOM: return parseTypeE(sheets);
+    default: return [];
+  }
+}
+
+// Parsers populate partNumber only for Type A (regex-extracted from
+// description) and Type D (column B). Type B/C/E never set partNumber, so
+// those workbooks yield [] here even when detection succeeds.
+export async function extractBoqSkus(filePath: string): Promise<string[]> {
+  try {
+    const excel = readExcelFile(filePath);
+    const firstSheet = excel.sheets[excel.sheetNames[0]] ?? [];
+    const type = detectBoQType(
+      excel.sheetNames, excel.fileName, firstSheet.slice(0, 5),
+    );
+    if (type === BoQType.TYPE_UNKNOWN) return [];
+    const lines = parseByType(type, excel.sheets);
+    const set = new Set<string>();
+    for (const l of lines) {
+      const sku = l.partNumber?.trim();
+      if (sku) set.add(sku);
+    }
+    return Array.from(set);
+  } catch {
+    return [];
+  }
 }
 
 export async function loadListPrices(
