@@ -8,13 +8,14 @@ import type { E2Output, E2Input } from '@/engines/e2/orchestrator';
 import type { E3Output } from '@/engines/e3/orchestrator';
 import type { CheckpointCallback } from '@/coordinator/pipeline-state';
 import type { EngineOutput, IntakeMode, PipelineState } from '@/coordinator/types';
+import type { DocumentType } from '@/types/document-type';
 
 export interface PipelineInput {
   opportunityId: string;
   /** Tenant scope for catalog credentials + price list lookup. */
   tenantId?: string;
   mode: IntakeMode;
-  files?: { path: string; content?: string }[];
+  files?: { path: string; content?: string; documentType?: DocumentType }[];
   devices?: E2Input['devices'];
   pricingConfig?: E2Input['pricingConfig'];
   clientName?: string;

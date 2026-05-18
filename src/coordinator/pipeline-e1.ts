@@ -2,9 +2,10 @@
 
 import type { E1Input, E1Output } from '@/engines/e1/orchestrator';
 import type { ArtifactRegistry } from '@/coordinator/types';
+import type { DocumentType } from '@/types/document-type';
 
 export interface E1BuildInput {
-  files?: { path: string; content?: string }[];
+  files?: { path: string; content?: string; documentType?: DocumentType }[];
   clientName?: string;
   country?: string;
   solutionContext?: string;
