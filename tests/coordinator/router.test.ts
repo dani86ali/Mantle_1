@@ -21,8 +21,8 @@ function makePipelineState(overrides: Partial<PipelineState> = {}): PipelineStat
 }
 
 describe('getEngineSequence', () => {
-  it('returns correct RFP sequence', () => {
-    expect(getEngineSequence('rfp')).toEqual(['e1', 'e2', 'e3']);
+  it('returns correct RFP sequence (E5 between E1 and E2)', () => {
+    expect(getEngineSequence('rfp')).toEqual(['e1', 'e5', 'e2', 'e3']);
   });
 
   it('returns correct RFI sequence', () => {
@@ -46,7 +46,7 @@ describe('getNextEngine', () => {
       mode: 'rfp',
       artifacts: makeArtifacts({ e1: { sector: 'telecom' } }),
     });
-    expect(getNextEngine(state)).toBe('e2');
+    expect(getNextEngine(state)).toBe('e5');
   });
 
   it('skips multiple completed engines (rfp)', () => {
@@ -54,6 +54,7 @@ describe('getNextEngine', () => {
       mode: 'rfp',
       artifacts: makeArtifacts({
         e1: { sector: 'telecom' },
+        e5: { componentList: '[]' },
         e2: { pricingSummary: 's3://bucket/pricing.json' },
       }),
     });
@@ -84,6 +85,7 @@ describe('getNextEngine', () => {
       mode: 'rfp',
       artifacts: makeArtifacts({
         e1: { sector: 'telecom' },
+        e5: { componentList: '[]' },
         e2: { pricingSummary: 's3://bucket/pricing.json' },
         e3: { submissionPdf: 's3://bucket/submission.pdf' },
       }),

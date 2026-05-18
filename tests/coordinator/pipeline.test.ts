@@ -10,6 +10,13 @@ vi.mock('@/engines/e2/orchestrator', () => ({
 vi.mock('@/engines/e3/orchestrator', () => ({
   runE3: vi.fn(),
 }));
+vi.mock('@/engines/e5/orchestrator', () => ({
+  runE5: vi.fn(async () => ({
+    engine: 'e5',
+    artifacts: { componentList: '[]', designSummary: '{}' },
+    warnings: [],
+  })),
+}));
 // The new pause/resume path persists state mid-run; tests don't run against a
 // real DB, so make persistence a no-op.
 vi.mock('@/lib/db/pipeline-store', () => ({
@@ -162,11 +169,12 @@ describe('runPipeline', () => {
 
     const result = await runPipeline(baseInput({ onCheckpoint }));
 
-    // onCheckpoint runs once per engine (e1, e2, e3) in RFP sequence; each
-    // engine creates its own set of checkpoint records.
-    expect(onCheckpoint).toHaveBeenCalledTimes(3);
+    // onCheckpoint runs once per engine in the sequence (e1, e5, e2, e3 in
+    // RFP mode); each engine creates its own set of checkpoint records.
+    expect(onCheckpoint).toHaveBeenCalledTimes(4);
     expect(result.state.checkpoints.map((c) => c.id)).toEqual([
       'e1-requirements', 'e1-compliance',
+      'e5-design-approach', 'e5-hld', 'e5-lld',
       'e2-sku-confirmation', 'e2-pricing-review',
       'e3-proposal',
     ]);
@@ -241,7 +249,7 @@ describe('runPipeline', () => {
   it('engineCalls records each engine in the sequence', async () => {
     const result = await runPipeline(baseInput());
     const engines = result.state.engineCalls.map((c) => c.engine);
-    expect(engines).toEqual(['e1', 'e2', 'e3']);
+    expect(engines).toEqual(['e1', 'e5', 'e2', 'e3']);
     expect(result.state.engineCalls.every((c) => c.completedAt !== undefined)).toBe(true);
   });
 

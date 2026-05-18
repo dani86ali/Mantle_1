@@ -10,8 +10,11 @@ import { join } from 'node:path';
 import type {
   E4Artifacts, E5Artifacts, EngineInput, EngineOutput, PipelineState,
 } from '@/coordinator/types';
+import type { E1Output } from '@/engines/e1/orchestrator';
+import type { Requirement } from '@/engines/e1/requirements-extractor';
 import {
   RequirementsBaselineSchema,
+  type BaselineEntry,
   type E5InputData,
   type RequirementsBaseline,
 } from '@/engines/e5/orchestrator-types';
@@ -121,4 +124,65 @@ export function buildE5Input(
 
 export function toE5Artifacts(out: EngineOutput<'e5'>): E5Artifacts {
   return { ...out.artifacts };
+}
+
+// ─── RFP-mode synthesis ─────────────────────────────────────────────────
+// In RFP mode E4 never runs, so E5 has no questionnaire baseline. Synthesise
+// one from E1's requirements: keep the mandatory ones plus anything that
+// references a technical standard (those are de-facto technical requirements),
+// then bucket each into the five RequirementsBaseline categories the E5
+// orchestrator expects.
+
+const CONSTRAINT_KEYWORDS = /\b(shall\s+not|must\s+not|prohibited|forbidden|restriction|restricted|disqualif)\b/i;
+const ASSUMPTION_KEYWORDS = /\b(assume|assumption|assumed|provided\s+that|given\s+that)\b/i;
+const NONFUNCTIONAL_KEYWORDS = /\b(performance|scalab|availab|reliab|secur|latency|throughput|uptime|recovery|sla|response\s+time|redundan|capacity)\b/i;
+const BUSINESS_KEYWORDS = /\b(budget|cost|pricing|roi|warranty|contract|schedule|timeline|milestone|invoice|payment|delivery|iktva|saudization)\b/i;
+
+type BaselineCategory = Exclude<keyof RequirementsBaseline, never>;
+
+function categoriseRequirement(text: string): BaselineCategory {
+  if (CONSTRAINT_KEYWORDS.test(text)) return 'constraints';
+  if (ASSUMPTION_KEYWORDS.test(text)) return 'assumptions';
+  if (NONFUNCTIONAL_KEYWORDS.test(text)) return 'nonFunctional';
+  if (BUSINESS_KEYWORDS.test(text)) return 'business';
+  return 'functional';
+}
+
+function toBaselineEntry(r: Requirement): BaselineEntry {
+  return {
+    id: r.id,
+    text: r.text,
+    priority: r.classification,
+    source: r.sourceFile,
+    confidence: r.confidence,
+  };
+}
+
+function isTechnical(r: Requirement): boolean {
+  return r.relatedStandards.length > 0;
+}
+
+export function baselineFromE1(e1: E1Output): RequirementsBaseline {
+  const baseline: Record<BaselineCategory, BaselineEntry[]> = {
+    business: [], functional: [], nonFunctional: [], constraints: [], assumptions: [],
+  };
+  const filtered = e1.requirements.filter(
+    (r) => r.classification === 'mandatory' || isTechnical(r),
+  );
+  for (const r of filtered) {
+    baseline[categoriseRequirement(r.text)].push(toBaselineEntry(r));
+  }
+  return baseline;
+}
+
+export function synthesizeE5InputFromE1(
+  e1: E1Output,
+  input: E5BuildInput,
+  state: PipelineState,
+  outputDir: string,
+): EngineInput<E5InputData> {
+  const stub: E4Artifacts = {
+    requirementsBaseline: JSON.stringify(baselineFromE1(e1)),
+  };
+  return buildE5Input(input, state, stub, outputDir);
 }
