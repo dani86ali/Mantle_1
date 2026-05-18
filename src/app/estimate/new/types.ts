@@ -1,3 +1,5 @@
+import type { SlotFileMap } from "@/components/intake/document-slots";
+
 export type WizardMode = "rfp" | "quick_bom" | "rfi";
 
 export type Domain =
@@ -18,7 +20,8 @@ export interface ParsedBomLine {
 
 export interface WizardState {
   mode: WizardMode | null;
-  files: File[];
+  rfpSlots: SlotFileMap;
+  rfpSlotsValid: boolean;
   bomFile: File | null;
   bomText: string;
   customerName: string;
@@ -59,7 +62,8 @@ export interface WizardState {
 
 export const initialState: WizardState = {
   mode: null,
-  files: [],
+  rfpSlots: {},
+  rfpSlotsValid: false,
   bomFile: null,
   bomText: "",
   customerName: "",

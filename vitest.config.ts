@@ -9,7 +9,10 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["tests/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
-    environmentMatchGlobs: [["tests/ui/**", "jsdom"]],
+    environmentMatchGlobs: [
+      ["tests/ui/**", "jsdom"],
+      ["tests/components/**", "jsdom"],
+    ],
     setupFiles: ["tests/ui/setup.ts"],
     testTimeout: 20000,
     coverage: {

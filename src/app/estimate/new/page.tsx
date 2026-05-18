@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { initialState, parseBomText, type WizardState } from "./types";
+import { DOCUMENT_SLOTS } from "@/components/intake/document-slots";
+import type { DocumentType } from "@/types/document-type";
+import type { UploadedFileMeta } from "@/app/api/upload/route";
 import { ActionBar, STEPS, StepIndicator } from "./chrome";
 import ModeSelect from "./steps/mode-select";
 import FileUpload from "./steps/file-upload";
@@ -34,22 +37,33 @@ export default function NewEstimatePage() {
     setSubmitting(true);
     setError(null);
     try {
-      let uploadedFiles: { filename: string; path: string }[] | undefined;
-      const filesToUpload: File[] =
-        state.mode === "rfp"
-          ? state.files
-          : state.mode === "quick_bom" && state.bomFile
-            ? [state.bomFile]
-            : [];
+      let uploadedFiles:
+        | { filename: string; path: string; documentType: DocumentType }[]
+        | undefined;
+      const filesToUpload: { file: File; type: DocumentType }[] = [];
+      if (state.mode === "rfp") {
+        for (const slot of DOCUMENT_SLOTS) {
+          const slotFiles = state.rfpSlots[slot.id] ?? [];
+          for (const f of slotFiles) filesToUpload.push({ file: f, type: slot.id });
+        }
+      } else if (state.mode === "quick_bom" && state.bomFile) {
+        filesToUpload.push({ file: state.bomFile, type: "boq" });
+      }
       if (filesToUpload.length > 0) {
         const fd = new FormData();
-        for (const f of filesToUpload) fd.append("files", f);
+        for (const { file } of filesToUpload) fd.append("files", file);
+        fd.append(
+          "types",
+          JSON.stringify(filesToUpload.map(({ type }) => type)),
+        );
         const up = await fetch("/api/upload", { method: "POST", body: fd });
         const upData = await up.json();
         if (!up.ok) throw new Error(upData.error ?? "File upload failed");
-        uploadedFiles = (upData.files as { filename: string; path: string }[]).map(
-          (f) => ({ filename: f.filename, path: f.path }),
-        );
+        uploadedFiles = (upData.files as UploadedFileMeta[]).map((f) => ({
+          filename: f.filename,
+          path: f.path,
+          documentType: f.documentType,
+        }));
       }
       const res = await fetch("/api/intake", {
         method: "POST",
@@ -116,7 +130,7 @@ export default function NewEstimatePage() {
 
 function canProceed(s: WizardState, step: number): boolean {
   if (step === 2) {
-    if (s.mode === "rfp") return s.files.length >= 1;
+    if (s.mode === "rfp") return s.rfpSlotsValid;
     if (s.mode === "quick_bom")
       return s.bomFile !== null || parseBomText(s.bomText).length >= 1;
     if (s.mode === "rfi") return true;
@@ -129,7 +143,7 @@ function canProceed(s: WizardState, step: number): boolean {
 
 function buildIntakeBody(
   s: WizardState,
-  uploadedFiles?: { filename: string; path: string }[],
+  uploadedFiles?: { filename: string; path: string; documentType: DocumentType }[],
 ) {
   const pricingConfig = {
     fxRate: s.fxRate,
