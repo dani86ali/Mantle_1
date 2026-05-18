@@ -2,15 +2,18 @@ import { extname } from "path";
 import { readFile } from "fs/promises";
 import { readDocument } from "@/lib/io/document-reader";
 import { readExcelFile } from "@/lib/io/excel-reader";
+import type { DocumentType } from "@/types/document-type";
 
 export interface UploadedFile {
   path: string;
   filename?: string;
+  documentType?: DocumentType;
 }
 
 export interface LoadedFile {
   path: string;
   content?: string;
+  documentType?: DocumentType;
 }
 
 export interface EnrichResult {
@@ -47,16 +50,17 @@ export async function enrichFileContent(
   const out: LoadedFile[] = [];
   for (const f of files) {
     const ext = extname(f.path).toLowerCase();
+    const dt = f.documentType;
 
     if (DOC_EXTS.has(ext)) {
       try {
         const result = await readDocument(f.path);
         for (const w of result.warnings) warnings.push(w);
-        out.push({ path: f.path, content: result.text });
+        out.push({ path: f.path, content: result.text, documentType: dt });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         warnings.push(`Failed to extract '${f.path}': ${msg}`);
-        out.push({ path: f.path, content: "" });
+        out.push({ path: f.path, content: "", documentType: dt });
       }
       continue;
     }
@@ -64,11 +68,15 @@ export async function enrichFileContent(
     if (EXCEL_EXTS.has(ext)) {
       try {
         const r = readExcelFile(f.path);
-        out.push({ path: f.path, content: flattenSheets(r.sheetNames, r.sheets) });
+        out.push({
+          path: f.path,
+          content: flattenSheets(r.sheetNames, r.sheets),
+          documentType: dt,
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         warnings.push(`Failed to extract '${f.path}': ${msg}`);
-        out.push({ path: f.path, content: "" });
+        out.push({ path: f.path, content: "", documentType: dt });
       }
       continue;
     }
@@ -76,16 +84,16 @@ export async function enrichFileContent(
     if (CSV_EXTS.has(ext)) {
       try {
         const text = await readFile(f.path, "utf8");
-        out.push({ path: f.path, content: text });
+        out.push({ path: f.path, content: text, documentType: dt });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         warnings.push(`Failed to extract '${f.path}': ${msg}`);
-        out.push({ path: f.path, content: "" });
+        out.push({ path: f.path, content: "", documentType: dt });
       }
       continue;
     }
 
-    out.push({ path: f.path });
+    out.push({ path: f.path, documentType: dt });
   }
   return { files: out, warnings };
 }

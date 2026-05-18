@@ -160,4 +160,35 @@ describe("enrichFileContent", () => {
     expect(mockReadDocument).toHaveBeenCalledWith("/uploads/SPEC.PDF");
     expect(r.files[0].content).toBe("upper");
   });
+
+  it("propagates documentType from UploadedFile to LoadedFile across all branches", async () => {
+    mockReadDocument.mockResolvedValueOnce({ text: "pdf", format: "pdf", warnings: [] });
+    mockReadExcelFile.mockReturnValueOnce({
+      fileName: "boq.xlsx",
+      sheetNames: ["S"],
+      sheets: { S: [["a"]] },
+    });
+    mockReadFile.mockResolvedValueOnce("sku,qty");
+    const r = await enrichFileContent([
+      { path: "/u/spec.pdf", documentType: "rfp_sow" },
+      { path: "/u/client.xlsx", documentType: "boq" },
+      { path: "/u/list.csv", documentType: "vendor_bom" },
+      { path: "/u/plan.dwg", documentType: "prior_design" },
+    ]);
+    expect(r.files[0].documentType).toBe("rfp_sow");
+    expect(r.files[1].documentType).toBe("boq");
+    expect(r.files[2].documentType).toBe("vendor_bom");
+    expect(r.files[3].documentType).toBe("prior_design");
+  });
+
+  it("propagates documentType even when extraction fails", async () => {
+    mockReadExcelFile.mockImplementationOnce(() => {
+      throw new Error("xlsx parse failed");
+    });
+    const r = await enrichFileContent([
+      { path: "/u/broken.xlsx", documentType: "boq" },
+    ]);
+    expect(r.files[0].documentType).toBe("boq");
+    expect(r.files[0].content).toBe("");
+  });
 });

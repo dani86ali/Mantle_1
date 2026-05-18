@@ -26,21 +26,19 @@ export interface E2BuildInput {
 }
 
 const BOQ_FILE_EXTS = new Set(['.xlsx', '.xls', '.csv']);
+const hasBoqExt = (fn: string): boolean =>
+  BOQ_FILE_EXTS.has(fn.slice(fn.lastIndexOf('.')).toLowerCase());
 
-/** Pick the uploaded BoQ workbook path from E1's file classifications.
- *  Matches subtype='boq_template' (filename/folder rules produce
- *  type='commercial', subtype='boq_template'); only spreadsheet
- *  extensions are returned since E2's parser reads Excel/CSV. */
+/** Pick the uploaded BoQ workbook path. User-assigned documentType='boq'
+ *  wins over the heuristic subtype='boq_template' match, resolving the
+ *  multi-XLSX-upload ambiguity where the old code silently picked the
+ *  first match. Only spreadsheet extensions are returned. */
 export function selectBoQFilePath(e1?: E1Output): string | undefined {
   const classified = e1?.fileClassifications;
   if (!classified || classified.length === 0) return undefined;
-  const boq = classified.find((f) => {
-    if (f.subtype !== 'boq_template') return false;
-    const dot = f.filename.lastIndexOf('.');
-    const ext = dot >= 0 ? f.filename.slice(dot).toLowerCase() : '';
-    return BOQ_FILE_EXTS.has(ext);
-  });
-  return boq?.path;
+  const explicit = classified.find((f) => f.documentType === 'boq' && hasBoqExt(f.filename));
+  if (explicit) return explicit.path;
+  return classified.find((f) => f.subtype === 'boq_template' && hasBoqExt(f.filename))?.path;
 }
 
 const DEFAULT_DEVICE_CONFIG: E2DeviceConfig = {

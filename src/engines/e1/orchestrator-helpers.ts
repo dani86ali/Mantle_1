@@ -1,5 +1,9 @@
 import { basename, dirname } from 'path';
-import { classifyFile } from '@/engines/e1/file-classifier';
+import {
+  classifyFile,
+  detectFileFormat,
+  type FileClassification,
+} from '@/engines/e1/file-classifier';
 import { extractReferences } from '@/engines/e1/missing-doc-detector';
 import {
   extractRequirements,
@@ -7,13 +11,39 @@ import {
 } from '@/engines/e1/requirements-extractor';
 import { readExcelFile } from '@/lib/io/excel-reader';
 import type { E1InputFile, E1ClassifiedFile } from '@/engines/e1/orchestrator-types';
+import type { DocumentType } from '@/types/document-type';
+
+/** Map an explicit user-assigned document type to E1's existing
+ *  type/subtype taxonomy. Returning undefined means "no explicit
+ *  type" — fall through to the heuristic classifier. */
+function classificationFromDocumentType(
+  documentType: DocumentType | undefined,
+  format: string,
+): FileClassification | undefined {
+  if (!documentType || documentType === 'other') return undefined;
+  const base = { confidence: 1.0, stage: 1 as const, format };
+  switch (documentType) {
+    case 'boq':
+      return { ...base, type: 'commercial', subtype: 'boq_template' };
+    case 'rfp_sow':
+      return { ...base, type: 'technical', subtype: 'requirements' };
+    case 'compliance':
+      return { ...base, type: 'compliance', subtype: 'general' };
+    case 'vendor_bom':
+      return { ...base, type: 'commercial', subtype: 'vendor_bom' };
+    case 'prior_design':
+      return { ...base, type: 'technical', subtype: 'engineering_drawing' };
+  }
+}
 
 export function classifyAll(files: E1InputFile[]): E1ClassifiedFile[] {
   return files.map((f) => {
     const filename = basename(f.path);
     const folder = basename(dirname(f.path));
-    const c = classifyFile(filename, folder, f.content);
-    return { ...c, path: f.path, filename };
+    const format = detectFileFormat(filename);
+    const explicit = classificationFromDocumentType(f.documentType, format);
+    const c = explicit ?? classifyFile(filename, folder, f.content);
+    return { ...c, path: f.path, filename, documentType: f.documentType };
   });
 }
 

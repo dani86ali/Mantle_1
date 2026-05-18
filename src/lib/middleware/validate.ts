@@ -4,6 +4,7 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { documentTypeSchema } from "@/types/document-type";
 
 /**
  * Validate request body against a Zod schema.
@@ -99,6 +100,7 @@ export const intakeFormSchema = z.object({
       z.object({
         filename: z.string(),
         path: z.string(),
+        documentType: documentTypeSchema,
       })
     )
     .optional(),
@@ -187,13 +189,11 @@ export function validateFileUpload(
       error: `File type ${file.type} not allowed. Accepted: CSV, XLSX, PDF`,
     };
   }
-
   if (file.size > MAX_FILE_SIZE) {
     return {
       valid: false,
       error: `File size ${(file.size / 1024 / 1024).toFixed(1)}MB exceeds 10MB limit`,
     };
   }
-
   return { valid: true };
 }

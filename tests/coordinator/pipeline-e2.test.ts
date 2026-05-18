@@ -1,0 +1,144 @@
+import { describe, it, expect } from "vitest";
+import { selectBoQFilePath } from "@/coordinator/pipeline-e2";
+import type { E1Output } from "@/engines/e1/orchestrator";
+import type { E1ClassifiedFile } from "@/engines/e1/orchestrator-types";
+
+function mkClassified(
+  overrides: Partial<E1ClassifiedFile> & {
+    path: string;
+    filename: string;
+  },
+): E1ClassifiedFile {
+  return {
+    type: "unknown",
+    subtype: "unknown",
+    confidence: 0.5,
+    stage: 1,
+    format: "xlsx",
+    ...overrides,
+  };
+}
+
+function mkE1Output(classified: E1ClassifiedFile[]): E1Output {
+  // selectBoQFilePath only reads fileClassifications; the rest is filler to
+  // satisfy the E1Output shape. Cast through unknown so we don't have to
+  // import every nested type.
+  return {
+    fileClassifications: classified,
+    missingDocuments: [],
+    requirements: [],
+    riskFlags: [],
+    deadlines: [],
+    evalCriteria: {
+      methodology: "unknown",
+      envelopes: [],
+      iktvaRequired: false,
+      source: "default",
+    },
+    vendorPreferences: [],
+    sectorDetection: {
+      sector: "general",
+      confidence: 0,
+      method: "content_keywords",
+      evidence: "",
+    },
+    frameworks: [],
+    complianceMatrix: {} as unknown as E1Output["complianceMatrix"],
+    clarifications: {} as unknown as E1Output["clarifications"],
+    stats: {
+      totalFiles: classified.length,
+      totalRequirements: 0,
+      mandatoryCount: 0,
+      criticalRisks: 0,
+    },
+  } as E1Output;
+}
+
+describe("selectBoQFilePath", () => {
+  it("returns undefined when no E1 output is provided", () => {
+    expect(selectBoQFilePath(undefined)).toBeUndefined();
+  });
+
+  it("returns undefined when fileClassifications is empty", () => {
+    expect(selectBoQFilePath(mkE1Output([]))).toBeUndefined();
+  });
+
+  it("prefers documentType='boq' over heuristic-only matches", () => {
+    const heuristicBoq = mkClassified({
+      path: "/u/Project_BOQ.xlsx",
+      filename: "Project_BOQ.xlsx",
+      type: "commercial",
+      subtype: "boq_template",
+      confidence: 0.9,
+    });
+    const explicitBoq = mkClassified({
+      path: "/u/Aramco_4203079088.xlsx",
+      filename: "Aramco_4203079088.xlsx",
+      type: "commercial",
+      subtype: "boq_template",
+      confidence: 1.0,
+      documentType: "boq",
+    });
+    const e1 = mkE1Output([heuristicBoq, explicitBoq]);
+    expect(selectBoQFilePath(e1)).toBe("/u/Aramco_4203079088.xlsx");
+  });
+
+  it("multi-XLSX upload: explicit boq wins, unknown XLSX is ignored", () => {
+    const explicitBoq = mkClassified({
+      path: "/u/client-pricing.xlsx",
+      filename: "client-pricing.xlsx",
+      type: "commercial",
+      subtype: "boq_template",
+      confidence: 1.0,
+      documentType: "boq",
+    });
+    const unknownXlsx = mkClassified({
+      path: "/u/network-inventory.xlsx",
+      filename: "network-inventory.xlsx",
+      type: "commercial",
+      subtype: "boq_template",
+      confidence: 0.4,
+      needsReview: true,
+    });
+    const e1 = mkE1Output([unknownXlsx, explicitBoq]);
+    expect(selectBoQFilePath(e1)).toBe("/u/client-pricing.xlsx");
+  });
+
+  it("falls back to subtype heuristic when no documentType='boq' is set", () => {
+    const heuristicBoq = mkClassified({
+      path: "/u/Project_BOQ.xlsx",
+      filename: "Project_BOQ.xlsx",
+      type: "commercial",
+      subtype: "boq_template",
+      confidence: 0.9,
+    });
+    const e1 = mkE1Output([heuristicBoq]);
+    expect(selectBoQFilePath(e1)).toBe("/u/Project_BOQ.xlsx");
+  });
+
+  it("ignores documentType='boq' on a non-spreadsheet file", () => {
+    const pdfMarkedBoq = mkClassified({
+      path: "/u/notes.pdf",
+      filename: "notes.pdf",
+      format: "pdf",
+      type: "commercial",
+      subtype: "boq_template",
+      confidence: 1.0,
+      documentType: "boq",
+    });
+    const e1 = mkE1Output([pdfMarkedBoq]);
+    expect(selectBoQFilePath(e1)).toBeUndefined();
+  });
+
+  it("returns undefined when no boq-typed and no boq_template subtype match", () => {
+    const rfp = mkClassified({
+      path: "/u/sow.docx",
+      filename: "sow.docx",
+      format: "docx",
+      type: "technical",
+      subtype: "requirements",
+      documentType: "rfp_sow",
+    });
+    expect(selectBoQFilePath(mkE1Output([rfp]))).toBeUndefined();
+  });
+});

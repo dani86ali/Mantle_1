@@ -6,6 +6,7 @@ import {
   matchFolderPatterns,
   scanContentKeywords,
 } from "@/engines/e1/file-classifier";
+import { classifyAll } from "@/engines/e1/orchestrator-helpers";
 
 describe("matchFilenamePatterns — 10 rules (FC-001)", () => {
   it("Rule 1: compliance/cybersecurity_standard — SACS-3 filename", () => {
@@ -267,6 +268,70 @@ describe("classifyFile — needsReview flag (FC-005)", () => {
     );
     expect(r.needsReview).toBeUndefined();
     expect(r.confidence).toBe(0.6);
+  });
+});
+
+describe("classifyAll — explicit documentType bypasses heuristic stages (FC-007)", () => {
+  it("documentType='rfp_sow' emits technical/requirements at confidence 1.0, stage 1", () => {
+    const out = classifyAll([
+      { path: "/u/random_name.pdf", documentType: "rfp_sow", content: "lorem ipsum" },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].type).toBe("technical");
+    expect(out[0].subtype).toBe("requirements");
+    expect(out[0].confidence).toBe(1.0);
+    expect(out[0].stage).toBe(1);
+    expect(out[0].documentType).toBe("rfp_sow");
+    expect(out[0].format).toBe("pdf");
+    // Filename "random_name.pdf" has no heuristic match — confidence 1.0 here
+    // proves we skipped the cascade.
+  });
+
+  it("documentType='boq' emits commercial/boq_template at confidence 1.0 even on a non-BoQ-named file", () => {
+    const out = classifyAll([
+      { path: "/u/Aramco_4203079088.xlsx", documentType: "boq" },
+    ]);
+    expect(out[0].type).toBe("commercial");
+    expect(out[0].subtype).toBe("boq_template");
+    expect(out[0].confidence).toBe(1.0);
+    expect(out[0].documentType).toBe("boq");
+  });
+
+  it("documentType='compliance' emits compliance/general at confidence 1.0", () => {
+    const out = classifyAll([{ path: "/u/x.pdf", documentType: "compliance" }]);
+    expect(out[0].type).toBe("compliance");
+    expect(out[0].subtype).toBe("general");
+    expect(out[0].confidence).toBe(1.0);
+  });
+
+  it("documentType='vendor_bom' emits commercial/vendor_bom at confidence 1.0", () => {
+    const out = classifyAll([{ path: "/u/quote.xlsx", documentType: "vendor_bom" }]);
+    expect(out[0].type).toBe("commercial");
+    expect(out[0].subtype).toBe("vendor_bom");
+    expect(out[0].confidence).toBe(1.0);
+  });
+
+  it("documentType='prior_design' emits technical/engineering_drawing at confidence 1.0", () => {
+    const out = classifyAll([{ path: "/u/hld.docx", documentType: "prior_design" }]);
+    expect(out[0].type).toBe("technical");
+    expect(out[0].subtype).toBe("engineering_drawing");
+    expect(out[0].confidence).toBe(1.0);
+  });
+
+  it("documentType='other' still runs heuristics (filename match wins)", () => {
+    const out = classifyAll([{ path: "/u/Project_BOQ.xlsx", documentType: "other" }]);
+    // Stage-1 filename rule for "BOQ" should fire at confidence 0.9.
+    expect(out[0].type).toBe("commercial");
+    expect(out[0].subtype).toBe("boq_template");
+    expect(out[0].confidence).toBe(0.9);
+    expect(out[0].documentType).toBe("other");
+  });
+
+  it("documentType undefined still runs heuristics (no explicit type set)", () => {
+    const out = classifyAll([{ path: "/u/random_file.pdf", content: "lorem" }]);
+    // No filename/folder rule, weak content → unknown with needsReview
+    expect(out[0].confidence).toBeLessThan(1.0);
+    expect(out[0].documentType).toBeUndefined();
   });
 });
 

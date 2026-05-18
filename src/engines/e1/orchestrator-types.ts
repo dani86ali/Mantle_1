@@ -11,10 +11,12 @@ import type { SectorDetection } from '@/engines/e1/sector-detector';
 import type { SelectedFramework } from '@/engines/e1/framework-selector';
 import type { ComplianceMatrixResult } from '@/engines/e1/compliance-matrix';
 import type { ClarificationResult } from '@/engines/e1/clarification-generator';
+import type { DocumentType } from '@/types/document-type';
 
 export interface E1InputFile {
   path: string;
   content?: string;
+  documentType?: DocumentType;
 }
 
 export interface E1Input {
@@ -27,6 +29,7 @@ export interface E1Input {
 export interface E1ClassifiedFile extends FileClassification {
   path: string;
   filename: string;
+  documentType?: DocumentType;
 }
 
 export interface E1Stats {

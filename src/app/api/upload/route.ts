@@ -3,7 +3,13 @@ import { mkdir, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { basename, extname, join } from "path";
 import { v4 as uuid } from "uuid";
+import { z } from "zod";
 import { requireAuth } from "@/lib/middleware/auth";
+import {
+  DOCUMENT_TYPES,
+  documentTypeSchema,
+  type DocumentType,
+} from "@/types/document-type";
 
 const ALLOWED_EXTENSIONS = [
   ".pdf",
@@ -16,12 +22,49 @@ const ALLOWED_EXTENSIONS = [
 ] as const;
 const MAX_FILES = 50;
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const DEFAULT_DOCUMENT_TYPE: DocumentType = "other";
 
 export interface UploadedFileMeta {
   filename: string;
   path: string;
   size: number;
   format: string;
+  documentType: DocumentType;
+}
+
+function parseTypesField(
+  raw: FormDataEntryValue | null,
+  fileCount: number,
+): { types: DocumentType[]; warning?: string } {
+  if (raw == null || typeof raw !== "string" || raw.trim() === "") {
+    return {
+      types: Array(fileCount).fill(DEFAULT_DOCUMENT_TYPE),
+      warning: `No 'types' field provided; defaulted all ${fileCount} file(s) to '${DEFAULT_DOCUMENT_TYPE}'. Allowed: ${DOCUMENT_TYPES.join(", ")}`,
+    };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {
+      types: Array(fileCount).fill(DEFAULT_DOCUMENT_TYPE),
+      warning: `Invalid JSON in 'types' field; defaulted all ${fileCount} file(s) to '${DEFAULT_DOCUMENT_TYPE}'`,
+    };
+  }
+  const result = z.array(documentTypeSchema).safeParse(parsed);
+  if (!result.success) {
+    return {
+      types: Array(fileCount).fill(DEFAULT_DOCUMENT_TYPE),
+      warning: `'types' field failed validation; defaulted all ${fileCount} file(s) to '${DEFAULT_DOCUMENT_TYPE}'`,
+    };
+  }
+  if (result.data.length !== fileCount) {
+    return {
+      types: Array(fileCount).fill(DEFAULT_DOCUMENT_TYPE),
+      warning: `'types' length (${result.data.length}) did not match files length (${fileCount}); defaulted all to '${DEFAULT_DOCUMENT_TYPE}'`,
+    };
+  }
+  return { types: result.data };
 }
 
 function safeBasename(name: string): string {
@@ -55,6 +98,11 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+
+  const { types: documentTypes, warning: typesWarning } = parseTypesField(
+    form.get("types"),
+    files.length,
+  );
 
   for (const file of files) {
     const ext = extname(file.name).toLowerCase();
@@ -90,7 +138,8 @@ export async function POST(request: NextRequest) {
 
   const results: UploadedFileMeta[] = [];
   try {
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
       const filename = safeBasename(file.name);
       const filePath = join(dir, filename);
       const buffer = Buffer.from(await file.arrayBuffer());
@@ -100,6 +149,7 @@ export async function POST(request: NextRequest) {
         path: filePath,
         size: file.size,
         format: extname(filename).toLowerCase().slice(1),
+        documentType: documentTypes[i],
       });
     }
   } catch (err) {
@@ -110,5 +160,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ intakeId, files: results }, { status: 201 });
+  const payload: { intakeId: string; files: UploadedFileMeta[]; warnings?: string[] } = {
+    intakeId,
+    files: results,
+  };
+  if (typesWarning) payload.warnings = [typesWarning];
+  return NextResponse.json(payload, { status: 201 });
 }
