@@ -119,7 +119,8 @@
       "Bash(docker compose *)",
       "Bash(npm install *)",
       "Read(//c/Users/dani8/OneDrive/Desktop/actual_output_files/**)",
-      "Bash(unzip -l \"C:/Users/dani8/OneDrive/Desktop/actual_output_files/cover_page.docx\")"
+      "Bash(unzip -l \"C:/Users/dani8/OneDrive/Desktop/actual_output_files/cover_page.docx\")",
+      "Skill(bridge)"
     ]
   }
 }
