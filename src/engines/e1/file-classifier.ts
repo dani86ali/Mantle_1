@@ -152,22 +152,35 @@ export function classifyFile(
 
   const stage3 = scanContentKeywords(content ?? "");
 
-  // Spreadsheet fallback: BoQ workbooks frequently arrive with PO/RTR
-  // filenames (e.g. Aramco_4203079088.xlsx) that match no filename or
-  // folder rule, and enrichFileContent skips XLSX/CSV so the content
-  // scan can never fire. Without this fallback, every such file ends as
-  // "unknown" — selectBoQFilePath returns undefined and E2 produces an
-  // empty BoM. Mark needsReview so the UI's classification dropdown can
-  // override when the heuristic is wrong (e.g. a non-BoQ spreadsheet).
-  if (stage3.type === "unknown" && hasSpreadsheetExtension(filename)) {
-    return {
-      type: "commercial",
-      subtype: "boq_template",
-      confidence: 0.4,
-      stage: 3,
-      format,
-      needsReview: true,
-    };
+  // Spreadsheet normalization: BoQ workbooks frequently arrive with PO/RTR
+  // filenames (e.g. Aramco_4203079088.xlsx) that match no filename or folder
+  // rule. selectBoQFilePath requires subtype='boq_template', so we route
+  // spreadsheets there in two cases:
+  //   1. content scan hit pricing keywords (unit price/qty/amount/SAR/USD) —
+  //      strong signal it's a BoQ; promote pricing → boq_template at 0.6.
+  //   2. content scan returned unknown — keyword-poor BoQs (raw SKU lists,
+  //      numeric-only cells) still need to reach E2; fall back at 0.4 with
+  //      needsReview so the UI can override if it's actually a non-BoQ sheet.
+  if (hasSpreadsheetExtension(filename)) {
+    if (stage3.type === "commercial" && stage3.subtype === "pricing") {
+      return {
+        type: "commercial",
+        subtype: "boq_template",
+        confidence: 0.6,
+        stage: 3,
+        format,
+      };
+    }
+    if (stage3.type === "unknown") {
+      return {
+        type: "commercial",
+        subtype: "boq_template",
+        confidence: 0.4,
+        stage: 3,
+        format,
+        needsReview: true,
+      };
+    }
   }
 
   const result = { ...stage3, format };

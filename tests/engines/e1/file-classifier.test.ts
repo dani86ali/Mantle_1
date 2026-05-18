@@ -203,6 +203,49 @@ describe("classifyFile — cascade logic (FC-004)", () => {
   });
 });
 
+describe("classifyFile — spreadsheet normalization to boq_template (FC-004b)", () => {
+  it("spreadsheet + pricing keywords → subtype boq_template at 0.6 (no needsReview)", () => {
+    const r = classifyFile(
+      "Aramco_4203079088.xlsx",
+      "Misc",
+      "Unit Price\tQty\tAmount\tSAR\nC9300-24P\t10\t5000"
+    );
+    expect(r.type).toBe("commercial");
+    expect(r.subtype).toBe("boq_template");
+    expect(r.confidence).toBe(0.6);
+    expect(r.stage).toBe(3);
+    expect(r.format).toBe("xlsx");
+    expect(r.needsReview).toBeUndefined();
+  });
+
+  it("spreadsheet with no keywords → subtype boq_template at 0.4 with needsReview", () => {
+    const r = classifyFile("Aramco_4203079088.xlsx", "Misc", "C9300-24P\t10\t5000");
+    expect(r.type).toBe("commercial");
+    expect(r.subtype).toBe("boq_template");
+    expect(r.confidence).toBe(0.4);
+    expect(r.needsReview).toBe(true);
+  });
+
+  it("non-spreadsheet with pricing keywords → stays commercial/pricing", () => {
+    const r = classifyFile(
+      "ProposalNotes.pdf",
+      "Misc",
+      "Unit price must be stated in SAR. Total price includes all taxes. QTY and amount to be confirmed."
+    );
+    expect(r.type).toBe("commercial");
+    expect(r.subtype).toBe("pricing");
+  });
+
+  it("spreadsheet with legal keywords → stays legal (not promoted to BoQ)", () => {
+    const r = classifyFile(
+      "data.xlsx",
+      "Misc",
+      "Whereas the parties hereby agrees to indemnify each other. Liability and jurisdiction clauses apply."
+    );
+    expect(r.type).toBe("legal");
+  });
+});
+
 describe("classifyFile — needsReview flag (FC-005)", () => {
   it("sets needsReview when all three stages fail", () => {
     const r = classifyFile("random_file.pdf", "Miscellaneous", "lorem ipsum dolor");
