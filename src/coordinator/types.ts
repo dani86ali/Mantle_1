@@ -38,6 +38,9 @@ export interface E3Artifacts {
   technicalProposal?: string;
   financialProposal?: string;
   submissionPdf?: string;
+  /** Human-readable reason E3 was skipped (e.g. "E2 output missing"). Set when
+   *  the dispatcher bypasses E3 so the UI can surface why no proposal exists. */
+  skipReason?: string;
 }
 
 export interface E4Artifacts {

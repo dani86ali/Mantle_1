@@ -99,7 +99,14 @@ async function runE3Stage(
   e1?: E1Output, e2?: E2Output,
 ): Promise<E3Output | undefined> {
   if (!e2 || !input.pricingConfig) {
-    logEvent(state, 'e3', 'warn', 'engine_call', 'E3 skipped: E2 output or pricingConfig missing');
+    const missing = !e2 && !input.pricingConfig
+      ? 'E2 output and pricingConfig missing'
+      : !e2
+        ? 'E2 output missing'
+        : 'pricingConfig missing';
+    const reason = `E3 skipped: ${missing}`;
+    logEvent(state, 'e3', 'warn', 'engine_call', reason);
+    state.artifacts.e3 = { skipReason: reason };
     return undefined;
   }
   const ctx = {
