@@ -148,7 +148,7 @@ export async function runE2(input: E2Input): Promise<E2Output> {
   // (2)+(3) Device expansion + BoQ-parsed lines fold into a single raw-line list.
   // Track the device-line count so we can pair BoQ priced lines back to their
   // source BoQLineItem (by index) when filling the client template (step 11).
-  const deviceLines = expandDevices(input.devices);
+  const { lines: deviceLines, warnings: deviceWarnings } = expandDevices(input.devices);
   const rawLines = [...deviceLines];
   for (const b of boqLines) {
     rawLines.push({
@@ -216,7 +216,8 @@ export async function runE2(input: E2Input): Promise<E2Output> {
   const totals = buildTotals(priced);
 
   // (9a) Honesty pass — flag that prices and EoX were not catalog-verified.
-  const { validationStatus, validationWarnings } = assessValidationStatus(priced);
+  const { validationStatus, validationWarnings: pricingWarnings } = assessValidationStatus(priced);
+  const validationWarnings = [...deviceWarnings, ...pricingWarnings];
 
   // (10) Emit BoM XLSX unless dry-run.
   let exportPath: string | undefined;
@@ -263,26 +264,45 @@ function parseByType(type: BoQType, sheets: Record<string, string[][]>): BoQLine
   }
 }
 
-function expandDevices(devices: E2Device[]): RawLine[] {
+/** Expand devices into raw lines (hardware + accessories + licenses + support).
+ *  Each helper is wrapped in try/catch so a single unsupported model (e.g. a
+ *  Webex endpoint that isn't in BOMATIC_Device_Specs.json) doesn't crash the
+ *  whole BoM build — the device still appears as a priced hardware line, just
+ *  without auto-generated accessories/licenses/support. The warnings array
+ *  surfaces what was skipped via the BoM Validation Results panel. */
+export function expandDevices(devices: E2Device[]): { lines: RawLine[]; warnings: string[] } {
   const out: RawLine[] = [];
+  const warnings: string[] = [];
   for (const d of devices) {
     out.push({ sku: d.model, description: d.model, qty: d.qty, category: "hardware" });
     if (d.config.vendor === "cisco") {
-      for (const a of selectAccessories(d.model, d.qty, {
-        redundantPsu: d.config.redundantPsu, rackMount: d.config.rackMount, powerCordType: d.config.powerCordType,
-      })) out.push({ sku: a.sku, description: a.description, qty: a.totalQty, category: "accessory" });
-      for (const l of calculateLicenses(d.model, d.qty, {
-        dnaTier: d.config.dnaTier, networkTier: d.config.networkTier, term: d.config.licenseTerm,
-      })) out.push({ sku: l.sku, description: l.description, qty: l.qty, category: mapLicenseCategory(l.category) });
+      try {
+        for (const a of selectAccessories(d.model, d.qty, {
+          redundantPsu: d.config.redundantPsu, rackMount: d.config.rackMount, powerCordType: d.config.powerCordType,
+        })) out.push({ sku: a.sku, description: a.description, qty: a.totalQty, category: "accessory" });
+      } catch (err) {
+        warnings.push(`No accessory data for ${d.model} — ${err instanceof Error ? err.message : String(err)}`);
+      }
+      try {
+        for (const l of calculateLicenses(d.model, d.qty, {
+          dnaTier: d.config.dnaTier, networkTier: d.config.networkTier, term: d.config.licenseTerm,
+        })) out.push({ sku: l.sku, description: l.description, qty: l.qty, category: mapLicenseCategory(l.category) });
+      } catch (err) {
+        warnings.push(`No license data for ${d.model} — ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     if (d.config.supportCriticality !== "none") {
-      for (const s of selectSupport(d.model, d.qty, {
-        criticality: d.config.supportCriticality,
-        term: SUPPORT_TERM_MONTHS[d.config.licenseTerm], vendor: d.config.vendor,
-      })) out.push({ sku: s.sku, description: s.description, qty: s.qty, category: "service" });
+      try {
+        for (const s of selectSupport(d.model, d.qty, {
+          criticality: d.config.supportCriticality,
+          term: SUPPORT_TERM_MONTHS[d.config.licenseTerm], vendor: d.config.vendor,
+        })) out.push({ sku: s.sku, description: s.description, qty: s.qty, category: "service" });
+      } catch (err) {
+        warnings.push(`No support data for ${d.model} — ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
-  return out;
+  return { lines: out, warnings };
 }
 
 function mapLicenseCategory(c: "network_license" | "dna_subscription" | "addon" | "software"): RawLine["category"] {

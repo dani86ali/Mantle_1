@@ -9,7 +9,7 @@ vi.mock("@/lib/ai/client", () => ({
 }));
 
 import { callAI } from "@/lib/ai/client";
-import { runE2, type E2Input } from "@/engines/e2/orchestrator";
+import { runE2, expandDevices, type E2Input } from "@/engines/e2/orchestrator";
 
 const mockCallAI = vi.mocked(callAI);
 
@@ -252,5 +252,59 @@ describe("runE2 — validationStatus honesty signal", () => {
     });
     expect(result.validationStatus).toBe("unvalidated");
     expect(result.validationWarnings.some((w) => /No list price available for C9120AXE-E/.test(w))).toBe(true);
+  });
+});
+
+describe("expandDevices — tolerance for unsupported models", () => {
+  it("does not throw when a device model isn't in BOMATIC_Device_Specs.json", () => {
+    expect(() =>
+      expandDevices([{
+        model: "CS-DESKPRO-K9",
+        qty: 2,
+        config: {
+          dnaTier: "advantage",
+          networkTier: "advantage",
+          licenseTerm: 5,
+          supportCriticality: "standard",
+          vendor: "cisco",
+        },
+      }]),
+    ).not.toThrow();
+  });
+
+  it("returns the hardware line + a warning for unsupported model, skipping accessories/licenses/support", () => {
+    const { lines, warnings } = expandDevices([{
+      model: "CS-DESKPRO-K9",
+      qty: 2,
+      config: {
+        dnaTier: "advantage",
+        networkTier: "advantage",
+        licenseTerm: 5,
+        supportCriticality: "standard",
+        vendor: "cisco",
+      },
+    }]);
+    // Hardware line still appears so the BoM shows the SKU
+    expect(lines.some((l) => l.sku === "CS-DESKPRO-K9" && l.category === "hardware")).toBe(true);
+    // No accessory/license/service lines for the unknown model
+    expect(lines.filter((l) => l.category === "accessory").length).toBe(0);
+    // Warnings name the model so the operator sees what was skipped
+    expect(warnings.some((w) => /CS-DESKPRO-K9/.test(w))).toBe(true);
+    expect(warnings.some((w) => /accessory/i.test(w))).toBe(true);
+  });
+
+  it("isolates failures per-helper — a license throw doesn't drop accessories from a known device", () => {
+    // A Catalyst 9300 is in device specs, so all three helpers succeed.
+    const { lines, warnings } = expandDevices([{
+      model: "C9300L-24UXG-4X-A",
+      qty: 1,
+      config: {
+        redundantPsu: true, rackMount: true, powerCordType: "CAB-TA-UK",
+        dnaTier: "advantage", networkTier: "advantage",
+        licenseTerm: 5, supportCriticality: "standard", vendor: "cisco",
+      },
+    }]);
+    expect(warnings.length).toBe(0);
+    expect(lines.some((l) => l.category === "accessory")).toBe(true);
   });
 });
