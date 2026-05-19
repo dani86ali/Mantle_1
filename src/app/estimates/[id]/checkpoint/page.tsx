@@ -9,6 +9,7 @@ import { buildNavItems, type ApiResponse } from "../hub-mappers";
 import { toCheckpointData, type CheckpointData } from "./mappers";
 import { CheckpointSkeleton } from "./checkpoint-skeleton";
 import { CheckpointActionBar, type CheckpointAction } from "./action-bar";
+import { pickNextRoute } from "../compliance/post-approval-nav";
 import { Card } from "./sections/common";
 import { FileClassificationsSection } from "./sections/file-classifications";
 import { RequirementsSection } from "./sections/requirements";
@@ -83,7 +84,9 @@ export default function CheckpointPage() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Failed (${res.status})`);
       }
-      router.push(`/estimates/${id}`);
+      const body = (await res.json().catch(() => ({}))) as { advancing?: boolean };
+      const next = await pickNextRoute(id, body.advancing === true);
+      router.push(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Action failed");
       setSubmitting(null);

@@ -1,14 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { PipelineState } from "@/coordinator/types";
 
-const { mockLoad, mockSave } = vi.hoisted(() => ({
+const { mockLoad, mockSave, mockResume } = vi.hoisted(() => ({
   mockLoad: vi.fn(),
   mockSave: vi.fn(),
+  mockResume: vi.fn(),
 }));
 
 vi.mock("@/lib/db/pipeline-store", () => ({
   loadPipelineStateForTenant: mockLoad,
   savePipelineState: mockSave,
+}));
+
+vi.mock("@/coordinator/run-and-persist", () => ({
+  resumeAndPersistPipeline: mockResume,
 }));
 
 import { POST } from "@/app/api/pipeline/[id]/checkpoint/route";
@@ -50,7 +55,9 @@ function makeState(): PipelineState {
 beforeEach(() => {
   mockLoad.mockReset();
   mockSave.mockReset();
+  mockResume.mockReset();
   mockSave.mockResolvedValue(undefined);
+  mockResume.mockResolvedValue(undefined);
 });
 
 describe("POST /api/pipeline/[id]/checkpoint", () => {
@@ -130,5 +137,127 @@ describe("POST /api/pipeline/[id]/checkpoint", () => {
     );
 
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── allowlist coverage for engines beyond E1/E2/E3 ──────────────────────
+// P4 added E5 to the RFP sequence and exposed a latent gap: the route's
+// VALID_CHECKPOINT_IDS allowlist hard-coded only e1/e2/e3 ids, so approving
+// any e5-* or e4-* checkpoint failed Zod validation and returned 400 —
+// leaving the operator with no way to advance past those engines.
+
+function makeStateWithCheckpoint(id: string, engine: PipelineState["currentEngine"]): PipelineState {
+  const now = new Date();
+  return {
+    id: "pipe-x",
+    opportunityId: "opp-x",
+    mode: "rfp",
+    currentEngine: engine,
+    artifacts: { e1: {}, e2: {}, e3: {}, e4: {}, e5: {} },
+    checkpoints: [
+      { id, engine, label: id, status: "pending", revisionsUsed: 0 },
+    ],
+    engineCalls: [],
+    timestamps: { createdAt: now, updatedAt: now },
+  };
+}
+
+describe("POST /api/pipeline/[id]/checkpoint — full allowlist coverage", () => {
+  it.each([
+    ["e4-questionnaire", "e4"],
+    ["e4-baseline", "e4"],
+    ["e5-design-approach", "e5"],
+    ["e5-hld", "e5"],
+    ["e5-lld", "e5"],
+  ] as const)("accepts approval for %s without 400", async (id, engine) => {
+    mockLoad.mockResolvedValue(makeStateWithCheckpoint(id, engine));
+
+    const res = await POST(
+      req({ checkpointId: id, status: "approved" }),
+      { params: { id: "pipe-x" } }
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.checkpoint.id).toBe(id);
+    expect(body.checkpoint.status).toBe("approved");
+  });
+});
+
+describe("POST /api/pipeline/[id]/checkpoint — auto-resume advancement signal", () => {
+  it("returns advancing:true and fires resume when all engine checkpoints approve", async () => {
+    const now = new Date();
+    const state: PipelineState = {
+      id: "pipe-adv",
+      opportunityId: "intake:abc",
+      intakeId: "abc",
+      mode: "rfp",
+      currentEngine: "e1",
+      status: "paused_at_checkpoint",
+      artifacts: { e1: {}, e2: {}, e3: {}, e4: {}, e5: {} },
+      checkpoints: [
+        {
+          id: "e1-requirements", engine: "e1", label: "Requirements baseline review",
+          status: "approved", revisionsUsed: 0, decidedAt: now,
+        },
+        {
+          id: "e1-compliance", engine: "e1", label: "Compliance matrix review",
+          status: "pending", revisionsUsed: 0,
+        },
+      ],
+      engineCalls: [],
+      timestamps: { createdAt: now, updatedAt: now },
+    };
+    mockLoad.mockResolvedValue(state);
+
+    const res = await POST(
+      req({ checkpointId: "e1-compliance", status: "approved" }),
+      { params: { id: "pipe-adv" } }
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.advancing).toBe(true);
+    expect(mockResume).toHaveBeenCalledTimes(1);
+    expect(mockResume).toHaveBeenCalledWith(
+      expect.any(String), // tenantId
+      "abc",
+    );
+  });
+
+  it("returns advancing:false when only some engine checkpoints are approved", async () => {
+    const now = new Date();
+    const state: PipelineState = {
+      id: "pipe-partial",
+      opportunityId: "intake:def",
+      intakeId: "def",
+      mode: "rfp",
+      currentEngine: "e1",
+      status: "paused_at_checkpoint",
+      artifacts: { e1: {}, e2: {}, e3: {}, e4: {}, e5: {} },
+      checkpoints: [
+        {
+          id: "e1-requirements", engine: "e1", label: "Requirements baseline review",
+          status: "pending", revisionsUsed: 0,
+        },
+        {
+          id: "e1-compliance", engine: "e1", label: "Compliance matrix review",
+          status: "pending", revisionsUsed: 0,
+        },
+      ],
+      engineCalls: [],
+      timestamps: { createdAt: now, updatedAt: now },
+    };
+    mockLoad.mockResolvedValue(state);
+
+    const res = await POST(
+      req({ checkpointId: "e1-requirements", status: "approved" }),
+      { params: { id: "pipe-partial" } }
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.advancing).toBe(false);
+    expect(mockResume).not.toHaveBeenCalled();
   });
 });

@@ -17,14 +17,14 @@ import {
 } from "@/lib/db/pipeline-store";
 import { requireAuth } from "@/lib/middleware/auth";
 import { resumeAndPersistPipeline } from "@/coordinator/run-and-persist";
+import { ENGINE_CHECKPOINTS } from "@/coordinator/pipeline-state";
 
-const VALID_CHECKPOINT_IDS = [
-  "e1-requirements",
-  "e1-compliance",
-  "e2-sku-confirmation",
-  "e2-pricing-review",
-  "e3-proposal",
-] as const;
+// Derive the allowlist from the single source of truth in pipeline-state.ts so
+// new engines (or new checkpoint ids inside an existing engine) automatically
+// pass Zod validation without a second list to keep in sync.
+const VALID_CHECKPOINT_IDS = Object.values(ENGINE_CHECKPOINTS)
+  .flat()
+  .map((c) => c.id) as [string, ...string[]];
 
 const checkpointSchema = z.object({
   checkpointId: z.enum(VALID_CHECKPOINT_IDS).optional(),

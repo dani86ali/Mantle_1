@@ -19,6 +19,7 @@ import {
   ComplianceSkeleton,
 } from "./compliance-chrome";
 import { useComplianceState } from "./use-compliance";
+import { pickNextRoute } from "./post-approval-nav";
 
 export default function CompliancePage() {
   const params = useParams();
@@ -111,7 +112,9 @@ export default function CompliancePage() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Approve failed (${res.status})`);
       }
-      router.push(`/estimates/${id}`);
+      const body = (await res.json().catch(() => ({}))) as { advancing?: boolean };
+      const next = await pickNextRoute(id, body.advancing === true);
+      router.push(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Approve failed");
       setApproving(false);
