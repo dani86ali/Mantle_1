@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, Info } from "lucide-react";
 import { EstimateSubNav } from "../hub-components";
@@ -31,6 +31,7 @@ function toPageData(json: ApiResponse, fallbackId: string): PageData {
 
 export default function ClarificationsPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
   const [page, setPage] = useState<PageData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,11 +90,6 @@ export default function ClarificationsPage() {
     } catch {
       setError("Clipboard access denied.");
     }
-  }
-
-  function handleExport() {
-    handleCopy();
-    setNotice("PDF export coming soon — questions copied to clipboard for now.");
   }
 
   function handleSelectCritical() {
@@ -161,9 +157,9 @@ export default function ClarificationsPage() {
           selectedCount={selectedIds.size}
           totalCount={page.questions.length}
           onCopy={handleCopy}
-          onExport={handleExport}
           onSelectCritical={handleSelectCritical}
           onDeselectAll={() => setSelectedIds(new Set())}
+          onBackToOverview={() => router.push(`/estimates/${id}`)}
         />
       </div>
     </div>

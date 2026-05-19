@@ -107,16 +107,16 @@ export function SelectionActions({
   selectedCount,
   totalCount,
   onCopy,
-  onExport,
   onSelectCritical,
   onDeselectAll,
+  onBackToOverview,
 }: {
   selectedCount: number;
   totalCount: number;
   onCopy: () => void;
-  onExport: () => void;
   onSelectCritical: () => void;
   onDeselectAll: () => void;
+  onBackToOverview: () => void;
 }) {
   return (
     <div className="fixed bottom-0 right-0 left-0 z-10 border-t border-[var(--border)] bg-bg-primary/95 px-4 py-3 backdrop-blur sm:left-56 sm:px-6">
@@ -143,14 +143,13 @@ export function SelectionActions({
             disabled={selectedCount === 0}
             className="rounded-button border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-text-secondary hover:border-[var(--border-hover)] hover:text-text-primary disabled:opacity-50"
           >
-            Copy selected
+            Copy to clipboard
           </button>
           <button
-            onClick={onExport}
-            disabled={selectedCount === 0}
-            className="rounded-button bg-accent px-4 py-1.5 text-sm font-medium text-text-primary hover:bg-accent-hover disabled:opacity-50"
+            onClick={onBackToOverview}
+            className="rounded-button bg-accent px-4 py-1.5 text-sm font-medium text-text-primary hover:bg-accent-hover"
           >
-            Export selected as PDF
+            Back to overview
           </button>
         </div>
       </div>
