@@ -129,7 +129,7 @@ export default function NewEstimatePage() {
 
 function canProceed(s: WizardState, step: number): boolean {
   if (step === 2) {
-    if (s.mode === "rfp") return pileIsValid(s.pileFiles).valid;
+    if (s.mode === "rfp") return pileIsValid(s.pileFiles).canSubmit;
     if (s.mode === "quick_bom")
       return s.bomFile !== null || parseBomText(s.bomText).length >= 1;
     if (s.mode === "rfi") return true;

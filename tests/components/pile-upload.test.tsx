@@ -92,6 +92,7 @@ describe("PileUpload", () => {
     dropFiles([makeFile("huge.pdf", MAX_FILE_SIZE_BYTES + 1)]);
 
     expect(screen.getByText(/exceeds 500 MB/i)).toBeInTheDocument();
+    expect(screen.getByText(/remove before continuing/i)).toBeInTheDocument();
   });
 
   it("remove button drops a file from the pile", () => {
@@ -109,36 +110,74 @@ describe("pileIsValid", () => {
     return { id: name, file: makeFile(name, size), documentType: dt };
   }
 
-  it("invalid when any file is untagged", () => {
+  it("blocks submit when no files uploaded", () => {
+    const r = pileIsValid([]);
+    expect(r.canSubmit).toBe(false);
+    expect(r.blockingReason).toMatch(/at least one file/i);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("blocks submit when any file is untagged", () => {
     const r = pileIsValid([pf("a.xlsx", "boq"), pf("b.pdf", null)]);
-    expect(r.valid).toBe(false);
-    expect(r.reason).toMatch(/need a tag/i);
+    expect(r.canSubmit).toBe(false);
+    expect(r.blockingReason).toMatch(/need a tag/i);
   });
 
-  it("invalid when no BoQ file", () => {
-    const r = pileIsValid([pf("a.pdf", "rfp"), pf("b.pdf", "compliance")]);
-    expect(r.valid).toBe(false);
-    expect(r.reason).toMatch(/BoQ/);
-  });
-
-  it("invalid when no RFP file", () => {
-    const r = pileIsValid([pf("a.xlsx", "boq"), pf("b.xlsx", "bom")]);
-    expect(r.valid).toBe(false);
-    expect(r.reason).toMatch(/RFP/);
-  });
-
-  it("valid when one BoQ + one RFP present and everything tagged", () => {
-    const r = pileIsValid([pf("a.xlsx", "boq"), pf("b.pdf", "rfp")]);
-    expect(r.valid).toBe(true);
-  });
-
-  it("ignores oversized untagged files when checking validity", () => {
+  it("blocks submit when any file is over 500 MB", () => {
     const r = pileIsValid([
       pf("a.xlsx", "boq"),
       pf("b.pdf", "rfp"),
-      pf("huge.pdf", null, MAX_FILE_SIZE_BYTES + 1),
+      pf("huge.pdf", "other", MAX_FILE_SIZE_BYTES + 1),
     ]);
-    expect(r.valid).toBe(true);
+    expect(r.canSubmit).toBe(false);
+    expect(r.blockingReason).toMatch(/exceed 500 MB/i);
+  });
+
+  it("blocks submit on oversized even when untagged", () => {
+    const r = pileIsValid([pf("huge.pdf", null, MAX_FILE_SIZE_BYTES + 1)]);
+    expect(r.canSubmit).toBe(false);
+    expect(r.blockingReason).toMatch(/exceed 500 MB/i);
+  });
+
+  it("allows submit with warning when no BoQ tagged", () => {
+    const r = pileIsValid([pf("a.pdf", "rfp"), pf("b.pdf", "compliance")]);
+    expect(r.canSubmit).toBe(true);
+    expect(r.warnings).toEqual(
+      expect.arrayContaining([expect.stringMatching(/No BoQ/)]),
+    );
+    expect(r.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/No RFP/)]),
+    );
+  });
+
+  it("allows submit with warning when no RFP tagged", () => {
+    const r = pileIsValid([pf("a.xlsx", "boq"), pf("b.xlsx", "bom")]);
+    expect(r.canSubmit).toBe(true);
+    expect(r.warnings).toEqual(
+      expect.arrayContaining([expect.stringMatching(/No RFP/)]),
+    );
+    expect(r.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/No BoQ/)]),
+    );
+  });
+
+  it("allows submit with both warnings when only Other tagged", () => {
+    const r = pileIsValid([pf("notes.txt", "other")]);
+    expect(r.canSubmit).toBe(true);
+    expect(r.warnings).toHaveLength(2);
+    expect(r.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/No BoQ/),
+        expect.stringMatching(/No RFP/),
+      ]),
+    );
+  });
+
+  it("allows submit with no warnings when both BoQ and RFP tagged", () => {
+    const r = pileIsValid([pf("a.xlsx", "boq"), pf("b.pdf", "rfp")]);
+    expect(r.canSubmit).toBe(true);
+    expect(r.warnings).toEqual([]);
+    expect(r.blockingReason).toBeUndefined();
   });
 });
 

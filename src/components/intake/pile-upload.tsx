@@ -166,7 +166,7 @@ export default function PileUpload({ value, onChange }: Props) {
                       role="alert"
                       className="mt-0.5 text-[11px] text-destructive"
                     >
-                      File exceeds 500 MB limit — will be skipped at submit
+                      File exceeds 500 MB limit — remove before continuing
                     </p>
                   )}
                   {mismatch && !tooLarge && (
@@ -226,22 +226,42 @@ export default function PileUpload({ value, onChange }: Props) {
   );
 }
 
-export function pileIsValid(pile: PileFile[]): {
-  valid: boolean;
-  reason?: string;
-} {
-  const submittable = pile.filter((p) => p.file.size <= MAX_FILE_SIZE_BYTES);
-  const untagged = submittable.filter((p) => p.documentType == null);
-  if (untagged.length > 0)
+export interface PileValidation {
+  canSubmit: boolean;
+  blockingReason?: string;
+  warnings: string[];
+}
+
+export function pileIsValid(pile: PileFile[]): PileValidation {
+  if (pile.length === 0) {
     return {
-      valid: false,
-      reason: `${untagged.length} file(s) need a tag before continuing`,
+      canSubmit: false,
+      blockingReason: "Add at least one file to continue",
+      warnings: [],
     };
-  const hasBoQ = submittable.some((p) => p.documentType === "boq");
-  const hasRFP = submittable.some((p) => p.documentType === "rfp");
-  if (!hasBoQ) return { valid: false, reason: "At least one BoQ file required" };
-  if (!hasRFP) return { valid: false, reason: "At least one RFP file required" };
-  return { valid: true };
+  }
+  const oversized = pile.filter((p) => p.file.size > MAX_FILE_SIZE_BYTES);
+  if (oversized.length > 0) {
+    return {
+      canSubmit: false,
+      blockingReason: `${oversized.length} file(s) exceed 500 MB — remove before continuing`,
+      warnings: [],
+    };
+  }
+  const untagged = pile.filter((p) => p.documentType == null);
+  if (untagged.length > 0) {
+    return {
+      canSubmit: false,
+      blockingReason: `${untagged.length} file(s) need a tag before continuing`,
+      warnings: [],
+    };
+  }
+  const warnings: string[] = [];
+  if (!pile.some((p) => p.documentType === "boq"))
+    warnings.push("No BoQ — pricing may produce $0 lines");
+  if (!pile.some((p) => p.documentType === "rfp"))
+    warnings.push("No RFP — requirements extraction will be limited");
+  return { canSubmit: true, warnings };
 }
 
 export function submittablePile(

@@ -1,5 +1,6 @@
 "use client";
 
+import { AlertTriangle } from "lucide-react";
 import PileUpload, { pileIsValid } from "@/components/intake/pile-upload";
 import type { WizardState } from "../types";
 
@@ -17,8 +18,8 @@ export default function FileUpload({ state, update }: Props) {
         Upload RFP package
       </h2>
       <p className="mt-1 text-sm text-text-secondary">
-        Drop any number of files, then tag each one. At least one{" "}
-        <strong>BoQ</strong> and one <strong>RFP</strong> file are required.
+        Drop any number of files, then tag each one. A <strong>BoQ</strong> and{" "}
+        <strong>RFP</strong> are recommended but not required.
       </p>
 
       <div className="mt-6">
@@ -28,8 +29,25 @@ export default function FileUpload({ state, update }: Props) {
         />
       </div>
 
-      {state.pileFiles.length > 0 && !status.valid && (
-        <p className="mt-3 text-xs text-warning">{status.reason}</p>
+      {state.pileFiles.length > 0 && status.blockingReason && (
+        <p className="mt-3 text-xs text-warning">{status.blockingReason}</p>
+      )}
+
+      {status.warnings.length > 0 && (
+        <ul
+          data-testid="pile-warnings"
+          className="mt-3 space-y-1 rounded-card border border-destructive/40 bg-destructive-muted px-3 py-2"
+        >
+          {status.warnings.map((w) => (
+            <li
+              key={w}
+              className="flex items-center gap-1.5 text-[11px] text-destructive"
+            >
+              <AlertTriangle size={11} />
+              {w}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
