@@ -158,13 +158,15 @@ function loadInventory(): InventoryRow[] {
   return rows;
 }
 
-function filterTier1(rows: InventoryRow[]): InventoryRow[] {
-  const estimateRe = /Estimate_[A-Z]{2}\d{9}[A-Z]{2}\.xlsx$/i;
-  return rows.filter(
-    (r) =>
-      r.family === "tender_analyzer" ||
-      (r.family === "unknown" && estimateRe.test(r.path))
-  );
+// Accept ALL families. Parsers (parseCCW, parseTA) decide what to attempt via
+// sheet-based detection; files whose sheets match neither parser surface as
+// graceful warnings. .xls binary rows still flow through — the xlsx library
+// can't read legacy binary .xls without xlsjs polyfill, so those fail-gracefully
+// inside openWorkbook(). Pre-A2 this only accepted tender_analyzer + Estimate_*
+// filename matches, dropping ~65% of the inventory including Cisco-provided CCW
+// quotes whose filenames don't match the legacy Estimate_ pattern.
+export function selectIngestionTargets(rows: InventoryRow[]): InventoryRow[] {
+  return rows.filter((r) => Boolean(r.family));
 }
 
 // ─── XLSX helpers ───────────────────────────────────────────────────────
@@ -278,7 +280,7 @@ function findCCWSheet(wb: xlsx.WorkBook): xlsx.WorkSheet | null {
   return null;
 }
 
-function parseCCW(
+export function parseCCW(
   absPath: string,
   relPath: string,
   opportunityId: string,
@@ -297,7 +299,11 @@ function parseCCW(
     const row = r + 1;
     const sku = cellStr(ws, `B${row}`);
     if (!sku) continue;
-    if (cellStr(ws, `H${row}`).toLowerCase() === "yes") continue; // bundle child
+    // H = "Included Item" indicates the SKU's price is rolled into a parent
+    // bundle line. We retain these as catalog entries with listPrice = 0
+    // (parent's standalone price); operator overrides at pricing-config time.
+    // Skipping them dropped legitimate orderable SKUs like PWR-C1-715WAC-P
+    // from the catalog.
     const listPrice = normalizeListPrice(cellNum(ws, `K${row}`));
 
     const smartMandatoryStr = cellStr(ws, `C${row}`).toLowerCase();
@@ -320,6 +326,31 @@ function parseCCW(
     });
   }
   return { entries: out };
+}
+
+// ─── Router ─────────────────────────────────────────────────────────────
+
+// Sheet-based router: try CCW first (findCCWSheet detects by sheet-name regex
+// OR by header probe for "Line Number" + "Item Name", so it handles
+// vendor_bom, stc_bom_template, customer_boq_xlsx, and the legacy Estimate_
+// filename pattern with the same code path). Fall back to TA only when CCW
+// reports "no recognizable CCW sheet" — for "could not open workbook" TA
+// would also fail to open, so don't double-warn.
+export function routeAndParse(
+  absPath: string,
+  relPath: string,
+  opportunityId: string,
+  observedAt: string
+): { entries: Candidate[]; warning?: string; parserUsed: "CCW" | "TA" | "none" } {
+  const ccw = parseCCW(absPath, relPath, opportunityId, observedAt);
+  if (ccw.warning !== "no recognizable CCW sheet") {
+    return { entries: ccw.entries, warning: ccw.warning, parserUsed: ccw.warning ? "none" : "CCW" };
+  }
+  const ta = parseTA(absPath, relPath, opportunityId, observedAt);
+  if (ta.warning) {
+    return { entries: [], warning: `CCW: no recognizable CCW sheet; TA: ${ta.warning}`, parserUsed: "none" };
+  }
+  return { entries: ta.entries, warning: undefined, parserUsed: "TA" };
 }
 
 // ─── Heuristics ─────────────────────────────────────────────────────────
@@ -560,8 +591,11 @@ async function main(): Promise<void> {
 
   const allRows = loadInventory();
   log(`Inventory rows parsed: ${allRows.length}`);
-  let targets = filterTier1(allRows);
-  log(`Tier-1 targets: ${targets.length} (TA + Estimate_*)`);
+  let targets = selectIngestionTargets(allRows);
+  const familyCounts: Record<string, number> = {};
+  for (const t of targets) familyCounts[t.family] = (familyCounts[t.family] ?? 0) + 1;
+  const familySummary = Object.keys(familyCounts).sort().map((k) => `${k}=${familyCounts[k]}`).join(", ");
+  log(`Ingestion targets: ${targets.length} files across ${Object.keys(familyCounts).length} families (${familySummary})`);
 
   const maxFiles = parseInt(process.env.MAX_FILES ?? "", 10);
   if (Number.isFinite(maxFiles) && maxFiles > 0) {
@@ -608,24 +642,21 @@ async function main(): Promise<void> {
     const observedAt = statMtime.toISOString().slice(0, 10);
     const opportunityId = parseOpId(t.path);
 
-    const isCCW = /Estimate_[A-Z]{2}\d{9}[A-Z]{2}\.xlsx$/i.test(t.path);
-    const { entries, warning } = isCCW
-      ? parseCCW(absPath, t.path, opportunityId, observedAt)
-      : parseTA(absPath, t.path, opportunityId, observedAt);
+    const { entries, warning, parserUsed } = routeAndParse(absPath, t.path, opportunityId, observedAt);
 
     if (warning) {
-      log(`${tag} FAIL: ${fname} — ${warning}`);
+      log(`${tag} FAIL [${t.family}]: ${fname} — ${warning}`);
       failures.push({ path: t.path, reason: warning });
       continue;
     }
     if (entries.length === 0) {
-      log(`${tag} extracted 0 entries: ${fname}`);
+      log(`${tag} extracted 0 entries [${t.family}]: ${fname}`);
       failures.push({ path: t.path, reason: "0 priced rows" });
       continue;
     }
     candidates.push(...entries);
     successfulFiles.push(t.path);
-    log(`${tag} extracted ${entries.length}: ${fname}`);
+    log(`${tag} extracted ${entries.length} via ${parserUsed} [${t.family}]: ${fname}`);
   }
 
   log(`Total candidates pre-dedupe: ${candidates.length}`);
