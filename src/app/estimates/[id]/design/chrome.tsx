@@ -7,23 +7,18 @@ import { cn } from "@/lib/utils";
 import { EstimateSubNav } from "../hub-components";
 import type { NavItem } from "../hub-mappers";
 
-export type DesignPhase =
-  | "idle" | "hld_in_progress" | "hld_complete"
-  | "lld_in_progress" | "lld_complete" | "complete";
+export type DesignPhase = "idle" | "hld_in_progress" | "hld_complete" | "complete";
 
-export type Tab = "approach" | "sizing" | "hld" | "lld-details" | "lld-doc";
+export type Tab = "approach" | "sizing" | "hld";
 
 export const TAB_LABELS: Record<Tab, string> = {
-  approach: "Design Approach", sizing: "Sizing & Compatibility",
-  hld: "HLD", "lld-details": "LLD Details", "lld-doc": "LLD Document",
+  approach: "Design Approach", sizing: "Sizing & Compatibility", hld: "HLD",
 };
 
 const PHASE_BADGE: Record<DesignPhase, string> = {
   idle: "bg-[var(--border)] text-text-tertiary",
   hld_in_progress: "bg-accent-muted text-accent",
   hld_complete: "bg-blue-muted text-blue",
-  lld_in_progress: "bg-accent-muted text-accent",
-  lld_complete: "bg-blue-muted text-blue",
   complete: "bg-success-muted text-success",
 };
 

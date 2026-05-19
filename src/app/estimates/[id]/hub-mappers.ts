@@ -158,7 +158,10 @@ export function buildNavItems(
     items.push(
       { label: "Requirements", href: `${base}/checkpoint`, state: checkpointState(pipeline, "e1-requirements") },
       { label: "Compliance", href: `${base}/compliance`, state: checkpointState(pipeline, "e1-compliance") },
-      { label: "Clarifications", href: `${base}/clarifications`, state: "not_started" }
+      { label: "Clarifications", href: `${base}/clarifications`, state: "not_started" },
+      // Design appears in RFP mode too — E5 runs after E1 in the RFP sequence
+      // and operators must approve e5-design-approach + e5-hld before E2 starts.
+      { label: "Design", href: `${base}/design`, state: engineState(pipeline, "e5") }
     );
   }
   items.push(

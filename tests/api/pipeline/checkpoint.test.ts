@@ -168,7 +168,6 @@ describe("POST /api/pipeline/[id]/checkpoint — full allowlist coverage", () =>
     ["e4-baseline", "e4"],
     ["e5-design-approach", "e5"],
     ["e5-hld", "e5"],
-    ["e5-lld", "e5"],
   ] as const)("accepts approval for %s without 400", async (id, engine) => {
     mockLoad.mockResolvedValue(makeStateWithCheckpoint(id, engine));
 

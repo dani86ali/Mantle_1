@@ -136,7 +136,16 @@ export function EstimateSubNav({ items, activeHref }: { items: NavItem[]; active
             )}
           >
             <span>{item.label}</span>
-            <span className={cn("h-2 w-2 rounded-full", STATUS_DOT[item.state])} />
+            {item.state === "needs_review" ? (
+              <span
+                data-testid={`nav-review-badge-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                className="rounded-full bg-warning-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning"
+              >
+                Review
+              </span>
+            ) : (
+              <span className={cn("h-2 w-2 rounded-full", STATUS_DOT[item.state])} />
+            )}
           </Link>
         ))}
       </nav>

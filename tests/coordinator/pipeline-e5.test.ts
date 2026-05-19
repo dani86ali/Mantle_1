@@ -89,7 +89,7 @@ describe('synthesizeE5InputFromE1', () => {
     expect(out.engine).toBe('e5');
     expect(out.inputData.requirementsBaseline).toBeDefined();
     expect(out.inputData.outputDir).toBe('/tmp/out');
-    expect(out.inputData.phase).toBe('full');
+    expect(out.inputData.phase).toBe('hld');
   });
 
   it('categories sum to the input count (no requirements dropped)', () => {

@@ -119,19 +119,6 @@ const phase1 = {
   hldRevisions: 0,
 };
 
-const phase2 = {
-  ipVlanPlan: { vlans: [], subnets: [], vrfs: [] },
-  portMaps: [],
-  cableSchedule: [],
-  qosPolicy: { vendor: "cisco", classes: [], markingPolicy: "", queuingPolicy: "" },
-  migrationApproach: { method: "cutover", phases: [], riskLevel: "low", reasoning: "fb" },
-  lldSections: [],
-  lldDocPath: "./out/Acme-Refresh-lld.docx",
-  rackElevations: [],
-  finalCompatibility: { valid: true, errors: [], warnings: [] },
-  lldRevisions: 0,
-};
-
 beforeEach(() => {
   mockResolve.mockReset();
   mockLoadState.mockReset();
@@ -330,18 +317,9 @@ describe("PATCH /api/estimates/[id]/design", () => {
     expect(res.status).toBe(400);
   });
 
-  it("approve_hld runs LLD and advances phase to lld_complete", async () => {
+  it("approve_hld advances phase to complete without invoking LLD (Fix #4)", async () => {
     mockResolve.mockResolvedValue(resolved);
     mockLoadState.mockResolvedValue({ ...hldState, phase: "hld_complete" });
-    mockRunE5.mockResolvedValue({
-      output: { engine: "e5", artifacts: {}, warnings: [] },
-      phase: "lld",
-      logs: [],
-      phase2,
-      componentList: [
-        { model: "C9500", vendor: "cisco", quantity: 2, role: "core", fromDesignStep: "3" },
-      ],
-    });
 
     const res = await designPATCH(
       jsonReq({ action: "approve_hld" }),
@@ -349,13 +327,12 @@ describe("PATCH /api/estimates/[id]/design", () => {
     );
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.status).toBe("lld_complete");
-    expect(body.lldDocxPath).toBe(phase2.lldDocPath);
-    expect(body.componentList).toHaveLength(1);
+    expect(body.status).toBe("complete");
 
-    const call = mockRunE5.mock.calls[0][0];
-    expect(call.inputData.phase).toBe("lld");
-    expect(call.inputData.hldHandoff.topology).toBe("two_tier_collapsed_core");
+    expect(mockSaveState).toHaveBeenCalledTimes(1);
+    const saved = mockSaveState.mock.calls[0][1];
+    expect(saved.phase).toBe("complete");
+    expect(mockRunE5).not.toHaveBeenCalled();
   });
 
   it("approve_hld in wrong phase returns 400", async () => {
@@ -433,12 +410,12 @@ describe("PATCH design approve_* → unified checkpoint sync", () => {
     updatedAt: "t0",
   };
 
-  it("approve_design approves e5-design-approach + syncs hldDocument; does not resume (e5-hld/lld still pending)", async () => {
+  it("approve_design approves e5-design-approach + syncs hldDocument; does not resume (e5-hld still pending)", async () => {
     mockResolve.mockResolvedValue(resolved);
     mockLoadState.mockResolvedValue(hldStateAtHld);
     const pipeline = pipelineWithE5Checkpoints({
       approved: [],
-      pending: ["e5-design-approach", "e5-hld", "e5-lld"],
+      pending: ["e5-design-approach", "e5-hld"],
     });
     mockLoadPipelineByIntake.mockResolvedValue(pipeline);
 
@@ -457,25 +434,17 @@ describe("PATCH design approve_* → unified checkpoint sync", () => {
     expect(mockResume).not.toHaveBeenCalled();
   });
 
-  it("approve_lld when other two e5-* are approved → all approved, resume fires, componentList synced", async () => {
+  it("approve_hld when e5-design-approach is already approved → all approved, resume fires", async () => {
     mockResolve.mockResolvedValue(resolved);
-    mockLoadState.mockResolvedValue({
-      ...hldStateAtHld,
-      phase: "lld_complete",
-      lldDocxPath: phase2.lldDocPath,
-      ipVlanPlan: JSON.stringify(phase2.ipVlanPlan),
-      componentList: JSON.stringify([
-        { model: "C9500", vendor: "cisco", quantity: 2, role: "core" },
-      ]),
-    });
+    mockLoadState.mockResolvedValue({ ...hldStateAtHld, phase: "hld_complete" });
     const pipeline = pipelineWithE5Checkpoints({
-      approved: ["e5-design-approach", "e5-hld"],
-      pending: ["e5-lld"],
+      approved: ["e5-design-approach"],
+      pending: ["e5-hld"],
     });
     mockLoadPipelineByIntake.mockResolvedValue(pipeline);
 
     const res = await designPATCH(
-      jsonReq({ action: "approve_lld" }),
+      jsonReq({ action: "approve_hld" }),
       { params: { id: "intake-1" } },
     );
     expect(res.status).toBe(200);
@@ -483,25 +452,20 @@ describe("PATCH design approve_* → unified checkpoint sync", () => {
     const saved = mockSavePipelineState.mock.calls[0][0] as PipelineState;
     expect(saved.checkpoints.every((c) => c.status === "approved")).toBe(true);
     expect(saved.status).toBe("running");
-    expect(saved.artifacts.e5.componentList).toContain("C9500");
-    expect(saved.artifacts.e5.lldDocument).toBe(phase2.lldDocPath);
+    expect(saved.artifacts.e5.hldDocument).toBe(phase1.hldDocPath);
     expect(mockResume).toHaveBeenCalledTimes(1);
     expect(mockResume).toHaveBeenCalledWith(expect.any(String), "intake-1");
+    // LLD code is not invoked post-Fix #4.
+    expect(mockRunE5).not.toHaveBeenCalled();
   });
 
-  it("approve_lld with no pipeline state for intake → succeeds, no unified-side-effects", async () => {
+  it("approve_hld with no pipeline state for intake → succeeds, no unified-side-effects", async () => {
     mockResolve.mockResolvedValue(resolved);
-    mockLoadState.mockResolvedValue({
-      ...hldStateAtHld,
-      phase: "lld_complete",
-      lldDocxPath: phase2.lldDocPath,
-      ipVlanPlan: JSON.stringify(phase2.ipVlanPlan),
-      componentList: JSON.stringify([]),
-    });
+    mockLoadState.mockResolvedValue({ ...hldStateAtHld, phase: "hld_complete" });
     mockLoadPipelineByIntake.mockResolvedValue(null);
 
     const res = await designPATCH(
-      jsonReq({ action: "approve_lld" }),
+      jsonReq({ action: "approve_hld" }),
       { params: { id: "intake-1" } },
     );
     expect(res.status).toBe(200);
@@ -513,50 +477,13 @@ describe("PATCH design approve_* → unified checkpoint sync", () => {
     expect(mockResume).not.toHaveBeenCalled();
   });
 
-  it("approve_lld when pipeline state exists but has no e5-lld checkpoint → no resume, no error", async () => {
-    mockResolve.mockResolvedValue(resolved);
-    mockLoadState.mockResolvedValue({
-      ...hldStateAtHld,
-      phase: "lld_complete",
-      lldDocxPath: phase2.lldDocPath,
-      ipVlanPlan: JSON.stringify(phase2.ipVlanPlan),
-      componentList: JSON.stringify([]),
-    });
-    // Old pipeline pre-A2: only e1-* checkpoints, no e5-* yet.
-    const now = new Date();
-    const pipeline: PipelineState = {
-      id: "pipe-old",
-      opportunityId: "intake:intake-1",
-      intakeId: "intake-1",
-      mode: "rfp",
-      currentEngine: "e1",
-      status: "paused_at_checkpoint",
-      artifacts: { e1: {}, e2: {}, e3: {}, e4: {}, e5: {} },
-      checkpoints: [
-        { id: "e1-requirements", engine: "e1", label: "x", status: "pending", revisionsUsed: 0 },
-      ],
-      engineCalls: [],
-      timestamps: { createdAt: now, updatedAt: now },
-    };
-    mockLoadPipelineByIntake.mockResolvedValue(pipeline);
-
-    const res = await designPATCH(
-      jsonReq({ action: "approve_lld" }),
-      { params: { id: "intake-1" } },
-    );
-    expect(res.status).toBe(200);
-
-    expect(mockSavePipelineState).not.toHaveBeenCalled();
-    expect(mockResume).not.toHaveBeenCalled();
-  });
-
-  it("approve_design → approve_hld → approve_lld in sequence drives all three checkpoints + fires resume once", async () => {
+  it("approve_design → approve_hld in sequence drives both checkpoints + fires resume once", async () => {
     mockResolve.mockResolvedValue(resolved);
 
-    // Shared pipeline mutated across the three calls.
+    // Shared pipeline mutated across both calls.
     const pipeline = pipelineWithE5Checkpoints({
       approved: [],
-      pending: ["e5-design-approach", "e5-hld", "e5-lld"],
+      pending: ["e5-design-approach", "e5-hld"],
     });
     mockLoadPipelineByIntake.mockResolvedValue(pipeline);
 
@@ -568,45 +495,21 @@ describe("PATCH design approve_* → unified checkpoint sync", () => {
     );
     expect(res.status).toBe(200);
 
-    // Step 2: approve_hld (phase hld_complete → lld_complete; runs LLD).
+    // Step 2: approve_hld (phase hld_complete → complete; triggers resume).
     mockLoadState.mockResolvedValueOnce({ ...hldStateAtHld, phase: "hld_complete" });
-    mockRunE5.mockResolvedValueOnce({
-      output: { engine: "e5", artifacts: {}, warnings: [] },
-      phase: "lld",
-      logs: [],
-      phase2,
-      componentList: [
-        { model: "C9500", vendor: "cisco", quantity: 2, role: "core", fromDesignStep: "3" },
-      ],
-    });
     res = await designPATCH(
       jsonReq({ action: "approve_hld" }),
       { params: { id: "intake-1" } },
     );
     expect(res.status).toBe(200);
 
-    // Step 3: approve_lld (phase lld_complete → complete; triggers resume).
-    mockLoadState.mockResolvedValueOnce({
-      ...hldStateAtHld,
-      phase: "lld_complete",
-      lldDocxPath: phase2.lldDocPath,
-      ipVlanPlan: JSON.stringify(phase2.ipVlanPlan),
-      componentList: JSON.stringify([{ model: "C9500", vendor: "cisco", quantity: 2 }]),
-    });
-    res = await designPATCH(
-      jsonReq({ action: "approve_lld" }),
-      { params: { id: "intake-1" } },
-    );
-    expect(res.status).toBe(200);
-
-    // All three e5-* approved on the shared pipeline.
+    // Both e5-* approved on the shared pipeline.
     expect(pipeline.checkpoints.filter((c) => c.engine === "e5").every((c) => c.status === "approved")).toBe(true);
     expect(pipeline.status).toBe("running");
-    expect(pipeline.artifacts.e5.componentList).toBeTruthy();
     expect(pipeline.artifacts.e5.hldDocument).toBe(phase1.hldDocPath);
-    expect(pipeline.artifacts.e5.lldDocument).toBe(phase2.lldDocPath);
     expect(mockResume).toHaveBeenCalledTimes(1);
-    expect(mockSavePipelineState).toHaveBeenCalledTimes(3);
+    expect(mockSavePipelineState).toHaveBeenCalledTimes(2);
+    expect(mockRunE5).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,7 @@
 /** Coordinator → E5 bridge.
  *  Maps pipeline inputs + E4 artifacts into the EngineInput shape consumed by
- *  runE5 (phase='full'), and turns the EngineOutput<'e5'> back into the
+ *  runE5 (phase='hld' — LLD is paused for the demo per memory
+ *  project-lld-deferred), and turns the EngineOutput<'e5'> back into the
  *  E5Artifacts the coordinator tracks.
  */
 
@@ -112,7 +113,7 @@ export function buildE5Input(
     hasVideo: input.hasVideo,
     hasRedundancy: input.hasRedundancy,
     downTimeToleranceHours: input.downTimeToleranceHours,
-    phase: 'full',
+    phase: 'hld',
     outputDir,
   };
   return {

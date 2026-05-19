@@ -2,10 +2,10 @@
  * Integration test for the RFP pause/resume chain.
  *
  * Reproduces the user-visible bug from P4 (commit bce86d5): after E1 compliance
- * approval, the pipeline should resume and run E5, then expose three pending
- * checkpoints (e5-design-approach, e5-hld, e5-lld). This test stubs the engines
- * and the DB layer so we can assert on the orchestrator's resume behavior in
- * isolation.
+ * approval, the pipeline should resume and run E5, then expose two pending
+ * checkpoints (e5-design-approach, e5-hld — LLD paused for demo per Fix #4).
+ * This test stubs the engines and the DB layer so we can assert on the
+ * orchestrator's resume behavior in isolation.
  *
  * On current main (before the fix-pack on this branch) this test:
  *   - PASSES the in-memory checkpoint assertion (resumePipeline itself is OK
@@ -32,10 +32,7 @@ vi.mock('@/engines/e5/orchestrator', () => ({
     engine: 'e5',
     artifacts: {
       hldDocument: '/tmp/bomatic-e5/x/hld.docx',
-      lldDocument: '/tmp/bomatic-e5/x/lld.docx',
       diagrams: [],
-      ipVlanPlan: '{}',
-      componentList: '[]',
       designSummary: '{}',
     },
     warnings: [],
@@ -186,7 +183,7 @@ describe('RFP resume chain (E1 → E5)', () => {
     mockRunE5.mockClear();
   });
 
-  it('resumes from paused-at-E1 and adds three pending E5 checkpoints', async () => {
+  it('resumes from paused-at-E1 and adds two pending E5 checkpoints', async () => {
     await resumeAndPersistPipeline(TENANT_ID, INTAKE_ID);
 
     expect(mockRunE5).toHaveBeenCalledTimes(1);
@@ -200,11 +197,11 @@ describe('RFP resume chain (E1 → E5)', () => {
       'e1-compliance',
       'e5-design-approach',
       'e5-hld',
-      'e5-lld',
     ]);
+    expect(checkpointIds).not.toContain('e5-lld');
 
     const e5Checkpoints = finalState.checkpoints.filter((c) => c.engine === 'e5');
-    expect(e5Checkpoints).toHaveLength(3);
+    expect(e5Checkpoints).toHaveLength(2);
     for (const cp of e5Checkpoints) {
       expect(cp.status).toBe('pending');
     }

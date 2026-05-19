@@ -24,7 +24,6 @@ export const ENGINE_CHECKPOINTS: Record<EngineId, { id: string; label: string }[
   e5: [
     { id: 'e5-design-approach', label: 'Design approach review' },
     { id: 'e5-hld', label: 'HLD review' },
-    { id: 'e5-lld', label: 'LLD review' },
   ],
 };
 

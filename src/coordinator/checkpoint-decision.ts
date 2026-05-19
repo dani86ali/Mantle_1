@@ -39,17 +39,18 @@ export function applyCheckpointDecision(
   state.timestamps.updatedAt = new Date();
 
   // The resume gate: only when this is an 'approved' decision, the pipeline
-  // is currently paused, AND every checkpoint belonging to `target.engine`
-  // is now approved. We flip status to 'running' here as the mutex so a
-  // concurrent approval that reads state after this save won't double-fire.
-  // (Best-effort — see route.ts comment history for prior context.)
+  // is currently paused, AND every checkpoint belonging to the engine the
+  // pipeline is CURRENTLY paused at (`state.currentEngine`) is now approved.
+  // Filtering by `state.currentEngine` (not `target.engine`) closes a bypass:
+  // re-POSTing an already-approved checkpoint from an earlier engine while
+  // paused at a later one must not fire resume.
   let willResume = false;
   if (
     status === "approved"
     && state.intakeId
     && state.status === "paused_at_checkpoint"
   ) {
-    const engineCps = state.checkpoints.filter((c) => c.engine === target.engine);
+    const engineCps = state.checkpoints.filter((c) => c.engine === state.currentEngine);
     const allApproved =
       engineCps.length > 0 && engineCps.every((c) => c.status === "approved");
     if (allApproved) {

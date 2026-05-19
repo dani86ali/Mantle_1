@@ -56,10 +56,8 @@ const patchSchema = z
     action: z.enum([
       "approve_design",
       "approve_hld",
-      "approve_lld",
       "revise_design",
       "revise_hld",
-      "revise_lld",
     ]),
     revisionNotes: z.string().max(5000).optional(),
   })

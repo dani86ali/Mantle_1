@@ -4,8 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { buildNavItems, type ApiResponse } from "../hub-mappers";
 import type {
-  DesignApproach, SizingResult, CompatibilityResult, HLDSection, LLDSection,
-  IPVlanPlan, ComponentListItem,
+  DesignApproach, SizingResult, CompatibilityResult, HLDSection,
 } from "@/engines/e5/types";
 import {
   ApproveReviseBar, DesignInputForm, DesignSkeleton, PhaseBadge, Shell, Tabs,
@@ -14,8 +13,6 @@ import {
 import { DesignApproachTab } from "./design-approach-tab";
 import { SizingTab } from "./sizing-tab";
 import { HLDTab } from "./hld-tab";
-import { LLDDetailsTab } from "./lld-details-tab";
-import { LLDDocumentTab } from "./lld-document-tab";
 
 interface DesignData {
   status: DesignPhase;
@@ -26,17 +23,12 @@ interface DesignData {
   hldSections: HLDSection[] | null;
   hldDocxPath: string | null;
   diagramXml: string | null;
-  lldSections: LLDSection[] | null;
-  lldDocxPath: string | null;
-  ipVlanPlan: IPVlanPlan | null;
-  componentList: ComponentListItem[] | null;
   revisionNotes: string | null;
 }
 
 type Action =
   | "approve_design" | "revise_design"
-  | "approve_hld" | "revise_hld"
-  | "approve_lld" | "revise_lld";
+  | "approve_hld" | "revise_hld";
 
 export default function DesignPage() {
   const params = useParams();
@@ -121,7 +113,7 @@ export default function DesignPage() {
     } finally { setBusy(null); }
   }
 
-  function download(type: "hld" | "lld" | "diagram") {
+  function download(type: "hld" | "diagram") {
     window.open(`/api/estimates/${id}/design/documents?type=${type}`, "_blank");
   }
 
@@ -146,8 +138,6 @@ export default function DesignPage() {
   if (data.designApproach) tabs.push("approach");
   if (data.sizingResult) tabs.push("sizing");
   if (data.hldSections) tabs.push("hld");
-  if (data.ipVlanPlan || data.componentList) tabs.push("lld-details");
-  if (data.lldSections) tabs.push("lld-doc");
   const active: Tab = tabs.includes(tab) ? tab : (tabs[0] ?? "approach");
   const isBusy = busy !== null;
 
@@ -160,8 +150,6 @@ export default function DesignPage() {
         {active === "approach" && <DesignApproachTab approach={data.designApproach} topology={data.topology} />}
         {active === "sizing" && <SizingTab sizing={data.sizingResult} compatibility={data.compatibilityResult} />}
         {active === "hld" && <HLDTab sections={data.hldSections} hldDocxPath={data.hldDocxPath} diagramXml={data.diagramXml} onDownload={download} />}
-        {active === "lld-details" && <LLDDetailsTab ipVlanPlan={data.ipVlanPlan} componentList={data.componentList} />}
-        {active === "lld-doc" && <LLDDocumentTab sections={data.lldSections} lldDocxPath={data.lldDocxPath} onDownload={download} />}
       </div>
       {active === "approach" && (
         <ApproveReviseBar approveLabel="Approve Design" reviseLabel="Revise Design"
@@ -172,11 +160,6 @@ export default function DesignPage() {
         <ApproveReviseBar approveLabel="Approve HLD" reviseLabel="Revise HLD"
           busyApprove={busy === "approve_hld"} busyRevise={busy === "revise_hld"} busy={isBusy}
           onApprove={() => dispatch("approve_hld")} onRevise={(n) => dispatch("revise_hld", n)} />
-      )}
-      {active === "lld-doc" && (
-        <ApproveReviseBar approveLabel="Approve LLD" reviseLabel="Revise LLD"
-          busyApprove={busy === "approve_lld"} busyRevise={busy === "revise_lld"} busy={isBusy}
-          onApprove={() => dispatch("approve_lld")} onRevise={(n) => dispatch("revise_lld", n)} />
       )}
     </Shell>
   );

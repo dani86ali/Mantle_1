@@ -171,10 +171,12 @@ describe('runPipeline', () => {
 
     // onCheckpoint runs once per engine in the sequence (e1, e5, e2, e3 in
     // RFP mode); each engine creates its own set of checkpoint records.
+    // e5 has 2 checkpoints (e5-design-approach + e5-hld) post Fix #4 — LLD
+    // is paused for the demo per memory project-lld-deferred.
     expect(onCheckpoint).toHaveBeenCalledTimes(4);
     expect(result.state.checkpoints.map((c) => c.id)).toEqual([
       'e1-requirements', 'e1-compliance',
-      'e5-design-approach', 'e5-hld', 'e5-lld',
+      'e5-design-approach', 'e5-hld',
       'e2-sku-confirmation', 'e2-pricing-review',
       'e3-proposal',
     ]);

@@ -17,6 +17,7 @@ function makeState(opts?: {
   checkpoints?: Checkpoint[];
   status?: PipelineState["status"];
   intakeId?: string;
+  currentEngine?: PipelineState["currentEngine"];
 }): PipelineState {
   const now = new Date();
   return {
@@ -24,7 +25,7 @@ function makeState(opts?: {
     opportunityId: "intake:ABC",
     intakeId: opts?.intakeId ?? "ABC",
     mode: "rfp",
-    currentEngine: "e1",
+    currentEngine: opts?.currentEngine ?? "e1",
     status: opts?.status ?? "paused_at_checkpoint",
     artifacts: { e1: {}, e2: {}, e3: {}, e4: {}, e5: {} },
     checkpoints: opts?.checkpoints ?? [],
@@ -72,10 +73,11 @@ describe("applyCheckpointDecision", () => {
 
   it("does not resume on revision_requested even when the checkpoint exists", () => {
     const state = makeState({
-      checkpoints: [makeCheckpoint("e5-lld", "e5", "pending")],
+      currentEngine: "e5",
+      checkpoints: [makeCheckpoint("e5-hld", "e5", "pending")],
     });
 
-    const result = applyCheckpointDecision(state, "e5-lld", "revision_requested", "fix subnets");
+    const result = applyCheckpointDecision(state, "e5-hld", "revision_requested", "fix subnets");
 
     expect(isCheckpointDecisionError(result)).toBe(false);
     if (isCheckpointDecisionError(result)) return;
@@ -90,18 +92,19 @@ describe("applyCheckpointDecision", () => {
       checkpoints: [makeCheckpoint("e1-requirements", "e1", "pending")],
     });
 
-    const result = applyCheckpointDecision(state, "e5-lld", "approved", undefined);
+    const result = applyCheckpointDecision(state, "e5-hld", "approved", undefined);
 
     expect(isCheckpointDecisionError(result)).toBe(true);
     if (!isCheckpointDecisionError(result)) return;
-    expect(result.error).toMatch(/e5-lld.*not found/);
+    expect(result.error).toMatch(/e5-hld.*not found/);
   });
 
   it("falls back to the last checkpoint when checkpointId is undefined", () => {
     const state = makeState({
+      currentEngine: "e2",
       checkpoints: [
         makeCheckpoint("e1-requirements", "e1", "approved"),
-        makeCheckpoint("e1-compliance", "e1", "pending"),
+        makeCheckpoint("e1-compliance", "e1", "approved"),
         makeCheckpoint("e2-sku-confirmation", "e2", "pending"),
       ],
     });
@@ -111,17 +114,18 @@ describe("applyCheckpointDecision", () => {
     expect(isCheckpointDecisionError(result)).toBe(false);
     if (isCheckpointDecisionError(result)) return;
     expect(result.target.id).toBe("e2-sku-confirmation");
-    // Only e2-sku-confirmation in engine 'e2' so it's the lone member — should resume.
+    // currentEngine is 'e2', the only e2 checkpoint just approved → resume.
     expect(result.willResume).toBe(true);
   });
 
   it("does not resume when pipeline is not paused", () => {
     const state = makeState({
       status: "running",
-      checkpoints: [makeCheckpoint("e5-lld", "e5", "pending")],
+      currentEngine: "e5",
+      checkpoints: [makeCheckpoint("e5-hld", "e5", "pending")],
     });
 
-    const result = applyCheckpointDecision(state, "e5-lld", "approved", undefined);
+    const result = applyCheckpointDecision(state, "e5-hld", "approved", undefined);
 
     expect(isCheckpointDecisionError(result)).toBe(false);
     if (isCheckpointDecisionError(result)) return;
@@ -130,15 +134,41 @@ describe("applyCheckpointDecision", () => {
 
   it("does not resume when pipeline has no intakeId", () => {
     const state = makeState({
-      checkpoints: [makeCheckpoint("e5-lld", "e5", "pending")],
+      currentEngine: "e5",
+      checkpoints: [makeCheckpoint("e5-hld", "e5", "pending")],
     });
     state.intakeId = undefined;
 
-    const result = applyCheckpointDecision(state, "e5-lld", "approved", undefined);
+    const result = applyCheckpointDecision(state, "e5-hld", "approved", undefined);
 
     expect(isCheckpointDecisionError(result)).toBe(false);
     if (isCheckpointDecisionError(result)) return;
     expect(result.willResume).toBe(false);
+  });
+
+  it("does NOT resume when re-approving an earlier-engine checkpoint while paused at a later engine (Fix #4 regression)", () => {
+    // Pipeline is paused at e5 with both e5 checkpoints still pending. All e1
+    // checkpoints are already approved. Re-POSTing an e1 approval (the
+    // operator-workaround that surfaced the bug) must NOT fire resume — the
+    // gate is keyed on state.currentEngine, not target.engine.
+    const state = makeState({
+      currentEngine: "e5",
+      checkpoints: [
+        makeCheckpoint("e1-requirements", "e1", "approved"),
+        makeCheckpoint("e1-compliance", "e1", "approved"),
+        makeCheckpoint("e5-design-approach", "e5", "pending"),
+        makeCheckpoint("e5-hld", "e5", "pending"),
+      ],
+    });
+
+    const result = applyCheckpointDecision(state, "e1-compliance", "approved", undefined);
+
+    expect(isCheckpointDecisionError(result)).toBe(false);
+    if (isCheckpointDecisionError(result)) return;
+    expect(result.willResume).toBe(false);
+    expect(state.status).toBe("paused_at_checkpoint");
+    expect(state.checkpoints.find((c) => c.id === "e5-design-approach")!.status).toBe("pending");
+    expect(state.checkpoints.find((c) => c.id === "e5-hld")!.status).toBe("pending");
   });
 
   it("returns an error when called with undefined id on a checkpoint-less pipeline", () => {
