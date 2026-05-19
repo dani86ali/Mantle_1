@@ -170,15 +170,15 @@ describe("enrichFileContent", () => {
     });
     mockReadFile.mockResolvedValueOnce("sku,qty");
     const r = await enrichFileContent([
-      { path: "/u/spec.pdf", documentType: "rfp_sow" },
+      { path: "/u/spec.pdf", documentType: "rfp" },
       { path: "/u/client.xlsx", documentType: "boq" },
-      { path: "/u/list.csv", documentType: "vendor_bom" },
-      { path: "/u/plan.dwg", documentType: "prior_design" },
+      { path: "/u/list.csv", documentType: "bom" },
+      { path: "/u/plan.dwg", documentType: "other" },
     ]);
-    expect(r.files[0].documentType).toBe("rfp_sow");
+    expect(r.files[0].documentType).toBe("rfp");
     expect(r.files[1].documentType).toBe("boq");
-    expect(r.files[2].documentType).toBe("vendor_bom");
-    expect(r.files[3].documentType).toBe("prior_design");
+    expect(r.files[2].documentType).toBe("bom");
+    expect(r.files[3].documentType).toBe("other");
   });
 
   it("propagates documentType even when extraction fails", async () => {

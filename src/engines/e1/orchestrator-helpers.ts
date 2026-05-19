@@ -25,14 +25,12 @@ function classificationFromDocumentType(
   switch (documentType) {
     case 'boq':
       return { ...base, type: 'commercial', subtype: 'boq_template' };
-    case 'rfp_sow':
+    case 'rfp':
       return { ...base, type: 'technical', subtype: 'requirements' };
     case 'compliance':
       return { ...base, type: 'compliance', subtype: 'general' };
-    case 'vendor_bom':
-      return { ...base, type: 'commercial', subtype: 'vendor_bom' };
-    case 'prior_design':
-      return { ...base, type: 'technical', subtype: 'engineering_drawing' };
+    case 'bom':
+      return { ...base, type: 'commercial', subtype: 'bom' };
   }
 }
 

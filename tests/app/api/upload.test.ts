@@ -41,7 +41,7 @@ describe("POST /api/upload — explicit document types", () => {
     form.append("files", mockFile("client-boq.xlsx"));
     form.append("files", mockFile("rfp.docx"));
     form.append("files", mockFile("compliance.pdf"));
-    form.append("types", JSON.stringify(["boq", "rfp_sow", "compliance"]));
+    form.append("types", JSON.stringify(["boq", "rfp", "compliance"]));
 
     const res = await POST(multipartReq(form));
     expect(res.status).toBe(201);
@@ -51,7 +51,7 @@ describe("POST /api/upload — explicit document types", () => {
     expect(body.files[0].filename).toBe("client-boq.xlsx");
     expect(body.files[0].documentType).toBe("boq");
     expect(body.files[1].filename).toBe("rfp.docx");
-    expect(body.files[1].documentType).toBe("rfp_sow");
+    expect(body.files[1].documentType).toBe("rfp");
     expect(body.files[2].filename).toBe("compliance.pdf");
     expect(body.files[2].documentType).toBe("compliance");
     expect(body.warnings).toBeUndefined();

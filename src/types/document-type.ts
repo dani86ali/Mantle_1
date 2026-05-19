@@ -2,10 +2,9 @@ import { z } from "zod";
 
 export const DOCUMENT_TYPES = [
   "boq",
-  "rfp_sow",
+  "rfp",
+  "bom",
   "compliance",
-  "vendor_bom",
-  "prior_design",
   "other",
 ] as const;
 

@@ -138,7 +138,7 @@ describe("selectBoQFilePath", () => {
       format: "docx",
       type: "technical",
       subtype: "requirements",
-      documentType: "rfp_sow",
+      documentType: "rfp",
     });
     expect(selectBoQFilePath(mkE1Output([rfp]))).toBeUndefined();
   });

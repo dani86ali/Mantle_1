@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { initialState, parseBomText, type WizardState } from "./types";
-import { DOCUMENT_SLOTS } from "@/components/intake/document-slots";
+import { pileIsValid, submittablePile } from "@/components/intake/pile-upload";
 import type { DocumentType } from "@/types/document-type";
 import type { UploadedFileMeta } from "@/app/api/upload/route";
 import { ActionBar, STEPS, StepIndicator } from "./chrome";
@@ -42,9 +42,8 @@ export default function NewEstimatePage() {
         | undefined;
       const filesToUpload: { file: File; type: DocumentType }[] = [];
       if (state.mode === "rfp") {
-        for (const slot of DOCUMENT_SLOTS) {
-          const slotFiles = state.rfpSlots[slot.id] ?? [];
-          for (const f of slotFiles) filesToUpload.push({ file: f, type: slot.id });
+        for (const { file, documentType } of submittablePile(state.pileFiles)) {
+          filesToUpload.push({ file, type: documentType });
         }
       } else if (state.mode === "quick_bom" && state.bomFile) {
         filesToUpload.push({ file: state.bomFile, type: "boq" });
@@ -130,7 +129,7 @@ export default function NewEstimatePage() {
 
 function canProceed(s: WizardState, step: number): boolean {
   if (step === 2) {
-    if (s.mode === "rfp") return s.rfpSlotsValid;
+    if (s.mode === "rfp") return pileIsValid(s.pileFiles).valid;
     if (s.mode === "quick_bom")
       return s.bomFile !== null || parseBomText(s.bomText).length >= 1;
     if (s.mode === "rfi") return true;

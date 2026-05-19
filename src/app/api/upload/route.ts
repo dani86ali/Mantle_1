@@ -14,14 +14,20 @@ import {
 const ALLOWED_EXTENSIONS = [
   ".pdf",
   ".docx",
+  ".doc",
   ".xlsx",
   ".xls",
   ".csv",
   ".msg",
   ".dwg",
+  ".zip",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".txt",
 ] as const;
-const MAX_FILES = 50;
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILES = 200;
+const MAX_FILE_SIZE = 500 * 1024 * 1024;
 const DEFAULT_DOCUMENT_TYPE: DocumentType = "other";
 
 export interface UploadedFileMeta {
@@ -117,9 +123,9 @@ export async function POST(request: NextRequest) {
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         {
-          error: `File '${file.name}' is ${(file.size / 1024 / 1024).toFixed(1)}MB (max 10MB)`,
+          error: `File '${file.name}' is ${(file.size / 1024 / 1024).toFixed(1)}MB (max 500MB)`,
         },
-        { status: 400 },
+        { status: 413 },
       );
     }
   }

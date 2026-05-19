@@ -272,16 +272,16 @@ describe("classifyFile — needsReview flag (FC-005)", () => {
 });
 
 describe("classifyAll — explicit documentType bypasses heuristic stages (FC-007)", () => {
-  it("documentType='rfp_sow' emits technical/requirements at confidence 1.0, stage 1", () => {
+  it("documentType='rfp' emits technical/requirements at confidence 1.0, stage 1", () => {
     const out = classifyAll([
-      { path: "/u/random_name.pdf", documentType: "rfp_sow", content: "lorem ipsum" },
+      { path: "/u/random_name.pdf", documentType: "rfp", content: "lorem ipsum" },
     ]);
     expect(out).toHaveLength(1);
     expect(out[0].type).toBe("technical");
     expect(out[0].subtype).toBe("requirements");
     expect(out[0].confidence).toBe(1.0);
     expect(out[0].stage).toBe(1);
-    expect(out[0].documentType).toBe("rfp_sow");
+    expect(out[0].documentType).toBe("rfp");
     expect(out[0].format).toBe("pdf");
     // Filename "random_name.pdf" has no heuristic match — confidence 1.0 here
     // proves we skipped the cascade.
@@ -304,17 +304,10 @@ describe("classifyAll — explicit documentType bypasses heuristic stages (FC-00
     expect(out[0].confidence).toBe(1.0);
   });
 
-  it("documentType='vendor_bom' emits commercial/vendor_bom at confidence 1.0", () => {
-    const out = classifyAll([{ path: "/u/quote.xlsx", documentType: "vendor_bom" }]);
+  it("documentType='bom' emits commercial/bom at confidence 1.0", () => {
+    const out = classifyAll([{ path: "/u/quote.xlsx", documentType: "bom" }]);
     expect(out[0].type).toBe("commercial");
-    expect(out[0].subtype).toBe("vendor_bom");
-    expect(out[0].confidence).toBe(1.0);
-  });
-
-  it("documentType='prior_design' emits technical/engineering_drawing at confidence 1.0", () => {
-    const out = classifyAll([{ path: "/u/hld.docx", documentType: "prior_design" }]);
-    expect(out[0].type).toBe("technical");
-    expect(out[0].subtype).toBe("engineering_drawing");
+    expect(out[0].subtype).toBe("bom");
     expect(out[0].confidence).toBe(1.0);
   });
 
@@ -332,6 +325,17 @@ describe("classifyAll — explicit documentType bypasses heuristic stages (FC-00
     // No filename/folder rule, weak content → unknown with needsReview
     expect(out[0].confidence).toBeLessThan(1.0);
     expect(out[0].documentType).toBeUndefined();
+  });
+
+  it("legacy/stale documentType values fall through to heuristics without throwing", () => {
+    // Simulates a stale DB row that still carries the dropped 'prior_design' string.
+    // The classifier must not throw and must defer to heuristic classification.
+    const out = classifyAll([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { path: "/u/hld.docx", documentType: "prior_design" as any },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].confidence).toBeLessThan(1.0);
   });
 });
 
