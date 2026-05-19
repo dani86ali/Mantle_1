@@ -151,7 +151,7 @@ export function buildNavItems(
   if (mode === "rfi") {
     items.push(
       { label: "Questionnaire", href: `${base}/questionnaire`, state: checkpointState(pipeline, "e4-questionnaire") },
-      { label: "Responses", href: `${base}/responses`, state: checkpointState(pipeline, "e4-requirements") },
+      { label: "Responses", href: `${base}/responses`, state: checkpointState(pipeline, "e4-baseline") },
       { label: "Design", href: `${base}/design`, state: engineState(pipeline, "e5") }
     );
   } else if (mode !== "quick_bom") {

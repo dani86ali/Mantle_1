@@ -2,7 +2,7 @@
  * E4 orchestrator — Discovery engine top-level entry point.
  * Runtime Architecture §4.4: two phases separated by a client pause.
  *   Phase 1: project-type detection → questionnaire generation → e4-questionnaire checkpoint.
- *   Phase 2: response parsing/interpretation → gap detection → baseline → e4-requirements checkpoint.
+ *   Phase 2: response parsing/interpretation → gap detection → baseline → e4-baseline checkpoint.
  * Phase routing is driven by the presence of response payload in inputData.
  */
 

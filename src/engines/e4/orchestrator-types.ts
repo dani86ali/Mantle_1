@@ -13,7 +13,7 @@ export type CheckpointDecision = {
 };
 
 export type CheckpointCallback = (
-  checkpointId: 'e4-questionnaire' | 'e4-requirements',
+  checkpointId: 'e4-questionnaire' | 'e4-baseline',
   artifact: string,
   revision: number,
 ) => Promise<CheckpointDecision> | CheckpointDecision;

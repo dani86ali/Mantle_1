@@ -1,5 +1,5 @@
 /**
- * E4 phase 2 — client response processing through the e4-requirements checkpoint.
+ * E4 phase 2 — client response processing through the e4-baseline checkpoint.
  * Steps 6-10 from Runtime Architecture §4.4. Revision loop bounded to 3 cycles.
  */
 
@@ -140,7 +140,7 @@ export async function runPhase2(
 
     if (!data.onCheckpoint || revisions >= MAX_REVISIONS) break;
     const decision = await data.onCheckpoint(
-      'e4-requirements',
+      'e4-baseline',
       JSON.stringify({ baseline, gaps }),
       revisions,
     );

@@ -273,13 +273,13 @@ describe('runE4 — phase 2 free-text path', () => {
 });
 
 describe('runE4 — phase 2 checkpoint + revision', () => {
-  it('reaches e4-requirements checkpoint', async () => {
+  it('reaches e4-baseline checkpoint', async () => {
     const cb = vi.fn().mockResolvedValue({ decision: 'approved' });
     await runE4Detailed(makeInput({
       clientName: 'Acme', country: 'SA', responseFilePath: '/tmp/r.xlsx',
       questions: [Q_A1, Q_B1], onCheckpoint: cb as CheckpointCallback,
     }));
-    expect(cb).toHaveBeenCalledWith('e4-requirements', expect.any(String), 0);
+    expect(cb).toHaveBeenCalledWith('e4-baseline', expect.any(String), 0);
   });
 
   it('re-runs steps 7-9 on revision_requested', async () => {
