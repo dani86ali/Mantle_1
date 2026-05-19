@@ -82,15 +82,15 @@ describe("adaptSimpleRule", () => {
 
   it("maps valid=false + severity=warning correctly", () => {
     const rule = adaptSimpleRule(
-      makeSimpleFn({ valid: false, severity: "warning", message: "EoX SKU detected" }),
-      "eox-check",
-      "EoX Check",
+      makeSimpleFn({ valid: false, severity: "warning", message: "License dependency missing" }),
+      "license-deps",
+      "License Dependencies",
       "Test rule"
     );
     const results = rule.run(makeMinimalContext());
     expect(results[0].passed).toBe(false);
     expect(results[0].severity).toBe("warning");
-    expect(results[0].message).toBe("EoX SKU detected");
+    expect(results[0].message).toBe("License dependency missing");
   });
 
   it("passes context.lines to the simple function", () => {

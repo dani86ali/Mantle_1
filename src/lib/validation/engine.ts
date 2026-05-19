@@ -1,7 +1,7 @@
 /**
  * Deterministic validation engine.
  *
- * Runs all 17 validation rules against a candidate BoM.
+ * Runs all 16 validation rules against a candidate BoM.
  * NO LLM calls — every rule is deterministic with a traceable source of truth.
  * LLM is used for fix suggestions only (in the agent's fix loop).
  */
@@ -27,9 +27,7 @@ import { poeBudgetRule } from "./rules/poe-budget";
 import { psuRedundancyRule } from "./rules/psu-redundancy";
 import { checkDnaOptout } from "./rules/dna-optout";
 import { checkApOnly } from "./rules/ap-only";
-import { checkEox } from "./rules/eox-check";
 import { checkLicenseDeps } from "./rules/license-deps";
-import { loadEoxLookup } from "@/lib/data/eox-loader";
 import { adaptSimpleRule } from "./adapter";
 
 const ALL_RULES: ValidationRule[] = [
@@ -57,12 +55,6 @@ const ALL_RULES: ValidationRule[] = [
     "ap-only",
     "AP-only Estimate",
     "Detects AP-only BoMs without a wireless controller"
-  ),
-  adaptSimpleRule(
-    (lines) => checkEox(lines, loadEoxLookup()),
-    "eox-check",
-    "EoX Check",
-    "Checks for end-of-life SKUs using the configured EoX lookup"
   ),
   adaptSimpleRule(
     checkLicenseDeps,

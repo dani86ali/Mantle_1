@@ -123,37 +123,49 @@ describe("Rule: SKU Existence", () => {
 
 // ─── EoX ──────────────────────────────────────────────────────────────────
 
+// EoX detection is now CSV-backed (data/cisco-eox.csv via loadEoxLookup).
+// WS-C3650-24TS-S → C9300-24T-A is a known migration row in the CSV; the
+// active SKU C9300L-24UXG-4X-A is not in the CSV and therefore non-EoX.
 describe("Rule: EoX Status", () => {
-  it("passes when no EoX SKUs", () => {
-    const line = makeLine();
-    const catalog = new Map([["C9300L-24UXG-4X-A", makeCatalogItem()]]);
-    const ctx = makeContext({ lines: [line], catalogData: catalog });
+  it("passes when no EoX SKUs (line not in CSV)", () => {
+    const line = makeLine({ sku: "C9300L-24UXG-4X-A" });
+    const ctx = makeContext({ lines: [line] });
 
     const results = eoxRule.run(ctx);
+    expect(results).toHaveLength(1);
     expect(results[0].passed).toBe(true);
+    expect(results[0].severity).toBe("info");
   });
 
-  it("fails when SKU is EoX", () => {
-    const line = makeLine({ sku: "EOX-SWITCH" });
-    const catalog = new Map([
-      [
-        "EOX-SWITCH",
-        makeCatalogItem({
-          sku: "EOX-SWITCH",
-          eoxStatus: {
-            isEox: true,
-            endOfSaleDate: "2023-06-01",
-            migrationSku: "C9300-48P-A",
-          },
-        }),
-      ],
-    ]);
-    const ctx = makeContext({ lines: [line], catalogData: catalog });
+  it("flags an EoX SKU from the CSV with its migration suggestion", () => {
+    const line = makeLine({ sku: "WS-C3650-24TS-S" });
+    const ctx = makeContext({ lines: [line] });
 
     const results = eoxRule.run(ctx);
     expect(results[0].passed).toBe(false);
     expect(results[0].severity).toBe("error");
-    expect(results[0].message).toContain("C9300-48P-A");
+    expect(results[0].message).toContain("WS-C3650-24TS-S");
+    expect(results[0].message).toContain("C9300-24T-A");
+  });
+
+  it("flags only the EoX line in a mixed BoM", () => {
+    const eolLine = makeLine({ id: "eol-1", sku: "WS-C3650-24TS-S" });
+    const activeLine = makeLine({ id: "act-1", sku: "C9300-48P-A" });
+    const ctx = makeContext({ lines: [eolLine, activeLine] });
+
+    const results = eoxRule.run(ctx);
+    const failures = results.filter((r) => !r.passed);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].affectedLineIds).toEqual(["eol-1"]);
+  });
+
+  it("returns the info pass-through on an empty BoM", () => {
+    const ctx = makeContext({ lines: [] });
+
+    const results = eoxRule.run(ctx);
+    expect(results).toHaveLength(1);
+    expect(results[0].passed).toBe(true);
+    expect(results[0].severity).toBe("info");
   });
 });
 
@@ -731,7 +743,7 @@ describe("Rule: Fan Count", () => {
 // ─── Full Engine ──────────────────────────────────────────────────────────
 
 describe("Validation Engine: Full Run", () => {
-  it("runs all 17 rules and returns combined results", () => {
+  it("runs all 16 rules and returns combined results", () => {
     const hw = makeLine({ id: "hw-1", sku: "C9300L-24UXG-4X-A", quantity: 2 });
     const lic = makeLine({ id: "lic-1", sku: "C9300L-DNA-A-24-3Y", category: "subscription" });
     const svc = makeLine({ id: "svc-1", sku: "CON-SNT-C93024GA", category: "service" });
@@ -746,8 +758,8 @@ describe("Validation Engine: Full Run", () => {
     });
 
     const results = runValidation(ctx);
-    // Should have results from all 17 rules (13 original + 4 adapted)
+    // Should have results from all 16 rules (13 declarative + 3 adapted)
     const ruleIds = new Set(results.map((r) => r.ruleId));
-    expect(ruleIds.size).toBe(17);
+    expect(ruleIds.size).toBe(16);
   });
 });

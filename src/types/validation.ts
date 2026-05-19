@@ -21,7 +21,6 @@ export type ValidationRuleId =
   | "fan-count"
   | "dna-optout"
   | "ap-only"
-  | "eox-check"
   | "license-deps";
 
 export interface ValidationResult {
