@@ -17,13 +17,15 @@ import type {
 const SOURCE_STEP = 'sizing-calculator';
 
 function toItem(d: DeviceSelection): ComponentListItem {
-  return {
+  const item: ComponentListItem = {
     model: d.model,
     vendor: d.vendor,
     quantity: d.quantity,
     role: d.role,
     fromDesignStep: SOURCE_STEP,
   };
+  if (d.orderableSku !== undefined) item.orderableSku = d.orderableSku;
+  return item;
 }
 
 /**

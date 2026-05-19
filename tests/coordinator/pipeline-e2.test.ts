@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { selectBoQFilePath } from "@/coordinator/pipeline-e2";
+import { selectBoQFilePath, resolveE2Devices } from "@/coordinator/pipeline-e2";
 import type { E1Output } from "@/engines/e1/orchestrator";
 import type { E1ClassifiedFile } from "@/engines/e1/orchestrator-types";
+import type { ComponentListItem } from "@/engines/e5/types";
 
 function mkClassified(
   overrides: Partial<E1ClassifiedFile> & {
@@ -140,5 +141,50 @@ describe("selectBoQFilePath", () => {
       documentType: "rfp_sow",
     });
     expect(selectBoQFilePath(mkE1Output([rfp]))).toBeUndefined();
+  });
+});
+
+describe("resolveE2Devices — orderableSku threading", () => {
+  it("uses orderableSku when set on the ComponentListItem", () => {
+    const items: ComponentListItem[] = [{
+      model: "C9300-48P",
+      orderableSku: "C9300-48P-A",
+      vendor: "cisco",
+      quantity: 3,
+      role: "access",
+      fromDesignStep: "sizing-calculator",
+    }];
+    const devices = resolveE2Devices({ pricingConfig: {} as never }, { componentList: JSON.stringify(items) });
+    expect(devices).toHaveLength(1);
+    expect(devices[0].model).toBe("C9300-48P-A");
+    expect(devices[0].qty).toBe(3);
+  });
+
+  it("falls back to bare model when ComponentListItem lacks orderableSku", () => {
+    const items: ComponentListItem[] = [{
+      model: "C9300-48P",
+      vendor: "cisco",
+      quantity: 3,
+      role: "access",
+      fromDesignStep: "sizing-calculator",
+    }];
+    const devices = resolveE2Devices({ pricingConfig: {} as never }, { componentList: JSON.stringify(items) });
+    expect(devices).toHaveLength(1);
+    expect(devices[0].model).toBe("C9300-48P");
+  });
+
+  it("explicit input.devices take precedence over E5 component list", () => {
+    const items: ComponentListItem[] = [{
+      model: "C9300-48P",
+      orderableSku: "C9300-48P-A",
+      vendor: "cisco",
+      quantity: 3,
+      role: "access",
+      fromDesignStep: "sizing-calculator",
+    }];
+    const explicit = [{ model: "MANUAL-SKU", qty: 1, config: { vendor: "cisco" as const, dnaTier: "advantage" as const, networkTier: "advantage" as const, licenseTerm: 5 as const, supportCriticality: "standard" as const } }];
+    const devices = resolveE2Devices({ pricingConfig: {} as never, devices: explicit }, { componentList: JSON.stringify(items) });
+    expect(devices).toHaveLength(1);
+    expect(devices[0].model).toBe("MANUAL-SKU");
   });
 });

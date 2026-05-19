@@ -43,6 +43,9 @@ export interface SizingInput {
 export interface DeviceSelection {
   role: string;
   model: string;
+  /** Concrete Cisco/Fortinet orderable SKU (e.g., 'C9300-48P-A'). Optional
+   *  for backwards compatibility — falls back to `model` when absent. */
+  orderableSku?: string;
   vendor: string;
   quantity: number;
   reasoning: string;
@@ -154,6 +157,10 @@ export interface LLDSection {
 }
 export interface ComponentListItem {
   model: string;
+  /** Concrete orderable SKU resolved from `model` + tier (see
+   *  src/engines/e5/orderable-sku-resolver.ts). Used by coordinator/E2 for
+   *  catalog lookup; falls back to `model` when absent. */
+  orderableSku?: string;
   vendor: string;
   quantity: number;
   role: string;

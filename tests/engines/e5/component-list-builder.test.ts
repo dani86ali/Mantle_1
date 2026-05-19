@@ -83,4 +83,24 @@ describe('buildComponentList', () => {
     const [item] = buildComponentList(sizing);
     expect(item.quantity).toBe(7);
   });
+
+  it('preserves orderableSku when DeviceSelection sets it', () => {
+    const sizing: SizingResult = {
+      ...empty,
+      accessDevices: [{ role: 'access', model: 'C9300-48P', orderableSku: 'C9300-48P-A',
+                       vendor: 'cisco', quantity: 3, reasoning: '' }],
+    };
+    const [item] = buildComponentList(sizing);
+    expect(item.model).toBe('C9300-48P');
+    expect(item.orderableSku).toBe('C9300-48P-A');
+  });
+
+  it('leaves orderableSku undefined when DeviceSelection lacks it', () => {
+    const sizing: SizingResult = {
+      ...empty,
+      accessDevices: [ds('access', 'C9300-48P', 'cisco', 3)],
+    };
+    const [item] = buildComponentList(sizing);
+    expect(item.orderableSku).toBeUndefined();
+  });
 });

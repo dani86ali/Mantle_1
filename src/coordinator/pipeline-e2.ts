@@ -61,7 +61,9 @@ function devicesFromComponentList(
   }
   if (!Array.isArray(items)) return [];
   return items.map((c) => ({
-    model: c.model,
+    // Prefer orderableSku (post-A4: real Cisco/Fortinet SKU) over bare model
+    // (older designs / models without a populated orderable_skus map).
+    model: c.orderableSku ?? c.model,
     qty: c.quantity,
     config: {
       ...DEFAULT_DEVICE_CONFIG,

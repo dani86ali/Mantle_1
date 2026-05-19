@@ -30,7 +30,8 @@
         "stack_cable_needed": true,
         "stack_kit_needed": false,
         "uplink": "modular",
-        "rack_units": 1
+        "rack_units": 1,
+        "orderable_skus": { "advantage": "C9300-24P-A", "essentials": "C9300-24P-E" }
       },
       {
         "model": "C9300-48P",
@@ -49,7 +50,8 @@
         "stack_cable_needed": true,
         "stack_kit_needed": false,
         "uplink": "modular",
-        "rack_units": 1
+        "rack_units": 1,
+        "orderable_skus": { "advantage": "C9300-48P-A", "essentials": "C9300-48P-E" }
       },
       {
         "model": "C9300-24T",
@@ -63,7 +65,8 @@
         "stack_max": 8,
         "stack_bw_gbps": 480,
         "uplink": "modular",
-        "rack_units": 1
+        "rack_units": 1,
+        "orderable_skus": { "advantage": "C9300-24T-A", "essentials": "C9300-24T-E" }
       },
       {
         "model": "C9300-48T",
@@ -77,7 +80,8 @@
         "stack_max": 8,
         "stack_bw_gbps": 480,
         "uplink": "modular",
-        "rack_units": 1
+        "rack_units": 1,
+        "orderable_skus": { "advantage": "C9300-48T-A", "essentials": "C9300-48T-E" }
       },
       {
         "model": "C9300-24U",
@@ -92,7 +96,8 @@
         "stack_max": 8,
         "stack_bw_gbps": 480,
         "uplink": "modular",
-        "rack_units": 1
+        "rack_units": 1,
+        "orderable_skus": { "advantage": "C9300-24U-A", "essentials": "C9300-24U-E" }
       },
       {
         "model": "C9300-48U",
@@ -106,7 +111,8 @@
         "stack_max": 8,
         "stack_bw_gbps": 480,
         "uplink": "modular",
-        "rack_units": 1
+        "rack_units": 1,
+        "orderable_skus": { "advantage": "C9300-48U-A", "essentials": "C9300-48U-E" }
       },
       {
         "model": "C9300-24H",
@@ -119,7 +125,8 @@
         "fan_sku": "C9300-FAN-1RU",
         "stack_max": 8,
         "uplink": "modular",
-        "rack_units": 1
+        "rack_units": 1,
+        "orderable_skus": { "advantage": "C9300-24H-A", "essentials": "C9300-24H-E" }
       }
     ],
     "catalyst_9300L": [
@@ -139,7 +146,8 @@
         "stack_kit_needed": true,
         "stack_kit_sku": "C9300L-STACK-KIT",
         "uplink": "fixed 4x10G",
-        "rack_units": 1
+        "rack_units": 1,
+        "orderable_skus": { "advantage": "C9300L-24P-4X-A", "essentials": "C9300L-24P-4X-E" }
       },
       {
         "model": "C9300L-48P-4X",
@@ -157,7 +165,8 @@
         "stack_kit_needed": true,
         "stack_kit_sku": "C9300L-STACK-KIT",
         "uplink": "fixed 4x10G",
-        "rack_units": 1
+        "rack_units": 1,
+        "orderable_skus": { "advantage": "C9300L-48P-4X-A", "essentials": "C9300L-48P-4X-E" }
       },
       {
         "model": "C9300L-24T-4X",
@@ -171,7 +180,8 @@
         "stack_max": 8,
         "stack_bw_gbps": 320,
         "uplink": "fixed 4x10G",
-        "rack_units": 1
+        "rack_units": 1,
+        "orderable_skus": { "advantage": "C9300L-24T-4X-A", "essentials": "C9300L-24T-4X-E" }
       },
       {
         "model": "C9300L-48T-4X",
@@ -185,7 +195,8 @@
         "stack_max": 8,
         "stack_bw_gbps": 320,
         "uplink": "fixed 4x10G",
-        "rack_units": 1
+        "rack_units": 1,
+        "orderable_skus": { "advantage": "C9300L-48T-4X-A", "essentials": "C9300L-48T-4X-E" }
       },
       {
         "model": "C9300L-24UXG-4X",
@@ -203,7 +214,8 @@
         "stack_kit_sku": "C9300L-STACK-KIT",
         "uplink": "fixed 4x10G",
         "rack_units": 1,
-        "notes": "Shahid's reference model from ground truth"
+        "notes": "Shahid's reference model from ground truth",
+        "orderable_skus": { "advantage": "C9300L-24UXG-4X-A", "essentials": "C9300L-24UXG-4X-E" }
       }
     ],
     "catalyst_9300X": [
@@ -219,7 +231,8 @@
         "stack_bw_gbps": 480,
         "uplink": "modular",
         "rack_units": 1,
-        "notes": "Smart building / Wi-Fi 6E deployments"
+        "notes": "Smart building / Wi-Fi 6E deployments",
+        "orderable_skus": { "advantage": "C9300X-48HX-A", "essentials": "C9300X-48HX-E" }
       }
     ]
   },
@@ -236,7 +249,8 @@
       "radios": 4,
       "max_clients_approx": 200,
       "uplink": "1x mGig",
-      "mounting": "AIR-AP-BRACKET-1"
+      "mounting": "AIR-AP-BRACKET-1",
+      "orderable_skus": { "domain_e": "C9120AXI-E" }
     },
     {
       "model": "C9120AXE",
@@ -252,7 +266,8 @@
       "max_clients_approx": 200,
       "uplink": "1x mGig",
       "mounting": "AIR-AP-BRACKET-1",
-      "notes": "Shahid's reference model \u2014 4 antennas per AP"
+      "notes": "Shahid's reference model \u2014 4 antennas per AP",
+      "orderable_skus": { "domain_e": "C9120AXE-E" }
     },
     {
       "model": "C9130AXI",
@@ -266,7 +281,8 @@
       "radios": 4,
       "max_clients_approx": 400,
       "uplink": "1x 5G mGig",
-      "notes": "Higher density than 9120"
+      "notes": "Higher density than 9120",
+      "orderable_skus": { "domain_e": "C9130AXI-E" }
     },
     {
       "model": "C9136I",
@@ -280,7 +296,8 @@
       "radios": 4,
       "max_clients_approx": 500,
       "uplink": "1x 5G mGig",
-      "notes": "Wi-Fi 6E with 6GHz band. Needs 802.3bt PoE."
+      "notes": "Wi-Fi 6E with 6GHz band. Needs 802.3bt PoE.",
+      "orderable_skus": { "domain_e": "C9136I-E" }
     }
   ],
   "poe_device_draw_reference": {
@@ -420,7 +437,8 @@
       "psu_redundant": "included",
       "ssd_gb": 480,
       "rack_units": 1,
-      "segment": "enterprise"
+      "segment": "enterprise",
+      "orderable_skus": { "standard": "FG-201F" }
     },
     {
       "model": "FG-401F",
@@ -452,7 +470,8 @@
       "psu_redundant": "included",
       "ssd_gb": 480,
       "rack_units": 1,
-      "segment": "large enterprise / DC"
+      "segment": "large enterprise / DC",
+      "orderable_skus": { "standard": "FG-601F-BDL-950-36" }
     },
     {
       "model": "FG-1001F",
@@ -468,7 +487,8 @@
       "psu_redundant": "included",
       "ssd_gb": 480,
       "rack_units": 1,
-      "segment": "data center"
+      "segment": "data center",
+      "orderable_skus": { "standard": "FG-1001F" }
     }
   ],
   "sizing_guidelines": {
