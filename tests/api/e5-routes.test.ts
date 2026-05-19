@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import { mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
+import type { PipelineState } from "@/coordinator/types";
 
 const {
   mockResolve,
@@ -11,6 +12,9 @@ const {
   mockParseJson,
   mockRunE5,
   mockLoadE4State,
+  mockLoadPipelineByIntake,
+  mockSavePipelineState,
+  mockResume,
 } = vi.hoisted(() => ({
   mockResolve: vi.fn(),
   mockLoadState: vi.fn(),
@@ -19,6 +23,9 @@ const {
   mockParseJson: vi.fn(),
   mockRunE5: vi.fn(),
   mockLoadE4State: vi.fn(),
+  mockLoadPipelineByIntake: vi.fn(),
+  mockSavePipelineState: vi.fn(),
+  mockResume: vi.fn(),
 }));
 
 vi.mock("@/app/api/estimates/[id]/_e5-state", () => ({
@@ -35,6 +42,15 @@ vi.mock("@/app/api/estimates/[id]/_e4-state", () => ({
 
 vi.mock("@/engines/e5/orchestrator", () => ({
   runE5Detailed: mockRunE5,
+}));
+
+vi.mock("@/lib/db/pipeline-store", () => ({
+  loadPipelineStateByIntake: mockLoadPipelineByIntake,
+  savePipelineState: mockSavePipelineState,
+}));
+
+vi.mock("@/coordinator/run-and-persist", () => ({
+  resumeAndPersistPipeline: mockResume,
 }));
 
 import {
@@ -127,6 +143,11 @@ beforeEach(() => {
   });
   mockRunE5.mockReset();
   mockLoadE4State.mockReset().mockResolvedValue({});
+  // Default: no pipeline state → unified-checkpoint sync is a no-op, so
+  // existing PATCH tests keep their previous (local-only) expectations.
+  mockLoadPipelineByIntake.mockReset().mockResolvedValue(null);
+  mockSavePipelineState.mockReset().mockResolvedValue(undefined);
+  mockResume.mockReset().mockResolvedValue(undefined);
 });
 
 describe("POST /api/estimates/[id]/design", () => {
@@ -364,6 +385,228 @@ describe("PATCH /api/estimates/[id]/design", () => {
       { params: { id: "intake-1" } },
     );
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── unified checkpoint sync — design approvals POST checkpoints into the
+// pipeline-state record so the standard resume mechanism drives E2/E3. ─────
+
+function pipelineWithE5Checkpoints(opts: {
+  approved: string[];
+  pending: string[];
+}): PipelineState {
+  const now = new Date();
+  return {
+    id: "pipe-e5",
+    opportunityId: "intake:intake-1",
+    intakeId: "intake-1",
+    mode: "rfp",
+    currentEngine: "e5",
+    status: "paused_at_checkpoint",
+    artifacts: { e1: {}, e2: {}, e3: {}, e4: {}, e5: {} },
+    checkpoints: [
+      ...opts.approved.map((id) => ({
+        id, engine: "e5" as const, label: id,
+        status: "approved" as const, revisionsUsed: 0, decidedAt: now,
+      })),
+      ...opts.pending.map((id) => ({
+        id, engine: "e5" as const, label: id,
+        status: "pending" as const, revisionsUsed: 0,
+      })),
+    ],
+    engineCalls: [],
+    timestamps: { createdAt: now, updatedAt: now },
+  };
+}
+
+describe("PATCH design approve_* → unified checkpoint sync", () => {
+  const hldStateAtHld = {
+    phase: "hld_in_progress" as const,
+    inputData: validBody,
+    designApproach: JSON.stringify(phase1.designApproach),
+    topology: phase1.topology,
+    sizingResult: JSON.stringify(phase1.sizing),
+    compatibilityResult: JSON.stringify(phase1.compatibility),
+    hldSections: JSON.stringify([]),
+    hldDocxPath: phase1.hldDocPath,
+    diagramXml: phase1.diagramXml,
+    updatedAt: "t0",
+  };
+
+  it("approve_design approves e5-design-approach + syncs hldDocument; does not resume (e5-hld/lld still pending)", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    mockLoadState.mockResolvedValue(hldStateAtHld);
+    const pipeline = pipelineWithE5Checkpoints({
+      approved: [],
+      pending: ["e5-design-approach", "e5-hld", "e5-lld"],
+    });
+    mockLoadPipelineByIntake.mockResolvedValue(pipeline);
+
+    const res = await designPATCH(
+      jsonReq({ action: "approve_design" }),
+      { params: { id: "intake-1" } },
+    );
+    expect(res.status).toBe(200);
+
+    expect(mockSavePipelineState).toHaveBeenCalledTimes(1);
+    const saved = mockSavePipelineState.mock.calls[0][0] as PipelineState;
+    expect(saved.checkpoints.find((c) => c.id === "e5-design-approach")!.status).toBe("approved");
+    expect(saved.checkpoints.find((c) => c.id === "e5-hld")!.status).toBe("pending");
+    expect(saved.artifacts.e5.hldDocument).toBe(phase1.hldDocPath);
+    expect(saved.status).toBe("paused_at_checkpoint");
+    expect(mockResume).not.toHaveBeenCalled();
+  });
+
+  it("approve_lld when other two e5-* are approved → all approved, resume fires, componentList synced", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    mockLoadState.mockResolvedValue({
+      ...hldStateAtHld,
+      phase: "lld_complete",
+      lldDocxPath: phase2.lldDocPath,
+      ipVlanPlan: JSON.stringify(phase2.ipVlanPlan),
+      componentList: JSON.stringify([
+        { model: "C9500", vendor: "cisco", quantity: 2, role: "core" },
+      ]),
+    });
+    const pipeline = pipelineWithE5Checkpoints({
+      approved: ["e5-design-approach", "e5-hld"],
+      pending: ["e5-lld"],
+    });
+    mockLoadPipelineByIntake.mockResolvedValue(pipeline);
+
+    const res = await designPATCH(
+      jsonReq({ action: "approve_lld" }),
+      { params: { id: "intake-1" } },
+    );
+    expect(res.status).toBe(200);
+
+    const saved = mockSavePipelineState.mock.calls[0][0] as PipelineState;
+    expect(saved.checkpoints.every((c) => c.status === "approved")).toBe(true);
+    expect(saved.status).toBe("running");
+    expect(saved.artifacts.e5.componentList).toContain("C9500");
+    expect(saved.artifacts.e5.lldDocument).toBe(phase2.lldDocPath);
+    expect(mockResume).toHaveBeenCalledTimes(1);
+    expect(mockResume).toHaveBeenCalledWith(expect.any(String), "intake-1");
+  });
+
+  it("approve_lld with no pipeline state for intake → succeeds, no unified-side-effects", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    mockLoadState.mockResolvedValue({
+      ...hldStateAtHld,
+      phase: "lld_complete",
+      lldDocxPath: phase2.lldDocPath,
+      ipVlanPlan: JSON.stringify(phase2.ipVlanPlan),
+      componentList: JSON.stringify([]),
+    });
+    mockLoadPipelineByIntake.mockResolvedValue(null);
+
+    const res = await designPATCH(
+      jsonReq({ action: "approve_lld" }),
+      { params: { id: "intake-1" } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("complete");
+
+    expect(mockSaveState).toHaveBeenCalledTimes(1); // local only
+    expect(mockSavePipelineState).not.toHaveBeenCalled();
+    expect(mockResume).not.toHaveBeenCalled();
+  });
+
+  it("approve_lld when pipeline state exists but has no e5-lld checkpoint → no resume, no error", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    mockLoadState.mockResolvedValue({
+      ...hldStateAtHld,
+      phase: "lld_complete",
+      lldDocxPath: phase2.lldDocPath,
+      ipVlanPlan: JSON.stringify(phase2.ipVlanPlan),
+      componentList: JSON.stringify([]),
+    });
+    // Old pipeline pre-A2: only e1-* checkpoints, no e5-* yet.
+    const now = new Date();
+    const pipeline: PipelineState = {
+      id: "pipe-old",
+      opportunityId: "intake:intake-1",
+      intakeId: "intake-1",
+      mode: "rfp",
+      currentEngine: "e1",
+      status: "paused_at_checkpoint",
+      artifacts: { e1: {}, e2: {}, e3: {}, e4: {}, e5: {} },
+      checkpoints: [
+        { id: "e1-requirements", engine: "e1", label: "x", status: "pending", revisionsUsed: 0 },
+      ],
+      engineCalls: [],
+      timestamps: { createdAt: now, updatedAt: now },
+    };
+    mockLoadPipelineByIntake.mockResolvedValue(pipeline);
+
+    const res = await designPATCH(
+      jsonReq({ action: "approve_lld" }),
+      { params: { id: "intake-1" } },
+    );
+    expect(res.status).toBe(200);
+
+    expect(mockSavePipelineState).not.toHaveBeenCalled();
+    expect(mockResume).not.toHaveBeenCalled();
+  });
+
+  it("approve_design → approve_hld → approve_lld in sequence drives all three checkpoints + fires resume once", async () => {
+    mockResolve.mockResolvedValue(resolved);
+
+    // Shared pipeline mutated across the three calls.
+    const pipeline = pipelineWithE5Checkpoints({
+      approved: [],
+      pending: ["e5-design-approach", "e5-hld", "e5-lld"],
+    });
+    mockLoadPipelineByIntake.mockResolvedValue(pipeline);
+
+    // Step 1: approve_design (phase hld_in_progress → hld_complete).
+    mockLoadState.mockResolvedValueOnce(hldStateAtHld);
+    let res = await designPATCH(
+      jsonReq({ action: "approve_design" }),
+      { params: { id: "intake-1" } },
+    );
+    expect(res.status).toBe(200);
+
+    // Step 2: approve_hld (phase hld_complete → lld_complete; runs LLD).
+    mockLoadState.mockResolvedValueOnce({ ...hldStateAtHld, phase: "hld_complete" });
+    mockRunE5.mockResolvedValueOnce({
+      output: { engine: "e5", artifacts: {}, warnings: [] },
+      phase: "lld",
+      logs: [],
+      phase2,
+      componentList: [
+        { model: "C9500", vendor: "cisco", quantity: 2, role: "core", fromDesignStep: "3" },
+      ],
+    });
+    res = await designPATCH(
+      jsonReq({ action: "approve_hld" }),
+      { params: { id: "intake-1" } },
+    );
+    expect(res.status).toBe(200);
+
+    // Step 3: approve_lld (phase lld_complete → complete; triggers resume).
+    mockLoadState.mockResolvedValueOnce({
+      ...hldStateAtHld,
+      phase: "lld_complete",
+      lldDocxPath: phase2.lldDocPath,
+      ipVlanPlan: JSON.stringify(phase2.ipVlanPlan),
+      componentList: JSON.stringify([{ model: "C9500", vendor: "cisco", quantity: 2 }]),
+    });
+    res = await designPATCH(
+      jsonReq({ action: "approve_lld" }),
+      { params: { id: "intake-1" } },
+    );
+    expect(res.status).toBe(200);
+
+    // All three e5-* approved on the shared pipeline.
+    expect(pipeline.checkpoints.filter((c) => c.engine === "e5").every((c) => c.status === "approved")).toBe(true);
+    expect(pipeline.status).toBe("running");
+    expect(pipeline.artifacts.e5.componentList).toBeTruthy();
+    expect(pipeline.artifacts.e5.hldDocument).toBe(phase1.hldDocPath);
+    expect(pipeline.artifacts.e5.lldDocument).toBe(phase2.lldDocPath);
+    expect(mockResume).toHaveBeenCalledTimes(1);
+    expect(mockSavePipelineState).toHaveBeenCalledTimes(3);
   });
 });
 

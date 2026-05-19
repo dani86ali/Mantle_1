@@ -1,26 +1,31 @@
 /**
  * E5 design PATCH action handlers — split from route.ts to keep it <200 lines.
  * Handles approve_* (phase transitions) and revise_* (re-run orchestrator).
+ *
+ * After each approve_* succeeds locally (E5StoredState mutation), the matching
+ * unified checkpoint (e5-design-approach / e5-hld / e5-lld) is approved on the
+ * pipeline-state record so the standard resume mechanism can drive E2/E3. If
+ * no pipeline state exists for the intake (standalone design-page entry), the
+ * unified work is skipped silently — local E5StoredState remains the source of
+ * truth for the design tab UI in that case.
  */
 
 import { NextResponse } from "next/server";
-import { runE5Detailed } from "@/engines/e5/orchestrator";
-import type { EngineInput } from "@/coordinator/types";
-import type { E5InputData } from "@/engines/e5/orchestrator-types";
-import type {
-  CompatibilityResult,
-  DesignApproach,
-  SizingResult,
-  TopologyPattern,
-} from "@/engines/e5/types";
 import {
-  minimalPipelineState,
   parseJson,
   saveE5State,
   type E5StoredState,
 } from "@/app/api/estimates/[id]/_e5-state";
-import { resolveE5OutputDir } from "@/coordinator/pipeline-e5";
-import { rerunE2E3AfterDesign } from "./_rerun-e2e3";
+import {
+  loadPipelineStateByIntake,
+  savePipelineState,
+} from "@/lib/db/pipeline-store";
+import {
+  applyCheckpointDecision,
+  isCheckpointDecisionError,
+} from "@/coordinator/checkpoint-decision";
+import { resumeAndPersistPipeline } from "@/coordinator/run-and-persist";
+import { runHld, runLld } from "./_orchestrator-runs";
 
 export type DesignAction =
   | "approve_design"
@@ -30,6 +35,12 @@ export type DesignAction =
   | "revise_hld"
   | "revise_lld";
 
+const APPROVE_TO_CHECKPOINT: Record<string, string> = {
+  approve_design: "e5-design-approach",
+  approve_hld: "e5-hld",
+  approve_lld: "e5-lld",
+};
+
 function badPhase(current: string, action: string): NextResponse {
   return NextResponse.json(
     { error: `Action '${action}' not allowed in phase '${current}'` },
@@ -37,97 +48,56 @@ function badPhase(current: string, action: string): NextResponse {
   );
 }
 
-function inputError(): NextResponse {
-  return NextResponse.json(
-    { error: "Stored design has no inputData; cannot re-run orchestrator" },
-    { status: 400 },
-  );
-}
-
-async function runHld(
+/**
+ * Sync E5StoredState into the pipeline-state record and mark the matching
+ * unified checkpoint approved. Best-effort: failure to find the pipeline or
+ * the checkpoint is logged and skipped, never thrown — the operator's local
+ * design-tab state has already been saved by the caller.
+ */
+async function approveUnifiedCheckpoint(
   intakeId: string,
-  state: E5StoredState,
-  revisionNotes: string | undefined,
-): Promise<E5StoredState | NextResponse> {
-  if (!state.inputData) return inputError();
-  const outputDir = await resolveE5OutputDir({
-    intakeId,
-    pipelineId: `e5-route-${intakeId}`,
-  });
-  const input: EngineInput<E5InputData> = {
-    engine: "e5",
-    pipelineState: minimalPipelineState(intakeId),
-    inputData: { ...state.inputData, phase: "hld", outputDir },
-    revisionNotes,
-  };
-  const out = await runE5Detailed(input);
-  if (out.output.error || !out.phase1) {
-    throw new Error(out.output.error ?? "E5 HLD re-run did not produce a result");
-  }
-  return {
-    ...state,
-    phase: "hld_in_progress",
-    designApproach: JSON.stringify(out.phase1.designApproach),
-    topology: out.phase1.topology,
-    sizingResult: JSON.stringify(out.phase1.sizing),
-    compatibilityResult: JSON.stringify(out.phase1.compatibility),
-    hldSections: JSON.stringify(out.phase1.hldSections),
-    hldDocxPath: out.phase1.hldDocPath,
-    diagramXml: out.phase1.diagramXml,
-    revisionNotes,
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-async function runLld(
-  intakeId: string,
-  state: E5StoredState,
-  revisionNotes: string | undefined,
-): Promise<E5StoredState | NextResponse> {
-  if (!state.inputData) return inputError();
-  const designApproach = parseJson<DesignApproach>(state.designApproach);
-  const topology = state.topology as TopologyPattern | undefined;
-  const sizing = parseJson<SizingResult>(state.sizingResult);
-  const compatibility = parseJson<CompatibilityResult>(state.compatibilityResult);
-  if (!designApproach || !topology || !sizing || !compatibility) {
-    return NextResponse.json(
-      { error: "Cannot run LLD: HLD handoff artifacts missing" },
-      { status: 400 },
+  tenantId: string,
+  e5State: E5StoredState,
+  checkpointId: string,
+): Promise<void> {
+  const state = await loadPipelineStateByIntake(intakeId);
+  if (!state) {
+    console.warn(
+      `[design-approve ${intakeId}] no pipeline state; skipping unified checkpoint '${checkpointId}'`,
     );
+    return;
   }
-  const outputDir = await resolveE5OutputDir({
-    intakeId,
-    pipelineId: `e5-route-${intakeId}`,
-  });
-  const input: EngineInput<E5InputData> = {
-    engine: "e5",
-    pipelineState: minimalPipelineState(intakeId),
-    inputData: {
-      ...state.inputData,
-      phase: "lld",
-      outputDir,
-      hldHandoff: { designApproach, topology, sizing, compatibility },
-    },
-    revisionNotes,
-  };
-  const out = await runE5Detailed(input);
-  if (out.output.error || !out.phase2) {
-    throw new Error(out.output.error ?? "E5 LLD did not produce a result");
+  if (!state.checkpoints.find((c) => c.id === checkpointId)) {
+    console.warn(
+      `[design-approve ${intakeId}] pipeline has no checkpoint '${checkpointId}'; skipping unified approval`,
+    );
+    return;
   }
-  return {
-    ...state,
-    phase: "lld_complete",
-    lldSections: JSON.stringify(out.phase2.lldSections),
-    lldDocxPath: out.phase2.lldDocPath,
-    ipVlanPlan: JSON.stringify(out.phase2.ipVlanPlan),
-    componentList: JSON.stringify(out.componentList ?? []),
-    revisionNotes,
-    updatedAt: new Date().toISOString(),
+  // Shallow-merge the design-page artifacts into state.artifacts.e5 so the
+  // dispatcher's E2 (which reads resolveE2Devices(..., state.artifacts.e5))
+  // sees the same component list the operator just approved.
+  state.artifacts.e5 = {
+    ...state.artifacts.e5,
+    ...(e5State.componentList !== undefined && { componentList: e5State.componentList }),
+    ...(e5State.hldDocxPath !== undefined && { hldDocument: e5State.hldDocxPath }),
+    ...(e5State.lldDocxPath !== undefined && { lldDocument: e5State.lldDocxPath }),
+    ...(e5State.ipVlanPlan !== undefined && { ipVlanPlan: e5State.ipVlanPlan }),
   };
+
+  const result = applyCheckpointDecision(state, checkpointId, "approved", undefined);
+  if (isCheckpointDecisionError(result)) {
+    console.warn(`[design-approve ${intakeId}] ${result.error}`);
+    return;
+  }
+  await savePipelineState(state);
+  if (result.willResume && state.intakeId) {
+    void resumeAndPersistPipeline(tenantId, state.intakeId);
+  }
 }
 
 export async function handlePatchAction(
   intakeId: string,
+  tenantId: string,
   state: E5StoredState,
   action: DesignAction,
   revisionNotes: string | undefined,
@@ -137,6 +107,7 @@ export async function handlePatchAction(
     if (state.phase !== "hld_in_progress") return badPhase(state.phase, action);
     const next: E5StoredState = { ...state, phase: "hld_complete", updatedAt: now };
     await saveE5State(intakeId, next);
+    await approveUnifiedCheckpoint(intakeId, tenantId, next, APPROVE_TO_CHECKPOINT[action]);
     return NextResponse.json({ status: next.phase, updatedAt: now });
   }
   if (action === "approve_hld") {
@@ -144,6 +115,7 @@ export async function handlePatchAction(
     const result = await runLld(intakeId, state, undefined);
     if (result instanceof NextResponse) return result;
     await saveE5State(intakeId, result);
+    await approveUnifiedCheckpoint(intakeId, tenantId, result, APPROVE_TO_CHECKPOINT[action]);
     return NextResponse.json({
       status: result.phase,
       lldDocxPath: result.lldDocxPath,
@@ -155,7 +127,7 @@ export async function handlePatchAction(
     if (state.phase !== "lld_complete") return badPhase(state.phase, action);
     const next: E5StoredState = { ...state, phase: "complete", updatedAt: now };
     await saveE5State(intakeId, next);
-    void rerunE2E3AfterDesign(intakeId, next);
+    await approveUnifiedCheckpoint(intakeId, tenantId, next, APPROVE_TO_CHECKPOINT[action]);
     return NextResponse.json({ status: next.phase, updatedAt: now });
   }
   if (action === "revise_design" || action === "revise_hld") {

@@ -189,6 +189,7 @@ export async function PATCH(
   try {
     return await handlePatchAction(
       resolved.intakeId,
+      session.tenantId,
       state,
       data.action,
       data.revisionNotes,

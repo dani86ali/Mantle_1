@@ -6,6 +6,9 @@
  * When the decision is 'approved' AND all checkpoints for the just-approved
  * engine are now approved AND the pipeline is paused, kicks off
  * resumeAndPersistPipeline so the next engine runs in the background.
+ *
+ * The mutation logic itself lives in @/coordinator/checkpoint-decision so the
+ * design-page PATCH handlers can apply the same advancement rules.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -18,6 +21,10 @@ import {
 import { requireAuth } from "@/lib/middleware/auth";
 import { resumeAndPersistPipeline } from "@/coordinator/run-and-persist";
 import { ENGINE_CHECKPOINTS } from "@/coordinator/pipeline-state";
+import {
+  applyCheckpointDecision,
+  isCheckpointDecisionError,
+} from "@/coordinator/checkpoint-decision";
 
 // Derive the allowlist from the single source of truth in pipeline-state.ts so
 // new engines (or new checkpoint ids inside an existing engine) automatically
@@ -50,49 +57,25 @@ export async function POST(
     );
   }
 
-  const target = data.checkpointId
-    ? state.checkpoints.find((c) => c.id === data.checkpointId)
-    : state.checkpoints[state.checkpoints.length - 1];
-
-  if (!target) {
-    const message = data.checkpointId
-      ? `Checkpoint '${data.checkpointId}' not found on this pipeline`
-      : "Pipeline has no checkpoints to update";
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
-
-  target.status = data.status;
-  if (data.notes !== undefined) target.revisionNotes = data.notes;
-  target.decidedAt = new Date();
-  state.timestamps.updatedAt = new Date();
-
-  // Decide whether this approval should advance the pipeline. All checkpoints
-  // for `target.engine` must now be 'approved' AND the pipeline must currently
-  // be paused. We flip status to 'running' here as the mutex so a concurrent
-  // approval that reads state after this save will see 'running' and won't
-  // double-fire the resume. The race is best-effort, not transactional — fine
-  // for human-driven UI clicks but would need a conditional UPDATE for true
-  // concurrent safety.
-  let willResume = false;
-  if (data.status === "approved" && state.intakeId && state.status === "paused_at_checkpoint") {
-    const engineCps = state.checkpoints.filter((c) => c.engine === target.engine);
-    const allApproved =
-      engineCps.length > 0 && engineCps.every((c) => c.status === "approved");
-    if (allApproved) {
-      state.status = "running";
-      willResume = true;
-    }
+  const result = applyCheckpointDecision(
+    state,
+    data.checkpointId,
+    data.status,
+    data.notes,
+  );
+  if (isCheckpointDecisionError(result)) {
+    return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
   await savePipelineState(state);
 
-  if (willResume && state.intakeId) {
+  if (result.willResume && state.intakeId) {
     void resumeAndPersistPipeline(session.tenantId, state.intakeId);
   }
 
   return NextResponse.json({
     pipelineId: state.id,
-    checkpoint: target,
-    advancing: willResume,
+    checkpoint: result.target,
+    advancing: result.willResume,
   });
 }
