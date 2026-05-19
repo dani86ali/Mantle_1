@@ -1,6 +1,4 @@
-import { z } from 'zod';
-import { callAI } from '@/lib/ai/client';
-import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
+import { tokenize, tokenOverlap } from './string-similarity';
 
 export interface DealProfile {
   sector: string;
@@ -22,6 +20,7 @@ export interface DealSummary {
   outcome: 'won' | 'lost' | 'pending';
   winLossReason?: string;
   margin?: number;
+  description?: string;
 }
 
 export interface SimilarDeal {
@@ -45,16 +44,8 @@ export interface SimilarDealResult {
 
 const SCORE_THRESHOLD = 0.4;
 const TOP_N = 10;
-const AI_TRIGGER_MIN = 3;
-const AI_HISTORY_CAP = 50;
-
-const AIOutputSchema = z.array(
-  z.object({
-    opportunityId: z.string(),
-    similarityScore: z.number(),
-    matchFactors: z.array(z.string()),
-  }),
-);
+const REQUIREMENTS_THRESHOLD = 0.3;
+const REQUIREMENTS_WEIGHT = 0.15;
 
 function lowerSet(values: string[]): Set<string> {
   return new Set(values.map((v) => v.toLowerCase()));
@@ -113,6 +104,24 @@ function scoreDeal(current: DealProfile, past: DealSummary): ScoredDeal {
     }
   }
 
+  if (current.requirements && current.requirements.length > 0) {
+    const pastText = [past.winLossReason, past.description]
+      .filter((s): s is string => typeof s === 'string' && s.length > 0)
+      .join(' ');
+    if (pastText.length > 0) {
+      const currentTokens = tokenize(current.requirements.join(' '));
+      const pastTokens = tokenize(pastText);
+      const overlap = tokenOverlap(currentTokens, pastTokens);
+      if (overlap >= REQUIREMENTS_THRESHOLD) {
+        score += REQUIREMENTS_WEIGHT;
+        const shared = currentTokens
+          .filter((t) => pastTokens.includes(t))
+          .slice(0, 2);
+        factors.push(`requirements:${shared.join(',')}`);
+      }
+    }
+  }
+
   return { deal: past, score, factors };
 }
 
@@ -128,54 +137,10 @@ function toSimilarDeal(scored: ScoredDeal): SimilarDeal {
   };
 }
 
-async function aiSupplement(
-  current: DealProfile,
-  history: DealSummary[],
-  alreadyMatchedIds: Set<string>,
-): Promise<SimilarDeal[]> {
-  const recent = history.slice(-AI_HISTORY_CAP);
-  const result = await callAI({
-    systemPrompt:
-      'You are a pre-sales analyst. Identify historical deals similar to the current ' +
-      'opportunity that a simple sector/country/vendor scoring algorithm might miss — ' +
-      'e.g. different sector but same technical requirements, adjacent product categories, ' +
-      'comparable buyer profile. Return strict JSON only.',
-    prompt:
-      `Current deal:\n${wrapUntrusted(JSON.stringify(current, null, 2), 'current-deal')}\n\n` +
-      `Historical deals:\n${JSON.stringify(recent, null, 2)}\n\n` +
-      `Respond with a JSON array of similar deals: ` +
-      `[{"opportunityId": "...", "similarityScore": <0..1>, "matchFactors": ["..."]}]. ` +
-      `Only include deals not trivially matched by sector/country/vendor overlap.`,
-    outputSchema: AIOutputSchema,
-    taskId: 'similar-deal-finder',
-    untrustedContent: true,
-  });
-
-  if (!result.success) return [];
-
-  const byId = new Map(history.map((d) => [d.opportunityId, d]));
-  const out: SimilarDeal[] = [];
-  for (const item of result.data) {
-    if (alreadyMatchedIds.has(item.opportunityId)) continue;
-    const deal = byId.get(item.opportunityId);
-    if (!deal) continue;
-    out.push({
-      opportunityId: deal.opportunityId,
-      customerName: deal.customerName,
-      similarityScore: item.similarityScore,
-      matchFactors: item.matchFactors,
-      dealValue: deal.dealValue,
-      outcome: deal.outcome,
-      margin: deal.margin,
-    });
-  }
-  return out;
-}
-
-export async function findSimilarDeals(
+export function findSimilarDeals(
   currentDeal: DealProfile,
   historicalDeals: DealSummary[],
-): Promise<SimilarDealResult> {
+): SimilarDealResult {
   if (historicalDeals.length === 0) {
     return {
       matches: [],
@@ -189,18 +154,9 @@ export async function findSimilarDeals(
     .sort((a, b) => b.score - a.score)
     .slice(0, TOP_N);
 
-  const deterministic = scored.map(toSimilarDeal);
-  const matchedIds = new Set(deterministic.map((d) => d.opportunityId));
+  const matches = scored.map(toSimilarDeal);
 
-  let merged = deterministic;
-  if (deterministic.length < AI_TRIGGER_MIN) {
-    const aiMatches = await aiSupplement(currentDeal, historicalDeals, matchedIds);
-    merged = [...deterministic, ...aiMatches]
-      .sort((a, b) => b.similarityScore - a.similarityScore)
-      .slice(0, TOP_N);
-  }
-
-  const wonMargins = merged
+  const wonMargins = matches
     .filter((m) => m.outcome === 'won' && typeof m.margin === 'number')
     .map((m) => m.margin as number);
   const avgMarginOfWins =
@@ -209,10 +165,10 @@ export async function findSimilarDeals(
       : null;
 
   return {
-    matches: merged,
+    matches,
     stats: {
       totalSearched: historicalDeals.length,
-      matchesFound: merged.length,
+      matchesFound: matches.length,
       avgMarginOfWins,
     },
   };

@@ -1,6 +1,5 @@
-import { z } from 'zod';
-import { callAI } from '@/lib/ai/client';
-import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
+import { runExpertRules } from './expert-rules';
+import type { RawAnomaly } from './expert-rules/types';
 
 export interface BomLineItem {
   sku: string;
@@ -15,6 +14,8 @@ export interface ProjectContext {
   siteCount: number;
   userCount?: number;
   description?: string;
+  projectType?: string;
+  hasWireless?: boolean;
 }
 
 export interface AnomalyRiskContext {
@@ -57,31 +58,6 @@ const COST_OUTLIER_RATIO = 0.5;
 const AP_CATEGORY = /access[- ]?point|wireless|wi[- ]?fi|\bap\b/i;
 const SWITCH_CATEGORY = /switch/i;
 const SWITCH_POE_PORTS_PER_UNIT = 48;
-
-const AnomalyTypeEnum = z.enum([
-  'quantity_mismatch',
-  'missing_component',
-  'oversized',
-  'undersized',
-  'unusual_combination',
-  'cost_outlier',
-]);
-
-const AIOutputSchema = z.object({
-  anomalies: z.array(
-    z.object({
-      type: AnomalyTypeEnum,
-      description: z.string(),
-      severity: z.enum(['warning', 'error']),
-      affectedSkus: z.array(z.string()),
-      suggestion: z.string(),
-    }),
-  ),
-  riskLevel: z.enum(['low', 'medium', 'high']),
-  summary: z.string(),
-});
-
-type RawAnomaly = Omit<Anomaly, 'id'>;
 
 function lineTotal(item: BomLineItem): number {
   return (item.unitPrice ?? 0) * item.qty;
@@ -167,62 +143,9 @@ function deterministicChecks(bom: BomLineItem[]): RawAnomaly[] {
   return out;
 }
 
-function summarizeBom(bom: BomLineItem[]): string {
-  return bom
-    .map(
-      (i) =>
-        `${i.sku} | qty=${i.qty} | ${i.category} | ${
-          typeof i.unitPrice === 'number' ? `$${i.unitPrice}` : 'no-price'
-        } | ${i.description}`,
-    )
-    .join('\n');
-}
-
-function summarizeRiskFlags(flags: AnomalyRiskContext[]): string {
-  return flags
-    .map((f) => `[${f.severity}] ${f.pattern}: ${f.matchedText} (${f.source})`)
-    .join('\n');
-}
-
-async function aiReview(
-  bom: BomLineItem[],
-  ctx: ProjectContext,
-  options?: AnomalyDetectionOptions,
-): Promise<RawAnomaly[]> {
-  const riskSection =
-    options?.riskFlags && options.riskFlags.length > 0
-      ? `RFP risk flags (${options.riskFlags.length}):\n${wrapUntrusted(
-          summarizeRiskFlags(options.riskFlags),
-          'rfp-risk-flags',
-        )}\n\n`
-      : '';
-  const result = await callAI({
-    systemPrompt:
-      'You are a senior pre-sales engineer reviewing a Bill of Materials for ' +
-      'scope and sanity issues a junior engineer might miss. Focus on missing ' +
-      'categories for the project type, mismatched quantities between related ' +
-      'components, and over/under-provisioning vs the stated user count. When ' +
-      'RFP risk flags are supplied, consider whether the BoM addresses or ' +
-      'conflicts with them. Do NOT repeat purely arithmetic checks. Return ' +
-      'strict JSON only.',
-    prompt:
-      `Project context:\n${wrapUntrusted(JSON.stringify(ctx, null, 2), 'project-context')}\n\n` +
-      riskSection +
-      `BoM (${bom.length} lines):\n${wrapUntrusted(summarizeBom(bom), 'customer-boq')}\n\n` +
-      `Respond with JSON: {"anomalies":[{"type":"missing_component|quantity_mismatch|oversized|undersized|unusual_combination|cost_outlier","description":"...","severity":"warning|error","affectedSkus":["..."],"suggestion":"..."}],"riskLevel":"low|medium|high","summary":"..."}`,
-    outputSchema: AIOutputSchema,
-    taskId: 'bom-anomaly-detector',
-    untrustedContent: true,
-  });
-
-  if (!result.success) return [];
-  return result.data.anomalies;
-}
-
 function computeRiskLevel(anomalies: Anomaly[]): 'low' | 'medium' | 'high' {
   const errors = anomalies.filter((a) => a.severity === 'error').length;
   if (errors > 0) return 'high';
-  if (anomalies.length >= 3) return 'medium';
   if (anomalies.length > 0) return 'medium';
   return 'low';
 }
@@ -234,14 +157,14 @@ function assignIds(raws: RawAnomaly[]): Anomaly[] {
   }));
 }
 
-export async function detectAnomalies(
+export function detectAnomalies(
   bom: BomLineItem[],
   projectContext: ProjectContext,
   options?: AnomalyDetectionOptions,
-): Promise<AnomalyResult> {
+): AnomalyResult {
   const deterministic = deterministicChecks(bom);
-  const ai = await aiReview(bom, projectContext, options);
-  const merged = assignIds([...deterministic, ...ai]);
+  const expert = runExpertRules(bom, projectContext, options);
+  const merged = assignIds([...deterministic, ...expert]);
   const riskLevel = computeRiskLevel(merged);
   const summary =
     merged.length === 0

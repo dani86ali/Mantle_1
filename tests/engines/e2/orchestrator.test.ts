@@ -139,10 +139,9 @@ describe("runE2 — orchestrator", () => {
     // Validation engine ran — 17 rules, each rule emits at least one result.
     expect(result.validationResults.length).toBeGreaterThan(0);
 
-    // Anomaly detector ran and used the mocked AI call.
+    // Anomaly detector ran (now fully deterministic — no AI call).
     expect(result.anomalies).toBeDefined();
     expect(result.anomalies.summary).toBeTruthy();
-    expect(mockCallAI).toHaveBeenCalled();
 
     // No historical deals supplied → similar-deal-finder skipped.
     expect(result.similarDeals).toBeUndefined();

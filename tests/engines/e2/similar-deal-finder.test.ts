@@ -1,21 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-
-vi.mock('@/lib/ai/client', () => ({
-  callAI: vi.fn(),
-}));
-
-import { callAI } from '@/lib/ai/client';
+import { describe, it, expect } from 'vitest';
 import {
   findSimilarDeals,
   type DealProfile,
   type DealSummary,
 } from '@/engines/e2/similar-deal-finder';
-
-const mockCallAI = vi.mocked(callAI);
-
-beforeEach(() => {
-  mockCallAI.mockReset();
-});
 
 const baseProfile: DealProfile = {
   sector: 'Telecom',
@@ -41,19 +29,17 @@ function deal(overrides: Partial<DealSummary>): DealSummary {
 }
 
 describe('findSimilarDeals', () => {
-  it('returns empty result for empty history without calling AI', async () => {
-    const result = await findSimilarDeals(baseProfile, []);
+  it('returns empty result for empty history', () => {
+    const result = findSimilarDeals(baseProfile, []);
     expect(result.matches).toEqual([]);
     expect(result.stats).toEqual({
       totalSearched: 0,
       matchesFound: 0,
       avgMarginOfWins: null,
     });
-    expect(mockCallAI).not.toHaveBeenCalled();
   });
 
-  it('exact sector+country+vendor match scores highest', async () => {
-    // Three deterministic candidates so AI is not triggered.
+  it('exact sector+country+vendor match scores highest', () => {
     const history: DealSummary[] = [
       deal({
         opportunityId: 'OPP-1',
@@ -79,9 +65,8 @@ describe('findSimilarDeals', () => {
       }),
     ];
 
-    const result = await findSimilarDeals(baseProfile, history);
+    const result = findSimilarDeals(baseProfile, history);
 
-    expect(mockCallAI).not.toHaveBeenCalled();
     expect(result.matches[0].opportunityId).toBe('OPP-1');
     expect(result.matches[0].similarityScore).toBeCloseTo(1.0, 3);
     expect(result.matches[0].matchFactors).toEqual(
@@ -93,17 +78,16 @@ describe('findSimilarDeals', () => {
         'dealSize±50%',
       ]),
     );
-    // Subsequent matches have strictly lower scores.
     expect(result.matches[1].similarityScore).toBeLessThan(
       result.matches[0].similarityScore,
     );
   });
 
-  it('different sector but same vendors+country still matches above threshold', async () => {
+  it('different sector but same vendors+country still matches above threshold', () => {
     const history: DealSummary[] = [
       deal({
         opportunityId: 'OPP-CROSS',
-        sector: 'Banking', // different
+        sector: 'Banking',
         country: 'Saudi Arabia',
         vendors: ['Cisco', 'Fortinet'],
         productCategories: ['Firewall'],
@@ -113,18 +97,15 @@ describe('findSimilarDeals', () => {
       deal({ opportunityId: 'OPP-B' }),
     ];
 
-    const result = await findSimilarDeals(baseProfile, history);
+    const result = findSimilarDeals(baseProfile, history);
 
-    expect(mockCallAI).not.toHaveBeenCalled();
     const cross = result.matches.find((m) => m.opportunityId === 'OPP-CROSS');
     expect(cross).toBeDefined();
-    // 0.2 country + 0.2 vendors + 0.2 categories + 0.1 dealSize = 0.7
     expect(cross!.similarityScore).toBeCloseTo(0.7, 3);
     expect(cross!.matchFactors).not.toContain('sector:Banking');
   });
 
-  it('calls AI to supplement when fewer than 3 deterministic matches', async () => {
-    // Only one deterministic match — AI should run.
+  it('returns fewer than 3 matches when only a few deterministic candidates exist', () => {
     const history: DealSummary[] = [
       deal({ opportunityId: 'OPP-DET' }),
       deal({
@@ -135,90 +116,56 @@ describe('findSimilarDeals', () => {
         productCategories: ['Storage'],
         dealValue: 50_000,
       }),
+    ];
+
+    const result = findSimilarDeals(baseProfile, history);
+
+    expect(result.matches.map((m) => m.opportunityId)).toEqual(['OPP-DET']);
+    expect(result.stats.matchesFound).toBe(1);
+  });
+
+  it('boosts score via requirements axis when current.requirements overlaps past text', () => {
+    const profile: DealProfile = {
+      ...baseProfile,
+      requirements: ['SD-WAN deployment with zero-touch provisioning'],
+    };
+    const history: DealSummary[] = [
       deal({
-        opportunityId: 'OPP-AI',
-        sector: 'Retail',
-        country: 'France',
-        vendors: ['Juniper'],
+        opportunityId: 'OPP-REQ',
+        sector: 'Banking',
+        country: 'Saudi Arabia',
+        winLossReason: 'Won on SD-WAN zero-touch provisioning capability',
+        vendors: ['Cisco'],
         productCategories: ['Routing'],
-        dealValue: 20_000,
-        outcome: 'won',
-        margin: 0.15,
+        dealValue: 1_000_000,
       }),
     ];
 
-    mockCallAI.mockResolvedValueOnce({
-      success: true,
-      data: [
-        {
-          opportunityId: 'OPP-AI',
-          similarityScore: 0.55,
-          matchFactors: ['similar technical requirements'],
-        },
-      ],
-      tokensUsed: 300,
-      latencyMs: 80,
-    });
-
-    const result = await findSimilarDeals(baseProfile, history);
-
-    expect(mockCallAI).toHaveBeenCalledTimes(1);
-    const ids = result.matches.map((m) => m.opportunityId);
-    expect(ids).toContain('OPP-DET');
-    expect(ids).toContain('OPP-AI');
-    const ai = result.matches.find((m) => m.opportunityId === 'OPP-AI')!;
-    expect(ai.similarityScore).toBe(0.55);
-    expect(ai.matchFactors).toContain('similar technical requirements');
+    const result = findSimilarDeals(profile, history);
+    const req = result.matches.find((m) => m.opportunityId === 'OPP-REQ');
+    expect(req).toBeDefined();
+    expect(req!.matchFactors.some((f) => f.startsWith('requirements:'))).toBe(true);
   });
 
-  it('does not call AI when 3+ deterministic matches exist', async () => {
+  it('does not add requirements factor when overlap is below threshold', () => {
+    const profile: DealProfile = {
+      ...baseProfile,
+      requirements: ['SD-WAN zero-touch'],
+    };
     const history: DealSummary[] = [
-      deal({ opportunityId: 'OPP-1' }),
-      deal({ opportunityId: 'OPP-2' }),
-      deal({ opportunityId: 'OPP-3' }),
+      deal({
+        opportunityId: 'OPP-NOREQ',
+        winLossReason: 'Cheaper price won the deal',
+      }),
     ];
 
-    await findSimilarDeals(baseProfile, history);
-    expect(mockCallAI).not.toHaveBeenCalled();
+    const result = findSimilarDeals(profile, history);
+    const noreq = result.matches.find((m) => m.opportunityId === 'OPP-NOREQ');
+    expect(noreq).toBeDefined();
+    expect(noreq!.matchFactors.some((f) => f.startsWith('requirements:'))).toBe(false);
   });
 
-  it('AI failure leaves deterministic matches unchanged', async () => {
-    const history: DealSummary[] = [deal({ opportunityId: 'OPP-DET' })];
-    mockCallAI.mockResolvedValueOnce({
-      success: false,
-      error: 'rate limit',
-      retryCount: 1,
-      fallback: 'engineer_review',
-    });
-
-    const result = await findSimilarDeals(baseProfile, history);
-    expect(result.matches).toHaveLength(1);
-    expect(result.matches[0].opportunityId).toBe('OPP-DET');
-  });
-
-  it('deduplicates AI results that overlap with deterministic matches', async () => {
-    const history: DealSummary[] = [deal({ opportunityId: 'OPP-DET' })];
-    mockCallAI.mockResolvedValueOnce({
-      success: true,
-      data: [
-        {
-          opportunityId: 'OPP-DET', // duplicate
-          similarityScore: 0.99,
-          matchFactors: ['ai factor'],
-        },
-      ],
-      tokensUsed: 100,
-      latencyMs: 30,
-    });
-
-    const result = await findSimilarDeals(baseProfile, history);
-    expect(result.matches).toHaveLength(1);
-    expect(result.matches[0].opportunityId).toBe('OPP-DET');
-    // Deterministic factors win (no 'ai factor' since dedup drops AI copy).
-    expect(result.matches[0].matchFactors).not.toContain('ai factor');
-  });
-
-  it('computes stats correctly including avgMarginOfWins', async () => {
+  it('computes stats correctly including avgMarginOfWins', () => {
     const history: DealSummary[] = [
       deal({ opportunityId: 'W1', outcome: 'won', margin: 0.3 }),
       deal({ opportunityId: 'W2', outcome: 'won', margin: 0.1 }),
@@ -226,31 +173,30 @@ describe('findSimilarDeals', () => {
       deal({ opportunityId: 'P1', outcome: 'pending' }),
     ];
 
-    const result = await findSimilarDeals(baseProfile, history);
+    const result = findSimilarDeals(baseProfile, history);
 
     expect(result.stats.totalSearched).toBe(4);
     expect(result.stats.matchesFound).toBe(4);
-    // Only won deals contribute: (0.3 + 0.1) / 2 = 0.2.
     expect(result.stats.avgMarginOfWins).toBeCloseTo(0.2, 5);
   });
 
-  it('returns null avgMarginOfWins when no won deals match', async () => {
+  it('returns null avgMarginOfWins when no won deals match', () => {
     const history: DealSummary[] = [
       deal({ opportunityId: 'L1', outcome: 'lost', margin: 0.3 }),
       deal({ opportunityId: 'L2', outcome: 'lost', margin: 0.2 }),
       deal({ opportunityId: 'L3', outcome: 'lost', margin: 0.4 }),
     ];
 
-    const result = await findSimilarDeals(baseProfile, history);
+    const result = findSimilarDeals(baseProfile, history);
     expect(result.stats.avgMarginOfWins).toBeNull();
   });
 
-  it('caps total results at 10', async () => {
+  it('caps total results at 10', () => {
     const history: DealSummary[] = Array.from({ length: 15 }, (_, i) =>
       deal({ opportunityId: `OPP-${i}` }),
     );
 
-    const result = await findSimilarDeals(baseProfile, history);
+    const result = findSimilarDeals(baseProfile, history);
     expect(result.matches).toHaveLength(10);
     expect(result.stats.totalSearched).toBe(15);
     expect(result.stats.matchesFound).toBe(10);

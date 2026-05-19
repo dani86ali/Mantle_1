@@ -1,6 +1,8 @@
-import { z } from 'zod';
-import { callAI } from '@/lib/ai/client';
-import { wrapUntrusted } from '@/lib/ai/wrap-untrusted';
+import {
+  tokenize,
+  tokenOverlap,
+  normalizedEditDistance,
+} from './string-similarity';
 
 export interface CatalogEntry {
   sku: string;
@@ -22,45 +24,56 @@ export interface FuzzyMatchResult {
   reasoning?: string;
 }
 
-const AIOutputSchema = z.object({
-  sku: z.string(),
-  confidence: z.number().min(0).max(1),
-  reasoning: z.string(),
-});
+const TOKEN_WEIGHT = 0.7;
+const EDIT_WEIGHT = 0.3;
+const MANUFACTURER_BOOST = 0.1;
+const CATEGORY_BOOST = 0.05;
+const CONFIDENCE_THRESHOLD = 0.55;
 
-const SYSTEM_PROMPT =
-  'You are a Cisco/Fortinet product catalog expert. Given a description, ' +
-  'find the best matching SKU from the provided catalog. If no good match ' +
-  'exists, return confidence 0 and explain why.';
-
-function buildPrompt(input: FuzzyMatchInput, catalog: CatalogEntry[]): string {
-  const catalogLines = catalog
-    .map((c) => `- ${c.sku} | ${c.family} | ${c.description}`)
-    .join('\n');
-
-  const hints: string[] = [];
-  if (input.manufacturer) hints.push(`Manufacturer: ${input.manufacturer}`);
-  if (input.category) hints.push(`Category: ${input.category}`);
-  const hintBlock = hints.length ? `\n\nHints:\n${hints.join('\n')}` : '';
-
-  return (
-    `Find the best matching catalog SKU for this BoQ line item description.\n\n` +
-    `Description: ${wrapUntrusted(input.description, 'boq-description')}${hintBlock}\n\n` +
-    `Catalog (sku | family | description):\n${catalogLines}\n\n` +
-    `Respond with JSON: {"sku": "<exact SKU from catalog>", ` +
-    `"confidence": <0..1>, "reasoning": "<short explanation>"}.\n` +
-    `If no acceptable match exists, set confidence to 0 and explain why.`
+function scoreCatalogEntry(
+  input: FuzzyMatchInput,
+  entry: CatalogEntry,
+): number {
+  const inputTokens = tokenize(input.description);
+  const entryTokens = tokenize(`${entry.description} ${entry.family}`);
+  const overlap = tokenOverlap(inputTokens, entryTokens);
+  const edit = normalizedEditDistance(
+    input.description.toLowerCase(),
+    entry.description.toLowerCase(),
   );
+
+  let score = TOKEN_WEIGHT * overlap + EDIT_WEIGHT * edit;
+
+  if (input.manufacturer) {
+    const mfgLower = input.manufacturer.toLowerCase();
+    const familyLower = entry.family.toLowerCase();
+    const descLower = entry.description.toLowerCase();
+    if (familyLower.includes(mfgLower) || descLower.includes(mfgLower)) {
+      score += MANUFACTURER_BOOST;
+    }
+  }
+
+  if (input.category) {
+    const catTokens = tokenize(input.category);
+    if (catTokens.length > 0) {
+      const entryAllTokens = tokenize(
+        `${entry.description} ${entry.family}`,
+      );
+      const catOverlap = tokenOverlap(catTokens, entryAllTokens);
+      if (catOverlap > 0) score += CATEGORY_BOOST;
+    }
+  }
+
+  return Math.min(score, 1);
 }
 
-export async function fuzzyMatchSku(
+export function fuzzyMatchSku(
   input: FuzzyMatchInput,
   catalog: CatalogEntry[],
-): Promise<FuzzyMatchResult> {
+): FuzzyMatchResult {
   const desc = input.description.trim();
   const descLower = desc.toLowerCase();
 
-  // (1) Exact SKU match (case-insensitive) — no AI call.
   const exact = catalog.find((c) => c.sku.toLowerCase() === descLower);
   if (exact) {
     return {
@@ -71,7 +84,6 @@ export async function fuzzyMatchSku(
     };
   }
 
-  // (2) Prefix / contains match — no AI call.
   const prefixOrContains = catalog.find((c) => {
     const skuLower = c.sku.toLowerCase();
     return skuLower.startsWith(descLower) || skuLower.includes(descLower);
@@ -85,43 +97,31 @@ export async function fuzzyMatchSku(
     };
   }
 
-  // (3) AI fuzzy match.
-  const aiResult = await callAI({
-    prompt: buildPrompt(input, catalog),
-    systemPrompt: SYSTEM_PROMPT,
-    outputSchema: AIOutputSchema,
-    taskId: `fuzzy-sku-match:${desc.slice(0, 40)}`,
-    untrustedContent: true,
-  });
-
-  if (!aiResult.success) {
-    return {
-      matchedSku: '',
-      confidence: 0,
-      matchType: 'no_match',
-      originalInput: input.description,
-      reasoning: `AI fallback to engineer_review: ${aiResult.error}`,
-    };
+  let best: { entry: CatalogEntry; score: number } | null = null;
+  for (const entry of catalog) {
+    const score = scoreCatalogEntry(input, entry);
+    if (!best || score > best.score) {
+      best = { entry, score };
+    }
   }
 
-  const { sku, confidence, reasoning } = aiResult.data;
-  const inCatalog = catalog.some((c) => c.sku === sku);
-
-  if (!inCatalog) {
+  if (best && best.score >= CONFIDENCE_THRESHOLD) {
     return {
-      matchedSku: sku,
-      confidence: 0,
-      matchType: 'no_match',
+      matchedSku: best.entry.sku,
+      confidence: Number(best.score.toFixed(3)),
+      matchType: 'fuzzy',
       originalInput: input.description,
-      reasoning: `AI returned SKU not in catalog: ${reasoning}`,
+      reasoning: 'token-overlap + edit-distance',
     };
   }
 
   return {
-    matchedSku: sku,
-    confidence,
-    matchType: 'fuzzy',
+    matchedSku: '',
+    confidence: 0,
+    matchType: 'no_match',
     originalInput: input.description,
-    reasoning,
+    reasoning: best
+      ? `best deterministic score ${best.score.toFixed(3)} below ${CONFIDENCE_THRESHOLD} threshold`
+      : 'empty catalog',
   };
 }

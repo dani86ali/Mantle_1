@@ -1,27 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-
-vi.mock('@/lib/ai/client', () => ({
-  callAI: vi.fn(),
-}));
-
-import { callAI } from '@/lib/ai/client';
+import { describe, it, expect } from 'vitest';
 import {
   detectAnomalies,
   type BomLineItem,
   type ProjectContext,
 } from '@/engines/e2/bom-anomaly-detector';
-
-const mockCallAI = vi.mocked(callAI);
-
-beforeEach(() => {
-  mockCallAI.mockReset();
-  mockCallAI.mockResolvedValue({
-    success: true,
-    data: { anomalies: [], riskLevel: 'low', summary: 'AI ok' },
-    tokensUsed: 0,
-    latencyMs: 0,
-  });
-});
 
 const baseCtx: ProjectContext = {
   sector: 'Telecom',
@@ -30,26 +12,14 @@ const baseCtx: ProjectContext = {
   description: 'Office network refresh',
 };
 
-describe('detectAnomalies', () => {
-  it('flags AP count exceeding switch PoE port capacity (deterministic)', async () => {
+describe('detectAnomalies (deterministic baseline)', () => {
+  it('flags AP count exceeding switch PoE port capacity', () => {
     const bom: BomLineItem[] = [
-      {
-        sku: 'C9120-AP',
-        description: 'Catalyst 9120 AP',
-        qty: 100,
-        category: 'Access Point',
-        unitPrice: 800,
-      },
-      {
-        sku: 'C9300-24P',
-        description: 'Catalyst 9300 24-port PoE switch',
-        qty: 1,
-        category: 'Switch',
-        unitPrice: 5000,
-      },
+      { sku: 'C9120-AP', description: 'Catalyst 9120 AP', qty: 100, category: 'Access Point', unitPrice: 800 },
+      { sku: 'C9300-24P', description: 'Catalyst 9300 24-port PoE switch', qty: 1, category: 'Switch', unitPrice: 5000 },
     ];
 
-    const result = await detectAnomalies(bom, baseCtx);
+    const result = detectAnomalies(bom, baseCtx);
     const oversized = result.anomalies.find((a) => a.type === 'oversized');
     expect(oversized).toBeDefined();
     expect(oversized!.severity).toBe('error');
@@ -59,105 +29,80 @@ describe('detectAnomalies', () => {
     expect(result.riskLevel).toBe('high');
   });
 
-  it('flags single line >50% of total BoM value as cost_outlier', async () => {
+  it('flags single line >50% of total BoM value as cost_outlier', () => {
     const bom: BomLineItem[] = [
-      {
-        sku: 'BIG-SKU',
-        description: 'Expensive line',
-        qty: 1,
-        category: 'Switch',
-        unitPrice: 100_000,
-      },
-      {
-        sku: 'SMALL-SKU',
-        description: 'Cheap line',
-        qty: 10,
-        category: 'Cable',
-        unitPrice: 100,
-      },
+      { sku: 'BIG-SKU', description: 'Expensive line', qty: 1, category: 'Switch', unitPrice: 100_000 },
+      { sku: 'SMALL-SKU', description: 'Cheap line', qty: 10, category: 'Cable', unitPrice: 100 },
     ];
 
-    const result = await detectAnomalies(bom, baseCtx);
+    const result = detectAnomalies(bom, baseCtx);
     const outlier = result.anomalies.find((a) => a.type === 'cost_outlier');
     expect(outlier).toBeDefined();
     expect(outlier!.affectedSkus).toEqual(['BIG-SKU']);
     expect(outlier!.severity).toBe('warning');
   });
 
-  it('flags zero-quantity lines as error', async () => {
+  it('flags zero-quantity lines as error', () => {
     const bom: BomLineItem[] = [
-      {
-        sku: 'EMPTY-SKU',
-        description: 'Forgot the qty',
-        qty: 0,
-        category: 'Switch',
-        unitPrice: 1000,
-      },
+      { sku: 'EMPTY-SKU', description: 'Forgot the qty', qty: 0, category: 'Switch', unitPrice: 1000 },
     ];
 
-    const result = await detectAnomalies(bom, baseCtx);
+    const result = detectAnomalies(bom, baseCtx);
     const zero = result.anomalies.find((a) => a.affectedSkus.includes('EMPTY-SKU'));
     expect(zero).toBeDefined();
     expect(zero!.severity).toBe('error');
     expect(result.riskLevel).toBe('high');
   });
 
-  it('flags duplicate SKUs with different prices as warning', async () => {
+  it('flags duplicate SKUs with different prices as warning', () => {
     const bom: BomLineItem[] = [
-      {
-        sku: 'DUP-SKU',
-        description: 'First line',
-        qty: 1,
-        category: 'Switch',
-        unitPrice: 1000,
-      },
-      {
-        sku: 'DUP-SKU',
-        description: 'Second line',
-        qty: 1,
-        category: 'Switch',
-        unitPrice: 1200,
-      },
+      { sku: 'DUP-SKU', description: 'First line', qty: 1, category: 'Switch', unitPrice: 1000 },
+      { sku: 'DUP-SKU', description: 'Second line', qty: 1, category: 'Switch', unitPrice: 1200 },
     ];
 
-    const result = await detectAnomalies(bom, baseCtx);
+    const result = detectAnomalies(bom, baseCtx);
     const dup = result.anomalies.find(
       (a) => a.affectedSkus.includes('DUP-SKU') && a.severity === 'warning',
     );
     expect(dup).toBeDefined();
   });
 
-  it('AI adds missing-component anomaly for banking project without firewall', async () => {
+  it('clean BoM with no issues returns low risk', () => {
     const bom: BomLineItem[] = [
-      {
-        sku: 'C9300-24',
-        description: 'Switch',
-        qty: 2,
-        category: 'Switch',
-        unitPrice: 5000,
-      },
+      { sku: 'C9300-24P', description: 'Switch', qty: 4, category: 'Switch', unitPrice: 5000 },
+      { sku: 'C9120-AP', description: 'AP', qty: 20, category: 'Access Point', unitPrice: 800 },
+      { sku: 'FPR-1010', description: 'Firewall', qty: 1, category: 'Firewall', unitPrice: 6000 },
+      { sku: 'PDU-30A', description: 'Rack PDU 30A', qty: 2, category: 'Power', unitPrice: 400 },
+      { sku: 'CAB-1M', description: 'Cable', qty: 50, category: 'Cable', unitPrice: 20 },
     ];
-    mockCallAI.mockReset();
-    mockCallAI.mockResolvedValueOnce({
-      success: true,
-      data: {
-        anomalies: [
-          {
-            type: 'missing_component',
-            description: 'Banking project has no firewall component',
-            severity: 'error',
-            affectedSkus: [],
-            suggestion: 'Add a perimeter firewall such as FPR-1010.',
-          },
-        ],
-        riskLevel: 'high',
-        summary: 'Missing security stack for banking sector.',
-      },
-      tokensUsed: 200,
-      latencyMs: 50,
-    });
 
-    const result = await detectAnomalies(bom, {
+    // 800 users / 40 = 20 expected APs → matches qty=20 within ±20%.
+    const ctx: ProjectContext = { ...baseCtx, userCount: 800 };
+    const result = detectAnomalies(bom, ctx);
+    expect(result.anomalies).toEqual([]);
+    expect(result.riskLevel).toBe('low');
+    expect(result.summary).toBe('No anomalies detected.');
+  });
+
+  it('assigns auto-incrementing IDs in AN-XXX format', () => {
+    const bom: BomLineItem[] = [
+      { sku: 'EMPTY-1', description: 'Zero qty', qty: 0, category: 'Switch', unitPrice: 1000 },
+      { sku: 'EMPTY-2', description: 'Zero qty', qty: 0, category: 'Switch', unitPrice: 1000 },
+    ];
+
+    const result = detectAnomalies(bom, baseCtx);
+    expect(result.anomalies[0].id).toBe('AN-001');
+    expect(result.anomalies[1].id).toBe('AN-002');
+  });
+});
+
+describe('detectAnomalies (expert rules)', () => {
+  it('emits missing_component when banking project has no firewall', () => {
+    const bom: BomLineItem[] = [
+      { sku: 'C9300-24', description: 'Switch', qty: 2, category: 'Switch', unitPrice: 5000 },
+    ];
+
+    const result = detectAnomalies(bom, {
       sector: 'Banking',
       siteCount: 1,
       userCount: 200,
@@ -166,90 +111,62 @@ describe('detectAnomalies', () => {
     const missing = result.anomalies.find((a) => a.type === 'missing_component');
     expect(missing).toBeDefined();
     expect(missing!.id).toMatch(/^AN-\d{3}$/);
-    expect(missing!.description).toContain('firewall');
+    expect(missing!.description.toLowerCase()).toContain('firewall');
   });
 
-  it('returns deterministic anomalies even when AI fails', async () => {
+  it('emits unusual_combination when AP count exceeds WLC capacity', () => {
     const bom: BomLineItem[] = [
-      {
-        sku: 'EMPTY-SKU',
-        description: 'Zero qty',
-        qty: 0,
-        category: 'Switch',
-        unitPrice: 1000,
-      },
+      { sku: 'C9120-AP', description: 'AP', qty: 200, category: 'Access Point', unitPrice: 800 },
+      { sku: 'C9800-WLC', description: 'WLC', qty: 1, category: 'WLC', unitPrice: 30_000 },
+      // Add enough switches so AP-vs-PoE check doesn't dominate.
+      { sku: 'C9300-48P', description: 'Switch', qty: 6, category: 'Switch', unitPrice: 8000 },
     ];
-    mockCallAI.mockReset();
-    mockCallAI.mockResolvedValueOnce({
-      success: false,
-      error: 'rate limit',
-      retryCount: 1,
-      fallback: 'engineer_review',
+
+    const result = detectAnomalies(bom, baseCtx);
+    const combo = result.anomalies.find((a) => a.type === 'unusual_combination');
+    expect(combo).toBeDefined();
+    expect(combo!.description).toMatch(/WLC capacity/);
+  });
+
+  it('emits undersized when wireless project has too few APs for user count', () => {
+    const bom: BomLineItem[] = [
+      { sku: 'C9120-AP', description: 'AP', qty: 1, category: 'Access Point', unitPrice: 800 },
+      { sku: 'C9300-48P', description: 'Switch', qty: 8, category: 'Switch', unitPrice: 8000 },
+    ];
+
+    const result = detectAnomalies(bom, {
+      sector: 'Telecom',
+      siteCount: 1,
+      userCount: 300,
+      hasWireless: true,
     });
 
-    const result = await detectAnomalies(bom, baseCtx);
-    expect(result.anomalies.length).toBeGreaterThan(0);
-    expect(result.anomalies[0].affectedSkus).toContain('EMPTY-SKU');
+    const undersized = result.anomalies.find((a) => a.type === 'undersized');
+    expect(undersized).toBeDefined();
+    expect(undersized!.description).toMatch(/AP count/);
   });
 
-  it('clean BoM with no issues returns low risk', async () => {
+  it('emits missing_component when HA risk flag is present but no redundant core/firewall', () => {
     const bom: BomLineItem[] = [
-      {
-        sku: 'C9300-24P',
-        description: 'Switch',
-        qty: 4,
-        category: 'Switch',
-        unitPrice: 5000,
-      },
-      {
-        sku: 'C9120-AP',
-        description: 'AP',
-        qty: 20,
-        category: 'Access Point',
-        unitPrice: 800,
-      },
-      {
-        sku: 'FPR-1010',
-        description: 'Firewall',
-        qty: 1,
-        category: 'Firewall',
-        unitPrice: 6000,
-      },
-      {
-        sku: 'CAB-1M',
-        description: 'Cable',
-        qty: 50,
-        category: 'Cable',
-        unitPrice: 20,
-      },
+      { sku: 'C9300-48P', description: 'Switch', qty: 2, category: 'Switch', unitPrice: 8000 },
+      { sku: 'FPR-1010', description: 'Firewall', qty: 1, category: 'Firewall', unitPrice: 6000 },
     ];
 
-    const result = await detectAnomalies(bom, baseCtx);
-    expect(result.anomalies).toEqual([]);
-    expect(result.riskLevel).toBe('low');
-    expect(result.summary).toBe('No anomalies detected.');
-  });
+    const result = detectAnomalies(bom, baseCtx, {
+      riskFlags: [
+        {
+          severity: 'high',
+          pattern: 'high availability',
+          matchedText: 'HA required for core network',
+          source: 'rfp-section-3.2',
+        },
+      ],
+    });
 
-  it('assigns auto-incrementing IDs in AN-XXX format', async () => {
-    const bom: BomLineItem[] = [
-      {
-        sku: 'EMPTY-1',
-        description: 'Zero qty',
-        qty: 0,
-        category: 'Switch',
-        unitPrice: 1000,
-      },
-      {
-        sku: 'EMPTY-2',
-        description: 'Zero qty',
-        qty: 0,
-        category: 'Switch',
-        unitPrice: 1000,
-      },
-    ];
-
-    const result = await detectAnomalies(bom, baseCtx);
-    expect(result.anomalies[0].id).toBe('AN-001');
-    expect(result.anomalies[1].id).toBe('AN-002');
+    const ha = result.anomalies.find(
+      (a) => a.type === 'missing_component' && /high availability/i.test(a.description),
+    );
+    expect(ha).toBeDefined();
+    expect(ha!.suggestion).toMatch(/redundant/i);
   });
 });
