@@ -140,11 +140,15 @@ beforeEach(() => {
 describe("POST /api/estimates/[id]/design", () => {
   it("triggers HLD generation and returns sizing", async () => {
     mockResolve.mockResolvedValue(resolved);
+    const componentList = [
+      { model: "C9500-24Y4C", vendor: "cisco" as const, quantity: 2, role: "core" as const, fromDesignStep: "sizing-calculator" },
+    ];
     mockRunE5.mockResolvedValue({
       output: { engine: "e5", artifacts: {}, warnings: [] },
       phase: "hld",
       logs: [],
       phase1,
+      componentList,
     });
 
     const res = await designPOST(jsonReq(validBody), { params: { id: "intake-1" } });
@@ -159,6 +163,9 @@ describe("POST /api/estimates/[id]/design", () => {
     expect(saved.phase).toBe("hld_in_progress");
     expect(saved.hldDocxPath).toBe("./out/Acme-Refresh-hld.docx");
     expect(saved.inputData.vendor).toBe("cisco");
+    // Fix #5: componentList from runE5Detailed must be persisted so E2 can
+    // price the design even before the unified-checkpoint sync runs.
+    expect(saved.componentList).toBe(JSON.stringify(componentList));
 
     const orchestratorInput = mockRunE5.mock.calls[0][0];
     expect(orchestratorInput.inputData.phase).toBe("hld");
@@ -457,6 +464,34 @@ describe("PATCH design approve_* → unified checkpoint sync", () => {
     expect(mockResume).toHaveBeenCalledWith(expect.any(String), "intake-1");
     // LLD code is not invoked post-Fix #4.
     expect(mockRunE5).not.toHaveBeenCalled();
+  });
+
+  it("approve_hld syncs componentList from E5StoredState into pipeline state.artifacts.e5 (Fix #5)", async () => {
+    mockResolve.mockResolvedValue(resolved);
+    const cl = JSON.stringify([
+      { model: "C9300-48P-A", vendor: "cisco", quantity: 2, role: "access", fromDesignStep: "sizing-calculator" },
+    ]);
+    mockLoadState.mockResolvedValue({
+      ...hldStateAtHld,
+      phase: "hld_complete",
+      componentList: cl,
+    });
+    const pipeline = pipelineWithE5Checkpoints({
+      approved: ["e5-design-approach"],
+      pending: ["e5-hld"],
+    });
+    mockLoadPipelineByIntake.mockResolvedValue(pipeline);
+
+    const res = await designPATCH(
+      jsonReq({ action: "approve_hld" }),
+      { params: { id: "intake-1" } },
+    );
+    expect(res.status).toBe(200);
+
+    const saved = mockSavePipelineState.mock.calls[0][0] as PipelineState;
+    // Regression guard against the Fix #4 narrowing — E2 reads this slot.
+    expect(saved.artifacts.e5.componentList).toBe(cl);
+    expect(saved.artifacts.e5.hldDocument).toBe(phase1.hldDocPath);
   });
 
   it("approve_hld with no pipeline state for intake → succeeds, no unified-side-effects", async () => {

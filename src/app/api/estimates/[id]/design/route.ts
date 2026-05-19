@@ -151,6 +151,7 @@ export async function POST(
     hldSections: JSON.stringify(out.phase1.hldSections),
     hldDocxPath: out.phase1.hldDocPath,
     diagramXml: out.phase1.diagramXml,
+    componentList: out.componentList ? JSON.stringify(out.componentList) : undefined,
     updatedAt: new Date().toISOString(),
   };
   await saveE5State(resolved.intakeId, next);

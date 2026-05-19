@@ -73,11 +73,15 @@ async function approveUnifiedCheckpoint(
     );
     return;
   }
-  // Shallow-merge the design-page artifacts into state.artifacts.e5 so the
-  // dispatcher's E2 (which reads resolveE2Devices(..., state.artifacts.e5))
-  // sees the same HLD outputs the operator just approved.
+  // Sync the design-page E5 artifacts into pipeline state so the dispatcher's
+  // E2 (which calls resolveE2Devices(input, state.artifacts.e5)) sees the
+  // componentList and HLD document. Mirrors the pre-B4 _rerun-e2e3.ts sync
+  // semantics that the approveUnifiedCheckpoint refactor accidentally narrowed.
+  // LLD fields (lldDocument, ipVlanPlan) are intentionally NOT synced —
+  // LLD is paused per memory project-lld-deferred.
   state.artifacts.e5 = {
     ...state.artifacts.e5,
+    ...(e5State.componentList !== undefined && { componentList: e5State.componentList }),
     ...(e5State.hldDocxPath !== undefined && { hldDocument: e5State.hldDocxPath }),
   };
 

@@ -82,6 +82,11 @@ export async function runE5Detailed(input: EngineInput<E5InputData>): Promise<E5
   try {
     if (phase === 'hld') {
       const p1 = await runPhase1(data, logs, warnings, input, outputDir);
+      // componentList is derived from sizing only — no LLD dependency. RFP demo
+      // flow (Fix #4) runs phase: 'hld' exclusively, so this must be generated
+      // here for E2 to have any devices to price. Restored after Fix #4 dropped
+      // it by accident.
+      const componentList = await buildComponentListStep(p1.sizing, logs, input, warnings);
       return {
         output: {
           engine: 'e5',
@@ -89,10 +94,11 @@ export async function runE5Detailed(input: EngineInput<E5InputData>): Promise<E5
             hldDocument: p1.hldDocPath,
             diagrams: p1.diagramXml ? [p1.diagramXml] : [],
             designSummary: buildDesignSummary(p1),
+            componentList: JSON.stringify(componentList),
           },
           warnings,
         },
-        phase, logs, phase1: p1,
+        phase, logs, phase1: p1, componentList,
       };
     }
 

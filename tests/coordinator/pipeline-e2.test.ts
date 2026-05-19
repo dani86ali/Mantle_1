@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { selectBoQFilePath, resolveE2Devices } from "@/coordinator/pipeline-e2";
+import { selectBoQFilePath, resolveE2Devices, devicesFromComponentList } from "@/coordinator/pipeline-e2";
 import type { E1Output } from "@/engines/e1/orchestrator";
 import type { E1ClassifiedFile } from "@/engines/e1/orchestrator-types";
 import type { ComponentListItem } from "@/engines/e5/types";
@@ -171,6 +171,24 @@ describe("resolveE2Devices — orderableSku threading", () => {
     const devices = resolveE2Devices({ pricingConfig: {} as never }, { componentList: JSON.stringify(items) });
     expect(devices).toHaveLength(1);
     expect(devices[0].model).toBe("C9300-48P");
+  });
+
+  it("devicesFromComponentList: parses a minimal component list (rerun fallback shape)", () => {
+    // Mirrors the rerun-route fallback path: when intake has no devices but
+    // state.artifacts.e5.componentList exists, this helper rebuilds the
+    // E2Device list so the operator's rerun can still price.
+    const json = JSON.stringify([
+      { model: "C9300-48P-A", vendor: "cisco", quantity: 2, role: "access", fromDesignStep: "sizing-calculator" },
+    ]);
+    const devices = devicesFromComponentList(json);
+    expect(devices).toHaveLength(1);
+    expect(devices[0].model).toBe("C9300-48P-A");
+    expect(devices[0].qty).toBe(2);
+    expect(devices[0].config.vendor).toBe("cisco");
+  });
+
+  it("devicesFromComponentList: returns [] on malformed JSON", () => {
+    expect(devicesFromComponentList("not-json")).toEqual([]);
   });
 
   it("explicit input.devices take precedence over E5 component list", () => {

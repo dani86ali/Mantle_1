@@ -156,9 +156,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="flex flex-col gap-1 text-xs text-text-secondary"><span>{label}</span>{children}</label>;
 }
 
-export function ApproveReviseBar({ approveLabel, reviseLabel, busyApprove, busyRevise, busy, onApprove, onRevise }: {
+export function ApproveReviseBar({ approveLabel, reviseLabel, busyApprove, busyRevise, busy, onApprove, onRevise, approveDisabled, approveDisabledReason }: {
   approveLabel: string; reviseLabel: string; busyApprove: boolean; busyRevise: boolean;
   busy: boolean; onApprove: () => void; onRevise: (notes: string) => void;
+  approveDisabled?: boolean; approveDisabledReason?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [notes, setNotes] = useState("");
@@ -181,7 +182,8 @@ export function ApproveReviseBar({ approveLabel, reviseLabel, busyApprove, busyR
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button onClick={() => setOpen(true)} disabled={busy}
               className="rounded-button border border-[var(--border)] px-3 py-2 text-sm font-medium text-warning hover:bg-warning-muted disabled:opacity-50">{reviseLabel}</button>
-            <button onClick={onApprove} disabled={busy}
+            <button onClick={onApprove} disabled={busy || approveDisabled}
+              title={approveDisabled ? approveDisabledReason : undefined}
               className="rounded-button bg-accent px-4 py-2 text-sm font-medium text-text-primary hover:bg-accent-hover disabled:opacity-50">
               {busyApprove ? "Approving…" : approveLabel}
             </button>

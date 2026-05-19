@@ -49,7 +49,7 @@ const DEFAULT_DEVICE_CONFIG: E2DeviceConfig = {
   vendor: 'cisco',
 };
 
-function devicesFromComponentList(
+export function devicesFromComponentList(
   json: string,
   configOverrides?: Partial<E2DeviceConfig>,
 ): E2Device[] {

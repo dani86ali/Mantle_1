@@ -175,7 +175,7 @@ describe('runE5 — full pipeline', () => {
 });
 
 describe('runE5 — HLD-only phase', () => {
-  it('runs steps 1-7 and skips phase 2', async () => {
+  it('runs steps 1-7 plus component-list build, skips phase 2', async () => {
     const out = await runE5Detailed(makeInput({ phase: 'hld' }));
     expect(out.phase).toBe('hld');
     expect(mMethod).toHaveBeenCalledTimes(1);
@@ -186,7 +186,12 @@ describe('runE5 — HLD-only phase', () => {
     expect(mIp).not.toHaveBeenCalled();
     expect(mLldNarr).not.toHaveBeenCalled();
     expect(mRack).not.toHaveBeenCalled();
-    expect(mComp).not.toHaveBeenCalled();
+    // componentList IS built in phase=hld — E2 needs devices to price (Fix #5).
+    expect(mComp).toHaveBeenCalledTimes(1);
+    expect(mComp).toHaveBeenCalledWith(SIZING);
+    expect(out.componentList).toBeDefined();
+    expect(out.componentList?.length).toBeGreaterThan(0);
+    expect(out.output.artifacts.componentList).toBeDefined();
     expect(out.output.artifacts.hldDocument).toBe('/tmp/hld.docx');
     expect(out.output.artifacts.lldDocument).toBeUndefined();
   });

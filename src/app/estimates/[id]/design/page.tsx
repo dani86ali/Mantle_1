@@ -159,6 +159,8 @@ export default function DesignPage() {
       {active === "hld" && (
         <ApproveReviseBar approveLabel="Approve HLD" reviseLabel="Revise HLD"
           busyApprove={busy === "approve_hld"} busyRevise={busy === "revise_hld"} busy={isBusy}
+          approveDisabled={data.status !== "hld_complete"}
+          approveDisabledReason="Approve Design Approach first"
           onApprove={() => dispatch("approve_hld")} onRevise={(n) => dispatch("revise_hld", n)} />
       )}
     </Shell>

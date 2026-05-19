@@ -51,9 +51,25 @@ export async function runEngine(
     const e5Input = input.mode === 'rfp' && out.e1Output
       ? synthesizeE5InputFromE1(out.e1Output, input, state, e5OutputDir)
       : buildE5Input(input, state, state.artifacts.e4, e5OutputDir);
+    console.info(`[dispatcher ${state.id}] running E5 phase=hld for intake ${state.intakeId ?? 'none'}`);
     out.e5Output = await runE5(e5Input);
     state.artifacts.e5 = toE5Artifacts(out.e5Output);
+    const e5CompListLen = safeComponentListLen(out.e5Output.artifacts.componentList);
+    console.info(
+      `[dispatcher ${state.id}] E5 complete, componentList size=${e5CompListLen}, ` +
+      `hldDocument=${out.e5Output.artifacts.hldDocument ?? 'none'}`,
+    );
     if (out.e5Output.error) throw new Error(out.e5Output.error);
+  }
+}
+
+function safeComponentListLen(raw: string | undefined): number {
+  if (!raw) return 0;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
   }
 }
 
