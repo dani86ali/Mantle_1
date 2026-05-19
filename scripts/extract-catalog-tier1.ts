@@ -5,6 +5,12 @@
  * entries (SKU + price + observations), merges with existing
  * src/lib/adapters/_mock-data/catalog-responses.json.
  *
+ * Rows with null/blank/0 list price are retained with listPrice = 0 —
+ * bundled child SKUs are part of the catalog so downstream lookups
+ * succeed; operators decide whether to override at pricing-config time.
+ * Cross-opp canonical listPrice prefers the most-recent NON-zero
+ * observation, falling back to most-recent if every observation is $0.
+ *
  * Spec: see prompt at top of session OR the tier1 prompt cycle.
  * Run from worktree root: npx tsx scripts/extract-catalog-tier1.ts
  */
@@ -23,8 +29,16 @@ const OUTPUT_CATALOG = "src/lib/adapters/_mock-data/catalog-responses.json";
 const LOG_DIR = "../bomatic_planning/extractors";
 
 const MIN_FILE_KB = 1;
-const MIN_PRICE = 10;
 const PRICE_DRIFT_WARN_RATIO = 0.10;
+
+// Treat null/blank/missing list price as 0, and keep all rows with a valid
+// sku+vendor regardless of price magnitude. Bundled / sub-line SKUs frequently
+// show $0 in column L (price rolled into parent); dropping them was destroying
+// catalog coverage for orderable child SKUs.
+export function normalizeListPrice(raw: number | null): number {
+  if (raw === null || !Number.isFinite(raw) || raw < 0) return 0;
+  return raw;
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -36,7 +50,7 @@ interface InventoryRow {
   family: string;
 }
 
-interface Candidate {
+export interface Candidate {
   sku: string;
   description: string;
   vendor: string;
@@ -198,7 +212,7 @@ function findTASheet(wb: xlsx.WorkBook): xlsx.WorkSheet | null {
   return null;
 }
 
-function parseTA(
+export function parseTA(
   absPath: string,
   relPath: string,
   opportunityId: string,
@@ -219,8 +233,7 @@ function parseTA(
     if (!sku) continue;
     const vendor = normalizeVendor(cellStr(ws, `D${row}`));
     if (!vendor) continue;
-    const listPrice = cellNum(ws, `L${row}`);
-    if (listPrice === null || listPrice < MIN_PRICE) continue;
+    const listPrice = normalizeListPrice(cellNum(ws, `L${row}`));
 
     out.push({
       sku,
@@ -285,8 +298,7 @@ function parseCCW(
     const sku = cellStr(ws, `B${row}`);
     if (!sku) continue;
     if (cellStr(ws, `H${row}`).toLowerCase() === "yes") continue; // bundle child
-    const listPrice = cellNum(ws, `K${row}`);
-    if (listPrice === null || listPrice <= 0) continue;
+    const listPrice = normalizeListPrice(cellNum(ws, `K${row}`));
 
     const smartMandatoryStr = cellStr(ws, `C${row}`).toLowerCase();
     const leadTimeDays = cellNum(ws, `G${row}`);
@@ -415,7 +427,7 @@ function stdev(nums: number[]): number {
   return Math.sqrt(v);
 }
 
-function dedupe(
+export function dedupe(
   candidates: Candidate[]
 ): { entries: Record<string, CatalogEntry>; driftWarnings: number } {
   // Collapse per (sku, opportunityId) — one observation per opportunity
@@ -436,7 +448,12 @@ function dedupe(
     const obs: Candidate[] = Object.values(opps).sort(
       (a, b) => a.observedAt.localeCompare(b.observedAt)
     );
-    const canonical = obs[obs.length - 1]; // most recent
+    // Prefer most-recent NON-zero observation so a SKU appearing only as a
+    // bundle child ($0) in the newest opp does not overwrite a real list
+    // price from an older standalone-purchase observation. Fall back to
+    // most-recent when every observation is $0 (genuinely a child SKU).
+    const nonZero = obs.filter((o) => o.listPrice > 0);
+    const canonical = nonZero.length > 0 ? nonZero[nonZero.length - 1] : obs[obs.length - 1];
     const prices = obs.map((o) => o.listPrice);
     const pMin = Math.min(...prices);
     const pMax = Math.max(...prices);
@@ -666,7 +683,12 @@ async function main(): Promise<void> {
   log(`Done in ${Math.round((Date.now() - t0) / 1000)}s`);
 }
 
-main().catch((e) => {
-  log(`FATAL: ${(e as Error).message}\n${(e as Error).stack ?? ""}`);
-  process.exit(1);
-});
+// Run only when invoked directly via `npx tsx scripts/extract-catalog-tier1.ts`.
+// Skipped when this module is imported (e.g. by vitest test files).
+const invokedPath = (process.argv[1] ?? "").replace(/\\/g, "/");
+if (invokedPath.endsWith("scripts/extract-catalog-tier1.ts")) {
+  main().catch((e) => {
+    log(`FATAL: ${(e as Error).message}\n${(e as Error).stack ?? ""}`);
+    process.exit(1);
+  });
+}
