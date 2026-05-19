@@ -12,7 +12,8 @@ import { generateExecutiveSummary } from './ai-sections/executive-summary';
 import { generateImplementation } from './ai-sections/implementation';
 import { generateProposedSolution } from './ai-sections/proposed-solution';
 import { generateScope } from './ai-sections/scope-customizer';
-import { generateProposalDocx } from './docx-generator';
+import { renderDocxFromTemplate } from '@/lib/docx/renderer';
+import { buildTpData } from './tp-data-builder';
 import { writeFinancialProposal } from './financial-proposal-writer';
 import { analyzeMargin } from './margin-analyzer';
 import { generatePricingTiers } from './pricing-tiers';
@@ -154,11 +155,39 @@ export async function runE3(input: E3Input): Promise<E3Output> {
   let financialPath: string | undefined;
   if (emitFiles) {
     const prefix = safeFilePrefix(metadata);
-    proposalPath = await generateProposalDocx(
-      sections,
+    const tpData = buildTpData({
       metadata,
+      e1,
+      e2,
+      sections,
+      e4: input.e4,
+      e5: input.e5,
+      contactName: input.contactName,
+      rfqNumber: input.rfqNumber,
+    });
+    const templatePath = join(process.cwd(), 'src/templates/TP-template.docx');
+    const strictMode = process.env.STRICT_PROPOSAL === '1';
+    const MISSING_MARKER = '<<MISSING:';
+    proposalPath = await renderDocxFromTemplate(
+      templatePath,
+      tpData as unknown as Record<string, unknown>,
       join(outputDir, `${prefix}-proposal.docx`),
+      strictMode ? { markMissing: (tag) => `${MISSING_MARKER}${tag}>>` } : {},
     );
+    if (strictMode) {
+      // Mirror the old docx-generator STRICT semantics: fail fast if any
+      // template placeholder rendered as the missing-marker. Scan handles
+      // both raw and XML-escaped forms (docxtemplater escapes `<` / `>`).
+      const { readFile: _read } = await import('fs/promises');
+      const PizZipImport = (await import('pizzip')).default;
+      const renderedBuf = await _read(proposalPath);
+      const xml = new PizZipImport(renderedBuf).files['word/document.xml'].asText();
+      if (xml.includes(MISSING_MARKER) || xml.includes('&lt;&lt;MISSING:')) {
+        throw new Error(
+          `[runE3] STRICT_PROPOSAL=1: rendered TP contains unresolved placeholder markers (${MISSING_MARKER}…). Inspect ${proposalPath}.`,
+        );
+      }
+    }
     financialPath = await writeFinancialProposal(
       {
         metadata: buildFinancialMetadata(metadata),

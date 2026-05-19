@@ -167,6 +167,9 @@ export interface E3Input {
   siteCount?: number;
   migrationApproach?: 'cutover' | 'parallel' | 'phased';
   keyStrengths?: string[];
+  /** Customer's RFQ reference (distinct from STC's internal opportunityId).
+   *  Surfaced verbatim in the rendered TP template. */
+  rfqNumber?: string;
   /** Optional E4 baseline — when present, enriches the requirements section. */
   e4?: E3E4Data;
   /** Optional E5 design data — when present, enriches proposed_solution + implementation. */

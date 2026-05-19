@@ -17,12 +17,15 @@ import { join } from "path";
 import { db } from "@/lib/db/index";
 import { bomDrafts, intakes } from "@/lib/db/schema";
 import { loadArtifacts, saveE3Artifacts } from "@/lib/db/pipeline-store";
-import { generateProposalDocx } from "@/engines/e3/docx-generator";
+import { renderDocxFromTemplate } from "@/lib/docx/renderer";
+import { buildTpData } from "@/engines/e3/tp-data-builder";
 import {
   writeFinancialProposal,
   type FinancialCostStack,
 } from "@/engines/e3/financial-proposal-writer";
 import type { E3Output } from "@/engines/e3/orchestrator";
+import type { E1Output } from "@/engines/e1/orchestrator";
+import type { E2Output } from "@/engines/e2/orchestrator";
 import type { ProposalMetadata } from "@/engines/e3/types";
 import { requireAuth } from "@/lib/middleware/auth";
 
@@ -47,7 +50,8 @@ export async function GET(
     return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
   }
 
-  const { e3 } = await loadArtifacts(resolved.intakeId);
+  const artifacts = await loadArtifacts(resolved.intakeId);
+  const { e3 } = artifacts;
   if (!e3) {
     return NextResponse.json(
       { error: "Proposal not generated for this estimate" },
@@ -56,7 +60,7 @@ export async function GET(
   }
 
   const download = new URL(request.url).searchParams.get("download");
-  if (download === "docx") return await downloadDocx(resolved, e3);
+  if (download === "docx") return await downloadDocx(resolved, e3, artifacts.e1, artifacts.e2);
   if (download === "financial") return await downloadFinancial(resolved, e3);
 
   return NextResponse.json({
@@ -70,20 +74,28 @@ export async function GET(
   });
 }
 
-async function downloadDocx(meta: Resolved, e3: E3Output): Promise<NextResponse> {
+async function downloadDocx(
+  meta: Resolved,
+  e3: E3Output,
+  e1: E1Output | undefined,
+  e2: E2Output | undefined,
+): Promise<NextResponse> {
   let path = e3.proposalPath;
   if (!path || !(await fileExists(path))) {
-    if (!e3.sections || e3.sections.length === 0) {
+    if (!e3.sections || e3.sections.length === 0 || !e1 || !e2) {
       return NextResponse.json(
-        { error: "Cannot regenerate proposal: sections unavailable" },
+        { error: "Cannot regenerate proposal: e1/e2/sections artifact missing" },
         { status: 400 }
       );
     }
     const dir = await ensureOutputDir(meta.intakeId);
-    path = await generateProposalDocx(
-      e3.sections,
-      buildProposalMetadata(meta),
-      join(dir, `${slug(meta.customerName)}-proposal.docx`)
+    const metadata = buildProposalMetadata(meta);
+    const tpData = buildTpData({ metadata, e1, e2, sections: e3.sections });
+    const templatePath = join(process.cwd(), 'src/templates/TP-template.docx');
+    path = await renderDocxFromTemplate(
+      templatePath,
+      tpData as unknown as Record<string, unknown>,
+      join(dir, `${slug(meta.customerName)}-proposal.docx`),
     );
     await saveE3Artifacts(meta.intakeId, { ...e3, proposalPath: path });
   }
