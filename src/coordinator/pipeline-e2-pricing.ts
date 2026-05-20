@@ -17,12 +17,8 @@ import { getItems } from "@/lib/adapters/catalog";
 import type { E2Device } from "@/engines/e2/orchestrator";
 import { detectBoQType } from "@/engines/e2/boq-detector";
 import { readExcelFile } from "@/lib/io/excel-reader";
-import { parseTypeA } from "@/engines/e2/parsers/type-a-ariba";
-import { parseTypeB } from "@/engines/e2/parsers/type-b-nrm2";
-import { parseTypeC } from "@/engines/e2/parsers/type-c-vendor-quote";
-import { parseTypeD } from "@/engines/e2/parsers/type-d-bom";
-import { parseTypeE } from "@/engines/e2/parsers/type-e-telecom";
-import { BoQType, type BoQLineItem } from "@/engines/e2/boq-types";
+import { parseBoQ } from "@/engines/e2/boq-parse";
+import { getCatalogMock } from "@/lib/adapters/_catalog-mock-data";
 
 const DEFAULT_PRICE_LIST_ID = "Global Price List Emerging (USD)";
 
@@ -42,24 +38,9 @@ export function collectCiscoSkus(devices: E2Device[] | undefined): string[] {
   return Array.from(set);
 }
 
-function parseByType(
-  type: BoQType,
-  sheets: Record<string, string[][]>,
-): BoQLineItem[] {
-  switch (type) {
-    case BoQType.TYPE_A_ARIBA: return parseTypeA(sheets);
-    case BoQType.TYPE_B_NRM2: return parseTypeB(sheets, "base");
-    case BoQType.TYPE_B_NRM2_ADDOMMIT: return parseTypeB(sheets, "addommit");
-    case BoQType.TYPE_C_VENDOR_QUOTE: return parseTypeC(sheets);
-    case BoQType.TYPE_D_BOM_NO_PRICE: return parseTypeD(sheets);
-    case BoQType.TYPE_E_TELECOM: return parseTypeE(sheets);
-    default: return [];
-  }
-}
-
-// Parsers populate partNumber only for Type A (regex-extracted from
-// description) and Type D (column B). Type B/C/E never set partNumber, so
-// those workbooks yield [] here even when detection succeeds.
+// Collects partNumber from parsed BoQ lines. Typed parsers populate it for
+// Type A (regex-extracted) and Type D (column B); the generic extractor sets
+// it for all TYPE_UNKNOWN layouts (CCW variants), so those now yield SKUs too.
 export async function extractBoqSkus(filePath: string): Promise<string[]> {
   try {
     const excel = readExcelFile(filePath);
@@ -67,8 +48,8 @@ export async function extractBoqSkus(filePath: string): Promise<string[]> {
     const type = detectBoQType(
       excel.sheetNames, excel.fileName, firstSheet.slice(0, 5),
     );
-    if (type === BoQType.TYPE_UNKNOWN) return [];
-    const lines = parseByType(type, excel.sheets);
+    const catalogSkus = Object.keys(getCatalogMock().items);
+    const lines = parseBoQ(type, excel.sheets, { catalogSkus });
     const set = new Set<string>();
     for (const l of lines) {
       const sku = l.partNumber?.trim();

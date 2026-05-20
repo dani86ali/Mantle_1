@@ -1,12 +1,7 @@
 import type { BoQLineItem } from "@/engines/e2/boq-types";
 import type { ValidationResult } from "@/types/validation";
-import { BoQType } from "@/engines/e2/boq-types";
 import { detectBoQType } from "@/engines/e2/boq-detector";
-import { parseTypeA } from "@/engines/e2/parsers/type-a-ariba";
-import { parseTypeB } from "@/engines/e2/parsers/type-b-nrm2";
-import { parseTypeC } from "@/engines/e2/parsers/type-c-vendor-quote";
-import { parseTypeD } from "@/engines/e2/parsers/type-d-bom";
-import { parseTypeE } from "@/engines/e2/parsers/type-e-telecom";
+import { parseBoQ } from "@/engines/e2/boq-parse";
 import { selectAccessories } from "@/engines/e2/accessory-selector";
 import { calculateLicenses } from "@/engines/e2/licensing-calculator";
 import { selectSupport } from "@/engines/e2/support-selector";
@@ -104,6 +99,9 @@ export interface E2Input {
   /** E1 analysis signals (RFP mode). Undefined for Quick BoM / RFI flows.
    *  Currently consumed by the AI sanity check in the anomaly detector. */
   e1Signals?: E1SignalsForE2;
+  /** Catalog SKU keyset for the generic BoQ extractor's Tier-3 grounding
+   *  (TYPE_UNKNOWN layouts). Loaded by the dispatcher; undefined in tests. */
+  catalogSkus?: string[];
 }
 export interface E2Output {
   bom: PricedBomLine[];
@@ -142,7 +140,7 @@ export async function runE2(input: E2Input): Promise<E2Output> {
     const excel = readExcelFile(input.filePath);
     const firstSheet = excel.sheets[excel.sheetNames[0]] ?? [];
     const type = detectBoQType(excel.sheetNames, excel.fileName, firstSheet.slice(0, 5));
-    boqLines = parseByType(type, excel.sheets);
+    boqLines = parseBoQ(type, excel.sheets, { catalogSkus: input.catalogSkus });
   }
 
   // (2)+(3) Device expansion + BoQ-parsed lines fold into a single raw-line list.
@@ -250,18 +248,6 @@ export async function runE2(input: E2Input): Promise<E2Output> {
     bom: priced, validationResults, anomalies, similarDeals, totals, exportPath,
     filledClientBoqPath, validationStatus, validationWarnings,
   };
-}
-
-function parseByType(type: BoQType, sheets: Record<string, string[][]>): BoQLineItem[] {
-  switch (type) {
-    case BoQType.TYPE_A_ARIBA: return parseTypeA(sheets);
-    case BoQType.TYPE_B_NRM2: return parseTypeB(sheets, "base");
-    case BoQType.TYPE_B_NRM2_ADDOMMIT: return parseTypeB(sheets, "addommit");
-    case BoQType.TYPE_C_VENDOR_QUOTE: return parseTypeC(sheets);
-    case BoQType.TYPE_D_BOM_NO_PRICE: return parseTypeD(sheets);
-    case BoQType.TYPE_E_TELECOM: return parseTypeE(sheets);
-    default: return [];
-  }
 }
 
 /** Expand devices into raw lines (hardware + accessories + licenses + support).

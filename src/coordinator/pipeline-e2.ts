@@ -23,6 +23,8 @@ export interface E2BuildInput {
   filePath?: string;
   /** Catalog-loaded USD list prices keyed by SKU. */
   listPrices?: Record<string, number>;
+  /** Catalog SKU keyset for the generic BoQ extractor's Tier-3 grounding. */
+  catalogSkus?: string[];
 }
 
 const BOQ_FILE_EXTS = new Set(['.xlsx', '.xls', '.csv']);
@@ -100,6 +102,7 @@ export function buildE2Input(
     pricingConfig: input.pricingConfig,
     filePath: input.filePath,
     listPrices: input.listPrices,
+    catalogSkus: input.catalogSkus,
     projectContext: {
       sector: e1?.sectorDetection.sector,
       description: input.solutionContext,

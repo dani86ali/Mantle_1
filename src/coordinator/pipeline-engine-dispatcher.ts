@@ -102,7 +102,10 @@ export async function runE2Stage(
   const e2BuildInput = { ...input, devices, deviceConfigOverrides, filePath: boqFilePath };
   const resolvedDevices = resolveE2Devices(e2BuildInput, state.artifacts.e5);
   let listPrices: Record<string, number> | undefined;
+  let catalogSkus: string[] | undefined;
   if (input.tenantId) {
+    const { getCatalogMock } = await import('@/lib/adapters/_catalog-mock-data');
+    catalogSkus = Object.keys(getCatalogMock().items);
     const deviceSkus = collectCiscoSkus(resolvedDevices);
     let boqSkus: string[] = [];
     if (input.mode === 'rfp' && boqFilePath) {
@@ -118,7 +121,7 @@ export async function runE2Stage(
     }
   }
   out.e2Output = await runE2(buildE2Input(
-    { ...e2BuildInput, listPrices },
+    { ...e2BuildInput, listPrices, catalogSkus },
     out.e1Output, state.artifacts.e5,
   ));
   state.artifacts.e2 = toE2Artifacts(out.e2Output, boqFilePath);

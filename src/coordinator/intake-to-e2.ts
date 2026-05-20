@@ -8,15 +8,9 @@ import type {
   E2Device,
   E2DeviceConfig,
 } from "@/engines/e2/orchestrator";
-import type { BoQLineItem } from "@/engines/e2/boq-types";
-import { BoQType } from "@/engines/e2/boq-types";
 import { readExcelFile } from "@/lib/io/excel-reader";
 import { detectBoQType } from "@/engines/e2/boq-detector";
-import { parseTypeA } from "@/engines/e2/parsers/type-a-ariba";
-import { parseTypeB } from "@/engines/e2/parsers/type-b-nrm2";
-import { parseTypeC } from "@/engines/e2/parsers/type-c-vendor-quote";
-import { parseTypeD } from "@/engines/e2/parsers/type-d-bom";
-import { parseTypeE } from "@/engines/e2/parsers/type-e-telecom";
+import { parseBoQ } from "@/engines/e2/boq-parse";
 
 export interface IntakeRequirementsForE2 {
   redundancyRequired?: boolean;
@@ -87,21 +81,6 @@ export function parseBomText(text: string): { sku: string; quantity: number }[] 
 
 const BOM_FILE_EXTS = new Set([".xlsx", ".xls", ".csv"]);
 
-function parseByType(
-  type: BoQType,
-  sheets: Record<string, string[][]>,
-): BoQLineItem[] {
-  switch (type) {
-    case BoQType.TYPE_A_ARIBA: return parseTypeA(sheets);
-    case BoQType.TYPE_B_NRM2: return parseTypeB(sheets, "base");
-    case BoQType.TYPE_B_NRM2_ADDOMMIT: return parseTypeB(sheets, "addommit");
-    case BoQType.TYPE_C_VENDOR_QUOTE: return parseTypeC(sheets);
-    case BoQType.TYPE_D_BOM_NO_PRICE: return parseTypeD(sheets);
-    case BoQType.TYPE_E_TELECOM: return parseTypeE(sheets);
-    default: return [];
-  }
-}
-
 /**
  * Parse the first XLSX/XLS/CSV BoM file found in `uploadedFiles` into
  * { sku, quantity } lines suitable for `IntakeRequirementsForE2.uploadedBomLines`.
@@ -123,7 +102,7 @@ export async function parseBomFromUploadedFiles(
     const type = detectBoQType(
       excel.sheetNames, excel.fileName, firstSheet.slice(0, 5),
     );
-    const lines = parseByType(type, excel.sheets);
+    const lines = parseBoQ(type, excel.sheets);
     return lines
       .map((b) => ({
         sku: b.partNumber || b.itemNumber || b.description,
