@@ -1,0 +1,210 @@
+import { describe, it, expect } from "vitest";
+import {
+  getArtifactTypesForStage,
+  isArtifactTypeAllowedForStage,
+  getLatestArtifactVersion,
+  getNextArtifactVersion,
+  isArtifactVersionFrozen,
+  materializeProjectArtifactVersion,
+  type ExistingProjectArtifactVersion,
+} from "@/lib/projects/artifacts";
+
+const PROJECT = "proj-1";
+const OTHER_PROJECT = "proj-2";
+const TENANT = "tenant-1";
+
+/** Build an existing-version stub with sensible defaults. */
+function existing(
+  overrides: Partial<ExistingProjectArtifactVersion> &
+    Pick<ExistingProjectArtifactVersion, "type" | "version">
+): ExistingProjectArtifactVersion {
+  return {
+    projectId: PROJECT,
+    status: "generated",
+    ...overrides,
+  };
+}
+
+describe("getArtifactTypesForStage", () => {
+  it("returns the Prompt 3 stage metadata", () => {
+    expect(getArtifactTypesForStage("boq_pricing_review")).toEqual([
+      "normalized_boq",
+      "sku_resolution",
+      "priced_boq",
+    ]);
+    expect(getArtifactTypesForStage("intake_package_review")).toEqual([
+      "input_package",
+    ]);
+  });
+});
+
+describe("isArtifactTypeAllowedForStage", () => {
+  it("accepts valid stage/type pairs", () => {
+    expect(
+      isArtifactTypeAllowedForStage("boq_pricing_review", "priced_boq")
+    ).toBe(true);
+    expect(
+      isArtifactTypeAllowedForStage("compliance_matrix_review", "compliance_matrix")
+    ).toBe(true);
+  });
+
+  it("rejects invalid stage/type pairs", () => {
+    expect(
+      isArtifactTypeAllowedForStage("intake_package_review", "priced_boq")
+    ).toBe(false);
+    expect(
+      isArtifactTypeAllowedForStage("sku_resolution", "technical_proposal")
+    ).toBe(false);
+  });
+});
+
+describe("getLatestArtifactVersion", () => {
+  it("returns undefined when none exist", () => {
+    expect(getLatestArtifactVersion([], PROJECT, "priced_boq")).toBeUndefined();
+    expect(
+      getLatestArtifactVersion(
+        [existing({ type: "normalized_boq", version: 3 })],
+        PROJECT,
+        "priced_boq"
+      )
+    ).toBeUndefined();
+  });
+
+  it("returns the max version for matching projectId + type only", () => {
+    const artifacts: ExistingProjectArtifactVersion[] = [
+      existing({ type: "priced_boq", version: 1 }),
+      existing({ type: "priced_boq", version: 2 }),
+      existing({ type: "normalized_boq", version: 9 }), // other type
+      existing({ type: "priced_boq", version: 5, projectId: OTHER_PROJECT }), // other project
+    ];
+    const latest = getLatestArtifactVersion(artifacts, PROJECT, "priced_boq");
+    expect(latest?.version).toBe(2);
+  });
+});
+
+describe("getNextArtifactVersion", () => {
+  it("returns 1 for the first version", () => {
+    expect(getNextArtifactVersion([], PROJECT, "priced_boq")).toBe(1);
+  });
+
+  it("increments after existing versions, including approved", () => {
+    const artifacts: ExistingProjectArtifactVersion[] = [
+      existing({ type: "priced_boq", version: 1 }),
+      existing({ type: "priced_boq", version: 2, status: "approved" }),
+    ];
+    expect(getNextArtifactVersion(artifacts, PROJECT, "priced_boq")).toBe(3);
+  });
+});
+
+describe("materializeProjectArtifactVersion", () => {
+  const base = {
+    projectId: PROJECT,
+    tenantId: TENANT,
+    stageId: "boq_pricing_review" as const,
+    type: "priced_boq" as const,
+  };
+
+  it("returns an insert-ready row with default status generated and version 1", () => {
+    const row = materializeProjectArtifactVersion({ ...base });
+    expect(row).toMatchObject({
+      projectId: PROJECT,
+      tenantId: TENANT,
+      stageId: "boq_pricing_review",
+      type: "priced_boq",
+      status: "generated",
+      version: 1,
+      payload: {},
+      sourceFileIds: [],
+      sourceArtifactIds: [],
+    });
+    expect(row.createdAt).toBeInstanceOf(Date);
+    expect(row.createdAt.getTime()).toBe(row.updatedAt.getTime());
+    // No `id` — the DB generates it.
+    expect("id" in row).toBe(false);
+  });
+
+  it("increments version based on existing artifacts", () => {
+    const row = materializeProjectArtifactVersion({
+      ...base,
+      existingArtifacts: [
+        existing({ type: "priced_boq", version: 1 }),
+        existing({ type: "priced_boq", version: 2, status: "approved" }),
+      ],
+    });
+    expect(row.version).toBe(3);
+  });
+
+  it("rejects disallowed stage/type combinations", () => {
+    expect(() =>
+      materializeProjectArtifactVersion({
+        ...base,
+        stageId: "intake_package_review",
+        type: "priced_boq",
+      })
+    ).toThrow(/not allowed for stage/);
+  });
+
+  it("rejects approved, stale, missing, and not_applicable as creation statuses", () => {
+    for (const status of [
+      "approved",
+      "stale",
+      "missing",
+      "not_applicable",
+    ] as const) {
+      expect(() =>
+        materializeProjectArtifactVersion({ ...base, status })
+      ).toThrow(/Cannot create an artifact version with status/);
+    }
+  });
+
+  it("accepts the allowed creation statuses", () => {
+    for (const status of ["generated", "needs_review", "failed"] as const) {
+      expect(
+        materializeProjectArtifactVersion({ ...base, status }).status
+      ).toBe(status);
+    }
+  });
+
+  it("copies sourceFileIds and sourceArtifactIds, not retaining by reference", () => {
+    const sourceFileIds = ["file-a"];
+    const sourceArtifactIds = ["art-a"];
+    const row = materializeProjectArtifactVersion({
+      ...base,
+      sourceFileIds,
+      sourceArtifactIds,
+    });
+    expect(row.sourceFileIds).not.toBe(sourceFileIds);
+    expect(row.sourceArtifactIds).not.toBe(sourceArtifactIds);
+    // Mutating the inputs afterwards must not affect the returned row.
+    sourceFileIds.push("file-b");
+    sourceArtifactIds.push("art-b");
+    expect(row.sourceFileIds).toEqual(["file-a"]);
+    expect(row.sourceArtifactIds).toEqual(["art-a"]);
+  });
+
+  it("does not mutate the existing artifact inputs", () => {
+    const artifacts: ExistingProjectArtifactVersion[] = [
+      existing({ type: "priced_boq", version: 1 }),
+      existing({ type: "priced_boq", version: 2 }),
+    ];
+    const snapshot = structuredClone(artifacts);
+    materializeProjectArtifactVersion({ ...base, existingArtifacts: artifacts });
+    expect(artifacts).toEqual(snapshot);
+  });
+});
+
+describe("isArtifactVersionFrozen", () => {
+  it("is true only for approved artifacts", () => {
+    expect(isArtifactVersionFrozen({ status: "approved" })).toBe(true);
+    for (const status of [
+      "missing",
+      "generated",
+      "needs_review",
+      "stale",
+      "failed",
+      "not_applicable",
+    ] as const) {
+      expect(isArtifactVersionFrozen({ status })).toBe(false);
+    }
+  });
+});
