@@ -295,6 +295,11 @@ export const pipelineRuns = pgTable(
   ]
 );
 
+// ---- Canonical Project State (MVP repair - alongside legacy tables) --------
+// New Project aggregate tables live in a separate file to keep this one under
+// budget. Not yet wired to runtime. See src/lib/db/project-schema.ts.
+export * from "./project-schema";
+
 // ─── RAG Chunks (Phase 2 — schema prepared) ──────────────────────────────
 
 export const ragChunks = pgTable("rag_chunks", {
