@@ -144,9 +144,10 @@ describe("materializeProjectArtifactVersion", () => {
     ).toThrow(/not allowed for stage/);
   });
 
-  it("rejects approved, stale, missing, and not_applicable as creation statuses", () => {
+  it("rejects approved, rejected, stale, missing, and not_applicable as creation statuses", () => {
     for (const status of [
       "approved",
+      "rejected",
       "stale",
       "missing",
       "not_applicable",
@@ -200,6 +201,7 @@ describe("isArtifactVersionFrozen", () => {
       "missing",
       "generated",
       "needs_review",
+      "rejected",
       "stale",
       "failed",
       "not_applicable",

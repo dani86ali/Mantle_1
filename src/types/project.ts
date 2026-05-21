@@ -30,12 +30,20 @@ export type ProjectStageStatus =
   | "rejected"
   | "not_applicable";
 
-/** Artifact lifecycle status. (section 14) */
+/**
+ * Artifact lifecycle status. (section 14)
+ *
+ * `rejected` is added per the approval model (section 16): a rejected approval
+ * marks the artifact rejected, and the next edit/regeneration creates a new
+ * version. It is not a creatable status (see CreatableProjectArtifactStatus in
+ * src/lib/projects/artifacts.ts) and does not freeze the version.
+ */
 export type ProjectArtifactStatus =
   | "missing"
   | "generated"
   | "needs_review"
   | "approved"
+  | "rejected"
   | "stale"
   | "failed"
   | "not_applicable";
