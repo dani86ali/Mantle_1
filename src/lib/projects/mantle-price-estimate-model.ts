@@ -54,6 +54,10 @@ export interface MantlePriceEstimateRow {
   unitNetPriceSar: number | null;
   discountPercent: number | null;
   extendedNetPriceSar: number | null;
+  /** Resolved Mantle category for priced rows; null on unpriced rows. */
+  category: MantleLineCategory | null;
+  /** True when a priced row had no explicit category and was defaulted to product. */
+  categoryWasDefaulted: boolean;
 }
 
 /** SAR totals and line counts for the Mantle footer/summary blocks. */
@@ -109,7 +113,10 @@ function resolveCategory(
 }
 
 /** Map one priced_boq draft line to a Mantle row, preserving source metadata. */
-function mapRow(line: PricedBoqDraftLine): MantlePriceEstimateRow {
+function mapRow(
+  line: PricedBoqDraftLine,
+  categoryByAcceptedSku: Readonly<Record<string, MantleLineCategory>> | undefined
+): MantlePriceEstimateRow {
   const base = {
     sourceFileId: line.sourceFileId,
     ...(line.sourceSheetName !== undefined ? { sourceSheetName: line.sourceSheetName } : {}),
@@ -129,6 +136,7 @@ function mapRow(line: PricedBoqDraftLine): MantlePriceEstimateRow {
 
   if (line.status === "priced" && line.amounts !== undefined && line.acceptedSku !== undefined) {
     const { unitListPriceSar, unitSellPriceSar, extendedSellPriceSar } = line.amounts;
+    const explicitCategory = resolveCategory(categoryByAcceptedSku, line.acceptedSku);
     return {
       ...base,
       partNumber: line.acceptedSku,
@@ -136,6 +144,8 @@ function mapRow(line: PricedBoqDraftLine): MantlePriceEstimateRow {
       unitNetPriceSar: unitSellPriceSar,
       discountPercent: discountPercentFor(unitListPriceSar, unitSellPriceSar),
       extendedNetPriceSar: extendedSellPriceSar,
+      category: explicitCategory ?? "product",
+      categoryWasDefaulted: explicitCategory === undefined,
     };
   }
 
@@ -146,6 +156,8 @@ function mapRow(line: PricedBoqDraftLine): MantlePriceEstimateRow {
     unitNetPriceSar: null,
     discountPercent: null,
     extendedNetPriceSar: null,
+    category: null,
+    categoryWasDefaulted: false,
   };
 }
 
@@ -162,7 +174,7 @@ export function buildMantlePriceEstimateModel(
 ): MantlePriceEstimateModel {
   const { payload, categoryByAcceptedSku } = input;
 
-  const rows = payload.lines.map(mapRow);
+  const rows = payload.lines.map((line) => mapRow(line, categoryByAcceptedSku));
 
   let totalPriceSar = 0;
   let productTotalSar = 0;
@@ -170,15 +182,16 @@ export function buildMantlePriceEstimateModel(
   let subscriptionTotalSar = 0;
   let missingCategory = false;
 
-  for (const line of payload.lines) {
-    if (line.status !== "priced" || line.amounts === undefined) continue;
-    const extended = line.amounts.extendedSellPriceSar;
+  // Totals follow each row's resolved category so the split and the row metadata
+  // never disagree. Priced rows carry a non-null extended price and category.
+  for (const row of rows) {
+    if (row.status !== "priced" || row.extendedNetPriceSar === null) continue;
+    const extended = row.extendedNetPriceSar;
     totalPriceSar += extended;
 
-    const category = resolveCategory(categoryByAcceptedSku, line.acceptedSku);
-    if (category === undefined) missingCategory = true;
-    if (category === "service") serviceTotalSar += extended;
-    else if (category === "subscription") subscriptionTotalSar += extended;
+    if (row.categoryWasDefaulted) missingCategory = true;
+    if (row.category === "service") serviceTotalSar += extended;
+    else if (row.category === "subscription") subscriptionTotalSar += extended;
     else productTotalSar += extended;
   }
 

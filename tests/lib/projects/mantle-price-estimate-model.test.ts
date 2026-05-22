@@ -365,6 +365,91 @@ describe("buildMantlePriceEstimateModel - totals", () => {
   });
 });
 
+describe("buildMantlePriceEstimateModel - category metadata", () => {
+  it("exposes explicit service/subscription/product categories on priced rows", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "HW" }),
+        pricedLine({ sourceRowNumber: 2, acceptedSku: "SVC" }),
+        pricedLine({ sourceRowNumber: 3, acceptedSku: "SUB" }),
+      ]),
+      categoryByAcceptedSku: { HW: "product", SVC: "service", SUB: "subscription" },
+    });
+    expect(model.rows.map((r) => r.category)).toEqual(["product", "service", "subscription"]);
+    expect(model.rows.map((r) => r.categoryWasDefaulted)).toEqual([false, false, false]);
+    expect(model.warnings).toEqual([]);
+  });
+
+  it("defaults a missing-category priced row to product and flags categoryWasDefaulted", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([pricedLine({ acceptedSku: "A" })]),
+      categoryByAcceptedSku: {},
+    });
+    expect(model.rows[0].category).toBe("product");
+    expect(model.rows[0].categoryWasDefaulted).toBe(true);
+  });
+
+  it("emits the missing-category warning exactly once for multiple defaulted priced rows", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "A" }),
+        pricedLine({ sourceRowNumber: 2, acceptedSku: "B" }),
+        pricedLine({ sourceRowNumber: 3, acceptedSku: "C" }),
+      ]),
+      categoryByAcceptedSku: {},
+    });
+    expect(model.rows.every((r) => r.category === "product" && r.categoryWasDefaulted)).toBe(true);
+    expect(
+      model.warnings.filter(
+        (w) =>
+          w ===
+          "Mantle line category metadata was not supplied for one or more priced rows; defaulted those rows to product totals."
+      )
+    ).toHaveLength(1);
+  });
+
+  it("sets category null and categoryWasDefaulted false on unpriced rows", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        unpricedLine({ sourceRowNumber: 1, status: "missing_decision" }),
+        unpricedLine({ sourceRowNumber: 2, status: "not_accepted", acceptedSku: undefined }),
+        unpricedLine({ sourceRowNumber: 3, status: "missing_price", acceptedSku: "MP" }),
+      ]),
+    });
+    expect(model.rows.map((r) => r.category)).toEqual([null, null, null]);
+    expect(model.rows.map((r) => r.categoryWasDefaulted)).toEqual([false, false, false]);
+  });
+
+  it("does not emit the missing-category warning for unpriced rows alone", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        unpricedLine({ sourceRowNumber: 1, status: "missing_decision" }),
+        unpricedLine({ sourceRowNumber: 2, status: "missing_price", acceptedSku: "MP" }),
+      ]),
+    });
+    expect(model.warnings).toEqual([]);
+  });
+
+  it("keeps category totals consistent with resolved row categories", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "HW" }), // 160 product
+        pricedLine({ sourceRowNumber: 2, acceptedSku: "SVC" }), // 160 service
+        pricedLine({ sourceRowNumber: 3, acceptedSku: "SUB" }), // 160 subscription
+        unpricedLine({ sourceRowNumber: 4, status: "missing_decision" }),
+      ]),
+      categoryByAcceptedSku: { HW: "product", SVC: "service", SUB: "subscription" },
+    });
+    const sumBy = (category: MantleLineCategory) =>
+      model.rows
+        .filter((r) => r.category === category)
+        .reduce((acc, r) => acc + (r.extendedNetPriceSar ?? 0), 0);
+    expect(model.totals.productTotalSar).toBe(sumBy("product"));
+    expect(model.totals.serviceTotalSar).toBe(sumBy("service"));
+    expect(model.totals.subscriptionTotalSar).toBe(sumBy("subscription"));
+  });
+});
+
 describe("buildMantlePriceEstimateModel - metadata, defaults & purity", () => {
   it("preserves source metadata on each row", () => {
     const model = buildMantlePriceEstimateModel({
