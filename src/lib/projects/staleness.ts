@@ -28,8 +28,9 @@ const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   Record<ProjectArtifactType, readonly ProjectArtifactType[]>
 > = {
   input_package: ["normalized_boq", "requirements_baseline"],
-  normalized_boq: ["sku_resolution", "priced_boq", "hld_design_delta"],
-  sku_resolution: ["priced_boq"],
+  normalized_boq: ["sku_resolution", "hld_design_delta"],
+  sku_resolution: ["configuration_expansion"],
+  configuration_expansion: ["priced_boq"],
   requirements_baseline: ["compliance_matrix"],
   compliance_matrix: ["hld_design_delta", "technical_proposal"],
   hld_design_delta: ["technical_proposal"],

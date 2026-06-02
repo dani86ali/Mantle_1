@@ -12,6 +12,7 @@ const VALID_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "input_package",
   "normalized_boq",
   "sku_resolution",
+  "configuration_expansion",
   "priced_boq",
   "requirements_baseline",
   "compliance_matrix",
@@ -23,10 +24,11 @@ const VALID_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
 const ids = (defs: readonly { stageId: string }[]) => defs.map((d) => d.stageId);
 
 describe("active stage sequences", () => {
-  it("quick_bom active sequence is exactly the four BoM stages in order", () => {
+  it("quick_bom active sequence is exactly the five BoM stages in order", () => {
     expect(ids(getActiveProjectStageDefinitions("quick_bom"))).toEqual([
       "boq_format_validation",
       "sku_resolution",
+      "configuration_expansion_review",
       "boq_pricing_review",
       "export_approval",
     ]);
@@ -59,6 +61,7 @@ describe("global stage order", () => {
       ["intake_package_review", 10],
       ["boq_format_validation", 20],
       ["sku_resolution", 30],
+      ["configuration_expansion_review", 35],
       ["requirements_baseline_review", 40],
       ["compliance_matrix_review", 50],
       ["hld_design_delta_review", 60],
@@ -91,9 +94,11 @@ describe("global stage order", () => {
 describe("isProjectStageApplicable", () => {
   it("matches the active sets for each mode", () => {
     expect(isProjectStageApplicable("quick_bom", "boq_format_validation")).toBe(true);
+    expect(isProjectStageApplicable("quick_bom", "configuration_expansion_review")).toBe(true);
     expect(isProjectStageApplicable("quick_bom", "intake_package_review")).toBe(false);
     expect(isProjectStageApplicable("rfp", "proposal_review")).toBe(true);
     expect(isProjectStageApplicable("rfp", "sku_resolution")).toBe(false);
+    expect(isProjectStageApplicable("rfp", "configuration_expansion_review")).toBe(false);
   });
 });
 
@@ -105,12 +110,13 @@ describe("materializeProjectStages", () => {
     expect(rows.map((r) => r.stageId)).toEqual([
       "boq_format_validation",
       "sku_resolution",
+      "configuration_expansion_review",
       "boq_pricing_review",
       "export_approval",
     ]);
     expect(rows.every((r) => r.status === "not_started")).toBe(true);
     expect(rows.every((r) => r.projectId === "proj-1" && r.tenantId === "tenant-1")).toBe(true);
-    expect(rows.map((r) => r.stageOrder)).toEqual([20, 30, 70, 90]);
+    expect(rows.map((r) => r.stageOrder)).toEqual([20, 30, 35, 70, 90]);
   });
 
   it("quick_bom with includeNotApplicable returns all canonical stages, RFP-only as not_applicable", () => {

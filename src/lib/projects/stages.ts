@@ -67,6 +67,15 @@ export const PROJECT_STAGE_DEFINITIONS: readonly ProjectStageDefinition[] = [
     artifactTypes: ["sku_resolution"],
   },
   {
+    stageId: "configuration_expansion_review",
+    order: 35,
+    label: "Configuration Expansion Review",
+    purpose:
+      "Review the configuration expansion draft (required/default/optional accessories, support, licensing, included zero-price components, and parent-child structure) from approved rule packs, and accept it before pricing. (section 11A)",
+    activeInModes: ["quick_bom"],
+    artifactTypes: ["normalized_boq", "sku_resolution", "configuration_expansion"],
+  },
+  {
     stageId: "requirements_baseline_review",
     order: 40,
     label: "Requirements Baseline Review",
@@ -97,9 +106,9 @@ export const PROJECT_STAGE_DEFINITIONS: readonly ProjectStageDefinition[] = [
     order: 70,
     label: "BoQ Pricing Review",
     purpose:
-      "Review deterministic SAR pricing of the normalized, SKU-resolved BoQ.",
+      "Review deterministic SAR pricing of the accepted configuration-expansion BoM. (section 11A.3)",
     activeInModes: ["quick_bom", "rfp"],
-    artifactTypes: ["normalized_boq", "sku_resolution", "priced_boq"],
+    artifactTypes: ["configuration_expansion", "priced_boq"],
   },
   {
     stageId: "proposal_review",

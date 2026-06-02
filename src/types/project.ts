@@ -48,11 +48,12 @@ export type ProjectArtifactStatus =
   | "failed"
   | "not_applicable";
 
-/** Versioned artifact kinds. No LLD artifact in MVP. (section 15) */
+/** Versioned artifact kinds. No LLD artifact in MVP. (section 15, section 11A) */
 export type ProjectArtifactType =
   | "input_package"
   | "normalized_boq"
   | "sku_resolution"
+  | "configuration_expansion"
   | "priced_boq"
   | "requirements_baseline"
   | "compliance_matrix"
@@ -70,6 +71,7 @@ export type ProjectStageId =
   | "intake_package_review"
   | "boq_format_validation"
   | "sku_resolution"
+  | "configuration_expansion_review"
   | "requirements_baseline_review"
   | "compliance_matrix_review"
   | "hld_design_delta_review"
