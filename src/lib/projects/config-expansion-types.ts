@@ -207,13 +207,38 @@ export interface ConfigurationExpansionDraftSummary {
 }
 
 /**
+ * Roll-up counts for a REVIEWED configuration-expansion result: how many customer
+ * lines were preserved and how many expansion lines an engineer accepted or
+ * rejected. Structurally matches the engineer-review helper's summary
+ * (src/lib/projects/config-expansion-review.ts), so a review result drops straight
+ * into the persisted artifact payload while this contract module stays
+ * self-contained. No monetary totals. (section 11A.3, section 11A.4)
+ */
+export interface ConfigurationExpansionReviewSummary {
+  /** Preserved customer lines. */
+  customerLineCount: number;
+  /** Expansion lines accepted into the expanded BoM. */
+  acceptedExpansionLineCount: number;
+  /** Expansion lines rejected and excluded from the expanded BoM. */
+  rejectedExpansionLineCount: number;
+  /** Total accepted lines (customer + accepted expansion). */
+  totalAcceptedLineCount: number;
+  /** Expansion lines that received an explicit decision (accepted + rejected). */
+  reviewedExpansionLineCount: number;
+}
+
+/**
  * JSONB payload of a `configuration_expansion` artifact: the reviewed/accepted
- * expanded BoM plus its provenance. Sourced from exactly one `normalized_boq` and
- * one `sku_resolution` artifact, and from one rule-pack version. Declared as a type
- * alias (not an interface) so it carries an implicit index signature and stays
- * assignable to the artifact repository's Record<string, unknown> payload, matching
- * the sku-resolution and priced-boq payloads. No pricing fields. (section 3,
- * section 11A.3, section 15)
+ * expanded BoM plus its provenance and audit trail. Sourced from exactly one
+ * `normalized_boq` and one `sku_resolution` artifact, and from one rule-pack
+ * version. `acceptedLines` is the accepted expanded BoM in customer-then-children
+ * order (its length is `lineCount`); `rejectedLines` keeps the excluded expansion
+ * lines, in original draft order, for review/audit traceability; `summary` is the
+ * engineer-review roll-up; `reviewedBy`/`reviewedAt` are present only when the
+ * reviewer supplied them. Declared as a type alias (not an interface) so it carries
+ * an implicit index signature and stays assignable to the artifact repository's
+ * Record<string, unknown> payload, matching the sku-resolution and priced-boq
+ * payloads. No pricing fields. (section 3, section 11A.3, section 15)
  */
 export type ConfigurationExpansionArtifactPayload = {
   sourceNormalizedBoqArtifactId: string;
@@ -224,8 +249,17 @@ export type ConfigurationExpansionArtifactPayload = {
   sourceFileIds: string[];
   rulePackId: string;
   rulePackVersion: string;
-  rulePackStatus: ConfigExpansionRulePackStatus;
+  /** Always "approved": only an approved-rule-pack expansion may be persisted. (section 11A.1, 11A.5) */
+  rulePackStatus: "approved";
+  /** Accepted-line count; equals acceptedLines.length. */
   lineCount: number;
-  lines: ConfigurationExpansionDraftLine[];
-  summary: ConfigurationExpansionDraftSummary;
+  /** Accepted expanded BoM, in customer-then-children order. */
+  acceptedLines: ConfigurationExpansionDraftLine[];
+  /** Rejected expansion lines, in original draft order, kept for audit. */
+  rejectedLines: ConfigurationExpansionDraftLine[];
+  summary: ConfigurationExpansionReviewSummary;
+  /** Reviewer identity, present only when supplied. */
+  reviewedBy?: string;
+  /** Review timestamp, present only when supplied. */
+  reviewedAt?: string;
 };

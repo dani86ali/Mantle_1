@@ -11,6 +11,7 @@ import type {
   ConfigExpansionRulePack,
   ConfigurationExpansionDraftLine,
   ConfigurationExpansionDraftSummary,
+  ConfigurationExpansionReviewSummary,
   ConfigurationExpansionArtifactPayload,
 } from "@/lib/projects/config-expansion-types";
 
@@ -113,13 +114,24 @@ const DRAFT_LINE: ConfigurationExpansionDraftLine = {
   approved: false,
 };
 
-const SUMMARY = {
+// The configuration-expansion DRAFT summary still backs the draft helper
+// (src/lib/projects/config-expansion.ts); keep it covered as a representative shape.
+const DRAFT_SUMMARY = {
   customerLineCount: 1,
   addedLineCount: 1,
   totalLineCount: 2,
   requiresReviewCount: 1,
   includedItemCount: 1,
 } satisfies ConfigurationExpansionDraftSummary;
+
+// The persisted artifact carries the REVIEW summary (accepted/rejected), not the draft one.
+const REVIEW_SUMMARY = {
+  customerLineCount: 1,
+  acceptedExpansionLineCount: 1,
+  rejectedExpansionLineCount: 0,
+  totalAcceptedLineCount: 2,
+  reviewedExpansionLineCount: 1,
+} satisfies ConfigurationExpansionReviewSummary;
 
 const PAYLOAD = {
   sourceNormalizedBoqArtifactId: "nbq-1",
@@ -128,10 +140,10 @@ const PAYLOAD = {
   sourceSkuResolutionArtifactVersion: 2,
   sourceFileIds: ["file-1"],
   rulePackId: "honeywell-candidate-rules",
-  rulePackVersion: "0.1.0-candidate",
-  rulePackStatus: "candidate",
+  rulePackVersion: "1.0.0",
+  rulePackStatus: "approved",
   lineCount: 2,
-  lines: [
+  acceptedLines: [
     {
       lineId: "line-1",
       origin: "customer",
@@ -147,7 +159,8 @@ const PAYLOAD = {
     },
     DRAFT_LINE,
   ],
-  summary: SUMMARY,
+  rejectedLines: [],
+  summary: REVIEW_SUMMARY,
 } satisfies ConfigurationExpansionArtifactPayload;
 
 // Required-field proof: omitting sourceRuleId and evidence from a child rule must
@@ -177,9 +190,14 @@ describe("configuration-expansion artifact payload", () => {
     expect(PAYLOAD.sourceSkuResolutionArtifactId).toBe("sku-1");
     expect(PAYLOAD.sourceSkuResolutionArtifactVersion).toBe(2);
     expect(PAYLOAD.rulePackId).toBe("honeywell-candidate-rules");
-    expect(PAYLOAD.rulePackVersion).toBe("0.1.0-candidate");
-    expect(PAYLOAD.rulePackStatus).toBe("candidate");
-    expect(PAYLOAD.lines).toHaveLength(2);
+    expect(PAYLOAD.rulePackVersion).toBe("1.0.0");
+    expect(PAYLOAD.rulePackStatus).toBe("approved");
+    expect(PAYLOAD.acceptedLines).toHaveLength(2);
+    expect(PAYLOAD.rejectedLines).toHaveLength(0);
+    expect(PAYLOAD.lineCount).toBe(PAYLOAD.acceptedLines.length);
+    expect(PAYLOAD.summary.totalAcceptedLineCount).toBe(2);
+    // The draft summary type still backs the upstream draft helper.
+    expect(DRAFT_SUMMARY.totalLineCount).toBe(2);
   });
 
   it("carries no pricing fields on any payload key", () => {
