@@ -6,6 +6,7 @@ import * as mod from "@/lib/projects/priced-boq";
 import {
   getPricedBoqLineKey,
   buildPricedBoqDraft,
+  buildPricedExpandedBoqDraft,
   type BuildPricedBoqDraftInput,
   type ExplicitSarUnitPrice,
 } from "@/lib/projects/priced-boq";
@@ -13,6 +14,7 @@ import {
   calculatePricedLineAmounts,
   summarizePricedLineAmounts,
 } from "@/lib/projects/pricing";
+import type { ConfigurationExpansionDraftLine } from "@/lib/projects/config-expansion-types";
 import type {
   CanonicalBoqLine,
   ProjectPricingConfig,
@@ -377,6 +379,163 @@ describe("buildPricedBoqDraft - purity", () => {
   });
 });
 
+// --- buildPricedExpandedBoqDraft (accepted expanded BoM pricing) ------------
+
+function customerLine(
+  overrides: Partial<ConfigurationExpansionDraftLine> = {}
+): ConfigurationExpansionDraftLine {
+  return {
+    lineId: "line-1",
+    origin: "customer",
+    sku: "PARENT-A",
+    description: "Parent A",
+    quantity: 2,
+    sourceFileId: FILE_ID,
+    sourceRowNumber: 1,
+    originalLineNumber: "1",
+    originalSku: "PARENT-A",
+    acceptedSku: "PARENT-A",
+    originalCells: { A: "1" },
+    ...overrides,
+  };
+}
+
+function expansionLine(
+  overrides: Partial<ConfigurationExpansionDraftLine> = {}
+): ConfigurationExpansionDraftLine {
+  return {
+    lineId: "line-1-x1",
+    origin: "expansion",
+    sku: "CHILD-1",
+    description: "Child one",
+    quantity: 2,
+    parentLineId: "line-1",
+    parentLineNumber: "1",
+    relationshipType: "service_or_support",
+    quantityRule: "same_as_parent",
+    includedItem: false,
+    sourceRuleId: "rule-a",
+    approvalRequired: false,
+    approved: true,
+    ...overrides,
+  };
+}
+
+describe("buildPricedExpandedBoqDraft", () => {
+  it("prices a customer line by its acceptedSku and an expansion line by its sku, in order", () => {
+    const cfg = config({ mode: "markup", ratePercent: 20 });
+    const draft = buildPricedExpandedBoqDraft({
+      acceptedLines: [customerLine(), expansionLine()],
+      pricingConfig: cfg,
+      unitListPriceSarBySku: { "PARENT-A": sar(100), "CHILD-1": sar(50) },
+    });
+    expect(draft.lines.map((l) => l.status)).toEqual(["priced", "priced"]);
+    expect(draft.lines.map((l) => l.acceptedSku)).toEqual(["PARENT-A", "CHILD-1"]);
+    expect(draft.lines[0].amounts).toEqual(
+      calculatePricedLineAmounts({ config: cfg, unitListPriceSar: 100, quantity: 2 })
+    );
+    expect(draft.lines[1].amounts).toEqual(
+      calculatePricedLineAmounts({ config: cfg, unitListPriceSar: 50, quantity: 2 })
+    );
+    expect("sourceFormat" in draft.lines[0]).toBe(false);
+  });
+
+  it("uses the expansion line's own sku for pricing, not its undefined acceptedSku", () => {
+    const draft = buildPricedExpandedBoqDraft({
+      acceptedLines: [expansionLine({ sku: "  CHILD-1  " })],
+      pricingConfig: config(),
+      unitListPriceSarBySku: { "CHILD-1": sar(50) },
+    });
+    expect(draft.lines[0].status).toBe("priced");
+    expect(draft.lines[0].acceptedSku).toBe("CHILD-1");
+  });
+
+  it("retains a customer line with no acceptedSku as not_accepted", () => {
+    const draft = buildPricedExpandedBoqDraft({
+      acceptedLines: [customerLine({ acceptedSku: undefined })],
+      pricingConfig: config(),
+      unitListPriceSarBySku: { "PARENT-A": sar(100) },
+    });
+    expect(draft.lines[0].status).toBe("not_accepted");
+    expect(draft.lines[0].acceptedSku).toBeUndefined();
+    expect(draft.lines[0].warning).toBe("SKU is not accepted for pricing.");
+    expect(draft.lines[0].amounts).toBeUndefined();
+    expect(draft.summary.notAcceptedCount).toBe(1);
+  });
+
+  it("flags an orderable SKU with no SAR price as missing_price", () => {
+    const draft = buildPricedExpandedBoqDraft({
+      acceptedLines: [expansionLine({ sku: "NO-PRICE" })],
+      pricingConfig: config(),
+      unitListPriceSarBySku: { OTHER: sar(100) },
+    });
+    expect(draft.lines[0].status).toBe("missing_price");
+    expect(draft.lines[0].acceptedSku).toBe("NO-PRICE");
+    expect(draft.lines[0].warning).toBe("Accepted SKU has no SAR unit price.");
+    expect(draft.summary.missingPriceCount).toBe(1);
+  });
+
+  it("totals only priced lines and reports missingDecisionCount as 0", () => {
+    const cfg = config();
+    const draft = buildPricedExpandedBoqDraft({
+      acceptedLines: [
+        customerLine({ lineId: "line-1", acceptedSku: "PARENT-A" }),
+        expansionLine({ lineId: "line-1-x1", sku: "CHILD-1" }),
+        customerLine({ lineId: "line-2", acceptedSku: undefined, sourceRowNumber: 2 }),
+      ],
+      pricingConfig: cfg,
+      unitListPriceSarBySku: { "PARENT-A": sar(100), "CHILD-1": sar(50) },
+    });
+    expect(draft.summary).toMatchObject({
+      inputLineCount: 3,
+      pricedLineCount: 2,
+      unpricedLineCount: 1,
+      missingDecisionCount: 0,
+      notAcceptedCount: 1,
+      missingPriceCount: 0,
+    });
+    expect(draft.summary.totals).toEqual(
+      summarizePricedLineAmounts([
+        calculatePricedLineAmounts({ config: cfg, unitListPriceSar: 100, quantity: 2 }),
+        calculatePricedLineAmounts({ config: cfg, unitListPriceSar: 50, quantity: 2 }),
+      ])
+    );
+  });
+
+  it("validates the pricing config up front, even with no lines", () => {
+    expect(() =>
+      buildPricedExpandedBoqDraft({
+        acceptedLines: [],
+        pricingConfig: config({ currency: "USD" as unknown as "SAR" }),
+        unitListPriceSarBySku: {},
+      })
+    ).toThrow("Pricing currency must be SAR.");
+  });
+
+  it("throws the exact error for a non-SAR price entry", () => {
+    expect(() =>
+      buildPricedExpandedBoqDraft({
+        acceptedLines: [customerLine()],
+        pricingConfig: config(),
+        unitListPriceSarBySku: {
+          "PARENT-A": { currency: "USD" as unknown as "SAR", unitListPriceSar: 100 },
+        },
+      })
+    ).toThrow("Accepted SKU price must be in SAR.");
+  });
+
+  it("does not mutate any input", () => {
+    const input = {
+      acceptedLines: [customerLine(), expansionLine()],
+      pricingConfig: config(),
+      unitListPriceSarBySku: { "PARENT-A": sar(100), "CHILD-1": sar(50) },
+    };
+    const snapshot = structuredClone(input);
+    buildPricedExpandedBoqDraft(input);
+    expect(input).toEqual(snapshot);
+  });
+});
+
 describe("module isolation & surface", () => {
   const source = readFileSync(
     join(process.cwd(), "src/lib/projects/priced-boq.ts"),
@@ -411,7 +570,7 @@ describe("module isolation & surface", () => {
 
   it("exposes only the intended runtime exports", () => {
     expect(Object.keys(mod).sort()).toEqual(
-      ["buildPricedBoqDraft", "getPricedBoqLineKey"].sort()
+      ["buildPricedBoqDraft", "buildPricedExpandedBoqDraft", "getPricedBoqLineKey"].sort()
     );
   });
 });

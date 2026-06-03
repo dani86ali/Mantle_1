@@ -1,15 +1,18 @@
 /**
- * Pure Project-domain helper: combine normalized BoQ lines, reviewed SKU
- * decisions, SAR pricing config, and explicit SAR unit prices into a priced BoQ
- * draft. Source: MVP_CANONICAL_PROJECT_STATE.md (8, 9, 10); shapes in
- * src/types/project.ts; pricing math in src/lib/projects/pricing.ts.
+ * Pure Project-domain pricing helpers. Two entry points share the SAR pricing math
+ * (section 8/9/10; shapes in src/types/project.ts; math in src/lib/projects/pricing.ts):
+ *   - buildPricedBoqDraft prices normalized BoQ lines against reviewed SKU decisions.
+ *   - buildPricedExpandedBoqDraft prices an accepted expanded BoM directly from a
+ *     configuration_expansion artifact's acceptedLines (the Quick BoM pricing input
+ *     authority; section 11A, section 19 task 8j). No sku_resolution decisions are
+ *     consulted here - the accepted lines already carry their orderable SKU.
  *
- * PURE: imports only the canonical types and pricing helpers (no DB, artifact
- * store, catalog lookup, mock catalog, engines, AI, API/UI, schema, Drizzle),
- * runs no I/O, never mutates inputs. Does NOT decide acceptance, look up the
- * catalog, or source/convert SAR prices - it consumes explicit per-SKU SAR
- * prices from the caller. Prices only accepted SKUs with an explicit SAR price
- * (section 8/9); other rows are retained with a status/warning (section 10).
+ * PURE: imports only the canonical types, the configuration-expansion line contract,
+ * and pricing helpers (no DB, artifact store, catalog lookup, mock catalog, engines,
+ * AI, API/UI, schema, Drizzle), runs no I/O, never mutates inputs. Does NOT decide
+ * acceptance, look up the catalog, or source/convert SAR prices - it consumes explicit
+ * per-SKU SAR prices from the caller. Prices only orderable SKUs with an explicit SAR
+ * price (section 8/9); other rows are retained with a status/warning (section 10).
  */
 import {
   calculatePricedLineAmounts,
@@ -18,6 +21,7 @@ import {
   type PricedLineAmounts,
   type PricingSummaryTotals,
 } from "@/lib/projects/pricing";
+import type { ConfigurationExpansionDraftLine } from "@/lib/projects/config-expansion-types";
 import type {
   BoqInputFormat,
   CanonicalBoqLine,
@@ -49,7 +53,8 @@ export interface ExplicitSarUnitPrice {
  * `decisionStatus`, and `amounts` appear only when relevant to the status.
  */
 export interface PricedBoqDraftLine {
-  sourceFormat: BoqInputFormat;
+  /** Present for lines mapped from a CanonicalBoqLine; absent for accepted expanded-BoM lines. */
+  sourceFormat?: BoqInputFormat;
   sourceFileId: string;
   sourceSheetName?: string;
   sourceRowNumber: number;
@@ -216,6 +221,99 @@ export function buildPricedBoqDraft(
       pricedLineCount: pricedAmounts.length,
       unpricedLineCount: missingDecisionCount + notAcceptedCount + missingPriceCount,
       missingDecisionCount,
+      notAcceptedCount,
+      missingPriceCount,
+      totals: summarizePricedLineAmounts(pricedAmounts),
+    },
+  };
+}
+
+/** Input for {@link buildPricedExpandedBoqDraft}. All fields are treated as read-only. */
+export interface BuildPricedExpandedBoqDraftInput {
+  /** Accepted expanded BoM lines (customer + accepted expansion), in customer-then-children order. */
+  acceptedLines: readonly ConfigurationExpansionDraftLine[];
+  pricingConfig: ProjectPricingConfig;
+  /** Explicit SAR price entry per orderable SKU. NOT catalog listPrice. */
+  unitListPriceSarBySku: Readonly<Record<string, ExplicitSarUnitPrice>>;
+}
+
+/** The orderable SKU to price: a customer line's accepted SKU, or an expansion line's own SKU. */
+function expandedPricingSkuFor(line: ConfigurationExpansionDraftLine): string {
+  const candidate = line.origin === "customer" ? line.acceptedSku : line.sku;
+  return candidate?.trim() ?? "";
+}
+
+/** Copy an accepted expanded-BoM line's source metadata into a fresh priced-line base. */
+function copyExpandedSourceMetadata(
+  line: ConfigurationExpansionDraftLine
+): Omit<PricedBoqDraftLine, "status"> {
+  return {
+    sourceFileId: line.sourceFileId ?? "",
+    ...(line.sourceSheetName !== undefined ? { sourceSheetName: line.sourceSheetName } : {}),
+    sourceRowNumber: line.sourceRowNumber ?? 0,
+    originalLineNumber: line.originalLineNumber ?? "",
+    ...(line.parentLineNumber !== undefined ? { parentLineNumber: line.parentLineNumber } : {}),
+    originalSku: line.originalSku ?? line.sku,
+    description: line.description,
+    quantity: line.quantity,
+    originalCells: { ...(line.originalCells ?? {}) },
+  };
+}
+
+/**
+ * Price an accepted expanded BoM directly from a persisted configuration_expansion
+ * artifact's acceptedLines (the pricing input authority; no sku_resolution decisions
+ * are reintroduced). Validates the pricing config up front, then emits one priced (or
+ * retained-unpriced) line per accepted line in order: a customer line prices by its
+ * acceptedSku, an expansion line by its own sku; a line with no orderable SKU is
+ * retained not_accepted, an orderable SKU with no SAR entry is retained missing_price,
+ * and a non-SAR entry throws. Rejected expansion lines are never passed here. Pure:
+ * never mutates inputs.
+ */
+export function buildPricedExpandedBoqDraft(
+  input: BuildPricedExpandedBoqDraftInput
+): PricedBoqDraft {
+  const { acceptedLines, pricingConfig, unitListPriceSarBySku } = input;
+  validateProjectPricingConfig(pricingConfig);
+
+  const draftLines: PricedBoqDraftLine[] = [];
+  const pricedAmounts: PricedLineAmounts[] = [];
+  let notAcceptedCount = 0, missingPriceCount = 0;
+
+  for (const line of acceptedLines) {
+    const base = copyExpandedSourceMetadata(line);
+    const acceptedSku = expandedPricingSkuFor(line);
+
+    if (acceptedSku === "") {
+      notAcceptedCount += 1;
+      draftLines.push({ ...base, status: "not_accepted", warning: NOT_ACCEPTED_WARNING });
+      continue;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(unitListPriceSarBySku, acceptedSku)) {
+      missingPriceCount += 1;
+      draftLines.push({ ...base, status: "missing_price", acceptedSku, warning: MISSING_PRICE_WARNING });
+      continue;
+    }
+
+    const priceEntry = unitListPriceSarBySku[acceptedSku];
+    if (priceEntry.currency !== "SAR") throw new Error(NON_SAR_PRICE_MESSAGE);
+    const amounts = calculatePricedLineAmounts({
+      config: pricingConfig,
+      unitListPriceSar: priceEntry.unitListPriceSar,
+      quantity: line.quantity,
+    });
+    pricedAmounts.push(amounts);
+    draftLines.push({ ...base, status: "priced", acceptedSku, amounts });
+  }
+
+  return {
+    lines: draftLines,
+    summary: {
+      inputLineCount: acceptedLines.length,
+      pricedLineCount: pricedAmounts.length,
+      unpricedLineCount: notAcceptedCount + missingPriceCount,
+      missingDecisionCount: 0,
       notAcceptedCount,
       missingPriceCount,
       totals: summarizePricedLineAmounts(pricedAmounts),

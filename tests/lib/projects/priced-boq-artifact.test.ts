@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
 
-// Only the DB repository is mocked: the priced-BoQ helper runs for real so its
+// Only the DB repository is mocked: the priced-expanded-BoQ helper runs for real so its
 // pricing math, line statuses, and errors are exercised end-to-end (it is pure).
 vi.mock("@/lib/db/project-artifact-store", () => ({
   getProjectArtifactById: vi.fn(),
@@ -20,21 +20,20 @@ import {
   createProjectArtifactVersion,
 } from "@/lib/db/project-artifact-store";
 import { type ExplicitSarUnitPrice } from "@/lib/projects/priced-boq";
-import type {
-  CanonicalBoqLine,
-  ProjectArtifact,
-  ProjectPricingConfig,
-  SkuResolutionDecision,
-} from "@/types/project";
+import type { ConfigurationExpansionDraftLine } from "@/lib/projects/config-expansion-types";
+import type { ProjectArtifact, ProjectPricingConfig } from "@/types/project";
 
 const getArtifactMock = vi.mocked(getProjectArtifactById);
 const createMock = vi.mocked(createProjectArtifactVersion);
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const PROJECT = "proj-1";
+const EXPANSION_ID = "art-ce-7";
+const EXPANSION_VERSION = 3;
 const NORMALIZED_ID = "art-nb-7";
 const NORMALIZED_VERSION = 5;
 const SKU_ID = "art-skur-3";
+const SKU_VERSION = 2;
 const FILE_ID = "file-1";
 
 function sar(unitListPriceSar: number): ExplicitSarUnitPrice {
@@ -52,74 +51,97 @@ function config(overrides: Partial<ProjectPricingConfig> = {}): ProjectPricingCo
   };
 }
 
-function line(overrides: Partial<CanonicalBoqLine> = {}): CanonicalBoqLine {
+// --- Accepted expanded-BoM line fixtures -----------------------------------
+
+function customer(
+  overrides: Partial<ConfigurationExpansionDraftLine> = {}
+): ConfigurationExpansionDraftLine {
   return {
-    sourceFormat: "format_1_line_item",
-    sourceFileId: FILE_ID,
-    sourceRowNumber: 1,
-    originalLineNumber: "1",
-    sku: "SKU-1",
-    description: "Item one",
+    lineId: "line-1",
+    origin: "customer",
+    sku: "PARENT-A",
+    description: "Parent A",
     quantity: 2,
-    originalCells: { A: "1", B: "Item one" },
-    ...overrides,
-  };
-}
-
-function decision(overrides: Partial<SkuResolutionDecision> = {}): SkuResolutionDecision {
-  return {
     sourceFileId: FILE_ID,
     sourceRowNumber: 1,
     originalLineNumber: "1",
-    originalSku: "SKU-1",
-    status: "accepted",
-    suggestions: [],
-    acceptedSku: "SKU-1",
+    originalSku: "PARENT-A",
+    acceptedSku: "PARENT-A",
+    originalCells: { "#": "1", "Part Number": "PARENT-A" },
     ...overrides,
   };
 }
 
-function normalizedArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
-  const now = new Date("2026-05-21T08:00:00.000Z");
+function expansion(
+  overrides: Partial<ConfigurationExpansionDraftLine> = {}
+): ConfigurationExpansionDraftLine {
   return {
-    id: NORMALIZED_ID,
-    projectId: PROJECT,
-    stageId: "boq_format_validation",
-    type: "normalized_boq",
-    status: "generated",
-    version: NORMALIZED_VERSION,
-    payload: {
-      sourceFileId: FILE_ID,
-      lineCount: 1,
-      lines: [line()],
-    },
-    sourceFileIds: [FILE_ID],
-    sourceArtifactIds: [],
-    createdAt: now,
-    updatedAt: now,
+    lineId: "line-1-x1",
+    origin: "expansion",
+    sku: "CHILD-1",
+    description: "Child one",
+    quantity: 2,
+    parentLineId: "line-1",
+    parentLineNumber: "1",
+    relationshipType: "service_or_support",
+    quantityRule: "same_as_parent",
+    includedItem: false,
+    sourceRuleId: "rule-a",
+    evidence: [
+      {
+        sourceType: "ccw_export",
+        sourcePath: "C:/Pre-Sales/fixture.xlsx",
+        sheetName: "Sheet1",
+        lineNumber: 1,
+        evidenceNote: "fixture evidence",
+      },
+    ],
+    approvalRequired: false,
+    approved: true,
     ...overrides,
   };
 }
 
-function skuArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
+// --- Artifact fixtures ------------------------------------------------------
+
+function expansionPayload(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    sourceNormalizedBoqArtifactId: NORMALIZED_ID,
+    sourceNormalizedBoqArtifactVersion: NORMALIZED_VERSION,
+    sourceSkuResolutionArtifactId: SKU_ID,
+    sourceSkuResolutionArtifactVersion: SKU_VERSION,
+    sourceFileIds: [FILE_ID],
+    rulePackId: "honeywell-scope-rules",
+    rulePackVersion: "1.0.0",
+    rulePackStatus: "approved",
+    lineCount: 2,
+    acceptedLines: [customer(), expansion()],
+    rejectedLines: [],
+    summary: {
+      customerLineCount: 1,
+      acceptedExpansionLineCount: 1,
+      rejectedExpansionLineCount: 0,
+      totalAcceptedLineCount: 2,
+      reviewedExpansionLineCount: 1,
+    },
+    ...overrides,
+  };
+}
+
+function expansionArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
   const now = new Date("2026-05-21T08:30:00.000Z");
   return {
-    id: SKU_ID,
+    id: EXPANSION_ID,
     projectId: PROJECT,
-    stageId: "sku_resolution",
-    type: "sku_resolution",
-    status: "generated",
-    version: 2,
-    payload: {
-      sourceNormalizedBoqArtifactId: NORMALIZED_ID,
-      sourceNormalizedBoqArtifactVersion: NORMALIZED_VERSION,
-      sourceFileIds: [FILE_ID],
-      lineCount: 1,
-      decisions: [decision()],
-      summary: {},
-    },
+    stageId: "configuration_expansion_review",
+    type: "configuration_expansion",
+    status: "needs_review",
+    version: EXPANSION_VERSION,
+    payload: expansionPayload(),
     sourceFileIds: [FILE_ID],
-    sourceArtifactIds: [NORMALIZED_ID],
+    sourceArtifactIds: [NORMALIZED_ID, SKU_ID],
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -137,7 +159,7 @@ function createdArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtif
     version: 1,
     payload: {},
     sourceFileIds: [FILE_ID],
-    sourceArtifactIds: [NORMALIZED_ID, SKU_ID],
+    sourceArtifactIds: [EXPANSION_ID],
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -150,22 +172,19 @@ function input(
   return {
     tenantId: TENANT,
     projectId: PROJECT,
-    normalizedBoqArtifactId: NORMALIZED_ID,
-    skuResolutionArtifactId: SKU_ID,
+    configurationExpansionArtifactId: EXPANSION_ID,
     pricingConfig: config(),
-    unitListPriceSarBySku: { "SKU-1": sar(100) },
+    unitListPriceSarBySku: { "PARENT-A": sar(100), "CHILD-1": sar(50) },
     ...overrides,
   };
 }
 
-/** Resolve normalized then SKU artifact for the two sequential lookups. */
-function mockArtifacts(normalized: ProjectArtifact | null, sku: ProjectArtifact | null): void {
+/** Resolve the configuration_expansion artifact for the single lookup. */
+function mockArtifact(expansionArt: ProjectArtifact | null): void {
   getArtifactMock.mockReset();
-  getArtifactMock.mockImplementation(async (_t, _p, id) => {
-    if (id === NORMALIZED_ID) return normalized;
-    if (id === SKU_ID) return sku;
-    return null;
-  });
+  getArtifactMock.mockImplementation(async (_t, _p, id) =>
+    id === EXPANSION_ID ? expansionArt : null
+  );
 }
 
 beforeEach(() => {
@@ -173,108 +192,74 @@ beforeEach(() => {
   createMock.mockResolvedValue(createdArtifact());
 });
 
+describe("createPricedBoqArtifact - source contract", () => {
+  it("loads exactly one configuration_expansion artifact by id, not normalized/sku ids", async () => {
+    mockArtifact(expansionArtifact());
+    await createPricedBoqArtifact(input());
+    // The input carries only configurationExpansionArtifactId; the service performs a
+    // single lookup against it and never resolves a normalized_boq or sku_resolution id.
+    expect(getArtifactMock).toHaveBeenCalledTimes(1);
+    expect(getArtifactMock).toHaveBeenCalledWith(TENANT, PROJECT, EXPANSION_ID);
+  });
+});
+
 describe("createPricedBoqArtifact - guards", () => {
-  it("throws the exact missing-normalized message and does not create", async () => {
-    mockArtifacts(null, skuArtifact());
+  it("throws the exact missing message and does not create", async () => {
+    mockArtifact(null);
     await expect(createPricedBoqArtifact(input())).rejects.toThrow(
-      "Normalized BoQ artifact not found."
+      "Configuration expansion artifact not found."
     );
     expect(createMock).not.toHaveBeenCalled();
   });
 
-  it("throws the exact wrong-normalized-type message and does not create", async () => {
-    mockArtifacts(normalizedArtifact({ type: "priced_boq" }), skuArtifact());
+  it("throws the exact wrong-type message and does not create", async () => {
+    mockArtifact(expansionArtifact({ type: "sku_resolution" }));
     await expect(createPricedBoqArtifact(input())).rejects.toThrow(
-      "Artifact is not a normalized_boq artifact."
+      "Artifact is not a configuration_expansion artifact."
     );
     expect(createMock).not.toHaveBeenCalled();
   });
 
-  it("throws the exact invalid-normalized-payload message when lines is not an array", async () => {
-    mockArtifacts(
-      normalizedArtifact({ payload: { lines: "nope" } }),
-      skuArtifact()
-    );
-    await expect(createPricedBoqArtifact(input())).rejects.toThrow(
-      "Normalized BoQ artifact payload is invalid."
-    );
-    expect(createMock).not.toHaveBeenCalled();
-  });
-
-  it("throws the exact missing-SKU message and does not create", async () => {
-    mockArtifacts(normalizedArtifact(), null);
-    await expect(createPricedBoqArtifact(input())).rejects.toThrow(
-      "SKU resolution artifact not found."
-    );
-    expect(createMock).not.toHaveBeenCalled();
-  });
-
-  it("throws the exact wrong-SKU-type message and does not create", async () => {
-    mockArtifacts(normalizedArtifact(), skuArtifact({ type: "normalized_boq" }));
-    await expect(createPricedBoqArtifact(input())).rejects.toThrow(
-      "Artifact is not a sku_resolution artifact."
-    );
-    expect(createMock).not.toHaveBeenCalled();
-  });
-
-  it("throws invalid-SKU-payload when decisions, source id, or source version are wrong", async () => {
+  it("throws invalid-payload when acceptedLines or a provenance field is wrong", async () => {
     const bad: Record<string, unknown>[] = [
-      { sourceNormalizedBoqArtifactId: NORMALIZED_ID, sourceNormalizedBoqArtifactVersion: NORMALIZED_VERSION }, // no decisions
-      { decisions: [], sourceNormalizedBoqArtifactVersion: NORMALIZED_VERSION }, // no id
-      { decisions: [], sourceNormalizedBoqArtifactId: NORMALIZED_ID }, // no version
+      expansionPayload({ acceptedLines: "nope" }), // acceptedLines not an array
+      expansionPayload({ sourceNormalizedBoqArtifactId: 7 }), // id not a string
+      expansionPayload({ sourceNormalizedBoqArtifactVersion: "5" }), // version not a number
+      expansionPayload({ sourceSkuResolutionArtifactId: undefined }), // missing sku id
+      expansionPayload({ sourceSkuResolutionArtifactVersion: undefined }), // missing sku version
+      expansionPayload({ rulePackStatus: undefined }), // missing rule-pack status
     ];
     for (const payload of bad) {
-      mockArtifacts(normalizedArtifact(), skuArtifact({ payload }));
+      mockArtifact(expansionArtifact({ payload }));
       await expect(createPricedBoqArtifact(input())).rejects.toThrow(
-        "SKU resolution artifact payload is invalid."
+        "Configuration expansion artifact payload is invalid."
       );
     }
     expect(createMock).not.toHaveBeenCalled();
   });
 
-  it("throws the mismatch message when the SKU artifact points to a different normalized id", async () => {
-    mockArtifacts(
-      normalizedArtifact(),
-      skuArtifact({
-        payload: {
-          sourceNormalizedBoqArtifactId: "art-nb-OTHER",
-          sourceNormalizedBoqArtifactVersion: NORMALIZED_VERSION,
-          decisions: [decision()],
-        },
-      })
-    );
-    await expect(createPricedBoqArtifact(input())).rejects.toThrow(
-      "SKU resolution artifact does not match the normalized BoQ artifact."
-    );
-    expect(createMock).not.toHaveBeenCalled();
-  });
-
-  it("throws the mismatch message when the SKU artifact points to a different normalized version", async () => {
-    mockArtifacts(
-      normalizedArtifact(),
-      skuArtifact({
-        payload: {
-          sourceNormalizedBoqArtifactId: NORMALIZED_ID,
-          sourceNormalizedBoqArtifactVersion: NORMALIZED_VERSION + 1,
-          decisions: [decision()],
-        },
-      })
-    );
-    await expect(createPricedBoqArtifact(input())).rejects.toThrow(
-      "SKU resolution artifact does not match the normalized BoQ artifact."
-    );
+  it("rejects a payload whose rulePackStatus is not approved, defensively", async () => {
+    for (const rulePackStatus of ["candidate", "rejected"]) {
+      mockArtifact(expansionArtifact({ payload: expansionPayload({ rulePackStatus }) }));
+      await expect(createPricedBoqArtifact(input())).rejects.toThrow(
+        "Configuration expansion artifact requires an approved rule pack."
+      );
+    }
     expect(createMock).not.toHaveBeenCalled();
   });
 });
 
 describe("createPricedBoqArtifact - pricing-helper errors bubble", () => {
+  beforeEach(() => {
+    mockArtifact(expansionArtifact());
+  });
+
   it("bubbles the non-SAR price error unchanged before any artifact is created", async () => {
-    mockArtifacts(normalizedArtifact(), skuArtifact());
     await expect(
       createPricedBoqArtifact(
         input({
           unitListPriceSarBySku: {
-            "SKU-1": { currency: "USD" as unknown as "SAR", unitListPriceSar: 100 },
+            "PARENT-A": { currency: "USD" as unknown as "SAR", unitListPriceSar: 100 },
           },
         })
       )
@@ -283,9 +268,8 @@ describe("createPricedBoqArtifact - pricing-helper errors bubble", () => {
   });
 
   it("bubbles the invalid-price error unchanged before any artifact is created", async () => {
-    mockArtifacts(normalizedArtifact(), skuArtifact());
     await expect(
-      createPricedBoqArtifact(input({ unitListPriceSarBySku: { "SKU-1": sar(-5) } }))
+      createPricedBoqArtifact(input({ unitListPriceSarBySku: { "PARENT-A": sar(-5) } }))
     ).rejects.toThrow("unitListPriceSar must be a finite nonnegative number.");
     expect(createMock).not.toHaveBeenCalled();
   });
@@ -293,50 +277,119 @@ describe("createPricedBoqArtifact - pricing-helper errors bubble", () => {
 
 describe("createPricedBoqArtifact - composition", () => {
   beforeEach(() => {
-    mockArtifacts(normalizedArtifact(), skuArtifact());
+    mockArtifact(expansionArtifact());
   });
 
-  it("creates exactly one artifact with the expected stage/type/status/source", async () => {
+  it("creates exactly one artifact with the expected stage/type/status", async () => {
     await createPricedBoqArtifact(input());
     expect(createMock).toHaveBeenCalledTimes(1);
-    const arg = createMock.mock.calls[0][0];
-    expect(arg).toMatchObject({
+    expect(createMock.mock.calls[0][0]).toMatchObject({
       projectId: PROJECT,
       tenantId: TENANT,
       stageId: "boq_pricing_review",
       type: "priced_boq",
       status: "needs_review",
     });
-    expect(arg.sourceArtifactIds).toEqual([NORMALIZED_ID, SKU_ID]);
   });
 
-  it("returns the created artifact, both source artifacts, payload, and draft", async () => {
-    const normalized = normalizedArtifact();
-    const sku = skuArtifact();
+  it("sets sourceArtifactIds to exactly the configuration_expansion artifact id", async () => {
+    await createPricedBoqArtifact(input());
+    expect(createMock.mock.calls[0][0].sourceArtifactIds).toEqual([EXPANSION_ID]);
+  });
+
+  it("copies sourceFileIds from the configuration_expansion artifact", async () => {
+    mockArtifact(expansionArtifact({ sourceFileIds: ["file-x", "file-y"] }));
+    const { payload } = await createPricedBoqArtifact(input());
+    expect(payload.sourceFileIds).toEqual(["file-x", "file-y"]);
+    expect(createMock.mock.calls[0][0].sourceFileIds).toEqual(["file-x", "file-y"]);
+  });
+
+  it("returns the created artifact, the source expansion artifact, payload, and draft", async () => {
+    const expansionArt = expansionArtifact();
     const created = createdArtifact({ id: "art-pb-9", version: 4 });
-    mockArtifacts(normalized, sku);
+    mockArtifact(expansionArt);
     createMock.mockResolvedValue(created);
     const result = await createPricedBoqArtifact(input());
     expect(result.artifact).toBe(created);
-    expect(result.normalizedBoqArtifact).toBe(normalized);
-    expect(result.skuResolutionArtifact).toBe(sku);
+    expect(result.configurationExpansionArtifact).toBe(expansionArt);
     expect(result.payload).toBe(createMock.mock.calls[0][0].payload);
-    expect(result.draft.lines).toHaveLength(1);
-    expect(result.draft.lines[0].status).toBe("priced");
+    expect(result.draft.lines).toHaveLength(2);
+    expect(result.draft.lines.map((l) => l.status)).toEqual(["priced", "priced"]);
   });
 });
 
-describe("createPricedBoqArtifact - payload shape", () => {
-  beforeEach(() => {
-    mockArtifacts(normalizedArtifact(), skuArtifact());
+describe("createPricedBoqArtifact - pricing from acceptedLines only", () => {
+  it("prices the accepted customer line and accepted expansion line", async () => {
+    mockArtifact(expansionArtifact());
+    const { payload } = await createPricedBoqArtifact(input());
+    expect(payload.lines.map((l) => l.status)).toEqual(["priced", "priced"]);
+    expect(payload.lines.map((l) => l.acceptedSku)).toEqual(["PARENT-A", "CHILD-1"]);
+    expect(payload.lines[0].amounts?.unitListPriceSar).toBe(100);
+    expect(payload.lines[1].amounts?.unitListPriceSar).toBe(50);
+    expect(payload.summary.pricedLineCount).toBe(2);
   });
 
-  it("records provenance ids and versions from the loaded artifacts", async () => {
+  it("does not price rejected expansion lines", async () => {
+    mockArtifact(
+      expansionArtifact({
+        payload: expansionPayload({
+          acceptedLines: [customer()],
+          rejectedLines: [
+            expansion({ lineId: "line-1-x2", sku: "REJECTED-CHILD", approved: false }),
+          ],
+          lineCount: 1,
+        }),
+      })
+    );
+    const { payload } = await createPricedBoqArtifact(
+      input({
+        // A price for the rejected SKU exists but must never be applied or recorded.
+        unitListPriceSarBySku: { "PARENT-A": sar(100), "REJECTED-CHILD": sar(999) },
+      })
+    );
+    expect(payload.lines).toHaveLength(1);
+    expect(payload.lines.map((l) => l.acceptedSku)).toEqual(["PARENT-A"]);
+    expect(payload.lines.map((l) => l.originalSku)).not.toContain("REJECTED-CHILD");
+    expect(Object.keys(payload.unitListPriceSarBySku)).toEqual(["PARENT-A"]);
+  });
+
+  it("preserves customer-then-children order from acceptedLines", async () => {
+    mockArtifact(
+      expansionArtifact({
+        payload: expansionPayload({
+          acceptedLines: [
+            customer({ lineId: "line-1", acceptedSku: "P1", originalSku: "P1" }),
+            expansion({ lineId: "line-1-x1", sku: "C1", parentLineId: "line-1" }),
+            customer({ lineId: "line-2", acceptedSku: "P2", originalSku: "P2", sourceRowNumber: 2 }),
+            expansion({ lineId: "line-2-x1", sku: "C2", parentLineId: "line-2" }),
+          ],
+          lineCount: 4,
+        }),
+      })
+    );
+    const { payload } = await createPricedBoqArtifact(
+      input({
+        unitListPriceSarBySku: { P1: sar(10), C1: sar(20), P2: sar(30), C2: sar(40) },
+      })
+    );
+    expect(payload.lines.map((l) => l.acceptedSku)).toEqual(["P1", "C1", "P2", "C2"]);
+    expect(payload.lineCount).toBe(4);
+  });
+});
+
+describe("createPricedBoqArtifact - payload provenance and prices", () => {
+  beforeEach(() => {
+    mockArtifact(expansionArtifact());
+  });
+
+  it("records the configuration expansion, normalized, and sku source ids/versions", async () => {
     const { payload } = await createPricedBoqArtifact(input());
+    expect(payload.sourceConfigurationExpansionArtifactId).toBe(EXPANSION_ID);
+    expect(payload.sourceConfigurationExpansionArtifactVersion).toBe(EXPANSION_VERSION);
     expect(payload.sourceNormalizedBoqArtifactId).toBe(NORMALIZED_ID);
     expect(payload.sourceNormalizedBoqArtifactVersion).toBe(NORMALIZED_VERSION);
     expect(payload.sourceSkuResolutionArtifactId).toBe(SKU_ID);
-    expect(payload.sourceSkuResolutionArtifactVersion).toBe(2);
+    expect(payload.sourceSkuResolutionArtifactVersion).toBe(SKU_VERSION);
   });
 
   it("copies the pricing config, lineCount, lines, and summary", async () => {
@@ -344,157 +397,137 @@ describe("createPricedBoqArtifact - payload shape", () => {
     const { payload } = await createPricedBoqArtifact(input({ pricingConfig: cfg }));
     expect(payload.pricingConfig).toEqual(cfg);
     expect(payload.pricingConfig).not.toBe(cfg);
-    expect(payload.lineCount).toBe(1);
-    expect(payload.lines).toHaveLength(1);
-    expect(payload.lines[0].status).toBe("priced");
-    expect(payload.summary.pricedLineCount).toBe(1);
-    expect(payload.summary.totals.lineCount).toBe(1);
+    expect(payload.lineCount).toBe(2);
+    expect(payload.lines).toHaveLength(2);
+    expect(payload.summary.totals.lineCount).toBe(2);
   });
 
-  it("unions sourceFileIds from both artifacts, unique and first-seen", async () => {
-    mockArtifacts(
-      normalizedArtifact({ sourceFileIds: ["file-a", "file-b"] }),
-      skuArtifact({ sourceFileIds: ["file-b", "file-c"] })
-    );
-    const { payload } = await createPricedBoqArtifact(input());
-    expect(payload.sourceFileIds).toEqual(["file-a", "file-b", "file-c"]);
-  });
-
-  it("draws sourceFileIds from the artifacts, not their payloads", async () => {
-    mockArtifacts(
-      normalizedArtifact({ sourceFileIds: ["file-art-n"] }),
-      skuArtifact({ sourceFileIds: ["file-art-s"] })
-    );
-    const { payload } = await createPricedBoqArtifact(input());
-    expect(payload.sourceFileIds).toEqual(["file-art-n", "file-art-s"]);
-    expect(createMock.mock.calls[0][0].sourceFileIds).toEqual(["file-art-n", "file-art-s"]);
-  });
-
-  it("stores only the SAR prices used by priced lines, copied fresh", async () => {
-    const usedPrice = sar(100);
+  it("stores only the SAR prices applied to priced lines, copied fresh", async () => {
+    const used = sar(100);
     const unitListPriceSarBySku: Record<string, ExplicitSarUnitPrice> = {
-      "SKU-1": usedPrice,
+      "PARENT-A": used,
+      "CHILD-1": sar(50),
       UNUSED: sar(999),
     };
     const { payload } = await createPricedBoqArtifact(input({ unitListPriceSarBySku }));
-    expect(Object.keys(payload.unitListPriceSarBySku)).toEqual(["SKU-1"]);
-    expect(payload.unitListPriceSarBySku["SKU-1"]).toEqual(usedPrice);
-    expect(payload.unitListPriceSarBySku["SKU-1"]).not.toBe(usedPrice);
+    expect(Object.keys(payload.unitListPriceSarBySku)).toEqual(["PARENT-A", "CHILD-1"]);
+    expect(payload.unitListPriceSarBySku["PARENT-A"]).toEqual(used);
+    expect(payload.unitListPriceSarBySku["PARENT-A"]).not.toBe(used);
   });
 
-  it("does not leak prices for missing_price rows whose SKU is absent from the map", async () => {
-    mockArtifacts(
-      normalizedArtifact({
-        payload: {
-          lines: [line({ sourceRowNumber: 1, sku: "A" }), line({ sourceRowNumber: 2, sku: "B" })],
-        },
-      }),
-      skuArtifact({
-        payload: {
-          sourceNormalizedBoqArtifactId: NORMALIZED_ID,
-          sourceNormalizedBoqArtifactVersion: NORMALIZED_VERSION,
-          decisions: [
-            decision({ sourceRowNumber: 1, acceptedSku: "PRICED" }),
-            decision({ sourceRowNumber: 2, acceptedSku: "NO-PRICE" }),
-          ],
-        },
-      })
-    );
+  it("does not record a price for an orderable SKU that has no SAR entry", async () => {
     const { payload } = await createPricedBoqArtifact(
-      input({ unitListPriceSarBySku: { PRICED: sar(50) } })
+      input({ unitListPriceSarBySku: { "PARENT-A": sar(100) } })
     );
-    expect(Object.keys(payload.unitListPriceSarBySku)).toEqual(["PRICED"]);
+    // CHILD-1 has no SAR price: its line is retained missing_price, not recorded.
+    const childLine = payload.lines.find((l) => l.acceptedSku === "CHILD-1");
+    expect(childLine?.status).toBe("missing_price");
+    expect(Object.keys(payload.unitListPriceSarBySku)).toEqual(["PARENT-A"]);
+  });
+});
+
+describe("createPricedBoqArtifact - no field leakage", () => {
+  // priced_boq legitimately carries pricing fields, so a token scan is wrong here.
+  // Guard instead that no configuration-AUTHORITY field leaks from the accepted
+  // expansion lines into the priced payload: assert each key is in a known allowlist.
+  const ALLOWED_TOP_LEVEL = [
+    "sourceConfigurationExpansionArtifactId",
+    "sourceConfigurationExpansionArtifactVersion",
+    "sourceNormalizedBoqArtifactId",
+    "sourceNormalizedBoqArtifactVersion",
+    "sourceSkuResolutionArtifactId",
+    "sourceSkuResolutionArtifactVersion",
+    "sourceFileIds",
+    "pricingConfig",
+    "unitListPriceSarBySku",
+    "lineCount",
+    "lines",
+    "summary",
+  ];
+  const ALLOWED_LINE_KEYS = [
+    "sourceFormat",
+    "sourceFileId",
+    "sourceSheetName",
+    "sourceRowNumber",
+    "originalLineNumber",
+    "parentLineNumber",
+    "originalSku",
+    "description",
+    "quantity",
+    "originalCells",
+    "status",
+    "acceptedSku",
+    "decisionStatus",
+    "amounts",
+    "warning",
+  ];
+
+  it("emits only known priced_boq payload keys and known priced-line keys", async () => {
+    mockArtifact(expansionArtifact());
+    const { payload } = await createPricedBoqArtifact(input());
+    for (const key of Object.keys(payload)) {
+      expect(ALLOWED_TOP_LEVEL, `unexpected payload key "${key}"`).toContain(key);
+    }
+    for (const line of payload.lines) {
+      for (const key of Object.keys(line)) {
+        // originalCells holds verbatim customer headers, not service-authored keys.
+        expect(ALLOWED_LINE_KEYS, `unexpected priced-line key "${key}"`).toContain(key);
+      }
+    }
   });
 });
 
 describe("createPricedBoqArtifact - freshness & purity", () => {
-  it("preserves draft line order and emits fresh line objects", async () => {
-    mockArtifacts(
-      normalizedArtifact({
-        payload: {
-          lines: [
-            line({ sourceRowNumber: 1, sku: "A" }),
-            line({ sourceRowNumber: 2, sku: "B" }),
-            line({ sourceRowNumber: 3, sku: "C" }),
-          ],
-        },
-      }),
-      skuArtifact({
-        payload: {
-          sourceNormalizedBoqArtifactId: NORMALIZED_ID,
-          sourceNormalizedBoqArtifactVersion: NORMALIZED_VERSION,
-          decisions: [decision({ sourceRowNumber: 1, acceptedSku: "A" })],
-        },
-      })
-    );
-    const result = await createPricedBoqArtifact(
-      input({ unitListPriceSarBySku: { A: sar(100) } })
-    );
-    expect(result.payload.lines.map((l) => l.sourceRowNumber)).toEqual([1, 2, 3]);
+  it("emits fresh line objects that do not alias the draft", async () => {
+    mockArtifact(expansionArtifact());
+    const result = await createPricedBoqArtifact(input());
     for (let i = 0; i < result.payload.lines.length; i += 1) {
       expect(result.payload.lines[i]).not.toBe(result.draft.lines[i]);
       expect(result.payload.lines[i]).toEqual(result.draft.lines[i]);
     }
-  });
-
-  it("does not alias originalCells, amounts, or summary totals from the draft", async () => {
-    mockArtifacts(normalizedArtifact(), skuArtifact());
-    const result = await createPricedBoqArtifact(input());
-    const priced = result.payload.lines[0];
-    expect(priced.originalCells).not.toBe(result.draft.lines[0].originalCells);
-    expect(priced.originalCells).toEqual(result.draft.lines[0].originalCells);
-    expect(priced.amounts).not.toBe(result.draft.lines[0].amounts);
-    expect(priced.amounts).toEqual(result.draft.lines[0].amounts);
     expect(result.payload.summary.totals).not.toBe(result.draft.summary.totals);
     expect(result.payload.summary.totals).toEqual(result.draft.summary.totals);
   });
 
-  it("passes fresh source arrays that cannot corrupt the source artifacts", async () => {
-    const normalized = normalizedArtifact();
-    const sku = skuArtifact();
-    mockArtifacts(normalized, sku);
+  it("passes fresh source arrays that cannot corrupt the source artifact", async () => {
+    const expansionArt = expansionArtifact();
+    mockArtifact(expansionArt);
     await createPricedBoqArtifact(input());
     const arg = createMock.mock.calls[0][0];
     arg.sourceFileIds!.push("injected");
     arg.sourceArtifactIds!.push("injected");
-    expect(normalized.sourceFileIds).toEqual([FILE_ID]);
-    expect(sku.sourceFileIds).toEqual([FILE_ID]);
+    expect(expansionArt.sourceFileIds).toEqual([FILE_ID]);
+    expect(expansionArt.sourceArtifactIds).toEqual([NORMALIZED_ID, SKU_ID]);
   });
 
-  it("does not mutate the input or either source artifact", async () => {
-    const normalized = normalizedArtifact();
-    const sku = skuArtifact();
-    mockArtifacts(normalized, sku);
-    const normalizedSnapshot = structuredClone(normalized);
-    const skuSnapshot = structuredClone(sku);
+  it("does not mutate the input or the source artifact", async () => {
+    const expansionArt = expansionArtifact();
+    mockArtifact(expansionArt);
+    const expansionSnapshot = structuredClone(expansionArt);
     const inp = input();
     const inputSnapshot = structuredClone(inp);
     await createPricedBoqArtifact(inp);
-    expect(normalized).toEqual(normalizedSnapshot);
-    expect(sku).toEqual(skuSnapshot);
+    expect(expansionArt).toEqual(expansionSnapshot);
     expect(inp).toEqual(inputSnapshot);
   });
 });
 
 describe("buildPricedBoqArtifactPayload", () => {
-  it("is pure over a hand-built draft and copies nested objects", () => {
-    const normalized = normalizedArtifact({ sourceFileIds: ["f1"] });
-    const sku = skuArtifact({ sourceFileIds: ["f2"] });
+  it("is pure over a hand-built draft and echoes the provenance ids/versions", () => {
+    const expansionArt = expansionArtifact({ sourceFileIds: ["f1", "f2"] });
     const cfg = config();
     const draft = {
       lines: [
         {
-          sourceFormat: "format_1_line_item" as const,
           sourceFileId: FILE_ID,
           sourceRowNumber: 1,
           originalLineNumber: "1",
-          originalSku: "SKU-1",
-          description: "Item one",
+          originalSku: "PARENT-A",
+          description: "Parent A",
           quantity: 2,
           originalCells: { A: "1" },
           status: "priced" as const,
-          acceptedSku: "SKU-1",
-          decisionStatus: "accepted" as const,
+          acceptedSku: "PARENT-A",
           amounts: {
             currency: "SAR" as const,
             quantity: 2,
@@ -528,29 +561,35 @@ describe("buildPricedBoqArtifactPayload", () => {
       },
     };
     const payload = buildPricedBoqArtifactPayload({
-      normalizedBoqArtifact: normalized,
-      skuResolutionArtifact: sku,
+      configurationExpansionArtifact: expansionArt,
+      sourceNormalizedBoqArtifactId: NORMALIZED_ID,
+      sourceNormalizedBoqArtifactVersion: NORMALIZED_VERSION,
+      sourceSkuResolutionArtifactId: SKU_ID,
+      sourceSkuResolutionArtifactVersion: SKU_VERSION,
       pricingConfig: cfg,
-      unitListPriceSarBySku: { "SKU-1": sar(100) },
+      unitListPriceSarBySku: { "PARENT-A": sar(100) },
       draft,
     });
+    expect(payload.sourceConfigurationExpansionArtifactId).toBe(EXPANSION_ID);
+    expect(payload.sourceConfigurationExpansionArtifactVersion).toBe(EXPANSION_VERSION);
+    expect(payload.sourceNormalizedBoqArtifactId).toBe(NORMALIZED_ID);
+    expect(payload.sourceSkuResolutionArtifactId).toBe(SKU_ID);
     expect(payload.sourceFileIds).toEqual(["f1", "f2"]);
     expect(payload.lineCount).toBe(1);
     expect(payload.lines[0]).not.toBe(draft.lines[0]);
     expect(payload.lines[0].originalCells).not.toBe(draft.lines[0].originalCells);
     expect(payload.lines[0].amounts).not.toBe(draft.lines[0].amounts);
     expect(payload.summary.totals).not.toBe(draft.summary.totals);
-    expect(payload.unitListPriceSarBySku["SKU-1"]).toEqual(sar(100));
+    expect(payload.unitListPriceSarBySku["PARENT-A"]).toEqual(sar(100));
   });
 });
 
 describe("module isolation & surface", () => {
-  const source = readFileSync(
-    join(process.cwd(), "src/lib/projects/priced-boq-artifact.ts"),
-    "utf8"
-  );
+  const MODULE_PATH = join(process.cwd(), "src/lib/projects/priced-boq-artifact.ts");
+  const TEST_PATH = join(process.cwd(), "tests/lib/projects/priced-boq-artifact.test.ts");
+  const source = readFileSync(MODULE_PATH, "utf8");
 
-  it("does not import DB schema/index, catalog, approvals, staleness, engines, AI, the Cisco adapter, or API/UI", () => {
+  it("does not import DB schema/index, catalog, approvals, staleness, engines, AI, Mantle/export, the Cisco adapter, or API/UI", () => {
     // Inspect import statements only - the docstring legitimately names these
     // domains to declare what the module deliberately omits. The artifact-store
     // repository is the one allowed DB import.
@@ -565,6 +604,8 @@ describe("module isolation & surface", () => {
       "catalog",
       "approval",
       "staleness",
+      "mantle",
+      "export",
       "@/engines",
       "@/coordinator",
       "@/lib/agent",
@@ -582,5 +623,16 @@ describe("module isolation & surface", () => {
     expect(Object.keys(service).sort()).toEqual(
       ["buildPricedBoqArtifactPayload", "createPricedBoqArtifact"].sort()
     );
+  });
+
+  it("keeps the module source ASCII-only", () => {
+    // eslint-disable-next-line no-control-regex
+    expect(/[^\x00-\x7F]/.test(source)).toBe(false);
+  });
+
+  it("keeps this test source ASCII-only", () => {
+    const testSource = readFileSync(TEST_PATH, "utf8");
+    // eslint-disable-next-line no-control-regex
+    expect(/[^\x00-\x7F]/.test(testSource)).toBe(false);
   });
 });
