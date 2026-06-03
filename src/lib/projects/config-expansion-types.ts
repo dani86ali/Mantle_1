@@ -139,18 +139,40 @@ export interface ConfigExpansionRulePack {
 /**
  * One line in a configuration-expansion draft / accepted expanded BoM. Preserved
  * customer lines (`origin: "customer"`) and auto-added expansion lines
- * (`origin: "expansion"`) share this shape; an expansion line nests under the
- * customer line it expands via `parentLineNumber`. Auto-added lines carry their
- * `sourceRuleId` and evidence for traceability, and an approval gate where options
- * exist. No pricing fields. (section 11A.3, section 11A.4)
+ * (`origin: "expansion"`) share this shape. Every line carries a within-draft
+ * `lineId`; an expansion line nests under the customer line it expands via
+ * `parentLineId` (and, for readability, the parent's `parentLineNumber`). A
+ * preserved customer line keeps its source identity (file/sheet/row, original
+ * line number, original and human-accepted SKU, original cells) so the draft
+ * traces back to the uploaded BoQ. Auto-added lines carry their `sourceRuleId`
+ * and evidence for traceability, and an approval gate because engineer review is
+ * still required. No pricing fields. (section 11A.3, section 11A.4)
  */
 export interface ConfigurationExpansionDraftLine {
+  /** Stable within-draft identity; expansion lines reference it as parentLineId. */
+  lineId: string;
   /** Whether this is a preserved customer line or an auto-added expansion line. */
   origin: "customer" | "expansion";
   sku: string;
   description: string;
   quantity: number;
-  /** Customer line number this line belongs/nests under, when applicable. */
+  /** Source file behind a preserved customer line. */
+  sourceFileId?: string;
+  /** Source worksheet behind a preserved customer line. */
+  sourceSheetName?: string;
+  /** 1-based source row behind a preserved customer line. */
+  sourceRowNumber?: number;
+  /** Customer line number as it appeared in the uploaded BoQ. */
+  originalLineNumber?: string;
+  /** The customer line's own SKU (customer evidence), for a preserved line. */
+  originalSku?: string;
+  /** Human-accepted SKU for a preserved customer line, when one was accepted. */
+  acceptedSku?: string;
+  /** Verbatim source cells preserved from the customer line. */
+  originalCells?: Record<string, string>;
+  /** `lineId` of the customer line an expansion line nests under. */
+  parentLineId?: string;
+  /** Customer line number an expansion line nests under, when applicable. */
   parentLineNumber?: string;
   /** Role under the parent, for expansion lines. */
   relationshipType?: ConfigExpansionRelationshipType;

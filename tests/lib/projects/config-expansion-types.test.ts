@@ -97,10 +97,12 @@ const RULE_PACK = {
 } satisfies ConfigExpansionRulePack;
 
 const DRAFT_LINE: ConfigurationExpansionDraftLine = {
+  lineId: "line-1-x1",
   origin: "expansion",
   sku: "PWR-C1-1100WAC-P",
   description: "1100W AC 80+ platinum Config 1 Power Supply",
   quantity: 7,
+  parentLineId: "line-1",
   parentLineNumber: "3",
   relationshipType: "included_zero_price",
   quantityRule: "same_as_parent",
@@ -131,10 +133,17 @@ const PAYLOAD = {
   lineCount: 2,
   lines: [
     {
+      lineId: "line-1",
       origin: "customer",
       sku: "C9300X-48HX-A",
       description: "Catalyst 9300 48-port mGig UPoE+, Network Advantage",
       quantity: 7,
+      sourceFileId: "file-1",
+      sourceRowNumber: 13,
+      originalLineNumber: "3",
+      originalSku: "C9300X-48HX-A",
+      acceptedSku: "C9300X-48HX-A",
+      originalCells: { "#": "3", "Part Number": "C9300X-48HX-A" },
     },
     DRAFT_LINE,
   ],
