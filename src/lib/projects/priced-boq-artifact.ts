@@ -41,10 +41,12 @@ const RULE_PACK_NOT_APPROVED_MESSAGE = "Configuration expansion artifact require
  * so it carries an implicit index signature assignable to the repository payload.
  */
 export type PricedBoqArtifactPayload = {
-  // Optional only so the frozen Mantle model's payload fixtures stay valid; the
-  // single producer (createPricedBoqArtifact) always populates both.
-  sourceConfigurationExpansionArtifactId?: string;
-  sourceConfigurationExpansionArtifactVersion?: number;
+  // The accepted configuration_expansion artifact this priced expanded BoM was
+  // produced from (pricing's input authority; section 11A, section 19 task 8j).
+  // Required: the single producer (createPricedBoqArtifact) always populates both,
+  // and Mantle export consumes the accepted priced expanded BoM shape explicitly.
+  sourceConfigurationExpansionArtifactId: string;
+  sourceConfigurationExpansionArtifactVersion: number;
   /** Upstream provenance copied from the configuration_expansion payload. */
   sourceNormalizedBoqArtifactId: string;
   sourceNormalizedBoqArtifactVersion: number;

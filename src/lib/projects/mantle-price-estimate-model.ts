@@ -3,7 +3,15 @@
  * a deterministic "Mantle Price Estimate" row model for a later ExcelJS template
  * writer to consume. Source of truth:
  * C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md (10. Priced Output
- * Contract - Mantle is the structural template).
+ * Contract - Mantle is the structural template; 11A.3, 19 task 8k).
+ *
+ * The priced_boq payload is the accepted priced EXPANDED BoM: it was produced by
+ * pricing the accepted configuration_expansion artifact's acceptedLines, so each
+ * row is either a preserved customer line or an accepted expansion child line, in
+ * customer-then-children order. These rows carry no sourceFormat (that is a
+ * normalized_boq field), and a child line is already priced by the orderable SKU
+ * on its own priced line - this mapper never re-resolves SKUs or re-prices. The
+ * optional parentLineNumber is copied through as trace metadata only.
  *
  * PURE: type-only imports from the priced-BoQ helper and artifact service; no
  * runtime imports at all (no exceljs, DB store, catalog/SKU service, approvals,
@@ -39,6 +47,8 @@ export interface MantlePriceEstimateRow {
   sourceSheetName?: string;
   sourceRowNumber: number;
   originalLineNumber: string;
+  /** Parent customer line number for an accepted expansion child; trace only, not written to the workbook yet. */
+  parentLineNumber?: string;
   originalSku: string;
   acceptedSku?: string;
   status: PricedBoqLineStatus;
@@ -122,6 +132,7 @@ function mapRow(
     ...(line.sourceSheetName !== undefined ? { sourceSheetName: line.sourceSheetName } : {}),
     sourceRowNumber: line.sourceRowNumber,
     originalLineNumber: line.originalLineNumber,
+    ...(line.parentLineNumber !== undefined ? { parentLineNumber: line.parentLineNumber } : {}),
     originalSku: line.originalSku,
     ...(line.acceptedSku !== undefined ? { acceptedSku: line.acceptedSku } : {}),
     status: line.status,
