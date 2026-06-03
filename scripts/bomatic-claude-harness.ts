@@ -498,6 +498,7 @@ async function runClaudeTurn(
     options.agent,
     "--dangerously-skip-permissions",
     "--print",
+    "--verbose",
     "--output-format",
     "stream-json",
     isFirstTurn ? "--session-id" : "--resume",
