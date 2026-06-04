@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildBomaticReviewSummary,
   evaluateGuardrails,
   normalizeRepoPath,
   parseVerifierVerdict,
@@ -84,6 +85,32 @@ describe("bomatic Claude harness guardrails", () => {
     });
     expect(report.status).toBe("stop");
     expect(report.findings.map((finding) => finding.code)).toContain("runtime_ai_boundary");
+  });
+});
+
+describe("bomatic Claude harness review summary", () => {
+  it("builds a BOMATIC #3 handoff instead of a harness decision", () => {
+    const report = evaluateGuardrails(passingBase);
+    const summary = buildBomaticReviewSummary({
+      promptNumber: "42",
+      runDir: "C:\\tmp\\bomatic-runs\\prompt-042",
+      sessionId: "11111111-1111-1111-1111-111111111111",
+      turnIndex: 0,
+      changedFiles: ["tests/lib/projects/mantle-export-artifact-workbook.test.ts"],
+      guardReport: report,
+      gitStatus: "?? tests/lib/projects/mantle-export-artifact-workbook.test.ts\n",
+      gitDiffStat: " tests/lib/projects/mantle-export-artifact-workbook.test.ts | 10 ++++++++++\n",
+      claudeExitCode: 0,
+      typecheckExitCode: 0,
+      testsExitCode: 0,
+    });
+
+    expect(summary).toContain("Prompt 42 Harness Review For BOMATIC #3");
+    expect(summary).toContain("BOMATIC #3 decides");
+    expect(summary).toContain("verdict");
+    expect(summary).toContain("cleanupPrompt");
+    expect(summary).toContain("tests/lib/projects/mantle-export-artifact-workbook.test.ts");
+    expect(summary).toContain("localGuardReport: pass (evidence only; BOMATIC #3 is the reviewer)");
   });
 });
 

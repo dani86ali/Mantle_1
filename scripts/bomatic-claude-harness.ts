@@ -43,6 +43,20 @@ export interface GuardrailInput {
   allowDependencyChanges?: boolean;
 }
 
+export interface BuildBomaticReviewSummaryInput {
+  promptNumber: string;
+  runDir: string;
+  sessionId: string;
+  turnIndex: number;
+  changedFiles: string[];
+  guardReport: GuardrailReport;
+  gitStatus: string;
+  gitDiffStat: string;
+  claudeExitCode: number;
+  typecheckExitCode: number | null;
+  testsExitCode: number | null;
+}
+
 interface CommandResult {
   command: string;
   exitCode: number;
@@ -284,6 +298,85 @@ function renderCommandResult(result: CommandResult): string {
     "",
     "STDERR:",
     result.stderr,
+    "",
+  ].join("\n");
+}
+
+function commandStatus(exitCode: number | null): string {
+  if (exitCode === null) return "skipped";
+  return exitCode === 0 ? "pass" : `fail (${exitCode})`;
+}
+
+function bulletList(values: string[]): string {
+  if (values.length === 0) return "- none";
+  return values.map((value) => `- ${value}`).join("\n");
+}
+
+export function buildBomaticReviewSummary(input: BuildBomaticReviewSummaryInput): string {
+  const findings =
+    input.guardReport.findings.length === 0
+      ? "- none"
+      : input.guardReport.findings
+          .map((finding) => {
+            const pathSuffix = finding.paths && finding.paths.length > 0 ? ` Paths: ${finding.paths.join(", ")}` : "";
+            return `- ${finding.severity}: ${finding.code} - ${finding.message}${pathSuffix}`;
+          })
+          .join("\n");
+
+  return [
+    `# Prompt ${input.promptNumber} Harness Review For BOMATIC #3`,
+    "",
+    "Paste this summary into BOMATIC #3. The harness is only the Claude executor and evidence collector here; BOMATIC #3 decides whether the run is complete, needs cleanup in the same Claude session, or must stop.",
+    "",
+    "Required BOMATIC #3 verdict JSON:",
+    "",
+    "```json",
+    JSON.stringify(
+      {
+        verdict: "commit | cleanup | stop",
+        commitMessage: "Required only when verdict is commit.",
+        cleanupPrompt: "Required only when verdict is cleanup. Harness must send it to the same Claude session.",
+        reason: "Required.",
+        warnings: [],
+      },
+      null,
+      2
+    ),
+    "```",
+    "",
+    "Run evidence:",
+    `- runDir: ${input.runDir}`,
+    `- claudeSessionId: ${input.sessionId}`,
+    `- turnIndex: ${input.turnIndex}`,
+    `- claudeExit: ${input.claudeExitCode === 0 ? "pass" : `fail (${input.claudeExitCode})`}`,
+    `- typecheck: ${commandStatus(input.typecheckExitCode)}`,
+    `- tests: ${commandStatus(input.testsExitCode)}`,
+    `- localGuardReport: ${input.guardReport.status} (evidence only; BOMATIC #3 is the reviewer)`,
+    "",
+    "Changed files:",
+    bulletList(input.changedFiles),
+    "",
+    "Guard findings:",
+    findings,
+    "",
+    "Git status:",
+    "",
+    "```text",
+    input.gitStatus.trim() || "(clean)",
+    "```",
+    "",
+    "Git diff stat:",
+    "",
+    "```text",
+    input.gitDiffStat.trim() || "(no diff)",
+    "```",
+    "",
+    "Review these artifacts before deciding:",
+    "- claude-transcript.txt",
+    "- git-diff.patch",
+    "- typecheck.log",
+    "- tests.log",
+    "- guard-report.json",
     "",
   ].join("\n");
 }
@@ -598,6 +691,32 @@ async function writeVerifierRequest(runDir: string, report: GuardrailReport): Pr
   );
 }
 
+async function writeBomaticReviewSummary(
+  options: HarnessOptions,
+  runDir: string,
+  sessionId: string,
+  turnIndex: number,
+  report: GuardrailReport,
+  snapshot: GitSnapshot,
+  claude: CommandResult,
+  checks: { typecheckExitCode: number | null; testsExitCode: number | null }
+): Promise<void> {
+  const summary = buildBomaticReviewSummary({
+    promptNumber: options.promptNumber,
+    runDir,
+    sessionId,
+    turnIndex,
+    changedFiles: snapshot.changedFiles,
+    guardReport: report,
+    gitStatus: snapshot.status.stdout,
+    gitDiffStat: snapshot.diffStat.stdout,
+    claudeExitCode: claude.exitCode,
+    typecheckExitCode: checks.typecheckExitCode,
+    testsExitCode: checks.testsExitCode,
+  });
+  await writeText(path.join(runDir, "bomatic-review-summary.md"), summary);
+}
+
 async function getVerifierVerdict(
   options: HarnessOptions,
   runDir: string,
@@ -717,6 +836,12 @@ async function runOne(options: HarnessOptions): Promise<"committed" | "awaiting_
       allowDependencyChanges: options.allowDependencyChanges,
     });
     await writeJson(path.join(runDir, "guard-report.json"), report);
+    await writeBomaticReviewSummary(options, runDir, sessionId, turnIndex, report, after, claude, checks);
+
+    if (!options.verifierCommand) {
+      await writeVerifierRequest(runDir, report);
+      return "awaiting_verifier";
+    }
 
     if (report.status === "stop") {
       const hardStops = report.findings.filter((finding) => finding.severity === "hard_stop");
@@ -871,7 +996,8 @@ function usage(): string {
     "  --test-command <command>         Defaults to npm test.",
     "  --skip-typecheck | --skip-tests  Capture skip logs instead of running checks.",
     "",
-    "Commit happens only when local guardrails pass and verifier JSON says commit.",
+    "Default behavior writes bomatic-review-summary.md for BOMATIC #3 and exits awaiting review.",
+    "Commit happens only when an explicit verifier command returns JSON verdict commit.",
   ].join("\n");
 }
 
