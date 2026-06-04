@@ -75,6 +75,7 @@ describe("bomatic reviewer prompt", () => {
     const prompt = buildReviewerPrompt({
       repoDir: "C:\\Pre-Sales\\bomatic",
       runDir: "C:\\tmp\\bomatic-runs\\prompt-044",
+      background: "Project-centered architecture. Runtime processing must be deterministic.",
       artifacts: {
         "bomatic-review-summary.md": "localGuardReport: pass",
         "git-diff.patch": "diff --git a/file b/file",
@@ -82,6 +83,8 @@ describe("bomatic reviewer prompt", () => {
     });
 
     expect(prompt).toContain("You are BOMATIC #3");
+    expect(prompt).toContain("BOMATIC Reviewer Background Pack");
+    expect(prompt).toContain("Runtime processing must be deterministic");
     expect(prompt).toContain("Return only one JSON object");
     expect(prompt).toContain("verdict");
     expect(prompt).toContain("cleanupPrompt");

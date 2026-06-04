@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,6 +18,7 @@ export interface ReviewerVerdict {
 export interface BuildReviewerPromptInput {
   repoDir: string;
   runDir: string;
+  background: string;
   artifacts: Record<string, string>;
 }
 
@@ -32,6 +34,7 @@ interface ReviewerOptions {
   repoDir: string;
   runDir: string;
   codexCommand: string;
+  backgroundFile: string;
   model?: string;
   profile?: string;
   timeoutMs: number;
@@ -41,6 +44,10 @@ interface ReviewerOptions {
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_FILE_CHARS = 180_000;
+const DEFAULT_BACKGROUND_FILE =
+  process.platform === "win32"
+    ? "C:\\tmp\\bomatic-reviewer-background.md"
+    : path.join(os.tmpdir(), "bomatic-reviewer-background.md");
 
 const REVIEW_ARTIFACTS = [
   "bomatic-review-summary.md",
@@ -134,6 +141,14 @@ export function buildReviewerPrompt(input: BuildReviewerPromptInput): string {
     "",
     `Repo: ${input.repoDir}`,
     `Harness run directory: ${input.runDir}`,
+    "",
+    "Durable BOMATIC reviewer background follows. Treat it as feedforward context, then review the run artifacts below.",
+    "",
+    "## BOMATIC Reviewer Background Pack",
+    "",
+    "```text",
+    input.background.trimEnd(),
+    "```",
     "",
     "Return only one JSON object matching this schema. Include every key; use an empty string for commitMessage or cleanupPrompt when the field is not applicable.",
     "",
@@ -283,10 +298,14 @@ async function writeText(filePath: string, value: string): Promise<void> {
 }
 
 async function runReviewer(options: ReviewerOptions): Promise<ReviewerVerdict> {
+  const background = existsSync(options.backgroundFile)
+    ? await readFile(options.backgroundFile, "utf8")
+    : `(missing background file: ${options.backgroundFile})`;
   const artifacts = await collectArtifacts(options.runDir, options.maxFileChars);
   const prompt = buildReviewerPrompt({
     repoDir: options.repoDir,
     runDir: options.runDir,
+    background,
     artifacts,
   });
 
@@ -295,6 +314,7 @@ async function runReviewer(options: ReviewerOptions): Promise<ReviewerVerdict> {
   const lastMessagePath = path.join(options.runDir, "bomatic-reviewer-last-message.txt");
   const logPath = path.join(options.runDir, "bomatic-reviewer-codex.log");
   await writeText(promptPath, prompt);
+  await writeText(path.join(options.runDir, "bomatic-reviewer-background.snapshot.md"), background);
   await writeText(schemaPath, `${JSON.stringify(VERDICT_SCHEMA, null, 2)}\n`);
 
   if (options.dryRun) {
@@ -369,6 +389,7 @@ function optionsFromArgs(args: string[]): ReviewerOptions {
     repoDir: path.resolve(readOption(args, "--repo") ?? process.cwd()),
     runDir: path.resolve(runDir),
     codexCommand: readOption(args, "--codex-command") ?? "codex",
+    backgroundFile: path.resolve(readOption(args, "--background-file") ?? DEFAULT_BACKGROUND_FILE),
     model: readOption(args, "--model"),
     profile: readOption(args, "--profile"),
     timeoutMs: parseNumberOption(args, "--timeout-ms", DEFAULT_TIMEOUT_MS),
@@ -387,6 +408,7 @@ function usage(): string {
     "",
     "Options:",
     "  --repo <dir>             Repo directory. Defaults to cwd.",
+    "  --background-file <file>  Reviewer background pack. Defaults to C:\\tmp\\bomatic-reviewer-background.md on Windows.",
     "  --model <model>          Optional Codex model override.",
     "  --profile <profile>      Optional Codex config profile.",
     "  --timeout-ms <ms>        Reviewer timeout. Defaults to 30 minutes.",
