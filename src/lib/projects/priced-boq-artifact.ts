@@ -34,6 +34,9 @@ import type { ProjectArtifact, ProjectPricingConfig } from "@/types/project";
 const MISSING_EXPANSION_MESSAGE = "Configuration expansion artifact not found.";
 const WRONG_EXPANSION_TYPE_MESSAGE = "Artifact is not a configuration_expansion artifact.";
 const INVALID_EXPANSION_PAYLOAD_MESSAGE = "Configuration expansion artifact payload is invalid.";
+// Distinct gates: this proves Project approval of the source artifact version
+// (section 16); RULE_PACK_NOT_APPROVED proves rule authority (section 11A).
+const EXPANSION_NOT_APPROVED_MESSAGE = "Configuration expansion artifact must be approved before pricing.";
 const RULE_PACK_NOT_APPROVED_MESSAGE = "Configuration expansion artifact requires an approved rule pack.";
 
 /**
@@ -188,9 +191,11 @@ function parseConfigurationExpansionPayload(
 /**
  * Persist a priced BoQ as a new `priced_boq` artifact version: load exactly one
  * `configuration_expansion` artifact (exact missing/wrong-type/invalid-payload
- * messages), require its rule pack to be approved, price its acceptedLines only
- * (bubbling pricing helper errors unchanged, before any artifact exists), and create
- * exactly one `needs_review` artifact whose single source artifact is the
+ * messages), require it to be approved in the canonical Project model
+ * (`status === "approved"`, section 16) AND require its rule pack to be approved
+ * (section 11A) - two distinct gates - then price its acceptedLines only (bubbling
+ * pricing helper errors unchanged, before any artifact exists), and create exactly
+ * one `needs_review` artifact whose single source artifact is the
  * configuration_expansion artifact. No mutation.
  */
 export async function createPricedBoqArtifact(
@@ -206,6 +211,11 @@ export async function createPricedBoqArtifact(
   if (!configurationExpansionArtifact) throw new Error(MISSING_EXPANSION_MESSAGE);
   if (configurationExpansionArtifact.type !== "configuration_expansion") {
     throw new Error(WRONG_EXPANSION_TYPE_MESSAGE);
+  }
+  // Project-approval gate: the source artifact version must be approved before pricing.
+  // Separate from the rule-pack gate below (rule authority, not Project approval).
+  if (configurationExpansionArtifact.status !== "approved") {
+    throw new Error(EXPANSION_NOT_APPROVED_MESSAGE);
   }
   const parsed = parseConfigurationExpansionPayload(configurationExpansionArtifact.payload);
   if (parsed.rulePackStatus !== "approved") throw new Error(RULE_PACK_NOT_APPROVED_MESSAGE);

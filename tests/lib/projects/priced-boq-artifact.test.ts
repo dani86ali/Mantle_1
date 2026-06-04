@@ -137,7 +137,9 @@ function expansionArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArt
     projectId: PROJECT,
     stageId: "configuration_expansion_review",
     type: "configuration_expansion",
-    status: "needs_review",
+    // Pricing consumes only an approved source artifact (Project approval gate);
+    // happy-path fixtures use an approved configuration_expansion artifact.
+    status: "approved",
     version: EXPANSION_VERSION,
     payload: expansionPayload(),
     sourceFileIds: [FILE_ID],
@@ -233,6 +235,29 @@ describe("createPricedBoqArtifact - guards", () => {
       mockArtifact(expansionArtifact({ payload }));
       await expect(createPricedBoqArtifact(input())).rejects.toThrow(
         "Configuration expansion artifact payload is invalid."
+      );
+    }
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects every non-approved source artifact status before pricing", async () => {
+    // Project-approval gate (section 16): pricing is blocked unless the source
+    // configuration_expansion artifact version is approved. The default payload here
+    // carries an APPROVED rule pack, so it is the artifact status - not rule authority -
+    // that fails, and it fails before any priced_boq artifact is created.
+    const nonApproved = [
+      "generated",
+      "needs_review",
+      "rejected",
+      "stale",
+      "failed",
+      "missing",
+      "not_applicable",
+    ] as const;
+    for (const status of nonApproved) {
+      mockArtifact(expansionArtifact({ status }));
+      await expect(createPricedBoqArtifact(input())).rejects.toThrow(
+        "Configuration expansion artifact must be approved before pricing."
       );
     }
     expect(createMock).not.toHaveBeenCalled();
