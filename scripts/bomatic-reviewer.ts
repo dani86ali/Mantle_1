@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,8 +8,8 @@ export type ReviewerVerdictValue = "commit" | "cleanup" | "stop";
 
 export interface ReviewerVerdict {
   verdict: ReviewerVerdictValue;
-  commitMessage?: string;
-  cleanupPrompt?: string;
+  commitMessage: string;
+  cleanupPrompt: string;
   reason: string;
   warnings: string[];
 }
@@ -20,6 +19,17 @@ export interface BuildReviewerPromptInput {
   runDir: string;
   background: string;
   artifacts: Record<string, string>;
+  manifest: ArtifactManifestEntry[];
+  planningFile: string;
+}
+
+export interface ArtifactManifestEntry {
+  name: string;
+  path: string;
+  missing: boolean;
+  truncated: boolean;
+  originalChars: number;
+  includedChars: number;
 }
 
 interface CommandResult {
@@ -35,6 +45,7 @@ interface ReviewerOptions {
   runDir: string;
   codexCommand: string;
   backgroundFile: string;
+  planningFile: string;
   model?: string;
   profile?: string;
   timeoutMs: number;
@@ -44,13 +55,15 @@ interface ReviewerOptions {
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_FILE_CHARS = 180_000;
-const DEFAULT_BACKGROUND_FILE =
-  process.platform === "win32"
-    ? "C:\\tmp\\bomatic-reviewer-background.md"
-    : path.join(os.tmpdir(), "bomatic-reviewer-background.md");
+const DEFAULT_BACKGROUND_FILE = path.join(
+  "docs",
+  "automation",
+  "bomatic-reviewer-background.md"
+);
 
 const REVIEW_ARTIFACTS = [
   "bomatic-review-summary.md",
+  "planning-source.md",
   "prompt.md",
   "guard-report.json",
   "changed-files.txt",
@@ -61,6 +74,18 @@ const REVIEW_ARTIFACTS = [
   "tests.log",
   "claude-transcript.txt",
 ] as const;
+
+const CRITICAL_ARTIFACTS = new Set<string>([
+  "planning-source.md",
+  "prompt.md",
+  "guard-report.json",
+  "changed-files.txt",
+  "git-status.txt",
+  "git-diff-stat.txt",
+  "git-diff.patch",
+  "typecheck.log",
+  "tests.log",
+]);
 
 const VERDICT_SCHEMA = {
   type: "object",
@@ -107,20 +132,87 @@ function truncate(value: string, maxChars: number): string {
   ].join("\n");
 }
 
-async function readArtifact(runDir: string, name: string, maxChars: number): Promise<string> {
+async function readArtifact(
+  runDir: string,
+  name: string,
+  maxChars: number
+): Promise<{ content: string; manifest: ArtifactManifestEntry }> {
   const filePath = path.join(runDir, name);
-  if (!existsSync(filePath)) return "(missing)";
-  return truncate(await readFile(filePath, "utf8"), maxChars);
+  if (!existsSync(filePath)) {
+    return {
+      content: "(missing)",
+      manifest: {
+        name,
+        path: filePath,
+        missing: true,
+        truncated: false,
+        originalChars: 0,
+        includedChars: 0,
+      },
+    };
+  }
+  const raw = await readFile(filePath, "utf8");
+  const content = truncate(raw, maxChars);
+  return {
+    content,
+    manifest: {
+      name,
+      path: filePath,
+      missing: false,
+      truncated: raw.length > maxChars,
+      originalChars: raw.length,
+      includedChars: content.length,
+    },
+  };
 }
 
-async function collectArtifacts(runDir: string, maxChars: number): Promise<Record<string, string>> {
-  const entries = await Promise.all(
-    REVIEW_ARTIFACTS.map(async (name) => [name, await readArtifact(runDir, name, maxChars)] as const)
+async function collectArtifacts(
+  runDir: string,
+  maxChars: number
+): Promise<{ artifacts: Record<string, string>; manifest: ArtifactManifestEntry[] }> {
+  const results = await Promise.all(
+    REVIEW_ARTIFACTS.map(async (name) => {
+      const result = await readArtifact(runDir, name, maxChars);
+      return [name, result] as const;
+    })
   );
-  return Object.fromEntries(entries);
+  return {
+    artifacts: Object.fromEntries(results.map(([name, result]) => [name, result.content])),
+    manifest: results.map(([, result]) => result.manifest),
+  };
+}
+
+function stopVerdict(reason: string, warnings: string[] = []): ReviewerVerdict {
+  return { verdict: "stop", commitMessage: "", cleanupPrompt: "", reason, warnings };
+}
+
+export function validateEvidenceManifest(manifest: ArtifactManifestEntry[]): string[] {
+  const failures: string[] = [];
+  const seen = new Set(manifest.map((item) => item.name));
+  for (const artifactName of Array.from(CRITICAL_ARTIFACTS)) {
+    if (!seen.has(artifactName)) failures.push(`${artifactName} is absent from the artifact manifest.`);
+  }
+  for (const item of manifest) {
+    if (!CRITICAL_ARTIFACTS.has(item.name)) continue;
+    if (item.missing) failures.push(`${item.name} is missing.`);
+    if (item.truncated) failures.push(`${item.name} is truncated.`);
+  }
+  return failures;
 }
 
 export function buildReviewerPrompt(input: BuildReviewerPromptInput): string {
+  const manifestText = input.manifest
+    .map((item) =>
+      [
+        `- ${item.name}`,
+        `  path: ${item.path}`,
+        `  missing: ${item.missing}`,
+        `  truncated: ${item.truncated}`,
+        `  originalChars: ${item.originalChars}`,
+        `  includedChars: ${item.includedChars}`,
+      ].join("\n")
+    )
+    .join("\n");
   const artifactSections = Object.entries(input.artifacts)
     .map(
       ([name, content]) => [
@@ -141,6 +233,7 @@ export function buildReviewerPrompt(input: BuildReviewerPromptInput): string {
     "",
     `Repo: ${input.repoDir}`,
     `Harness run directory: ${input.runDir}`,
+    `Planning source of truth: ${input.planningFile}`,
     "",
     "Durable BOMATIC reviewer background follows. Treat it as feedforward context, then review the run artifacts below.",
     "",
@@ -167,7 +260,9 @@ export function buildReviewerPrompt(input: BuildReviewerPromptInput): string {
     "```",
     "",
     "Verdict rules:",
-    "- Use commit only when the prompt is actually complete, the changed files are scoped, typecheck/tests pass or are intentionally skipped with a defensible reason, and the architecture boundaries are respected.",
+    "- Use commit only when the prompt is actually complete, the changed files are scoped, required typecheck/tests pass, and the architecture boundaries are respected.",
+    "- Do not commit when required verification was skipped unless the prompt explicitly allowed the skip and the diff is clearly docs/test-only or otherwise low risk.",
+    "- Do not commit if a critical artifact is missing/truncated unless you independently inspect the full source from the run directory or repo and explain why the truncation is irrelevant.",
     "- Use cleanup when the same Claude session can fix the issue with a narrow follow-up. The cleanupPrompt must be pasteable directly to Claude and must say not to commit.",
     "- Use stop for forbidden path changes, stash changes, Claude-created commits, unscoped/dependency changes, architecture boundary violations, runtime AI/catalog/pricing/config decisions where forbidden, or anything that needs human intervention.",
     "- Commit messages should be concise conventional commits.",
@@ -182,6 +277,12 @@ export function buildReviewerPrompt(input: BuildReviewerPromptInput): string {
     "- Do not allow stc-knowledge/ or .claude/settings.local.json changes.",
     "",
     "Evidence follows.",
+    "",
+    "## Artifact Manifest",
+    "",
+    "```text",
+    manifestText,
+    "```",
     "",
     artifactSections,
   ].join("\n");
@@ -215,24 +316,30 @@ export function parseReviewerVerdict(raw: string): ReviewerVerdict {
     throw new Error("Reviewer verdict requires a non-empty reason.");
   }
 
-  const commitMessage = typeof value.commitMessage === "string" ? value.commitMessage.trim() : undefined;
-  const cleanupPrompt = typeof value.cleanupPrompt === "string" ? value.cleanupPrompt.trim() : undefined;
+  if (typeof value.commitMessage !== "string") {
+    throw new Error("Reviewer verdict requires commitMessage string.");
+  }
+  if (typeof value.cleanupPrompt !== "string") {
+    throw new Error("Reviewer verdict requires cleanupPrompt string.");
+  }
+  if (!Array.isArray(value.warnings) || !value.warnings.every((warning) => typeof warning === "string")) {
+    throw new Error("Reviewer verdict warnings must be an array of strings.");
+  }
+  const commitMessage = value.commitMessage.trim();
+  const cleanupPrompt = value.cleanupPrompt.trim();
   if (verdict === "commit" && !commitMessage) {
     throw new Error("Commit verdict requires commitMessage.");
   }
   if (verdict === "cleanup" && !cleanupPrompt) {
     throw new Error("Cleanup verdict requires cleanupPrompt.");
   }
-  const warnings = Array.isArray(value.warnings)
-    ? value.warnings.filter((warning): warning is string => typeof warning === "string")
-    : [];
 
   return {
     verdict,
     reason,
-    warnings,
-    ...(commitMessage ? { commitMessage } : {}),
-    ...(cleanupPrompt ? { cleanupPrompt } : {}),
+    warnings: value.warnings,
+    commitMessage,
+    cleanupPrompt,
   };
 }
 
@@ -298,15 +405,23 @@ async function writeText(filePath: string, value: string): Promise<void> {
 }
 
 async function runReviewer(options: ReviewerOptions): Promise<ReviewerVerdict> {
-  const background = existsSync(options.backgroundFile)
-    ? await readFile(options.backgroundFile, "utf8")
-    : `(missing background file: ${options.backgroundFile})`;
-  const artifacts = await collectArtifacts(options.runDir, options.maxFileChars);
+  if (!existsSync(options.backgroundFile)) {
+    return stopVerdict(`Reviewer background file is missing: ${options.backgroundFile}`);
+  }
+  const background = await readFile(options.backgroundFile, "utf8");
+  const { artifacts, manifest } = await collectArtifacts(options.runDir, options.maxFileChars);
+  const evidenceFailures = validateEvidenceManifest(manifest);
+  if (evidenceFailures.length > 0) {
+    await writeText(path.join(options.runDir, "bomatic-reviewer-artifact-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+    return stopVerdict("Critical reviewer evidence is missing or truncated.", evidenceFailures);
+  }
   const prompt = buildReviewerPrompt({
     repoDir: options.repoDir,
     runDir: options.runDir,
     background,
     artifacts,
+    manifest,
+    planningFile: options.planningFile,
   });
 
   const promptPath = path.join(options.runDir, "bomatic-reviewer-prompt.md");
@@ -315,14 +430,11 @@ async function runReviewer(options: ReviewerOptions): Promise<ReviewerVerdict> {
   const logPath = path.join(options.runDir, "bomatic-reviewer-codex.log");
   await writeText(promptPath, prompt);
   await writeText(path.join(options.runDir, "bomatic-reviewer-background.snapshot.md"), background);
+  await writeText(path.join(options.runDir, "bomatic-reviewer-artifact-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   await writeText(schemaPath, `${JSON.stringify(VERDICT_SCHEMA, null, 2)}\n`);
 
   if (options.dryRun) {
-    return {
-      verdict: "stop",
-      reason: `Dry run wrote reviewer prompt to ${promptPath}.`,
-      warnings: [],
-    };
+    return stopVerdict(`Dry run wrote reviewer prompt to ${promptPath}.`);
   }
 
   const args = [
@@ -333,6 +445,8 @@ async function runReviewer(options: ReviewerOptions): Promise<ReviewerVerdict> {
     options.repoDir,
     "--add-dir",
     options.runDir,
+    "--add-dir",
+    path.dirname(options.planningFile),
     "--sandbox",
     "read-only",
     "--output-schema",
@@ -385,11 +499,16 @@ async function runReviewer(options: ReviewerOptions): Promise<ReviewerVerdict> {
 function optionsFromArgs(args: string[]): ReviewerOptions {
   const runDir = readOption(args, "--run-dir") ?? process.env.BOMATIC_RUN_DIR;
   if (!runDir) throw new Error("--run-dir is required, or set BOMATIC_RUN_DIR.");
+  const repoDir = path.resolve(readOption(args, "--repo") ?? process.cwd());
   return {
-    repoDir: path.resolve(readOption(args, "--repo") ?? process.cwd()),
+    repoDir,
     runDir: path.resolve(runDir),
     codexCommand: readOption(args, "--codex-command") ?? "codex",
-    backgroundFile: path.resolve(readOption(args, "--background-file") ?? DEFAULT_BACKGROUND_FILE),
+    backgroundFile: path.resolve(repoDir, readOption(args, "--background-file") ?? DEFAULT_BACKGROUND_FILE),
+    planningFile: path.resolve(
+      readOption(args, "--planning-file") ??
+        path.resolve(repoDir, "..", "bomatic_planning", "MVP_CANONICAL_PROJECT_STATE.md")
+    ),
     model: readOption(args, "--model"),
     profile: readOption(args, "--profile"),
     timeoutMs: parseNumberOption(args, "--timeout-ms", DEFAULT_TIMEOUT_MS),
@@ -408,7 +527,8 @@ function usage(): string {
     "",
     "Options:",
     "  --repo <dir>             Repo directory. Defaults to cwd.",
-    "  --background-file <file>  Reviewer background pack. Defaults to C:\\tmp\\bomatic-reviewer-background.md on Windows.",
+    "  --background-file <file>  Reviewer background pack. Defaults to docs\\automation\\bomatic-reviewer-background.md.",
+    "  --planning-file <file>    Planning source. Defaults to ..\\bomatic_planning\\MVP_CANONICAL_PROJECT_STATE.md.",
     "  --model <model>          Optional Codex model override.",
     "  --profile <profile>      Optional Codex config profile.",
     "  --timeout-ms <ms>        Reviewer timeout. Defaults to 30 minutes.",
