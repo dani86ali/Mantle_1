@@ -11,9 +11,12 @@
  * loading, AI decision, stage-status update, staleness propagation, or export work,
  * and imports no engines/schema/AI/pricing/catalog/API/UI code. Only an APPROVED rule
  * pack may be persisted (runtime expansion uses approved rules only); candidate or
- * rejected packs are rejected. Review-helper errors bubble with no artifact created;
- * inputs/sources are never mutated; no pricing fields are added. The artifact is
- * created `needs_review`, NOT approved - approval stays the canonical Project flow.
+ * rejected packs are rejected. The source `sku_resolution` artifact must itself be
+ * approved (section 16) before an accepted expansion is persisted - configuration
+ * expansion depends on human-accepted SKU decisions. Review-helper errors bubble with
+ * no artifact created; inputs/sources are never mutated; no pricing fields are added.
+ * The artifact is created `needs_review`, NOT approved - approval stays the canonical
+ * Project flow.
  */
 import {
   createProjectArtifactVersion,
@@ -38,6 +41,10 @@ const MISSING_SKU_MESSAGE = "SKU resolution artifact not found.";
 const WRONG_SKU_TYPE_MESSAGE = "Artifact is not a sku_resolution artifact.";
 const INVALID_SKU_PAYLOAD_MESSAGE = "SKU resolution artifact payload is invalid.";
 const MISMATCH_MESSAGE = "SKU resolution artifact does not match the normalized BoQ artifact.";
+// Distinct gates: this proves Project approval of the source sku_resolution
+// artifact version (section 16); RULE_PACK_NOT_APPROVED proves rule authority
+// (section 11A).
+const SKU_NOT_APPROVED_MESSAGE = "SKU resolution artifact must be approved before configuration expansion.";
 const RULE_PACK_NOT_APPROVED_MESSAGE = "Configuration expansion artifact requires an approved rule pack.";
 
 /** Input for {@link createConfigurationExpansionArtifact}. Lines/decisions are read-only. */
@@ -150,8 +157,10 @@ export function buildConfigurationExpansionArtifactPayload(
 /**
  * Persist a reviewed/accepted configuration expansion as a new `configuration_expansion`
  * artifact version: load+validate the normalized BoQ and `sku_resolution` artifacts (exact
- * messages, incl. provenance mismatch), require an approved rule pack, apply accept/reject
- * decisions (review-helper errors bubble first), and create one `needs_review` artifact.
+ * messages, incl. provenance mismatch), require the source `sku_resolution` artifact to be
+ * approved in the Project model (section 16) AND require an approved rule pack (section 11A)
+ * - two distinct gates - apply accept/reject decisions (review-helper errors bubble first),
+ * and create one `needs_review` artifact.
  */
 export async function createConfigurationExpansionArtifact(
   input: CreateConfigurationExpansionArtifactInput
@@ -165,6 +174,10 @@ export async function createConfigurationExpansionArtifact(
   const skuResolutionArtifact = await getProjectArtifactById(tenantId, projectId, input.skuResolutionArtifactId);
   if (!skuResolutionArtifact) throw new Error(MISSING_SKU_MESSAGE);
   if (skuResolutionArtifact.type !== "sku_resolution") throw new Error(WRONG_SKU_TYPE_MESSAGE);
+  // Project-approval gate: configuration expansion depends on human-accepted SKU
+  // decisions, so the source sku_resolution artifact version must be approved
+  // (section 16). Separate from the rule-pack gate (section 11A) below.
+  if (skuResolutionArtifact.status !== "approved") throw new Error(SKU_NOT_APPROVED_MESSAGE);
   const provenance = parseSkuProvenance(skuResolutionArtifact.payload);
 
   if (

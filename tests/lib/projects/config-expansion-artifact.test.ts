@@ -128,7 +128,9 @@ function skuArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact 
     projectId: PROJECT,
     stageId: "sku_resolution",
     type: "sku_resolution",
-    status: "generated",
+    // Configuration expansion consumes only an approved sku_resolution artifact
+    // (Project approval gate, section 16); happy-path fixtures use approved.
+    status: "approved",
     version: 2,
     payload: {
       sourceNormalizedBoqArtifactId: NORMALIZED_ID,
@@ -276,6 +278,29 @@ describe("createConfigurationExpansionArtifact - guards", () => {
     await expect(createConfigurationExpansionArtifact(input())).rejects.toThrow(
       "SKU resolution artifact does not match the normalized BoQ artifact."
     );
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects every non-approved sku_resolution artifact status and does not create", async () => {
+    // Project-approval gate (section 16): configuration expansion is blocked unless the
+    // source sku_resolution artifact version is approved. The input carries an APPROVED
+    // rule pack and the fixture provenance matches, so it is the artifact status - not
+    // rule authority or provenance - that fails, before any artifact is created.
+    const nonApproved = [
+      "generated",
+      "needs_review",
+      "rejected",
+      "stale",
+      "failed",
+      "missing",
+      "not_applicable",
+    ] as const;
+    for (const status of nonApproved) {
+      mockArtifacts(normalizedArtifact(), skuArtifact({ status }));
+      await expect(createConfigurationExpansionArtifact(input())).rejects.toThrow(
+        "SKU resolution artifact must be approved before configuration expansion."
+      );
+    }
     expect(createMock).not.toHaveBeenCalled();
   });
 
