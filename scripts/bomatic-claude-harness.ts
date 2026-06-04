@@ -409,6 +409,9 @@ async function runProcess(
     child.stderr?.on("data", (chunk: string) => {
       stderr += chunk;
     });
+    child.stdin?.on("error", (error) => {
+      stderr += `${error instanceof Error ? error.message : String(error)}\n`;
+    });
     child.on("error", (error) => {
       stderr += `${error instanceof Error ? error.message : String(error)}\n`;
     });
@@ -430,10 +433,14 @@ async function runProcess(
       });
     });
 
-    if (options.input !== undefined) {
-      child.stdin?.write(options.input);
+    try {
+      if (options.input !== undefined) {
+        child.stdin?.write(options.input);
+      }
+      child.stdin?.end();
+    } catch (error: unknown) {
+      stderr += `${error instanceof Error ? error.message : String(error)}\n`;
     }
-    child.stdin?.end();
   });
 }
 
@@ -990,7 +997,7 @@ function usage(): string {
     "  --effort <level>                 Claude effort. Defaults to max.",
     "  --agent <agent>                  Claude agent/profile. Defaults to ultracode.",
     "  --allowed-path <path-or-glob>    Repeat for scoped files/directories.",
-    "  --verifier-command <command>     Command that prints verifier JSON to stdout.",
+    "  --verifier-command <command>     Command that prints verifier JSON to stdout, e.g. npx.cmd tsx scripts/bomatic-reviewer.ts.",
     "  --max-cleanups <n>               Cleanup turns in the same Claude session. Defaults to 2.",
     "  --typecheck-command <command>    Defaults to npm run typecheck.",
     "  --test-command <command>         Defaults to npm test.",
