@@ -13,6 +13,12 @@ import type {
   ConfigurationExpansionDraftSummary,
   ConfigurationExpansionReviewSummary,
   ConfigurationExpansionArtifactPayload,
+  ConfigExpansionQuantityModel,
+  ConfigExpansionDuplicatePolicy,
+  ConfigExpansionOptionGroup,
+  ConfigExpansionTermOptionGroup,
+  ConfigExpansionEvidenceScope,
+  ConfigExpansionReplacementCandidate,
 } from "@/lib/projects/config-expansion-types";
 
 /**
@@ -169,6 +175,141 @@ const PAYLOAD = {
 // @ts-expect-error - sourceRuleId and evidence are required on a child rule
 const _CHILD_MISSING_PROVENANCE: ConfigExpansionChildRule = { sku: "X", description: "Y", relationshipType: "subscription", quantityRule: "fixed", includedItem: false, approvalRequired: true, approved: false };
 
+// --- Advanced rule-model contracts (Prompt 49, type-contract-only) ----------
+// These prove the forward-compatible shapes compile. They assert nothing about
+// runtime behavior: no runtime evaluator reads these advanced fields yet.
+
+// All five advanced quantity-model variants compile, including the related-SKU
+// total and the selected-option-count derivations the gap report calls for.
+const QUANTITY_MODELS = [
+  { type: "same_as_parent" },
+  { type: "fixed", value: 5 },
+  { type: "fixed_per_parent", value: 2 },
+  { type: "same_as_related_sku_total", relatedSku: "CW9178I-CFG", scope: "project" },
+  { type: "selected_option_count", optionGroupId: "c9300x-ac-power-supplies" },
+] satisfies ConfigExpansionQuantityModel[];
+
+// A wireless license child derives its quantity from the related access-point SKU
+// total instead of Honeywell's frozen quantity 12. The required v1 quantityRule
+// stays; quantityModel is the additive forward contract.
+const WIRELESS_LICENSE_CHILD = {
+  sku: "LIC-CW-A",
+  description: "Cisco Wireless License - Advantage",
+  relationshipType: "subscription",
+  quantityRule: "fixed",
+  includedItem: false,
+  sourceRuleId: "honeywell-cisco-network-sub",
+  evidence: [CITATION],
+  approvalRequired: true,
+  approved: false,
+  quantityValue: 12,
+  quantityModel: {
+    type: "same_as_related_sku_total",
+    relatedSku: "CW9178I-CFG",
+    scope: "project",
+  },
+  evidenceScope: "reusable_logic",
+  reviewNotes: "Derive from CW9178I-CFG access-point total, not the observed 12.",
+} satisfies ConfigExpansionChildRule;
+
+// A power-cable child derives its quantity from the selected AC power-supply
+// option count rather than a frozen per-parent multiplier of 2.
+const POWER_CABLE_CHILD = {
+  sku: "CAB-C15-CBN",
+  description: "Cabinet Jumper Power Cord, 250 VAC 13A, C14-C15 Connectors",
+  relationshipType: "default_selected",
+  quantityRule: "fixed_per_parent",
+  includedItem: false,
+  sourceRuleId: "honeywell-c9300x-48hx-a",
+  evidence: [CITATION],
+  approvalRequired: true,
+  approved: false,
+  quantityValue: 2,
+  quantityModel: {
+    type: "selected_option_count",
+    optionGroupId: "c9300x-ac-power-supplies",
+  },
+  duplicatePolicy: {
+    scope: "parent_segment",
+    match: "sku_and_parent",
+    quantitySatisfaction: "always_add_missing_delta",
+  },
+} satisfies ConfigExpansionChildRule;
+
+// An option group: a default selection with engineer-review alternatives.
+const PSU_OPTION_GROUP = {
+  optionGroupId: "c9300x-ac-power-supplies",
+  label: "C9300X AC power supplies",
+  selectionMode: "multi_select",
+  defaultOptionSku: "PWR-C1-1100WAC-P",
+  required: true,
+  engineerReviewRequired: true,
+  optionSkus: ["PWR-C1-1100WAC-P", "PWR-C1-1100WAC-P/2"],
+  notes: "Secondary PSU is an engineer-review redundancy choice.",
+} satisfies ConfigExpansionOptionGroup;
+
+// A term option group: 3Y (36-month) default with 5Y/7Y (60/84) alternatives.
+const DNA_TERM_GROUP = {
+  termGroupId: "c9300-dna-term",
+  defaultTermMonths: 36,
+  allowedTermMonths: [36, 60, 84],
+  engineerReviewRequired: true,
+  optionSkus: ["C9300-DNA-A-48-3Y", "C9300-DNA-A-48-5Y", "C9300-DNA-A-48-7Y"],
+  notes: "3Y default; 5Y/7Y alternatives chosen at engineer review.",
+} satisfies ConfigExpansionTermOptionGroup;
+
+// A duplicate policy scoped per project SKU, where an existing line satisfies a
+// required one (per-project subscription/support de-duplication).
+const PROJECT_DUPLICATE_POLICY = {
+  scope: "project_sku",
+  match: "sku",
+  quantitySatisfaction: "existing_satisfies_required",
+} satisfies ConfigExpansionDuplicatePolicy;
+
+// A replacement candidate lives SEPARATELY from the runtime child rules. It is a
+// review model only and authorizes no silent runtime SKU substitution.
+const IMAGE_REPLACEMENT_CANDIDATE = {
+  historicalSku: "SC9300UK9-1712",
+  currentSkus: ["SC9300UK9-1715"],
+  evidence: [CITATION],
+  evidenceScope: "quote_observed",
+  approvalRequired: true,
+  approved: false,
+  notes: "Historical-to-current image SKU mapping; reviewed and approved on its own, never applied silently at runtime.",
+} satisfies ConfigExpansionReplacementCandidate;
+
+// A rule pack MAY carry the advanced tables; packs that omit them (like RULE_PACK
+// above) stay valid. The replacement candidate is carried here, NOT inside any
+// parent rule's childLines.
+const ADVANCED_RULE_PACK = {
+  rulePackId: "honeywell-candidate-rules-advanced",
+  name: "Honeywell candidate rules (advanced model)",
+  version: "0.2.0-candidate",
+  status: "candidate",
+  approvalRequired: true,
+  sourceScope: "honeywell_current_ccw_2026_06_02",
+  parentRules: [PARENT_RULE],
+  optionGroups: [PSU_OPTION_GROUP],
+  termOptionGroups: [DNA_TERM_GROUP],
+  replacementCandidates: [IMAGE_REPLACEMENT_CANDIDATE],
+} satisfies ConfigExpansionRulePack;
+
+// --- Advanced-model type-safety proofs (verified by tsc) --------------------
+
+// An invalid evidence scope must be rejected.
+// @ts-expect-error - "observed" is not a ConfigExpansionEvidenceScope value
+const _BAD_EVIDENCE_SCOPE: ConfigExpansionEvidenceScope = "observed";
+
+// An invalid duplicate-policy scope must be rejected. "project" is the QUANTITY
+// model's scope value, not the duplicate policy's ("project_sku"); using it here
+// also proves the two scope unions are distinct.
+// @ts-expect-error - "project" is not a ConfigExpansionDuplicatePolicy scope
+const _BAD_DUPLICATE_SCOPE: ConfigExpansionDuplicatePolicy = { scope: "project", match: "sku", quantitySatisfaction: "always_review" };
+
+// A replacement candidate must carry evidence; omitting it is a type error.
+// @ts-expect-error - evidence is required on a replacement candidate
+const _REPLACEMENT_MISSING_EVIDENCE: ConfigExpansionReplacementCandidate = { historicalSku: "A", currentSkus: ["B"], evidenceScope: "needs_more_evidence", approvalRequired: true, approved: false };
+
 // --- Runtime assertions over the representative constants -------------------
 
 function collectKeys(node: unknown, acc: string[]): string[] {
@@ -285,5 +426,96 @@ describe("configuration-expansion type module - decoupling and hygiene", () => {
     const source = readFileSync(TEST_PATH, "utf8");
     // eslint-disable-next-line no-control-regex
     expect(/[^\x00-\x7F]/.test(source)).toBe(false);
+  });
+});
+
+describe("configuration-expansion advanced rule-model contracts", () => {
+  it("derives a wireless license quantity from the related access-point SKU total", () => {
+    expect(WIRELESS_LICENSE_CHILD.quantityModel).toEqual({
+      type: "same_as_related_sku_total",
+      relatedSku: "CW9178I-CFG",
+      scope: "project",
+    });
+    // The required v1 quantityRule is retained alongside the forward contract.
+    expect(WIRELESS_LICENSE_CHILD.quantityRule).toBe("fixed");
+    expect(WIRELESS_LICENSE_CHILD.evidenceScope).toBe("reusable_logic");
+  });
+
+  it("derives a power-cable quantity from a selected option-group count", () => {
+    expect(POWER_CABLE_CHILD.quantityModel).toEqual({
+      type: "selected_option_count",
+      optionGroupId: "c9300x-ac-power-supplies",
+    });
+  });
+
+  it("models a 3Y default term with 5Y/7Y alternatives", () => {
+    expect(DNA_TERM_GROUP.defaultTermMonths).toBe(36);
+    expect(DNA_TERM_GROUP.allowedTermMonths).toContain(36);
+    expect(DNA_TERM_GROUP.allowedTermMonths).toContain(60);
+    expect(DNA_TERM_GROUP.allowedTermMonths).toContain(84);
+    expect(DNA_TERM_GROUP.engineerReviewRequired).toBe(true);
+  });
+
+  it("models a project-SKU duplicate policy satisfied by an existing line", () => {
+    expect(PROJECT_DUPLICATE_POLICY.scope).toBe("project_sku");
+    expect(PROJECT_DUPLICATE_POLICY.quantitySatisfaction).toBe(
+      "existing_satisfies_required"
+    );
+  });
+
+  it("exposes an option group with a default and engineer-review alternatives", () => {
+    expect(PSU_OPTION_GROUP.optionGroupId).toBe("c9300x-ac-power-supplies");
+    expect(PSU_OPTION_GROUP.engineerReviewRequired).toBe(true);
+    expect(PSU_OPTION_GROUP.optionSkus.length).toBeGreaterThan(1);
+    expect(QUANTITY_MODELS).toHaveLength(5);
+  });
+
+  it("keeps replacement candidates separate from runtime child rules", () => {
+    // The replacement candidate is its own model: no runtime child-rule fields.
+    expect("quantityRule" in IMAGE_REPLACEMENT_CANDIDATE).toBe(false);
+    expect("sourceRuleId" in IMAGE_REPLACEMENT_CANDIDATE).toBe(false);
+    expect(IMAGE_REPLACEMENT_CANDIDATE.evidence.length).toBeGreaterThanOrEqual(1);
+    // It is carried on the pack's replacementCandidates table, not in childLines.
+    expect(ADVANCED_RULE_PACK.replacementCandidates).toHaveLength(1);
+    for (const parentRule of ADVANCED_RULE_PACK.parentRules) {
+      for (const childRule of parentRule.childLines) {
+        expect("historicalSku" in childRule).toBe(false);
+      }
+    }
+  });
+
+  it("anchors the advanced-model type-safety directives", () => {
+    // These literals exist only to anchor the @ts-expect-error directives above;
+    // they are intentionally invalid at the type level but valid JS at runtime.
+    expect(_BAD_EVIDENCE_SCOPE).toBe("observed");
+    expect(_BAD_DUPLICATE_SCOPE.scope).toBe("project");
+    expect(_REPLACEMENT_MISSING_EVIDENCE.historicalSku).toBe("A");
+  });
+
+  it("carries no pricing token on any representative fixture key", () => {
+    const fixtures: unknown[] = [
+      PAYLOAD,
+      RULE_PACK,
+      ADVANCED_RULE_PACK,
+      WIRELESS_LICENSE_CHILD,
+      POWER_CABLE_CHILD,
+      PSU_OPTION_GROUP,
+      DNA_TERM_GROUP,
+      PROJECT_DUPLICATE_POLICY,
+      IMAGE_REPLACEMENT_CANDIDATE,
+      QUANTITY_MODELS,
+      DRAFT_LINE,
+      DRAFT_SUMMARY,
+      REVIEW_SUMMARY,
+    ];
+    for (const key of collectKeys(fixtures, [])) {
+      const lower = key.toLowerCase();
+      for (const token of FORBIDDEN_KEY_TOKENS) {
+        expect(
+          lower.includes(token),
+          `fixture key "${key}" contains pricing token "${token}"`
+        ).toBe(false);
+      }
+    }
   });
 });

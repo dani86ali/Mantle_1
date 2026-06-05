@@ -5,12 +5,17 @@
  * (section 14, 15). Companion stage/artifact ids: `configuration_expansion_review`
  * and `configuration_expansion`.
  *
- * This is a TYPE-ONLY contract module. It declares two things:
+ * This is a TYPE-ONLY contract module. It declares three things:
  *  1. the structured configuration-expansion RULE PACK (parent SKU rules, their
- *     child lines, and the evidence citations that back them), and
+ *     child lines, and the evidence citations that back them),
  *  2. the `configuration_expansion` ARTIFACT payload produced by the
  *     Configuration Expansion Review stage from one `normalized_boq` and one
- *     `sku_resolution` artifact plus one rule-pack version.
+ *     `sku_resolution` artifact plus one rule-pack version, and
+ *  3. forward-compatible ADVANCED rule-model contracts (advanced quantity model,
+ *     duplicate policy, option/term groups, evidence scope, and separate
+ *     replacement candidates). These advanced contracts are TYPE CONTRACTS ONLY:
+ *     no runtime evaluation reads them until later, deliberate runtime support is
+ *     implemented; declaring a shape here does not imply the engine honors it.
  *
  * It is intentionally SELF-CONTAINED with no imports: no DB / artifact store, no
  * API/UI, no engines, no AI, no pricing, no catalog lookup. Configuration
@@ -69,6 +74,133 @@ export interface ConfigExpansionEvidenceCitation {
   evidenceNote: string;
 }
 
+/* ------------------------------------------------------------------------- *
+ * ADVANCED rule-model contracts (TYPE CONTRACT ONLY).
+ *
+ * The shapes below are forward-compatible model extensions recorded after the
+ * Honeywell rule approval review (docs/config-expansion/RULE_MODEL_GAP_REPORT.md).
+ * They are TYPE CONTRACTS ONLY: no runtime evaluation reads them yet. The
+ * deterministic builder (src/lib/projects/config-expansion.ts) still evaluates the
+ * v1 `ConfigExpansionQuantityRule` union above and nothing here, so an advanced
+ * rule can never be silently mis-evaluated as a v1 rule. Runtime support is a
+ * later, deliberate prompt; declaring a shape here does NOT imply the engine
+ * honors it.
+ *
+ * Pricing authority stays strictly separate from configuration authority
+ * (section 11A.1): there are NO price/cost/discount/margin/markup/VAT/currency/
+ * sell/amount fields on any of these contracts, exactly as in the v1 model.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Advanced, forward-compatible quantity model. Deliberately a SEPARATE union from
+ * the runtime v1 `ConfigExpansionQuantityRule`: the v1 evaluator never reads this,
+ * so adding a variant here cannot silently change how an existing pack evaluates.
+ * TYPE CONTRACT ONLY until runtime support is implemented; no pricing fields.
+ *  - `same_as_related_sku_total`: quantity tracks the total quantity of a related
+ *    SKU (e.g. a wireless license tracking the CW9178I-CFG access-point total),
+ *    scoped across the project, the parent segment, or a related-SKU group.
+ *  - `selected_option_count`: quantity derives from how many options in an option
+ *    group were selected (e.g. power cords following the selected AC PSU count).
+ * Note the `scope` values here (`project`, ...) differ from the duplicate policy's
+ * (`project_sku`, ...) on purpose.
+ */
+export type ConfigExpansionQuantityModel =
+  | { type: "same_as_parent" }
+  | { type: "fixed"; value: number }
+  | { type: "fixed_per_parent"; value: number }
+  | {
+      type: "same_as_related_sku_total";
+      relatedSku: string;
+      scope: "project" | "parent_segment" | "related_sku_group";
+    }
+  | {
+      type: "selected_option_count";
+      optionGroupId: string;
+      relationshipFilter?: ConfigExpansionRelationshipType[];
+    };
+
+/**
+ * Evidence scope for a value or selection: was it merely observed once in a quote
+ * (`quote_observed`), is it reusable configuration logic from an ordering guide
+ * (`reusable_logic`), or does it still need more evidence before reuse
+ * (`needs_more_evidence`). Keeps a value seen once in a CCW from being promoted
+ * into a universal rule. TYPE CONTRACT ONLY until runtime support is implemented.
+ */
+export type ConfigExpansionEvidenceScope =
+  | "quote_observed"
+  | "reusable_logic"
+  | "needs_more_evidence";
+
+/**
+ * Duplicate-detection policy for a line: at what `scope` a duplicate is judged, how
+ * two lines `match`, and how an existing quantity satisfies a required one. Lets
+ * de-duplication span more than a single parent segment (e.g. a per-project
+ * subscription unique by `project_sku`). TYPE CONTRACT ONLY until runtime support
+ * is implemented; no pricing fields.
+ */
+export interface ConfigExpansionDuplicatePolicy {
+  scope: "parent_segment" | "project_sku" | "related_sku_group";
+  match: "sku" | "sku_and_parent" | "sku_and_option_group";
+  quantitySatisfaction:
+    | "existing_satisfies_required"
+    | "always_add_missing_delta"
+    | "always_review";
+}
+
+/**
+ * An option group: a default selection plus engineer-review alternatives (e.g.
+ * secondary PSU, network modules, mounting accessories, SSD-none, stack kits).
+ * `defaultOptionSku` may be preselected, but `engineerReviewRequired` keeps it
+ * from being auto-accepted where options exist. TYPE CONTRACT ONLY until runtime
+ * support is implemented; no pricing fields.
+ */
+export interface ConfigExpansionOptionGroup {
+  optionGroupId: string;
+  label: string;
+  selectionMode: "single_select" | "multi_select";
+  defaultOptionSku?: string;
+  required: boolean;
+  engineerReviewRequired: boolean;
+  optionSkus: string[];
+  notes?: string;
+}
+
+/**
+ * A term option group: a 3-year (36-month) default with longer-term alternatives
+ * (e.g. 5Y/7Y -> 60/84 months), chosen at engineer review rather than frozen from
+ * a CCW. `defaultTermMonths` is fixed to 36 by contract; `allowedTermMonths` lists
+ * the offered terms in months. TYPE CONTRACT ONLY until runtime support is
+ * implemented; no pricing fields.
+ */
+export interface ConfigExpansionTermOptionGroup {
+  termGroupId: string;
+  defaultTermMonths: 36;
+  allowedTermMonths: readonly number[];
+  engineerReviewRequired: boolean;
+  optionSkus: string[];
+  notes?: string;
+}
+
+/**
+ * A historical-to-current SKU replacement CANDIDATE, modeled SEPARATELY from
+ * configuration expansion. This is a review model only and DOES NOT authorize any
+ * silent runtime SKU replacement: a replacement is a different decision from
+ * expansion and must be approved on its own (`approvalRequired`/`approved`). Until
+ * approved, nothing substitutes `historicalSku` with `currentSkus` at runtime, and
+ * even once approved a replacement is never applied silently here. Carries its own
+ * `evidence` (required) and `evidenceScope`. TYPE CONTRACT ONLY until runtime
+ * support is implemented; no pricing fields.
+ */
+export interface ConfigExpansionReplacementCandidate {
+  historicalSku: string;
+  currentSkus: string[];
+  evidence: ConfigExpansionEvidenceCitation[];
+  evidenceScope: ConfigExpansionEvidenceScope;
+  approvalRequired: boolean;
+  approved: boolean;
+  notes?: string;
+}
+
 /**
  * One configuration-expansion child line a rule contributes under a parent SKU.
  * It carries its provenance (`sourceRuleId`) and evidence, plus its own approval
@@ -94,6 +226,23 @@ export interface ConfigExpansionChildRule {
   termMonths?: number;
   /** Fixed quantity, or the per-parent multiplier for `fixed`/`fixed_per_parent`. */
   quantityValue?: number;
+  /**
+   * Advanced, forward-compatible model fields (TYPE CONTRACT ONLY; the v1 runtime
+   * evaluator in config-expansion.ts ignores them until later runtime support).
+   * `quantityModel` does NOT replace the required v1 `quantityRule` above; it is an
+   * additive forward contract a future evaluator may read. No pricing fields.
+   */
+  quantityModel?: ConfigExpansionQuantityModel;
+  /** Duplicate-detection policy for this line (scope/match/satisfaction). */
+  duplicatePolicy?: ConfigExpansionDuplicatePolicy;
+  /** Id of the option group this line belongs to, when it is an option. */
+  optionGroupId?: string;
+  /** Id of the term option group this line belongs to, when it is term-coupled. */
+  termGroupId?: string;
+  /** Whether this line's value is quote-observed, reusable logic, or needs more evidence. */
+  evidenceScope?: ConfigExpansionEvidenceScope;
+  /** Free-text engineer review note; not authority. */
+  reviewNotes?: string;
 }
 
 /**
@@ -112,6 +261,13 @@ export interface ConfigExpansionParentRule {
   relationshipType?: "standalone";
   approvalRequired: boolean;
   approved: boolean;
+  /**
+   * Advanced, forward-compatible model fields (TYPE CONTRACT ONLY until runtime
+   * support lands). No pricing fields.
+   */
+  evidenceScope?: ConfigExpansionEvidenceScope;
+  /** Free-text engineer review note; not authority. */
+  reviewNotes?: string;
 }
 
 /**
@@ -134,6 +290,15 @@ export interface ConfigExpansionRulePack {
     title?: string;
   }[];
   parentRules: ConfigExpansionParentRule[];
+  /**
+   * Advanced, forward-compatible rule-pack tables (TYPE CONTRACT ONLY until runtime
+   * support lands). Packs that omit them stay valid, so current candidate/approved
+   * packs remain compatible. `replacementCandidates` are a SEPARATE review model
+   * and do NOT authorize silent runtime SKU replacement. No pricing fields.
+   */
+  optionGroups?: ConfigExpansionOptionGroup[];
+  termOptionGroups?: ConfigExpansionTermOptionGroup[];
+  replacementCandidates?: ConfigExpansionReplacementCandidate[];
 }
 
 /**
