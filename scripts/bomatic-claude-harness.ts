@@ -93,6 +93,7 @@ interface HarnessOptions {
   maxCleanupAttempts: number;
   typecheckCommand: string;
   testCommand: string;
+  testCommands: string[];
   skipTypecheck: boolean;
   skipTests: boolean;
   allowDependencyChanges: boolean;
@@ -679,9 +680,14 @@ async function runQualityChecks(options: HarnessOptions, runDir: string): Promis
   if (options.skipTests) {
     await writeText(path.join(runDir, "tests.log"), "Skipped by harness option.\n");
   } else {
-    const tests = await runShellCommand(options.testCommand, options.repoDir, options.commandTimeoutMs);
-    testsExitCode = tests.exitCode;
-    await writeText(path.join(runDir, "tests.log"), renderCommandResult(tests));
+    const testLogs: string[] = [];
+    for (const command of options.testCommands) {
+      const tests = await runShellCommand(command, options.repoDir, options.commandTimeoutMs);
+      testLogs.push(renderCommandResult(tests));
+      testsExitCode = tests.exitCode;
+      if (tests.exitCode !== 0) break;
+    }
+    await writeText(path.join(runDir, "tests.log"), testLogs.join("\n"));
   }
 
   return { typecheckExitCode, testsExitCode };
@@ -829,7 +835,7 @@ async function runOne(options: HarnessOptions): Promise<"committed" | "awaiting_
     allowedPaths: options.allowedPaths,
     maxCleanupAttempts: options.maxCleanupAttempts,
     typecheckCommand: options.skipTypecheck ? null : options.typecheckCommand,
-    testCommand: options.skipTests ? null : options.testCommand,
+    testCommands: options.skipTests ? [] : options.testCommands,
     verifierCommandConfigured: Boolean(options.verifierCommand),
     createdAt: new Date().toISOString(),
   });
@@ -966,6 +972,7 @@ function optionsFromArgs(args: string[]): HarnessOptions {
   const promptNumber = readOption(args, "--prompt-number");
   if (!promptFile) throw new Error("--prompt is required.");
   if (!promptNumber) throw new Error("--prompt-number is required.");
+  const testCommands = readRepeatedOption(args, "--test-command");
 
   return {
     repoDir,
@@ -978,7 +985,8 @@ function optionsFromArgs(args: string[]): HarnessOptions {
     allowedPaths: readRepeatedOption(args, "--allowed-path"),
     maxCleanupAttempts: parseNumberOption(args, "--max-cleanups", 2),
     typecheckCommand: readOption(args, "--typecheck-command") ?? DEFAULT_TYPECHECK_COMMAND,
-    testCommand: readOption(args, "--test-command") ?? DEFAULT_TEST_COMMAND,
+    testCommand: testCommands[0] ?? DEFAULT_TEST_COMMAND,
+    testCommands: testCommands.length > 0 ? testCommands : [DEFAULT_TEST_COMMAND],
     skipTypecheck: hasFlag(args, "--skip-typecheck"),
     skipTests: hasFlag(args, "--skip-tests"),
     allowDependencyChanges: hasFlag(args, "--allow-dependency-changes"),
@@ -1010,6 +1018,16 @@ async function runQueue(queuePath: string, cliArgs: string[]): Promise<"committe
       promptFile: path.resolve(item.promptFile),
       promptNumber: item.promptNumber,
       allowedPaths: item.allowedPaths ?? parsed.defaults?.allowedPaths ?? cliDefaults.allowedPaths,
+      testCommand:
+        item.testCommand ??
+        parsed.defaults?.testCommand ??
+        cliDefaults.testCommand,
+      testCommands:
+        item.testCommands ??
+        (item.testCommand ? [item.testCommand] : undefined) ??
+        parsed.defaults?.testCommands ??
+        (parsed.defaults?.testCommand ? [parsed.defaults.testCommand] : undefined) ??
+        cliDefaults.testCommands,
     };
     const result = await runOne(merged);
     if (result !== "committed") return result;
@@ -1033,7 +1051,7 @@ function usage(): string {
     "  --verifier-command <command>     Command that prints verifier JSON to stdout, e.g. npx.cmd tsx scripts/bomatic-reviewer.ts.",
     "  --max-cleanups <n>               Cleanup turns in the same Claude session. Defaults to 2.",
     "  --typecheck-command <command>    Defaults to npm run typecheck.",
-    "  --test-command <command>         Defaults to npm test.",
+    "  --test-command <command>         Test command. Repeat to run multiple commands in order. Defaults to npm test.",
     "  --skip-typecheck | --skip-tests  Capture skip logs instead of running checks.",
     "",
     "Default behavior writes bomatic-review-summary.md for BOMATIC #3 and exits awaiting review.",
