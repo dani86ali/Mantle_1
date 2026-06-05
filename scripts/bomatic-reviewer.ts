@@ -54,7 +54,7 @@ interface ReviewerOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
-const DEFAULT_MAX_FILE_CHARS = 180_000;
+const DEFAULT_MAX_FILE_CHARS = 1_000_000;
 const DEFAULT_BACKGROUND_FILE = path.join(
   "docs",
   "automation",
@@ -532,7 +532,7 @@ function usage(): string {
     "  --model <model>          Optional Codex model override.",
     "  --profile <profile>      Optional Codex config profile.",
     "  --timeout-ms <ms>        Reviewer timeout. Defaults to 30 minutes.",
-    "  --max-file-chars <n>     Per-artifact prompt excerpt size. Defaults to 180000.",
+    "  --max-file-chars <n>     Per-artifact prompt excerpt size. Defaults to 1000000.",
     "  --dry-run                Write the reviewer prompt and return a stop JSON without calling Codex.",
   ].join("\n");
 }

@@ -312,6 +312,11 @@ function bulletList(values: string[]): string {
   return values.map((value) => `- ${value}`).join("\n");
 }
 
+export function combineGitDiffOutput(...values: string[]): string {
+  const parts = values.map((value) => value.trimEnd()).filter((value) => value.length > 0);
+  return parts.length === 0 ? "" : `${parts.join("\n\n")}\n`;
+}
+
 export function buildBomaticReviewSummary(input: BuildBomaticReviewSummaryInput): string {
   const findings =
     input.guardReport.findings.length === 0
@@ -452,6 +457,21 @@ async function runGit(args: string[], repoDir: string, timeoutMs = DEFAULT_COMMA
   return runProcess("git", args, { cwd: repoDir, timeoutMs });
 }
 
+async function buildUntrackedDiffOutput(
+  repoDir: string,
+  files: string[],
+  mode: "patch" | "stat"
+): Promise<string> {
+  if (files.length === 0) return "";
+  const argsPrefix = mode === "stat" ? ["diff", "--no-index", "--stat", "--"] : ["diff", "--no-index", "--"];
+  const results = await Promise.all(files.map((file) => runGit([...argsPrefix, "/dev/null", file], repoDir)));
+  const failed = results.find((result) => result.exitCode > 1 || result.timedOut);
+  if (failed) {
+    throw new Error(`Failed to capture untracked ${mode} diff: ${failed.stderr || failed.stdout}`);
+  }
+  return combineGitDiffOutput(...results.map((result) => result.stdout));
+}
+
 async function writeText(filePath: string, value: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, value, "utf8");
@@ -463,7 +483,7 @@ async function appendText(filePath: string, value: string): Promise<void> {
 }
 
 async function captureGitSnapshot(repoDir: string): Promise<GitSnapshot> {
-  const [status, log, diffStat, diffPatch, diffNameOnly, untracked, head, stashRef, stashList] =
+  const [status, log, diffStatResult, diffPatchResult, diffNameOnly, untracked, head, stashRef, stashList] =
     await Promise.all([
       runGit(["status", "--short", "-uall"], repoDir),
       runGit(["log", "-5", "--oneline"], repoDir),
@@ -476,7 +496,20 @@ async function captureGitSnapshot(repoDir: string): Promise<GitSnapshot> {
       runGit(["stash", "list"], repoDir),
     ]);
 
-  const changedFiles = uniqueSorted([...splitLines(diffNameOnly.stdout), ...splitLines(untracked.stdout)]);
+  const untrackedFiles = splitLines(untracked.stdout);
+  const changedFiles = uniqueSorted([...splitLines(diffNameOnly.stdout), ...untrackedFiles]);
+  const [untrackedDiffStat, untrackedDiffPatch] = await Promise.all([
+    buildUntrackedDiffOutput(repoDir, untrackedFiles, "stat"),
+    buildUntrackedDiffOutput(repoDir, untrackedFiles, "patch"),
+  ]);
+  const diffStat: CommandResult = {
+    ...diffStatResult,
+    stdout: combineGitDiffOutput(diffStatResult.stdout, untrackedDiffStat),
+  };
+  const diffPatch: CommandResult = {
+    ...diffPatchResult,
+    stdout: combineGitDiffOutput(diffPatchResult.stdout, untrackedDiffPatch),
+  };
   const stashFingerprint = stashRef.exitCode === 0 ? stashRef.stdout.trim() : "(none)";
   return {
     status,

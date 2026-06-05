@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildBomaticReviewSummary,
+  combineGitDiffOutput,
   evaluateGuardrails,
   normalizeRepoPath,
   parseVerifierVerdict,
@@ -30,6 +31,18 @@ describe("bomatic Claude harness path matching", () => {
     expect(pathMatchesSpec("src/lib/projects/priced-boq.ts", "src/lib/projects")).toBe(true);
     expect(pathMatchesSpec("tests/lib/projects/foo.test.ts", "tests/**/*.test.ts")).toBe(true);
     expect(pathMatchesSpec("src/app/page.tsx", "tests/**/*.test.ts")).toBe(false);
+  });
+});
+
+describe("bomatic Claude harness diff capture", () => {
+  it("combines tracked and untracked diff output without dropping either side", () => {
+    expect(combineGitDiffOutput("tracked diff\n", "untracked diff\n")).toBe(
+      "tracked diff\n\nuntracked diff\n"
+    );
+  });
+
+  it("keeps an untracked-only diff non-empty", () => {
+    expect(combineGitDiffOutput("", "new file diff\n")).toBe("new file diff\n");
   });
 });
 
