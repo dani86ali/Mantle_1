@@ -157,6 +157,7 @@ const OTHER_TENANT = "22222222-2222-2222-2222-222222222222";
 const QUICK_BOM_ACTIVE = [
   "boq_format_validation",
   "sku_resolution",
+  "configuration_expansion_review",
   "boq_pricing_review",
   "export_approval",
 ];
@@ -169,7 +170,11 @@ const RFP_ACTIVE = [
   "proposal_review",
   "export_approval",
 ];
-const QUICK_BOM_ONLY = ["boq_format_validation", "sku_resolution"];
+const QUICK_BOM_ONLY = [
+  "boq_format_validation",
+  "sku_resolution",
+  "configuration_expansion_review",
+];
 
 beforeEach(() => {
   store.projects.length = 0;
@@ -237,7 +242,7 @@ describe("createProject", () => {
       includeNotApplicableStages: true,
     });
 
-    expect(project.stages).toHaveLength(9);
+    expect(project.stages).toHaveLength(10);
     const active = project.stages.filter((s) => s.status !== "not_applicable");
     const inactive = project.stages.filter(
       (s) => s.status === "not_applicable"
