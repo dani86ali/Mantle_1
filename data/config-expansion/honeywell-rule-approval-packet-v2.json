@@ -1,0 +1,2665 @@
+{
+  "packetId": "honeywell-rule-approval-packet-v2",
+  "packetVersion": "0.2.0",
+  "status": "pending_human_approval",
+  "purpose": "model_aware_human_review_packet",
+  "sourceCandidateRulePackId": "honeywell-candidate-rules-v2",
+  "sourceCandidateRulePackVersion": "0.2.0-candidate",
+  "sourceCandidateRulePackStatus": "candidate",
+  "priorCandidateRulePackId": "honeywell-candidate-rules",
+  "priorCandidateRulePackVersion": "0.1.0-candidate",
+  "sourceScope": "honeywell_current_ccw_2026_06_02",
+  "createdFromEvidence": [
+    {
+      "sourceType": "ccw_export",
+      "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+      "title": "Current Cisco CCW estimate export (Honeywell scope)."
+    },
+    {
+      "sourceType": "datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178 Series_datasheet.pdf",
+      "title": "Cisco Wireless 9178 Series data sheet."
+    },
+    {
+      "sourceType": "install_guide",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178I Series Wi-Fi 7Access PointHardware Installation.pdf",
+      "title": "Cisco Wireless 9178I Series hardware installation guide."
+    },
+    {
+      "sourceType": "ordering_guide",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless Ordering.pdf",
+      "title": "Cisco Wireless ordering guide."
+    },
+    {
+      "sourceType": "subscription_datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Networking Subscription Data Sheet.pdf",
+      "title": "Cisco Networking Subscription data sheet."
+    },
+    {
+      "sourceType": "subscription_datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Spaces Unlimited Subscription.pdf",
+      "title": "Cisco Spaces Unlimited Subscription data sheet."
+    },
+    {
+      "sourceType": "ordering_guide",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+      "title": "Cisco Catalyst 9300 Series ordering guide."
+    },
+    {
+      "sourceType": "datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300_datasheet.pdf",
+      "title": "Cisco Catalyst 9300 data sheet."
+    },
+    {
+      "sourceType": "datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco IP Phone 7800 Series Data Sheet.pdf",
+      "title": "Cisco IP Phone 7800 Series data sheet."
+    },
+    {
+      "sourceType": "gpl",
+      "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+      "title": "Cisco GPL/SAR catalog export (SKU existence and descriptions only; not price authority)."
+    }
+  ],
+  "notes": "This is a MODEL-AWARE HUMAN REVIEW packet (v2) derived mechanically from the honeywell-candidate-rules-v2 candidate pack. It is not runtime authority and grants no active, approved, or runtime configuration-expansion behavior. Every reviewDecision here is pending. It re-expresses the Honeywell configuration logic on the advanced rule model (related-SKU quantities, selected-option-count quantities, option groups, term option groups with a 3Y default and 5Y/7Y review alternatives, evidence scope, and separate replacement candidates) instead of freezing Honeywell quote quantities. No rule, child line, replacement, option group, or term group becomes active until a human/business reviewer records explicit decisions and a separate later prompt builds an approved runtime rule pack. Pricing is never authority here: configuration authority stays separate from pricing authority. Risk and model flags are review prompts only; they approve and reject nothing.",
+  "decisionVocabulary": {
+    "pending": "No human decision has been recorded. This is the only decision state present in this packet.",
+    "approve_for_honeywell_mvp": "Reviewer approves this item for inclusion when a separate approved Honeywell MVP runtime rule pack is later authored. Recording this here does not itself activate the item.",
+    "defer": "Reviewer postpones this item: neither approved nor rejected for now.",
+    "reject": "Reviewer rejects this item: it must not enter an approved runtime rule pack.",
+    "needs_more_evidence": "Reviewer requires additional authoritative evidence before deciding."
+  },
+  "summary": {
+    "parentRuleCount": 7,
+    "childLineCount": 53,
+    "standaloneParentRuleCount": 2,
+    "replacementReviewCount": 11,
+    "optionGroupCount": 2,
+    "termOptionGroupCount": 8,
+    "totalPendingDecisions": 71
+  },
+  "parentRuleReviews": [
+    {
+      "ruleId": "honeywell-cw9178i-cfg",
+      "parentSku": "CW9178I-CFG",
+      "parentDescription": "Cisco Wireless 9178I(W7,4 radio,3 band 4x4,UWB), Global",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 2,
+          "evidenceNote": "CCW Line Number 1.0; Item Name CW9178I-CFG; Group Name Default; Quantity 12; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178 Series_datasheet.pdf",
+          "pageNumber": 7,
+          "evidenceNote": "Cisco Wireless 9178I Wi-Fi 7 access point model referenced on this page."
+        },
+        {
+          "sourceType": "ordering_guide",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless Ordering.pdf",
+          "pageNumber": 18,
+          "evidenceNote": "CW9178I wireless access point ordering reference."
+        }
+      ],
+      "evidenceScope": "reusable_logic",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [],
+      "childLineReviews": [
+        {
+          "sku": "CON-ROB-CW9178IC",
+          "description": "RMA UPGRADE 8X5XNBD Cisco Wireless 9178I",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "termMonths": 12,
+          "sourceRuleId": "honeywell-cw9178i-cfg",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 3,
+              "evidenceNote": "CCW Line Number 1.0.1; Item Name CON-ROB-CW9178IC; Included Item No; Service Duration (Months) 12; Quantity 12."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "service_or_support_term_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "AIR-AP-BRACKET-2",
+          "description": "802.11 AP Universal Mounting Bracket",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-cw9178i-cfg",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 4,
+              "evidenceNote": "CCW Line Number 1.1; Item Name AIR-AP-BRACKET-2; Included Item No; Service Duration (Months) N/A; Quantity 12."
+            },
+            {
+              "sourceType": "install_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178I Series Wi-Fi 7Access PointHardware Installation.pdf",
+              "pageNumber": 19,
+              "evidenceNote": "AIR-AP-BRACKET-2 universal mounting bracket referenced on this page."
+            }
+          ],
+          "evidenceScope": "reusable_logic",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "default_selection_requires_review"
+          ]
+        },
+        {
+          "sku": "AIR-AP-T-RAIL-F",
+          "description": "Flush Mount for APs & Cellular Gateways-Recessed",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-cw9178i-cfg",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 5,
+              "evidenceNote": "CCW Line Number 1.2; Item Name AIR-AP-T-RAIL-F; Included Item No; Service Duration (Months) N/A; Quantity 12."
+            },
+            {
+              "sourceType": "install_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178I Series Wi-Fi 7Access PointHardware Installation.pdf",
+              "pageNumber": 20,
+              "evidenceNote": "AIR-AP-T-RAIL flush/recessed mount referenced on this page."
+            }
+          ],
+          "evidenceScope": "reusable_logic",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "default_selection_requires_review"
+          ]
+        },
+        {
+          "sku": "CW9178-SINGLE",
+          "description": "SINGLE PACK OPTION",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-cw9178i-cfg",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 6,
+              "evidenceNote": "CCW Line Number 1.3; Item Name CW9178-SINGLE; Included Item No; Service Duration (Months) N/A; Quantity 12."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "default_selection_requires_review",
+            "ccw_only_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-cisco-network-sub",
+      "parentSku": "CISCO-NETWORK-SUB",
+      "parentDescription": "Cisco Networking Subscription",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 8,
+          "evidenceNote": "CCW Line Number 2.0; Item Name CISCO-NETWORK-SUB; Group Name Default; Quantity 1; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "subscription_datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Networking Subscription Data Sheet.pdf",
+          "pageNumber": 3,
+          "evidenceNote": "Cisco Networking Subscription Advantage tier overview."
+        },
+        {
+          "sourceType": "ordering_guide",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless Ordering.pdf",
+          "pageNumber": 17,
+          "evidenceNote": "Subscription requirement (mandatory) referenced on this page."
+        }
+      ],
+      "evidenceScope": "reusable_logic",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [],
+      "childLineReviews": [
+        {
+          "sku": "LIC-CW-A",
+          "description": "Cisco Wireless License - Advantage",
+          "relationshipType": "subscription",
+          "quantityRule": "fixed",
+          "quantityValue": 12,
+          "sourceRuleId": "honeywell-cisco-network-sub",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 9,
+              "evidenceNote": "CCW Line Number 2.1; Item Name LIC-CW-A; Included Item No; Service Duration (Months) N/A; Quantity 12. Quantity 12 equals the deployed access-point count in this CCW; per-access-point generalization requires human approval."
+            },
+            {
+              "sourceType": "subscription_datasheet",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Networking Subscription Data Sheet.pdf",
+              "pageNumber": 8,
+              "evidenceNote": "LIC-CW-A Cisco Wireless Advantage license referenced on this page."
+            }
+          ],
+          "quantityModel": {
+            "type": "same_as_related_sku_total",
+            "relatedSku": "CW9178I-CFG",
+            "scope": "project"
+          },
+          "duplicatePolicy": {
+            "scope": "project_sku",
+            "match": "sku",
+            "quantitySatisfaction": "existing_satisfies_required"
+          },
+          "evidenceScope": "reusable_logic",
+          "legacyQuantityScope": "quote_observed",
+          "modelNotes": "Quantity is modeled as same_as_related_sku_total tracking the CW9178I-CFG access-point total across the project. The legacy quantityRule \"fixed\" / quantityValue 12 is Honeywell quote-observed compatibility data only (12 equals this CCW access-point count) and is NOT reusable logic. Per-access-point generalization still requires human approval before any approved runtime pack. duplicatePolicy is project_sku scoped so an existing per-project license satisfies the required quantity instead of being re-added per parent segment.",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "fixed_quantity_requires_review",
+            "subscription_requires_review",
+            "related_sku_quantity_model_requires_review",
+            "legacy_fixed_quantity_is_quote_observed_not_reusable",
+            "duplicate_policy_project_sku_requires_review"
+          ]
+        },
+        {
+          "sku": "LIC-SPACES-ADV",
+          "description": "Cisco Spaces Advantage for Cisco Wireless Advantage License",
+          "relationshipType": "subscription",
+          "quantityRule": "fixed",
+          "quantityValue": 12,
+          "sourceRuleId": "honeywell-cisco-network-sub",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 10,
+              "evidenceNote": "CCW Line Number 2.2; Item Name LIC-SPACES-ADV; Included Item No; Service Duration (Months) N/A; Quantity 12. Quantity 12 equals the deployed access-point count in this CCW; per-access-point generalization requires human approval."
+            },
+            {
+              "sourceType": "subscription_datasheet",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Spaces Unlimited Subscription.pdf",
+              "pageNumber": 1,
+              "evidenceNote": "Cisco Spaces Advantage subscription described on this page."
+            }
+          ],
+          "quantityModel": {
+            "type": "same_as_related_sku_total",
+            "relatedSku": "CW9178I-CFG",
+            "scope": "project"
+          },
+          "duplicatePolicy": {
+            "scope": "project_sku",
+            "match": "sku",
+            "quantitySatisfaction": "existing_satisfies_required"
+          },
+          "evidenceScope": "reusable_logic",
+          "legacyQuantityScope": "quote_observed",
+          "modelNotes": "Quantity is modeled as same_as_related_sku_total tracking the CW9178I-CFG access-point total across the project. The legacy quantityRule \"fixed\" / quantityValue 12 is Honeywell quote-observed compatibility data only (12 equals this CCW access-point count) and is NOT reusable logic. Per-access-point generalization still requires human approval before any approved runtime pack. duplicatePolicy is project_sku scoped so an existing per-project license satisfies the required quantity instead of being re-added per parent segment.",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "fixed_quantity_requires_review",
+            "subscription_requires_review",
+            "related_sku_quantity_model_requires_review",
+            "legacy_fixed_quantity_is_quote_observed_not_reusable",
+            "duplicate_policy_project_sku_requires_review"
+          ]
+        },
+        {
+          "sku": "SVS-L0SPT-CN",
+          "description": "Cisco Network Product Support",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-cisco-network-sub",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 11,
+              "evidenceNote": "CCW Line Number 2.3; Item Name SVS-L0SPT-CN; Included Item No; Service Duration (Months) N/A; Quantity 1."
+            },
+            {
+              "sourceType": "subscription_datasheet",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Networking Subscription Data Sheet.pdf",
+              "pageNumber": 6,
+              "evidenceNote": "Cisco network product support referenced on this page."
+            }
+          ],
+          "evidenceScope": "reusable_logic",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "service_or_support_term_requires_review"
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-c9300x-48hx-a",
+      "parentSku": "C9300X-48HX-A",
+      "parentDescription": "Catalyst 9300 48-port mGig UPoE+, Network Advantage",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 13,
+          "evidenceNote": "CCW Line Number 3.0; Item Name C9300X-48HX-A; Group Name Default; Quantity 7; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300_datasheet.pdf",
+          "pageNumber": 62,
+          "evidenceNote": "C9300X-48HX-A model referenced on this page."
+        },
+        {
+          "sourceType": "ordering_guide",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+          "pageNumber": 20,
+          "evidenceNote": "Catalyst 9300 power-supply selection guidance."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 561,
+          "evidenceNote": "C9300X-48HX-A catalog entry (existence/description only; not price authority)."
+        }
+      ],
+      "evidenceScope": "reusable_logic",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [],
+      "childLineReviews": [
+        {
+          "sku": "CON-L1NCD-C9300XY4",
+          "description": "CX LEVEL 1 8X7NCD Catalyst 9300 48-port mGig UPoE+, Networ",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "termMonths": 36,
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 14,
+              "evidenceNote": "CCW Line Number 3.0.1; Item Name CON-L1NCD-C9300XY4; Included Item No; Service Duration (Months) 36; Quantity 7."
+            }
+          ],
+          "termGroupId": "term-con-l1ncd-c9300xy4",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "service_or_support_term_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9300-DNA-A-48",
+          "description": "C9300 DNA Advantage, 48-Port Term Licenses",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 15,
+              "evidenceNote": "CCW Line Number 3.1; Item Name C9300-DNA-A-48; Included Item No; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "CON-L1SWT-C93A48",
+          "description": "CX LEVEL 1 SW SUB C9300 DNA Advantage",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "termMonths": 36,
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 16,
+              "evidenceNote": "CCW Line Number 3.1.0.1; Item Name CON-L1SWT-C93A48; Included Item No; Service Duration (Months) 36; Quantity 7."
+            }
+          ],
+          "termGroupId": "term-con-l1swt-c93a48",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "service_or_support_term_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9300-DNA-A-48-3Y",
+          "description": "C9300 DNA Advantage, 48-Port, 3 Year Term License",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "termMonths": 36,
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 17,
+              "evidenceNote": "CCW Line Number 3.1.1; Item Name C9300-DNA-A-48-3Y; Included Item No; Service Duration (Months) 36; Quantity 7."
+            }
+          ],
+          "termGroupId": "term-c9300-dna-a-48-3y",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "TE-EMBEDDED-T",
+          "description": "Cisco ThousandEyes Enterprise Agent IBN Embedded",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 18,
+              "evidenceNote": "CCW Line Number 3.2; Item Name TE-EMBEDDED-T; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "TE-EMBEDDED-T-3Y",
+          "description": "ThousandEyes - Enterprise Agents",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "termMonths": 36,
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 19,
+              "evidenceNote": "CCW Line Number 3.2.1; Item Name TE-EMBEDDED-T-3Y; Included Item No; Service Duration (Months) 36; Quantity 7."
+            }
+          ],
+          "termGroupId": "term-te-embedded-t-3y",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "D-DNAS-EXT-S-T",
+          "description": "Cisco DNA Spaces Extend Term License for Catalyst Switches",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 20,
+              "evidenceNote": "CCW Line Number 3.3; Item Name D-DNAS-EXT-S-T; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "D-DNAS-EXT-S-3Y",
+          "description": "Cisco DNA Spaces Extend for Catalyst Switching - 3Year",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "termMonths": 36,
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 21,
+              "evidenceNote": "CCW Line Number 3.3.1; Item Name D-DNAS-EXT-S-3Y; Included Item No; Service Duration (Months) 36; Quantity 7."
+            }
+          ],
+          "termGroupId": "term-d-dnas-ext-s-3y",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9300-NW-A-48",
+          "description": "C9300 Network Advantage, 48-port license",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 22,
+              "evidenceNote": "CCW Line Number 3.4; Item Name C9300-NW-A-48; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "SC9300UK9-1715",
+          "description": "CAT9300/9400/9500/9600 UNIVERSAL",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 23,
+              "evidenceNote": "CCW Line Number 3.5; Item Name SC9300UK9-1715; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "TE-C9K-SW",
+          "description": "TE agent for IOSXE on C9K",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 24,
+              "evidenceNote": "CCW Line Number 3.6; Item Name TE-C9K-SW; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "PWR-C1-1100WAC-P",
+          "description": "1100W AC 80+ platinum Config 1 Power Supply",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 25,
+              "evidenceNote": "CCW Line Number 3.7; Item Name PWR-C1-1100WAC-P; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "optionGroupId": "c9300x-ac-power-supplies",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "PWR-C1-1100WAC-P/2",
+          "description": "1100W AC 80+ platinum Config 1 Secondary Power Supply",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 26,
+              "evidenceNote": "CCW Line Number 3.8; Item Name PWR-C1-1100WAC-P/2; Included Item No; Service Duration (Months) N/A; Quantity 7. Secondary/redundant power supply selected in this CCW; redundancy is an engineer-review decision."
+            }
+          ],
+          "optionGroupId": "c9300x-ac-power-supplies",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "default_selection_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9300-SSD-NONE",
+          "description": "No SSD Card Selected",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 27,
+              "evidenceNote": "CCW Line Number 3.9; Item Name C9300-SSD-NONE; Included Item No; Service Duration (Months) N/A; Quantity 7. Configurator no-SSD placeholder line."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "default_selection_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "STACK-T1-50CM",
+          "description": "50CM Type 1 Stacking Cable",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 28,
+              "evidenceNote": "CCW Line Number 3.10; Item Name STACK-T1-50CM; Included Item No; Service Duration (Months) N/A; Quantity 7."
+            },
+            {
+              "sourceType": "ordering_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+              "pageNumber": 29,
+              "evidenceNote": "STACK-T1-50CM stacking cable referenced on this page."
+            }
+          ],
+          "evidenceScope": "reusable_logic",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "default_selection_requires_review"
+          ]
+        },
+        {
+          "sku": "CAB-SPWR-30CM",
+          "description": "Catalyst Stack Power Cable 30 CM",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 29,
+              "evidenceNote": "CCW Line Number 3.11; Item Name CAB-SPWR-30CM; Included Item No; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "default_selection_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9K-ACC-RBFT",
+          "description": "RUBBER FEET FOR TABLE TOP SETUP 9200 and 93xx",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 30,
+              "evidenceNote": "CCW Line Number 3.12; Item Name C9K-ACC-RBFT; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9K-ACC-SCR-4",
+          "description": "12-24 and 10-32 SCREWS FOR RACK INSTALLATION, QTY 4",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 31,
+              "evidenceNote": "CCW Line Number 3.13; Item Name C9K-ACC-SCR-4; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "CAB-GUIDE-1RU",
+          "description": "1RU CABLE MANAGEMENT GUIDES 9200 and 9300",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 32,
+              "evidenceNote": "CCW Line Number 3.14; Item Name CAB-GUIDE-1RU; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9300X-NM-8Y",
+          "description": "Catalyst 9300 8 x 10G/25G Network Module SFP+/SFP28",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 33,
+              "evidenceNote": "CCW Line Number 3.15; Item Name C9300X-NM-8Y; Included Item No; Service Duration (Months) N/A; Quantity 7."
+            },
+            {
+              "sourceType": "ordering_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+              "pageNumber": 28,
+              "evidenceNote": "C9300X-NM-8Y uplink network module referenced on this page."
+            }
+          ],
+          "evidenceScope": "reusable_logic",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "default_selection_requires_review"
+          ]
+        },
+        {
+          "sku": "NETWORK-PNP-LIC",
+          "description": "Network Plug-n-Play Connect for zero-touch device deployment",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 34,
+              "evidenceNote": "CCW Line Number 3.16; Item Name NETWORK-PNP-LIC; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "CAB-C15-CBN",
+          "description": "Cabinet Jumper Power Cord, 250 VAC 13A, C14-C15 Connectors",
+          "relationshipType": "default_selected",
+          "quantityRule": "fixed_per_parent",
+          "quantityValue": 2,
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 35,
+              "evidenceNote": "CCW Line Number 3.17; Item Name CAB-C15-CBN; Included Item No; Service Duration (Months) N/A; Quantity 14. Quantity 14 equals 2 power cords per switch (parent quantity 7); fixed_per_parent multiplier 2."
+            }
+          ],
+          "quantityModel": {
+            "type": "selected_option_count",
+            "optionGroupId": "c9300x-ac-power-supplies"
+          },
+          "evidenceScope": "needs_more_evidence",
+          "modelNotes": "Cable quantity is modeled as selected_option_count following the selected AC power-supply count in option group c9300x-ac-power-supplies. The legacy quantityRule \"fixed_per_parent\" / quantityValue 2 is Honeywell quote-observed (2 cords matched 2 selected AC power supplies in this CCW) and is not universal; with one power supply selected the cord count should follow. The selected-option-count derivation needs more evidence before runtime use.",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "fixed_per_parent_requires_review",
+            "default_selection_requires_review",
+            "selected_option_count_model_requires_review",
+            "legacy_fixed_per_parent_is_quote_observed",
+            "ccw_only_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-c9300l-24p-4x-a",
+      "parentSku": "C9300L-24P-4X-A",
+      "parentDescription": "Catalyst 9300L 24p PoE, Network Advantage ,4x10G Uplink",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 37,
+          "evidenceNote": "CCW Line Number 4.0; Item Name C9300L-24P-4X-A; Group Name Default; Quantity 6; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300_datasheet.pdf",
+          "pageNumber": 66,
+          "evidenceNote": "C9300L-24P-4X-A model referenced on this page."
+        },
+        {
+          "sourceType": "ordering_guide",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+          "pageNumber": 20,
+          "evidenceNote": "Catalyst 9300 power-supply selection guidance."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 499,
+          "evidenceNote": "C9300L-24P-4X-A catalog entry (existence/description only; not price authority)."
+        }
+      ],
+      "evidenceScope": "reusable_logic",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [],
+      "childLineReviews": [
+        {
+          "sku": "CON-L1NCD-C93024PX",
+          "description": "CX LEVEL 1 8X7NCDCatalyst 9300L 24p PoE Network Advantag",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "termMonths": 36,
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 38,
+              "evidenceNote": "CCW Line Number 4.0.1; Item Name CON-L1NCD-C93024PX; Included Item No; Service Duration (Months) 36; Quantity 6."
+            }
+          ],
+          "termGroupId": "term-con-l1ncd-c93024px",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "service_or_support_term_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9300L-DNA-A-24",
+          "description": "C9300L Cisco DNA Advantage, 24-port Term Licenses",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 39,
+              "evidenceNote": "CCW Line Number 4.1; Item Name C9300L-DNA-A-24; Included Item No; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "CON-L1SWT-C93LA24",
+          "description": "CX LEVEL 1 SW SUB C9300L Cisco DNA Adv",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "termMonths": 36,
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 40,
+              "evidenceNote": "CCW Line Number 4.1.0.1; Item Name CON-L1SWT-C93LA24; Included Item No; Service Duration (Months) 36; Quantity 6."
+            }
+          ],
+          "termGroupId": "term-con-l1swt-c93la24",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "service_or_support_term_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9300L-DNA-A-24-3Y",
+          "description": "C9300L Cisco DNA Advantage, 24-port, 3 Year Term license",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "termMonths": 36,
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 41,
+              "evidenceNote": "CCW Line Number 4.1.1; Item Name C9300L-DNA-A-24-3Y; Included Item No; Service Duration (Months) 36; Quantity 6."
+            }
+          ],
+          "termGroupId": "term-c9300l-dna-a-24-3y",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "TE-EMBEDDED-T",
+          "description": "Cisco ThousandEyes Enterprise Agent IBN Embedded",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 42,
+              "evidenceNote": "CCW Line Number 4.2; Item Name TE-EMBEDDED-T; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "TE-EMBEDDED-T-3Y",
+          "description": "ThousandEyes - Enterprise Agents",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "termMonths": 36,
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 43,
+              "evidenceNote": "CCW Line Number 4.2.1; Item Name TE-EMBEDDED-T-3Y; Included Item No; Service Duration (Months) 36; Quantity 6."
+            }
+          ],
+          "termGroupId": "term-te-embedded-t-3y",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "D-DNAS-EXT-S-T",
+          "description": "Cisco DNA Spaces Extend Term License for Catalyst Switches",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 44,
+              "evidenceNote": "CCW Line Number 4.3; Item Name D-DNAS-EXT-S-T; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "D-DNAS-EXT-S-3Y",
+          "description": "Cisco DNA Spaces Extend for Catalyst Switching - 3Year",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "termMonths": 36,
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 45,
+              "evidenceNote": "CCW Line Number 4.3.1; Item Name D-DNAS-EXT-S-3Y; Included Item No; Service Duration (Months) 36; Quantity 6."
+            }
+          ],
+          "termGroupId": "term-d-dnas-ext-s-3y",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "S9300LUK9-1718",
+          "description": "CAT9300/9400/9500/9600 UNIVERSAL",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 46,
+              "evidenceNote": "CCW Line Number 4.4; Item Name S9300LUK9-1718; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9300L-NW-A-24",
+          "description": "C9300L Network Advantage, 24-port license",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 47,
+              "evidenceNote": "CCW Line Number 4.5; Item Name C9300L-NW-A-24; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "TE-C9K-SW",
+          "description": "TE agent for IOSXE on C9K",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 48,
+              "evidenceNote": "CCW Line Number 4.6; Item Name TE-C9K-SW; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "FAN-T2",
+          "description": "Cisco Type 2 Fan Module",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "fixed_per_parent",
+          "quantityValue": 3,
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 49,
+              "evidenceNote": "CCW Line Number 4.7; Item Name FAN-T2; Included Item Yes; Service Duration (Months) N/A; Quantity 18. Quantity 18 equals 3 fan modules per switch (parent quantity 6); fixed_per_parent multiplier 3."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "fixed_per_parent_requires_review",
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "PWR-C1-715WAC-P",
+          "description": "715W AC 80+ platinum Config 1 Power Supply",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 50,
+              "evidenceNote": "CCW Line Number 4.8; Item Name PWR-C1-715WAC-P; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "optionGroupId": "c9300l-ac-power-supplies",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "PWR-C1-715WAC-P/2",
+          "description": "715W AC 80+ platinum Config 1 SecondaryPower Supply",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 51,
+              "evidenceNote": "CCW Line Number 4.9; Item Name PWR-C1-715WAC-P/2; Included Item No; Service Duration (Months) N/A; Quantity 6. Secondary/redundant power supply selected in this CCW; redundancy is an engineer-review decision."
+            }
+          ],
+          "optionGroupId": "c9300l-ac-power-supplies",
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "default_selection_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "CAB-C15-CBN",
+          "description": "Cabinet Jumper Power Cord, 250 VAC 13A, C14-C15 Connectors",
+          "relationshipType": "default_selected",
+          "quantityRule": "fixed_per_parent",
+          "quantityValue": 2,
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 52,
+              "evidenceNote": "CCW Line Number 4.10; Item Name CAB-C15-CBN; Included Item No; Service Duration (Months) N/A; Quantity 12. Quantity 12 equals 2 power cords per switch (parent quantity 6); fixed_per_parent multiplier 2."
+            }
+          ],
+          "quantityModel": {
+            "type": "selected_option_count",
+            "optionGroupId": "c9300l-ac-power-supplies"
+          },
+          "evidenceScope": "needs_more_evidence",
+          "modelNotes": "Cable quantity is modeled as selected_option_count following the selected AC power-supply count in option group c9300l-ac-power-supplies. The legacy quantityRule \"fixed_per_parent\" / quantityValue 2 is Honeywell quote-observed (2 cords matched 2 selected AC power supplies in this CCW) and is not universal; with one power supply selected the cord count should follow. The selected-option-count derivation needs more evidence before runtime use.",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "fixed_per_parent_requires_review",
+            "default_selection_requires_review",
+            "selected_option_count_model_requires_review",
+            "legacy_fixed_per_parent_is_quote_observed",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9300L-SSD-NONE",
+          "description": "No SSD Card Selected",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 53,
+              "evidenceNote": "CCW Line Number 4.11; Item Name C9300L-SSD-NONE; Included Item No; Service Duration (Months) N/A; Quantity 6. Configurator no-SSD placeholder line."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "default_selection_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9K-ACC-RBFT",
+          "description": "RUBBER FEET FOR TABLE TOP SETUP 9200 and 93xx",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 54,
+              "evidenceNote": "CCW Line Number 4.12; Item Name C9K-ACC-RBFT; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9K-ACC-SCR-4",
+          "description": "12-24 and 10-32 SCREWS FOR RACK INSTALLATION, QTY 4",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 55,
+              "evidenceNote": "CCW Line Number 4.13; Item Name C9K-ACC-SCR-4; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "CAB-GUIDE-1RU",
+          "description": "1RU CABLE MANAGEMENT GUIDES 9200 and 9300",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 56,
+              "evidenceNote": "CCW Line Number 4.14; Item Name CAB-GUIDE-1RU; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "C9300L-STACK-KIT2",
+          "description": "Cisco Catalyst 9300L and 9300LM Stacking Kit",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 57,
+              "evidenceNote": "CCW Line Number 4.15; Item Name C9300L-STACK-KIT2; Included Item No; Service Duration (Months) N/A; Quantity 6."
+            },
+            {
+              "sourceType": "ordering_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+              "pageNumber": 29,
+              "evidenceNote": "C9300L-STACK-KIT2 stacking kit referenced on this page."
+            }
+          ],
+          "evidenceScope": "reusable_logic",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "default_selection_requires_review"
+          ]
+        },
+        {
+          "sku": "C9300L-STACK-A",
+          "description": "Catalyst 9300L & 9300LM Stack Module",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "fixed_per_parent",
+          "quantityValue": 2,
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 58,
+              "evidenceNote": "CCW Line Number 4.16; Item Name C9300L-STACK-A; Included Item Yes; Service Duration (Months) N/A; Quantity 12. Quantity 12 equals 2 stack modules per switch (parent quantity 6); fixed_per_parent multiplier 2."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "fixed_per_parent_requires_review",
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "STACK-T3A-50CM",
+          "description": "C9300L & C9300LM 50CM Type 3A Stacking Cable",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 59,
+              "evidenceNote": "CCW Line Number 4.17; Item Name STACK-T3A-50CM; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "included_zero_price_accessory_requires_review",
+            "ccw_only_evidence"
+          ]
+        },
+        {
+          "sku": "NETWORK-PNP-LIC",
+          "description": "Network Plug-n-Play Connect for zero-touch device deployment",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 60,
+              "evidenceNote": "CCW Line Number 4.18; Item Name NETWORK-PNP-LIC; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "subscription_requires_review",
+            "ccw_only_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-sfp-10g-lr-s",
+      "parentSku": "SFP-10G-LR-S=",
+      "parentDescription": "10GBASE-LR SFP Module, Enterprise-Class",
+      "relationshipType": "standalone",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 62,
+          "evidenceNote": "CCW Line Number 5.0; Item Name SFP-10G-LR-S=; Group Name Default; Quantity 12; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 2307,
+          "evidenceNote": "SFP-10G-LR-S= 10GBASE-LR SFP module catalog entry (existence/description only; not price authority)."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [],
+      "childLineReviews": []
+    },
+    {
+      "ruleId": "honeywell-sfp-10-25g-lr-s",
+      "parentSku": "SFP-10/25G-LR-S=",
+      "parentDescription": "10/25GBASE-LR SFP28 Module",
+      "relationshipType": "standalone",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 64,
+          "evidenceNote": "CCW Line Number 6.0; Item Name SFP-10/25G-LR-S=; Group Name Default; Quantity 14; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 2286,
+          "evidenceNote": "SFP-10/25G-LR-S= 10/25GBASE-LR SFP28 module catalog entry (existence/description only; not price authority)."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [],
+      "childLineReviews": []
+    },
+    {
+      "ruleId": "honeywell-cp-7841-k9",
+      "parentSku": "CP-7841-K9=",
+      "parentDescription": "Cisco IP Phone 7841",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 66,
+          "evidenceNote": "CCW Line Number 7.0; Item Name CP-7841-K9=; Group Name Default; Quantity 59; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco IP Phone 7800 Series Data Sheet.pdf",
+          "pageNumber": 3,
+          "evidenceNote": "Cisco IP Phone 7841 model overview."
+        },
+        {
+          "sourceType": "datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco IP Phone 7800 Series Data Sheet.pdf",
+          "pageNumber": 11,
+          "evidenceNote": "CP-7841 ordering information referenced on this page."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 842,
+          "evidenceNote": "CP-7841-K9= Cisco UC Phone 7841 catalog entry (existence/description only; not price authority)."
+        }
+      ],
+      "evidenceScope": "reusable_logic",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [],
+      "childLineReviews": [
+        {
+          "sku": "CON-L1NBD-P7PK94P1",
+          "description": "CX LEVEL 1 8X5XNBDCisco UC Phone 7841",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "termMonths": 12,
+          "sourceRuleId": "honeywell-cp-7841-k9",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 67,
+              "evidenceNote": "CCW Line Number 7.0.1; Item Name CON-L1NBD-P7PK94P1; Included Item No; Service Duration (Months) 12; Quantity 59."
+            }
+          ],
+          "evidenceScope": "quote_observed",
+          "reviewDecision": "pending",
+          "allowedDecisions": [
+            "approve_for_honeywell_mvp",
+            "defer",
+            "reject",
+            "needs_more_evidence"
+          ],
+          "reviewer": "",
+          "reviewedAt": "",
+          "reviewNotes": "",
+          "riskFlags": [
+            "service_or_support_term_requires_review",
+            "ccw_only_evidence"
+          ]
+        }
+      ]
+    }
+  ],
+  "replacementReviews": [
+    {
+      "candidateReplacementId": "repl-c9300-dnx-a-48-3y",
+      "historicalSku": "C9300-DNX-A-48-3Y",
+      "currentSkus": [
+        "C9300-DNA-A-48-3Y"
+      ],
+      "rationale": "Historical SKU C9300-DNX-A-48-3Y observed in prior Honeywell regression context only (not rule authority); current CCW scope uses C9300-DNA-A-48-3Y. This mapping is a candidate and requires human pre-sales approval before any runtime substitution.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 17,
+          "evidenceNote": "Current SKU C9300-DNA-A-48-3Y present at CCW Line Number 3.1.1."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [
+        "replacement_requires_explicit_approval",
+        "ccw_only_evidence"
+      ],
+      "modelNotes": "Historical-to-current SKU mapping for review only. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime."
+    },
+    {
+      "candidateReplacementId": "repl-c9300l-dnx-a-24-3y",
+      "historicalSku": "C9300L-DNX-A-24-3Y",
+      "currentSkus": [
+        "C9300L-DNA-A-24-3Y"
+      ],
+      "rationale": "Historical SKU C9300L-DNX-A-24-3Y observed in prior Honeywell regression context only (not rule authority); current CCW scope uses C9300L-DNA-A-24-3Y. This mapping is a candidate and requires human pre-sales approval before any runtime substitution.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 41,
+          "evidenceNote": "Current SKU C9300L-DNA-A-24-3Y present at CCW Line Number 4.1.1."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [
+        "replacement_requires_explicit_approval",
+        "ccw_only_evidence"
+      ],
+      "modelNotes": "Historical-to-current SKU mapping for review only. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime."
+    },
+    {
+      "candidateReplacementId": "repl-sc9300uk9-1712",
+      "historicalSku": "SC9300UK9-1712",
+      "currentSkus": [
+        "SC9300UK9-1715"
+      ],
+      "rationale": "Historical SKU SC9300UK9-1712 observed in prior Honeywell regression context only (not rule authority); current CCW scope uses SC9300UK9-1715. This mapping is a candidate and requires human pre-sales approval before any runtime substitution.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 23,
+          "evidenceNote": "Current SKU SC9300UK9-1715 present at CCW Line Number 3.5."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [
+        "replacement_requires_explicit_approval",
+        "ccw_only_evidence"
+      ],
+      "modelNotes": "Historical-to-current SKU mapping for review only. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime."
+    },
+    {
+      "candidateReplacementId": "repl-s9300luk9-1712",
+      "historicalSku": "S9300LUK9-1712",
+      "currentSkus": [
+        "S9300LUK9-1718"
+      ],
+      "rationale": "Historical SKU S9300LUK9-1712 observed in prior Honeywell regression context only (not rule authority); current CCW scope uses S9300LUK9-1718. This mapping is a candidate and requires human pre-sales approval before any runtime substitution.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 46,
+          "evidenceNote": "Current SKU S9300LUK9-1718 present at CCW Line Number 4.4."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [
+        "replacement_requires_explicit_approval",
+        "ccw_only_evidence"
+      ],
+      "modelNotes": "Historical-to-current SKU mapping for review only. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime."
+    },
+    {
+      "candidateReplacementId": "repl-spaces-ext-s",
+      "historicalSku": "SPACES-EXT-S",
+      "currentSkus": [
+        "D-DNAS-EXT-S-T",
+        "D-DNAS-EXT-S-3Y"
+      ],
+      "rationale": "Historical SKU SPACES-EXT-S observed in prior Honeywell regression context only (not rule authority); current CCW scope uses D-DNAS-EXT-S-T, D-DNAS-EXT-S-3Y. This mapping is a candidate and requires human pre-sales approval before any runtime substitution.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 20,
+          "evidenceNote": "Current SKU D-DNAS-EXT-S-T present at CCW Line Number 3.3."
+        },
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 21,
+          "evidenceNote": "Current SKU D-DNAS-EXT-S-3Y present at CCW Line Number 3.3.1."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [
+        "replacement_requires_explicit_approval",
+        "ccw_only_evidence"
+      ],
+      "modelNotes": "Historical-to-current SKU mapping for review only. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime."
+    },
+    {
+      "candidateReplacementId": "repl-con-l1nbx-c9300xy4",
+      "historicalSku": "CON-L1NBX-C9300XY4",
+      "currentSkus": [
+        "CON-L1NCD-C9300XY4"
+      ],
+      "rationale": "Historical SKU CON-L1NBX-C9300XY4 observed in prior Honeywell regression context only (not rule authority); current CCW scope uses CON-L1NCD-C9300XY4. This mapping is a candidate and requires human pre-sales approval before any runtime substitution.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 14,
+          "evidenceNote": "Current SKU CON-L1NCD-C9300XY4 present at CCW Line Number 3.0.1."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [
+        "replacement_requires_explicit_approval",
+        "ccw_only_evidence"
+      ],
+      "modelNotes": "Historical-to-current SKU mapping for review only. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime."
+    },
+    {
+      "candidateReplacementId": "repl-con-l1swx-93xa48my",
+      "historicalSku": "CON-L1SWX-93XA48MY",
+      "currentSkus": [
+        "CON-L1SWT-C93A48"
+      ],
+      "rationale": "Historical SKU CON-L1SWX-93XA48MY observed in prior Honeywell regression context only (not rule authority); current CCW scope uses CON-L1SWT-C93A48. This mapping is a candidate and requires human pre-sales approval before any runtime substitution.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 16,
+          "evidenceNote": "Current SKU CON-L1SWT-C93A48 present at CCW Line Number 3.1.0.1."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [
+        "replacement_requires_explicit_approval",
+        "ccw_only_evidence"
+      ],
+      "modelNotes": "Historical-to-current SKU mapping for review only. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime."
+    },
+    {
+      "candidateReplacementId": "repl-con-l1nbx-c93024px",
+      "historicalSku": "CON-L1NBX-C93024PX",
+      "currentSkus": [
+        "CON-L1NCD-C93024PX"
+      ],
+      "rationale": "Historical SKU CON-L1NBX-C93024PX observed in prior Honeywell regression context only (not rule authority); current CCW scope uses CON-L1NCD-C93024PX. This mapping is a candidate and requires human pre-sales approval before any runtime substitution.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 38,
+          "evidenceNote": "Current SKU CON-L1NCD-C93024PX present at CCW Line Number 4.0.1."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [
+        "replacement_requires_explicit_approval",
+        "ccw_only_evidence"
+      ],
+      "modelNotes": "Historical-to-current SKU mapping for review only. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime."
+    },
+    {
+      "candidateReplacementId": "repl-con-l1swx-3lxa24my",
+      "historicalSku": "CON-L1SWX-3LXA24MY",
+      "currentSkus": [
+        "CON-L1SWT-C93LA24"
+      ],
+      "rationale": "Historical SKU CON-L1SWX-3LXA24MY observed in prior Honeywell regression context only (not rule authority); current CCW scope uses CON-L1SWT-C93LA24. This mapping is a candidate and requires human pre-sales approval before any runtime substitution.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 40,
+          "evidenceNote": "Current SKU CON-L1SWT-C93LA24 present at CCW Line Number 4.1.0.1."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [
+        "replacement_requires_explicit_approval",
+        "ccw_only_evidence"
+      ],
+      "modelNotes": "Historical-to-current SKU mapping for review only. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime."
+    },
+    {
+      "candidateReplacementId": "repl-con-snt-p7pk94p1",
+      "historicalSku": "CON-SNT-P7PK94P1",
+      "currentSkus": [
+        "CON-L1NBD-P7PK94P1"
+      ],
+      "rationale": "Historical SKU CON-SNT-P7PK94P1 observed in prior Honeywell regression context only (not rule authority); current CCW scope uses CON-L1NBD-P7PK94P1. This mapping is a candidate and requires human pre-sales approval before any runtime substitution.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 67,
+          "evidenceNote": "Current SKU CON-L1NBD-P7PK94P1 present at CCW Line Number 7.0.1."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [
+        "replacement_requires_explicit_approval",
+        "ccw_only_evidence"
+      ],
+      "modelNotes": "Historical-to-current SKU mapping for review only. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime."
+    },
+    {
+      "candidateReplacementId": "repl-c9300l-stack-blank",
+      "historicalSku": "C9300L-STACK-BLANK",
+      "currentSkus": [
+        "C9300L-STACK-KIT2",
+        "C9300L-STACK-A",
+        "STACK-T3A-50CM"
+      ],
+      "rationale": "Historical SKU C9300L-STACK-BLANK observed in prior Honeywell regression context only (not rule authority); current CCW scope uses C9300L-STACK-KIT2, C9300L-STACK-A, STACK-T3A-50CM. This mapping is a candidate and requires human pre-sales approval before any runtime substitution.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 57,
+          "evidenceNote": "Current SKU C9300L-STACK-KIT2 present at CCW Line Number 4.15."
+        },
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 58,
+          "evidenceNote": "Current SKU C9300L-STACK-A present at CCW Line Number 4.16."
+        },
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 59,
+          "evidenceNote": "Current SKU STACK-T3A-50CM present at CCW Line Number 4.17."
+        }
+      ],
+      "evidenceScope": "quote_observed",
+      "reviewDecision": "pending",
+      "allowedDecisions": [
+        "approve_for_honeywell_mvp",
+        "defer",
+        "reject",
+        "needs_more_evidence"
+      ],
+      "reviewer": "",
+      "reviewedAt": "",
+      "reviewNotes": "",
+      "riskFlags": [
+        "replacement_requires_explicit_approval",
+        "ccw_only_evidence"
+      ],
+      "modelNotes": "Historical-to-current SKU mapping for review only. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime."
+    }
+  ],
+  "optionGroups": [
+    {
+      "optionGroupId": "c9300x-ac-power-supplies",
+      "label": "C9300X-48HX-A AC power supplies",
+      "selectionMode": "multi_select",
+      "defaultOptionSku": "PWR-C1-1100WAC-P",
+      "required": true,
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "PWR-C1-1100WAC-P",
+        "PWR-C1-1100WAC-P/2"
+      ],
+      "notes": "Primary 1100W AC power supply plus an optional secondary/redundant power supply. The secondary PWR-C1-1100WAC-P/2 is Honeywell-selected (default-review), not a universal default; redundancy is an engineer-review decision."
+    },
+    {
+      "optionGroupId": "c9300l-ac-power-supplies",
+      "label": "C9300L-24P-4X-A AC power supplies",
+      "selectionMode": "multi_select",
+      "defaultOptionSku": "PWR-C1-715WAC-P",
+      "required": true,
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "PWR-C1-715WAC-P",
+        "PWR-C1-715WAC-P/2"
+      ],
+      "notes": "Primary 715W AC power supply plus an optional secondary/redundant power supply. The secondary PWR-C1-715WAC-P/2 is Honeywell-selected (default-review), not a universal default; redundancy is an engineer-review decision."
+    }
+  ],
+  "termOptionGroups": [
+    {
+      "termGroupId": "term-con-l1ncd-c9300xy4",
+      "defaultTermMonths": 36,
+      "allowedTermMonths": [
+        36,
+        60,
+        84
+      ],
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "CON-L1NCD-C9300XY4"
+      ],
+      "notes": "3Y default term observed in the Honeywell CCW for CON-L1NCD-C9300XY4. 5Y/7Y alternatives (60/84 months) are engineer-review options only and are not represented as SKUs here; 5Y/7Y alternatives require Cisco SKU evidence before they can enter an approved runtime pack."
+    },
+    {
+      "termGroupId": "term-con-l1swt-c93a48",
+      "defaultTermMonths": 36,
+      "allowedTermMonths": [
+        36,
+        60,
+        84
+      ],
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "CON-L1SWT-C93A48"
+      ],
+      "notes": "3Y default term observed in the Honeywell CCW for CON-L1SWT-C93A48. 5Y/7Y alternatives (60/84 months) are engineer-review options only and are not represented as SKUs here; 5Y/7Y alternatives require Cisco SKU evidence before they can enter an approved runtime pack."
+    },
+    {
+      "termGroupId": "term-c9300-dna-a-48-3y",
+      "defaultTermMonths": 36,
+      "allowedTermMonths": [
+        36,
+        60,
+        84
+      ],
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "C9300-DNA-A-48-3Y"
+      ],
+      "notes": "3Y default term observed in the Honeywell CCW for C9300-DNA-A-48-3Y. 5Y/7Y alternatives (60/84 months) are engineer-review options only and are not represented as SKUs here; 5Y/7Y alternatives require Cisco SKU evidence before they can enter an approved runtime pack."
+    },
+    {
+      "termGroupId": "term-te-embedded-t-3y",
+      "defaultTermMonths": 36,
+      "allowedTermMonths": [
+        36,
+        60,
+        84
+      ],
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "TE-EMBEDDED-T-3Y"
+      ],
+      "notes": "3Y default term observed in the Honeywell CCW for TE-EMBEDDED-T-3Y. 5Y/7Y alternatives (60/84 months) are engineer-review options only and are not represented as SKUs here; 5Y/7Y alternatives require Cisco SKU evidence before they can enter an approved runtime pack."
+    },
+    {
+      "termGroupId": "term-d-dnas-ext-s-3y",
+      "defaultTermMonths": 36,
+      "allowedTermMonths": [
+        36,
+        60,
+        84
+      ],
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "D-DNAS-EXT-S-3Y"
+      ],
+      "notes": "3Y default term observed in the Honeywell CCW for D-DNAS-EXT-S-3Y. 5Y/7Y alternatives (60/84 months) are engineer-review options only and are not represented as SKUs here; 5Y/7Y alternatives require Cisco SKU evidence before they can enter an approved runtime pack."
+    },
+    {
+      "termGroupId": "term-con-l1ncd-c93024px",
+      "defaultTermMonths": 36,
+      "allowedTermMonths": [
+        36,
+        60,
+        84
+      ],
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "CON-L1NCD-C93024PX"
+      ],
+      "notes": "3Y default term observed in the Honeywell CCW for CON-L1NCD-C93024PX. 5Y/7Y alternatives (60/84 months) are engineer-review options only and are not represented as SKUs here; 5Y/7Y alternatives require Cisco SKU evidence before they can enter an approved runtime pack."
+    },
+    {
+      "termGroupId": "term-con-l1swt-c93la24",
+      "defaultTermMonths": 36,
+      "allowedTermMonths": [
+        36,
+        60,
+        84
+      ],
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "CON-L1SWT-C93LA24"
+      ],
+      "notes": "3Y default term observed in the Honeywell CCW for CON-L1SWT-C93LA24. 5Y/7Y alternatives (60/84 months) are engineer-review options only and are not represented as SKUs here; 5Y/7Y alternatives require Cisco SKU evidence before they can enter an approved runtime pack."
+    },
+    {
+      "termGroupId": "term-c9300l-dna-a-24-3y",
+      "defaultTermMonths": 36,
+      "allowedTermMonths": [
+        36,
+        60,
+        84
+      ],
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "C9300L-DNA-A-24-3Y"
+      ],
+      "notes": "3Y default term observed in the Honeywell CCW for C9300L-DNA-A-24-3Y. 5Y/7Y alternatives (60/84 months) are engineer-review options only and are not represented as SKUs here; 5Y/7Y alternatives require Cisco SKU evidence before they can enter an approved runtime pack."
+    }
+  ]
+}
