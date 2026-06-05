@@ -1,0 +1,428 @@
+{
+  "rulePackId": "honeywell-batch1-approved-rules",
+  "name": "Honeywell MVP Batch 1 Approved Runtime Configuration Expansion Rules",
+  "version": "1.0.0",
+  "status": "approved",
+  "approvalRequired": false,
+  "sourceScope": "Honeywell MVP / Batch 1",
+  "createdDate": "2026-06-05",
+  "derivedFrom": {
+    "candidateRulePackId": "honeywell-candidate-rules-v2",
+    "candidateRulePackVersion": "0.2.0-candidate",
+    "candidateRulePackStatus": "candidate",
+    "reviewPacketId": "honeywell-rule-approval-packet-v2",
+    "batchStrategyDoc": "docs/config-expansion/HONEYWELL_RULE_APPROVAL_BATCH_STRATEGY.md",
+    "note": "Authored as a NEW artifact from explicit human/business Batch 1 decisions. The source candidate packs and review packets are unchanged and remain candidate/pending; no candidate pack status was flipped to author this approved pack."
+  },
+  "approval": {
+    "decision": "I approve Batch 1 for Honeywell MVP with the caveats listed.",
+    "batch": "batch-1",
+    "scope": "honeywell_mvp_batch_1",
+    "approvedDecisions": [
+      "LIC-CW-A under CISCO-NETWORK-SUB",
+      "LIC-SPACES-ADV under CISCO-NETWORK-SUB",
+      "CAB-C15-CBN under C9300X-48HX-A",
+      "CAB-C15-CBN under C9300L-24P-4X-A",
+      "option group c9300x-ac-power-supplies",
+      "option group c9300l-ac-power-supplies",
+      "project_sku duplicate policy for the wireless subscription/license lines"
+    ],
+    "caveats": [
+      "Honeywell MVP only.",
+      "This is not broad Cisco-general approval.",
+      "This does not approve all 53 child lines.",
+      "Batch 2 terms/support/licensing lines remain deferred.",
+      "Batch 3 replacement candidates remain deferred.",
+      "Batch 4 broader Cisco generalization remains deferred.",
+      "No pricing authority is encoded."
+    ]
+  },
+  "notes": "PARTIAL approved runtime rule pack: only the Honeywell MVP Batch 1 configuration-expansion decisions are active. The full 53-child-line Honeywell candidate pack is NOT approved. Batch 2 (term-coupled support/licensing), Batch 3 (replacement candidates), and Batch 4 (broader Cisco generalization) remain deferred. No pricing authority is encoded here; what to add/default/offer is configuration authority, while pricing is resolved separately from the catalog/price source at runtime, so the two stay strictly separate. The source candidate packs (data/config-expansion/honeywell-candidate-rules.json, data/config-expansion/honeywell-candidate-rules-v2.json) and the review packets remain unchanged and candidate/pending; this approved pack is a new, separate artifact.",
+  "createdFromEvidence": [
+    {
+      "sourceType": "ccw_export",
+      "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+      "title": "Current Cisco CCW estimate export (Honeywell scope)."
+    },
+    {
+      "sourceType": "subscription_datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Networking Subscription Data Sheet.pdf",
+      "title": "Cisco Networking Subscription data sheet."
+    },
+    {
+      "sourceType": "subscription_datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Spaces Unlimited Subscription.pdf",
+      "title": "Cisco Spaces Unlimited Subscription data sheet."
+    },
+    {
+      "sourceType": "ordering_guide",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless Ordering.pdf",
+      "title": "Cisco Wireless ordering guide."
+    },
+    {
+      "sourceType": "ordering_guide",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+      "title": "Cisco Catalyst 9300 Series ordering guide."
+    },
+    {
+      "sourceType": "datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300_datasheet.pdf",
+      "title": "Cisco Catalyst 9300 data sheet."
+    },
+    {
+      "sourceType": "gpl",
+      "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+      "title": "Cisco GPL/SAR catalog export (SKU existence and descriptions only; not price authority)."
+    }
+  ],
+  "parentRules": [
+    {
+      "ruleId": "honeywell-cisco-network-sub",
+      "parentSku": "CISCO-NETWORK-SUB",
+      "parentDescription": "Cisco Networking Subscription",
+      "approved": true,
+      "approvalRequired": false,
+      "evidenceScope": "reusable_logic",
+      "reviewNotes": "Approved for Honeywell MVP Batch 1: only the two wireless subscription license child lines (LIC-CW-A, LIC-SPACES-ADV) are in scope. Other CISCO-NETWORK-SUB children (for example SVS-L0SPT-CN) remain deferred and are intentionally not included in this approved pack.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 8,
+          "evidenceNote": "CCW Line Number 2.0; Item Name CISCO-NETWORK-SUB; Group Name Default; Quantity 1; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "subscription_datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Networking Subscription Data Sheet.pdf",
+          "pageNumber": 3,
+          "evidenceNote": "Cisco Networking Subscription Advantage tier overview."
+        },
+        {
+          "sourceType": "ordering_guide",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless Ordering.pdf",
+          "pageNumber": 17,
+          "evidenceNote": "Subscription requirement (mandatory) referenced on this page."
+        }
+      ],
+      "childLines": [
+        {
+          "sku": "LIC-CW-A",
+          "description": "Cisco Wireless License - Advantage",
+          "relationshipType": "subscription",
+          "quantityRule": "fixed",
+          "quantityValue": 12,
+          "includedItem": false,
+          "sourceRuleId": "honeywell-cisco-network-sub",
+          "approved": true,
+          "approvalRequired": false,
+          "quantityModel": {
+            "type": "same_as_related_sku_total",
+            "relatedSku": "CW9178I-CFG",
+            "scope": "project"
+          },
+          "duplicatePolicy": {
+            "scope": "project_sku",
+            "match": "sku",
+            "quantitySatisfaction": "existing_satisfies_required"
+          },
+          "evidenceScope": "reusable_logic",
+          "reviewNotes": "Approved for Honeywell MVP Batch 1. License quantity tracks the CW9178I-CFG access-point total across the project (same_as_related_sku_total, project scope). The legacy quantityRule fixed / quantityValue 12 is Honeywell quote-observed compatibility data only and is NOT reusable logic. The project_sku duplicate policy keeps a per-project license from being re-added per parent segment.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 9,
+              "evidenceNote": "CCW Line Number 2.1; Item Name LIC-CW-A; Included Item No; Service Duration (Months) N/A; Quantity 12. Quantity 12 equals the deployed access-point count in this CCW; per-access-point generalization requires human approval."
+            },
+            {
+              "sourceType": "subscription_datasheet",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Networking Subscription Data Sheet.pdf",
+              "pageNumber": 8,
+              "evidenceNote": "LIC-CW-A Cisco Wireless Advantage license referenced on this page."
+            }
+          ]
+        },
+        {
+          "sku": "LIC-SPACES-ADV",
+          "description": "Cisco Spaces Advantage for Cisco Wireless Advantage License",
+          "relationshipType": "subscription",
+          "quantityRule": "fixed",
+          "quantityValue": 12,
+          "includedItem": false,
+          "sourceRuleId": "honeywell-cisco-network-sub",
+          "approved": true,
+          "approvalRequired": false,
+          "quantityModel": {
+            "type": "same_as_related_sku_total",
+            "relatedSku": "CW9178I-CFG",
+            "scope": "project"
+          },
+          "duplicatePolicy": {
+            "scope": "project_sku",
+            "match": "sku",
+            "quantitySatisfaction": "existing_satisfies_required"
+          },
+          "evidenceScope": "reusable_logic",
+          "reviewNotes": "Approved for Honeywell MVP Batch 1. License quantity tracks the CW9178I-CFG access-point total across the project (same_as_related_sku_total, project scope). The legacy quantityRule fixed / quantityValue 12 is Honeywell quote-observed compatibility data only and is NOT reusable logic. The project_sku duplicate policy keeps a per-project license from being re-added per parent segment.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 10,
+              "evidenceNote": "CCW Line Number 2.2; Item Name LIC-SPACES-ADV; Included Item No; Service Duration (Months) N/A; Quantity 12. Quantity 12 equals the deployed access-point count in this CCW; per-access-point generalization requires human approval."
+            },
+            {
+              "sourceType": "subscription_datasheet",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Spaces Unlimited Subscription.pdf",
+              "pageNumber": 1,
+              "evidenceNote": "Cisco Spaces Advantage subscription described on this page."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-c9300x-48hx-a",
+      "parentSku": "C9300X-48HX-A",
+      "parentDescription": "Catalyst 9300 48-port mGig UPoE+, Network Advantage",
+      "approved": true,
+      "approvalRequired": false,
+      "evidenceScope": "reusable_logic",
+      "reviewNotes": "Approved for Honeywell MVP Batch 1: only the AC power-supply option lines and the selected-option power cord (CAB-C15-CBN) are in scope. All other C9300X-48HX-A children remain deferred and are intentionally not included in this approved pack.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 13,
+          "evidenceNote": "CCW Line Number 3.0; Item Name C9300X-48HX-A; Group Name Default; Quantity 7; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300_datasheet.pdf",
+          "pageNumber": 62,
+          "evidenceNote": "C9300X-48HX-A model referenced on this page."
+        },
+        {
+          "sourceType": "ordering_guide",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+          "pageNumber": 20,
+          "evidenceNote": "Catalyst 9300 power-supply selection guidance."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 561,
+          "evidenceNote": "C9300X-48HX-A catalog entry (existence/description only; not price authority)."
+        }
+      ],
+      "childLines": [
+        {
+          "sku": "PWR-C1-1100WAC-P",
+          "description": "1100W AC 80+ platinum Config 1 Power Supply",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "optionGroupId": "c9300x-ac-power-supplies",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 25,
+              "evidenceNote": "CCW Line Number 3.7; Item Name PWR-C1-1100WAC-P; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "PWR-C1-1100WAC-P/2",
+          "description": "1100W AC 80+ platinum Config 1 Secondary Power Supply",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "optionGroupId": "c9300x-ac-power-supplies",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 26,
+              "evidenceNote": "CCW Line Number 3.8; Item Name PWR-C1-1100WAC-P/2; Included Item No; Service Duration (Months) N/A; Quantity 7. Secondary/redundant power supply selected in this CCW; redundancy is an engineer-review decision."
+            }
+          ]
+        },
+        {
+          "sku": "CAB-C15-CBN",
+          "description": "Cabinet Jumper Power Cord, 250 VAC 13A, C14-C15 Connectors",
+          "relationshipType": "default_selected",
+          "quantityRule": "fixed_per_parent",
+          "quantityValue": 2,
+          "includedItem": false,
+          "sourceRuleId": "honeywell-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "quantityModel": {
+            "type": "selected_option_count",
+            "optionGroupId": "c9300x-ac-power-supplies"
+          },
+          "evidenceScope": "needs_more_evidence",
+          "reviewNotes": "Approved for Honeywell MVP Batch 1 only. Cable quantity follows the selected AC power-supply count in option group c9300x-ac-power-supplies (selected_option_count). The legacy fixed_per_parent multiplier 2 is Honeywell quote-observed compatibility data only. evidenceScope stays needs_more_evidence: this is a Honeywell-scoped decision and must not be generalized into a universal Cisco rule without more evidence (deferred to Batch 4).",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 35,
+              "evidenceNote": "CCW Line Number 3.17; Item Name CAB-C15-CBN; Included Item No; Service Duration (Months) N/A; Quantity 14. Quantity 14 equals 2 power cords per switch (parent quantity 7); fixed_per_parent multiplier 2."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-c9300l-24p-4x-a",
+      "parentSku": "C9300L-24P-4X-A",
+      "parentDescription": "Catalyst 9300L 24p PoE, Network Advantage ,4x10G Uplink",
+      "approved": true,
+      "approvalRequired": false,
+      "evidenceScope": "reusable_logic",
+      "reviewNotes": "Approved for Honeywell MVP Batch 1: only the AC power-supply option lines and the selected-option power cord (CAB-C15-CBN) are in scope. All other C9300L-24P-4X-A children remain deferred and are intentionally not included in this approved pack.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 37,
+          "evidenceNote": "CCW Line Number 4.0; Item Name C9300L-24P-4X-A; Group Name Default; Quantity 6; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300_datasheet.pdf",
+          "pageNumber": 66,
+          "evidenceNote": "C9300L-24P-4X-A model referenced on this page."
+        },
+        {
+          "sourceType": "ordering_guide",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+          "pageNumber": 20,
+          "evidenceNote": "Catalyst 9300 power-supply selection guidance."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 499,
+          "evidenceNote": "C9300L-24P-4X-A catalog entry (existence/description only; not price authority)."
+        }
+      ],
+      "childLines": [
+        {
+          "sku": "PWR-C1-715WAC-P",
+          "description": "715W AC 80+ platinum Config 1 Power Supply",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "optionGroupId": "c9300l-ac-power-supplies",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 50,
+              "evidenceNote": "CCW Line Number 4.8; Item Name PWR-C1-715WAC-P; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "PWR-C1-715WAC-P/2",
+          "description": "715W AC 80+ platinum Config 1 SecondaryPower Supply",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "optionGroupId": "c9300l-ac-power-supplies",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 51,
+              "evidenceNote": "CCW Line Number 4.9; Item Name PWR-C1-715WAC-P/2; Included Item No; Service Duration (Months) N/A; Quantity 6. Secondary/redundant power supply selected in this CCW; redundancy is an engineer-review decision."
+            }
+          ]
+        },
+        {
+          "sku": "CAB-C15-CBN",
+          "description": "Cabinet Jumper Power Cord, 250 VAC 13A, C14-C15 Connectors",
+          "relationshipType": "default_selected",
+          "quantityRule": "fixed_per_parent",
+          "quantityValue": 2,
+          "includedItem": false,
+          "sourceRuleId": "honeywell-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "quantityModel": {
+            "type": "selected_option_count",
+            "optionGroupId": "c9300l-ac-power-supplies"
+          },
+          "evidenceScope": "needs_more_evidence",
+          "reviewNotes": "Approved for Honeywell MVP Batch 1 only. Cable quantity follows the selected AC power-supply count in option group c9300l-ac-power-supplies (selected_option_count). The legacy fixed_per_parent multiplier 2 is Honeywell quote-observed compatibility data only. evidenceScope stays needs_more_evidence: this is a Honeywell-scoped decision and must not be generalized into a universal Cisco rule without more evidence (deferred to Batch 4).",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 52,
+              "evidenceNote": "CCW Line Number 4.10; Item Name CAB-C15-CBN; Included Item No; Service Duration (Months) N/A; Quantity 12. Quantity 12 equals 2 power cords per switch (parent quantity 6); fixed_per_parent multiplier 2."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "optionGroups": [
+    {
+      "optionGroupId": "c9300x-ac-power-supplies",
+      "label": "C9300X-48HX-A AC power supplies",
+      "selectionMode": "multi_select",
+      "defaultOptionSku": "PWR-C1-1100WAC-P",
+      "required": true,
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "PWR-C1-1100WAC-P",
+        "PWR-C1-1100WAC-P/2"
+      ],
+      "notes": "Primary 1100W AC power supply plus an optional secondary/redundant power supply. The secondary PWR-C1-1100WAC-P/2 is Honeywell-selected (default-review), not a universal default; redundancy is an engineer-review decision."
+    },
+    {
+      "optionGroupId": "c9300l-ac-power-supplies",
+      "label": "C9300L-24P-4X-A AC power supplies",
+      "selectionMode": "multi_select",
+      "defaultOptionSku": "PWR-C1-715WAC-P",
+      "required": true,
+      "engineerReviewRequired": true,
+      "optionSkus": [
+        "PWR-C1-715WAC-P",
+        "PWR-C1-715WAC-P/2"
+      ],
+      "notes": "Primary 715W AC power supply plus an optional secondary/redundant power supply. The secondary PWR-C1-715WAC-P/2 is Honeywell-selected (default-review), not a universal default; redundancy is an engineer-review decision."
+    }
+  ]
+}
