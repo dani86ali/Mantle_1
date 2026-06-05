@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  artifactExcerptLimit,
   buildReviewerPrompt,
   extractJsonObject,
   parseReviewerVerdict,
@@ -127,6 +128,20 @@ describe("bomatic reviewer prompt", () => {
     expect(prompt).toContain("Treat the local guard report as evidence, not as your decision");
     expect(prompt).toContain("## bomatic-review-summary.md");
     expect(prompt).toContain("## git-diff.patch");
+  });
+});
+
+describe("bomatic reviewer artifact excerpt limits", () => {
+  it("keeps critical artifacts at the configured limit", () => {
+    expect(artifactExcerptLimit("git-diff.patch", 1_000_000)).toBe(1_000_000);
+  });
+
+  it("caps non-critical artifacts to protect reviewer context", () => {
+    expect(artifactExcerptLimit("claude-transcript.txt", 1_000_000)).toBe(120_000);
+  });
+
+  it("honors a smaller configured limit for non-critical artifacts", () => {
+    expect(artifactExcerptLimit("claude-transcript.txt", 50_000)).toBe(50_000);
   });
 });
 

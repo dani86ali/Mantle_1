@@ -55,6 +55,7 @@ interface ReviewerOptions {
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_FILE_CHARS = 1_000_000;
+const DEFAULT_NONCRITICAL_MAX_FILE_CHARS = 120_000;
 const DEFAULT_BACKGROUND_FILE = path.join(
   "docs",
   "automation",
@@ -86,6 +87,11 @@ const CRITICAL_ARTIFACTS = new Set<string>([
   "typecheck.log",
   "tests.log",
 ]);
+
+export function artifactExcerptLimit(name: string, maxFileChars: number): number {
+  if (CRITICAL_ARTIFACTS.has(name)) return maxFileChars;
+  return Math.min(maxFileChars, DEFAULT_NONCRITICAL_MAX_FILE_CHARS);
+}
 
 const VERDICT_SCHEMA = {
   type: "object",
@@ -172,7 +178,7 @@ async function collectArtifacts(
 ): Promise<{ artifacts: Record<string, string>; manifest: ArtifactManifestEntry[] }> {
   const results = await Promise.all(
     REVIEW_ARTIFACTS.map(async (name) => {
-      const result = await readArtifact(runDir, name, maxChars);
+      const result = await readArtifact(runDir, name, artifactExcerptLimit(name, maxChars));
       return [name, result] as const;
     })
   );
@@ -532,7 +538,7 @@ function usage(): string {
     "  --model <model>          Optional Codex model override.",
     "  --profile <profile>      Optional Codex config profile.",
     "  --timeout-ms <ms>        Reviewer timeout. Defaults to 30 minutes.",
-    "  --max-file-chars <n>     Per-artifact prompt excerpt size. Defaults to 1000000.",
+    "  --max-file-chars <n>     Critical artifact excerpt size. Defaults to 1000000; non-critical artifacts are capped lower.",
     "  --dry-run                Write the reviewer prompt and return a stop JSON without calling Codex.",
   ].join("\n");
 }
