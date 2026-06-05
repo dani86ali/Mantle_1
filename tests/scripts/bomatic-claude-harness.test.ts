@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   buildBomaticReviewSummary,
+  buildPromptReferenceReport,
   combineGitDiffOutput,
   evaluateGuardrails,
   normalizeRepoPath,
   parseVerifierVerdict,
   pathMatchesSpec,
   promptDirName,
+  promptReferenceTerms,
 } from "../../scripts/bomatic-claude-harness";
 
 const passingBase = {
@@ -44,6 +46,33 @@ describe("bomatic Claude harness prompt run directory naming", () => {
   it("preserves cleanup suffixes such as 54b", () => {
     expect(promptDirName("54b")).toBe("prompt-054b");
     expect(promptDirName("prompt-54b")).toBe("prompt-054b");
+  });
+});
+
+describe("bomatic Claude harness prompt reference evidence", () => {
+  it("searches both the cleanup suffix and base prompt number", () => {
+    expect(promptReferenceTerms("54b")).toEqual(
+      expect.arrayContaining(["Prompt 54", "Prompt 54b", "Prompt 55", "Next Prompt Sequence"])
+    );
+  });
+
+  it("renders roadmap matches for reviewer cleanup decisions", () => {
+    const report = buildPromptReferenceReport({
+      promptNumber: "54",
+      promptText: "Prompt 54 - CAB validator cleanup",
+      matches: [
+        {
+          source: "docs/config-expansion/HONEYWELL_RULE_APPROVAL_BATCH_STRATEGY.md",
+          line: 119,
+          text: "Prompt 54 should be Batch 1 runtime evaluator support.",
+        },
+      ],
+    });
+
+    expect(report).toContain("Prompt 54 Reference Report");
+    expect(report).toContain("runtime evaluator");
+    expect(report).toContain("docs/config-expansion/HONEYWELL_RULE_APPROVAL_BATCH_STRATEGY.md:119");
+    expect(report).toContain("Prompt 54 should be Batch 1 runtime evaluator support.");
   });
 });
 
@@ -135,6 +164,7 @@ describe("bomatic Claude harness review summary", () => {
     expect(summary).toContain("BOMATIC #3 decides");
     expect(summary).toContain("verdict");
     expect(summary).toContain("cleanupPrompt");
+    expect(summary).toContain("prompt-reference-report.md");
     expect(summary).toContain("tests/lib/projects/mantle-export-artifact-workbook.test.ts");
     expect(summary).toContain("localGuardReport: pass (evidence only; BOMATIC #3 is the reviewer)");
   });

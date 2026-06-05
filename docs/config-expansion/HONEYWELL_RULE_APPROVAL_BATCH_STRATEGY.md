@@ -116,14 +116,14 @@ Excludes:
 
 ## 4. Batch 1 Runtime Boundary
 
-Prompt 54 should implement runtime evaluator support only for the Batch 1 model
+Prompt 55 should implement runtime evaluator support only for the Batch 1 model
 primitives and their tests: same_as_related_sku_total, selected_option_count, the
 project_sku duplicatePolicy with existing_satisfies_required, and the AC PSU
 option groups c9300x-ac-power-supplies and c9300l-ac-power-supplies. Today the
 deterministic builder (src/lib/projects/config-expansion.ts) evaluates only the
 v1 quantityRule union (same_as_parent, fixed, fixed_per_parent) with
 parent-segment-local duplicate detection, and ignores every advanced model field.
-Prompt 54 must not create or activate an approved rule pack: it adds evaluator
+Prompt 55 must not create or activate an approved rule pack: it adds evaluator
 support and tests only, and the v2 candidate pack stays candidate.
 
 ## 5. Approval Boundary
@@ -150,11 +150,16 @@ authored as a NEW artifact, never by flipping a candidate pack's status.
 
 ## 7. Next Prompt Sequence
 
-- Prompt 54: Batch 1 runtime evaluator support only. Evaluator support and tests
+- Prompt 54: completed - Honeywell v2 CAB validator cleanup. The model-aware v2
+  CAB/rule artifact validator and its tests
+  (src/lib/projects/honeywell-rule-model-v2-validator.ts) shipped here. This
+  prompt is done and changed no batch strategy; it is not the runtime evaluator
+  prompt.
+- Prompt 55: Batch 1 runtime evaluator support only. Evaluator support and tests
   for the Batch 1 model primitives; no approved pack is created or activated.
-- Prompt 55: Batch 1 approved Honeywell runtime pack from explicit decisions, if
+- Prompt 56: Batch 1 approved Honeywell runtime pack from explicit decisions, if
   decisions are available. Authored as a new artifact from recorded
   human/business decisions over the Batch 1 scope.
-- Prompt 56: demo orchestration / fixture runner after the approved pack exists.
+- Prompt 57: demo orchestration / fixture runner after the approved pack exists.
 - Later prompts: Batch 2 terms, Batch 3 replacements, and Batch 4 generalization,
   each gated on its own evidence and explicit decisions.

@@ -112,6 +112,7 @@ describe("bomatic reviewer prompt", () => {
       ],
       artifacts: {
         "bomatic-review-summary.md": "localGuardReport: pass",
+        "prompt-reference-report.md": "docs/config-expansion/HONEYWELL_RULE_APPROVAL_BATCH_STRATEGY.md:119: Prompt 54 should be Batch 1 runtime evaluator support.",
         "git-diff.patch": "diff --git a/file b/file",
       },
     });
@@ -122,11 +123,14 @@ describe("bomatic reviewer prompt", () => {
     expect(prompt).toContain("Planning source of truth");
     expect(prompt).toContain("Return only one JSON object");
     expect(prompt).toContain("Do not commit when required verification was skipped");
+    expect(prompt).toContain("Review prompt-reference-report.md");
+    expect(prompt).toContain("stale prompt numbering");
     expect(prompt).toContain("## Artifact Manifest");
     expect(prompt).toContain("verdict");
     expect(prompt).toContain("cleanupPrompt");
     expect(prompt).toContain("Treat the local guard report as evidence, not as your decision");
     expect(prompt).toContain("## bomatic-review-summary.md");
+    expect(prompt).toContain("## prompt-reference-report.md");
     expect(prompt).toContain("## git-diff.patch");
   });
 });

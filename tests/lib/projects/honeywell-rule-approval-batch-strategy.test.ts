@@ -12,7 +12,8 @@ import { join } from "path";
  * deterministic model safety through Batch 4 broader Cisco generalization), the
  * Batch 1 include/exclude scope, the Batch 2 term-option contract, the Batch 3
  * non-silent-replacement rule, and the next-prompt sequence that moves the runtime
- * evaluator work to Prompt 54. The doc is read from disk (not imported) so the
+ * evaluator work to Prompt 55 (Prompt 54 was spent on the Honeywell v2 CAB
+ * validator cleanup). The doc is read from disk (not imported) so the
  * test also proves it exists and is ASCII-only. No source/runtime/data-pack file
  * is touched.
  */
@@ -117,10 +118,31 @@ describe("Honeywell rule approval batch strategy - later batches", () => {
 });
 
 describe("Honeywell rule approval batch strategy - next prompt sequence", () => {
-  it("moves Batch 1 runtime evaluator support to Prompt 54", () => {
+  it("moves Batch 1 runtime evaluator support to Prompt 55", () => {
     const sequence = between(md, NEXT_SEQUENCE_HEADER);
     expect(sequence).toContain(
+      "Prompt 55: Batch 1 runtime evaluator support only"
+    );
+  });
+
+  it("records Prompt 54 as the completed Honeywell v2 CAB validator cleanup", () => {
+    const sequence = between(md, NEXT_SEQUENCE_HEADER);
+    expect(sequence).toContain(
+      "Prompt 54: completed - Honeywell v2 CAB validator cleanup"
+    );
+    // No stale claim that Prompt 54 is the runtime evaluator prompt.
+    expect(sequence).not.toContain(
       "Prompt 54: Batch 1 runtime evaluator support only"
+    );
+  });
+
+  it("orders the forward queue: 56 approved pack, 57 demo runner", () => {
+    const sequence = between(md, NEXT_SEQUENCE_HEADER);
+    expect(sequence).toContain(
+      "Prompt 56: Batch 1 approved Honeywell runtime pack"
+    );
+    expect(sequence).toContain(
+      "Prompt 57: demo orchestration / fixture runner"
     );
   });
 });

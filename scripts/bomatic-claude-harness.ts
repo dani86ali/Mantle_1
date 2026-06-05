@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,6 +55,18 @@ export interface BuildBomaticReviewSummaryInput {
   claudeExitCode: number;
   typecheckExitCode: number | null;
   testsExitCode: number | null;
+}
+
+export interface PromptReferenceMatch {
+  source: string;
+  line: number;
+  text: string;
+}
+
+export interface BuildPromptReferenceReportInput {
+  promptNumber: string;
+  promptText: string;
+  matches: PromptReferenceMatch[];
 }
 
 interface CommandResult {
@@ -380,6 +392,7 @@ export function buildBomaticReviewSummary(input: BuildBomaticReviewSummaryInput)
     "Review these artifacts before deciding:",
     "- claude-transcript.txt",
     "- git-diff.patch",
+    "- prompt-reference-report.md",
     "- typecheck.log",
     "- tests.log",
     "- guard-report.json",
@@ -562,6 +575,126 @@ export function promptDirName(promptNumber: string): string {
   if (!match) return `prompt-${normalized || "unknown"}`;
   const [, digits, suffix = ""] = match;
   return `prompt-${digits.padStart(3, "0")}${suffix}`;
+}
+
+export function promptReferenceTerms(promptNumber: string): string[] {
+  const normalized = promptNumber.replace(/^prompt-/i, "").trim();
+  const match = normalized.match(/^(\d+)([a-z][a-z0-9-]*)?$/i);
+  const terms = new Set<string>([
+    "Next Prompt Sequence",
+    "runtime evaluator",
+    "approved runtime pack",
+    "demo orchestration",
+    "fixture runner",
+  ]);
+  if (!match) {
+    terms.add(`Prompt ${normalized}`);
+    return Array.from(terms);
+  }
+
+  const current = Number(match[1]);
+  const suffix = match[2] ?? "";
+  terms.add(`Prompt ${current}`);
+  if (suffix) terms.add(`Prompt ${current}${suffix}`);
+  terms.add(`Prompt ${current + 1}`);
+  return Array.from(terms);
+}
+
+export function buildPromptReferenceReport(input: BuildPromptReferenceReportInput): string {
+  const title =
+    input.promptText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? "(empty prompt)";
+  const terms = promptReferenceTerms(input.promptNumber);
+  const matches =
+    input.matches.length === 0
+      ? "- none"
+      : input.matches
+          .map((match) => `- ${match.source}:${match.line}: ${match.text}`)
+          .join("\n");
+
+  return [
+    `# Prompt ${input.promptNumber} Reference Report`,
+    "",
+    "Purpose: surface cross-prompt roadmap and sequencing references for the reviewer. This is evidence only; BOMATIC reviewer decides whether any stale references require cleanup.",
+    "",
+    `Prompt title/source line: ${title}`,
+    "",
+    "Search terms:",
+    ...terms.map((term) => `- ${term}`),
+    "",
+    "Matches:",
+    matches,
+    "",
+  ].join("\n");
+}
+
+async function listMarkdownFiles(rootDir: string, maxFiles = 500): Promise<string[]> {
+  if (!existsSync(rootDir)) return [];
+  const found: string[] = [];
+  async function visit(dir: string): Promise<void> {
+    if (found.length >= maxFiles) return;
+    let entryNames: string[];
+    try {
+      entryNames = await readdir(dir);
+    } catch {
+      return;
+    }
+    for (const entryName of entryNames) {
+      if (found.length >= maxFiles) return;
+      const fullPath = path.join(dir, entryName);
+      let fileStat: Awaited<ReturnType<typeof stat>>;
+      try {
+        fileStat = await stat(fullPath);
+      } catch {
+        continue;
+      }
+      if (fileStat.isDirectory()) {
+        if ([".git", "node_modules", "dist", "coverage"].includes(entryName)) continue;
+        await visit(fullPath);
+      } else if (fileStat.isFile() && entryName.toLowerCase().endsWith(".md")) {
+        found.push(fullPath);
+      }
+    }
+  }
+  await visit(rootDir);
+  return found;
+}
+
+async function collectPromptReferenceMatches(
+  repoDir: string,
+  promptFile: string,
+  promptNumber: string
+): Promise<PromptReferenceMatch[]> {
+  const terms = promptReferenceTerms(promptNumber);
+  const docsDir = path.join(repoDir, "docs");
+  const promptDir = path.dirname(promptFile);
+  const files = uniqueSorted([
+    ...(await listMarkdownFiles(docsDir)),
+    ...(await listMarkdownFiles(promptDir, 200)),
+  ]);
+  const matches: PromptReferenceMatch[] = [];
+  for (const file of files) {
+    let raw: string;
+    try {
+      raw = await readFile(file, "utf8");
+    } catch {
+      continue;
+    }
+    const lines = raw.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      const matched = terms.some((term) => line.toLowerCase().includes(term.toLowerCase()));
+      if (!matched) return;
+      const source = isInside(file, repoDir) ? normalizeRepoPath(path.relative(repoDir, file)) : file;
+      matches.push({
+        source,
+        line: index + 1,
+        text: line.trim().slice(0, 240),
+      });
+    });
+  }
+  return matches;
 }
 
 async function createRunDir(runRoot: string, promptNumber: string): Promise<string> {
@@ -829,6 +962,15 @@ async function runOne(options: HarnessOptions): Promise<"committed" | "awaiting_
   const promptText = await readFile(options.promptFile, "utf8");
   await writeText(path.join(runDir, "prompt.md"), promptText);
   await copyIfExists(options.planningFile ?? defaultPlanningFile(repoDir), path.join(runDir, "planning-source.md"));
+  const promptReferenceMatches = await collectPromptReferenceMatches(repoDir, options.promptFile, options.promptNumber);
+  await writeText(
+    path.join(runDir, "prompt-reference-report.md"),
+    buildPromptReferenceReport({
+      promptNumber: options.promptNumber,
+      promptText,
+      matches: promptReferenceMatches,
+    })
+  );
 
   const sessionId = randomUUID();
   await writeJson(path.join(runDir, "harness-run.json"), {
