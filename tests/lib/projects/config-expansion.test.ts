@@ -456,6 +456,394 @@ describe("buildConfigurationExpansionDraft - review gate and summary", () => {
   });
 });
 
+// --- Batch 1: same_as_related_sku_total (project scope) --------------------
+
+describe("buildConfigurationExpansionDraft - same_as_related_sku_total (project scope)", () => {
+  // Wireless license child whose quantity tracks the related AP total. The legacy
+  // quantityRule "fixed" / quantityValue 12 is deliberately set to a value that
+  // DIFFERS from the derived total, so a test that emits 12 would prove the frozen
+  // value leaked through; emitting the related total proves the model override.
+  function licChild(overrides: Partial<ConfigExpansionChildRule> = {}): ConfigExpansionChildRule {
+    return child({
+      sku: "LIC-CW-A",
+      description: "Cisco Wireless License - Advantage",
+      relationshipType: "subscription",
+      sourceRuleId: "rule-sub",
+      quantityRule: "fixed",
+      quantityValue: 12,
+      quantityModel: { type: "same_as_related_sku_total", relatedSku: "CW9178I-CFG", scope: "project" },
+      ...overrides,
+    });
+  }
+
+  // AP customer line (row 1) plus the subscription parent line (row 2). The license
+  // lives under CISCO-NETWORK-SUB; its quantity must track the CW9178I-CFG total.
+  function buildScenario(
+    apQuantity: number,
+    apAcceptedSku: string = "CW9178I-CFG",
+    apOriginalSku: string = "CW9178I-CFG"
+  ) {
+    return build({
+      lines: [
+        line({ sourceRowNumber: 1, originalLineNumber: "1", sku: apOriginalSku, quantity: apQuantity, originalCells: { "#": "1", "Part Number": apOriginalSku } }),
+        line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "CISCO-NETWORK-SUB", quantity: 1, originalCells: { "#": "2", "Part Number": "CISCO-NETWORK-SUB" } }),
+      ],
+      decisions: [
+        accept({ sourceRowNumber: 1, originalLineNumber: "1", originalSku: apOriginalSku, acceptedSku: apAcceptedSku }),
+        accept({ sourceRowNumber: 2, originalLineNumber: "2", originalSku: "CISCO-NETWORK-SUB", acceptedSku: "CISCO-NETWORK-SUB" }),
+      ],
+      rulePack: approvedPack([
+        parent({ ruleId: "rule-sub", parentSku: "CISCO-NETWORK-SUB", childLines: [licChild()] }),
+      ]),
+    });
+  }
+
+  it("derives 12 licenses from 12 related access points (not the frozen legacy value)", () => {
+    const lic = addedLines(buildScenario(12)).find((l) => l.sku === "LIC-CW-A");
+    expect(lic?.quantity).toBe(12);
+  });
+
+  it("tracks the related AP quantity deterministically when it changes", () => {
+    // 20 access points -> 20 licenses; the frozen quantityValue 12 is ignored.
+    const lic = addedLines(buildScenario(20)).find((l) => l.sku === "LIC-CW-A");
+    expect(lic?.quantity).toBe(20);
+  });
+
+  it("matches the related SKU on the accepted SKU, not the original", () => {
+    // Original SKU "RAW-AP" but accepted "CW9178I-CFG": the related total still counts it.
+    const lic = addedLines(buildScenario(15, "CW9178I-CFG", "RAW-AP")).find((l) => l.sku === "LIC-CW-A");
+    expect(lic?.quantity).toBe(15);
+  });
+
+  it("adds no license line when the related SKU total is zero", () => {
+    // Original SKU "CW9178I-CFG" but accepted to something else: zero effective total.
+    // The frozen 12 must NOT leak through as a fallback.
+    const draft = buildScenario(12, "OTHER-AP", "CW9178I-CFG");
+    expect(addedLines(draft).some((l) => l.sku === "LIC-CW-A")).toBe(false);
+    expect(draft.summary.addedLineCount).toBe(0);
+  });
+});
+
+// --- Batch 1: selected_option_count ----------------------------------------
+
+describe("buildConfigurationExpansionDraft - selected_option_count", () => {
+  function psuChild(sku: string, optionGroupId: string, relationshipType: ConfigExpansionChildRule["relationshipType"] = "default_selected"): ConfigExpansionChildRule {
+    return child({ sku, optionGroupId, relationshipType, sourceRuleId: "rule-sw" });
+  }
+  // Power cord whose quantity follows the SUM of the selected AC PSU quantities. The
+  // legacy fixed_per_parent multiplier (5) is chosen so 5 * parent never equals the
+  // derived option-sum, so a test asserting the derived value proves the model
+  // overrides the frozen legacy rule (and that it is a sum, not a bare count).
+  function cableChild(optionGroupId: string): ConfigExpansionChildRule {
+    return child({
+      sku: "CAB-C15-CBN",
+      description: "Cabinet Jumper Power Cord",
+      relationshipType: "default_selected",
+      sourceRuleId: "rule-sw",
+      quantityRule: "fixed_per_parent",
+      quantityValue: 5,
+      quantityModel: { type: "selected_option_count", optionGroupId },
+    });
+  }
+  function switchScenario(parentSku: string, cableGroupId: string, psus: ConfigExpansionChildRule[], parentQuantity: number) {
+    return build({
+      lines: [line({ sku: parentSku, quantity: parentQuantity, originalCells: { "#": "1", "Part Number": parentSku } })],
+      decisions: [accept({ originalSku: parentSku, acceptedSku: parentSku })],
+      rulePack: approvedPack([
+        parent({ ruleId: "rule-sw", parentSku, childLines: [...psus, cableChild(cableGroupId)] }),
+      ]),
+    });
+  }
+
+  it("sums the selected AC PSU quantities for a C9300X switch (parent 7, two PSUs -> 14)", () => {
+    const draft = switchScenario("C9300X-48HX-A", "c9300x-ac-power-supplies", [
+      psuChild("PWR-C1-1100WAC-P", "c9300x-ac-power-supplies", "included_zero_price"),
+      psuChild("PWR-C1-1100WAC-P/2", "c9300x-ac-power-supplies"),
+    ], 7);
+    const cable = addedLines(draft).find((l) => l.sku === "CAB-C15-CBN");
+    // 2 PSUs, each same_as_parent (7) -> 14; not a bare count (2) and not legacy 5 * 7 = 35.
+    expect(cable?.quantity).toBe(14);
+  });
+
+  it("sums the selected AC PSU quantities for a C9300L switch (parent 6, two PSUs -> 12)", () => {
+    const draft = switchScenario("C9300L-24P-4X-A", "c9300l-ac-power-supplies", [
+      psuChild("PWR-C1-715WAC-P", "c9300l-ac-power-supplies", "included_zero_price"),
+      psuChild("PWR-C1-715WAC-P/2", "c9300l-ac-power-supplies"),
+    ], 6);
+    const cable = addedLines(draft).find((l) => l.sku === "CAB-C15-CBN");
+    expect(cable?.quantity).toBe(12);
+  });
+
+  it("follows the selected quantity down when the secondary PSU is removed (parent 7 -> 7)", () => {
+    const draft = switchScenario("C9300X-48HX-A", "c9300x-ac-power-supplies", [
+      psuChild("PWR-C1-1100WAC-P", "c9300x-ac-power-supplies", "included_zero_price"),
+    ], 7);
+    const cable = addedLines(draft).find((l) => l.sku === "CAB-C15-CBN");
+    // One PSU (7) -> 7, proving the sum is over selected option quantities, not 2 * parent.
+    expect(cable?.quantity).toBe(7);
+  });
+
+  it("proves per-device logic at parent quantity 1 (two PSUs -> 2)", () => {
+    const draft = switchScenario("C9300X-48HX-A", "c9300x-ac-power-supplies", [
+      psuChild("PWR-C1-1100WAC-P", "c9300x-ac-power-supplies", "included_zero_price"),
+      psuChild("PWR-C1-1100WAC-P/2", "c9300x-ac-power-supplies"),
+    ], 1);
+    const cable = addedLines(draft).find((l) => l.sku === "CAB-C15-CBN");
+    // 2 PSUs, each same_as_parent (1) -> 2: one cord per selected supply per device.
+    expect(cable?.quantity).toBe(2);
+  });
+
+  it("excludes the cable itself from the sum when it shares the option group id", () => {
+    const cableInGroup = child({
+      sku: "CAB-C15-CBN",
+      description: "Cabinet Jumper Power Cord",
+      relationshipType: "default_selected",
+      sourceRuleId: "rule-sw",
+      quantityRule: "fixed_per_parent",
+      quantityValue: 5,
+      optionGroupId: "c9300x-ac-power-supplies",
+      quantityModel: { type: "selected_option_count", optionGroupId: "c9300x-ac-power-supplies" },
+    });
+    const draft = build({
+      lines: [line({ sku: "C9300X-48HX-A", quantity: 7, originalCells: { "#": "1", "Part Number": "C9300X-48HX-A" } })],
+      decisions: [accept({ originalSku: "C9300X-48HX-A", acceptedSku: "C9300X-48HX-A" })],
+      rulePack: approvedPack([
+        parent({
+          ruleId: "rule-sw",
+          parentSku: "C9300X-48HX-A",
+          childLines: [
+            psuChild("PWR-C1-1100WAC-P", "c9300x-ac-power-supplies", "included_zero_price"),
+            psuChild("PWR-C1-1100WAC-P/2", "c9300x-ac-power-supplies"),
+            cableInGroup,
+          ],
+        }),
+      ]),
+    });
+    const cable = addedLines(draft).find((l) => l.sku === "CAB-C15-CBN");
+    // Sum is the two PSUs only (14); the cable's own contribution (legacy 5 * 7 = 35) is excluded.
+    expect(cable?.quantity).toBe(14);
+  });
+
+  it("adds no cable line when the referenced option group has no selected options", () => {
+    // The cable references c9300x-ac-power-supplies but the only PSU is in another
+    // group, so the selected quantity is zero and no cable line is produced.
+    const draft = switchScenario("C9300X-48HX-A", "c9300x-ac-power-supplies", [
+      psuChild("PWR-OTHER", "some-other-group"),
+    ], 7);
+    expect(addedLines(draft).some((l) => l.sku === "CAB-C15-CBN")).toBe(false);
+  });
+});
+
+// --- Batch 1: project_sku duplicate policy ---------------------------------
+
+describe("buildConfigurationExpansionDraft - project_sku duplicate policy", () => {
+  function licChild(overrides: Partial<ConfigExpansionChildRule> = {}): ConfigExpansionChildRule {
+    return child({
+      sku: "LIC-CW-A",
+      relationshipType: "subscription",
+      sourceRuleId: "rule-sub",
+      quantityRule: "fixed",
+      quantityValue: 12,
+      quantityModel: { type: "same_as_related_sku_total", relatedSku: "CW9178I-CFG", scope: "project" },
+      duplicatePolicy: { scope: "project_sku", match: "sku", quantitySatisfaction: "existing_satisfies_required" },
+      ...overrides,
+    });
+  }
+  // Row 1: an existing LIC-CW-A customer line that sits OUTSIDE the subscription
+  // segment. Row 2: the related AP total (12). Row 3: the subscription parent.
+  function scenario(existingLicQuantity: number, licRule: ConfigExpansionChildRule) {
+    return build({
+      lines: [
+        line({ sourceRowNumber: 1, originalLineNumber: "1", sku: "LIC-CW-A", quantity: existingLicQuantity, originalCells: { "#": "1", "Part Number": "LIC-CW-A" } }),
+        line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "CW9178I-CFG", quantity: 12, originalCells: { "#": "2", "Part Number": "CW9178I-CFG" } }),
+        line({ sourceRowNumber: 3, originalLineNumber: "3", sku: "CISCO-NETWORK-SUB", quantity: 1, originalCells: { "#": "3", "Part Number": "CISCO-NETWORK-SUB" } }),
+      ],
+      decisions: [
+        accept({ sourceRowNumber: 1, originalLineNumber: "1", originalSku: "LIC-CW-A", acceptedSku: "LIC-CW-A" }),
+        accept({ sourceRowNumber: 2, originalLineNumber: "2", originalSku: "CW9178I-CFG", acceptedSku: "CW9178I-CFG" }),
+        accept({ sourceRowNumber: 3, originalLineNumber: "3", originalSku: "CISCO-NETWORK-SUB", acceptedSku: "CISCO-NETWORK-SUB" }),
+      ],
+      rulePack: approvedPack([
+        parent({ ruleId: "rule-sub", parentSku: "CISCO-NETWORK-SUB", childLines: [licRule] }),
+      ]),
+    });
+  }
+
+  it("does not re-add a project-unique SKU already satisfied in a different segment", () => {
+    // Existing LIC-CW-A (row 1, qty 12) covers the required 12, so nothing is added -
+    // even though the existing line is in a different parent segment.
+    const draft = scenario(12, licChild());
+    expect(addedLines(draft).some((l) => l.sku === "LIC-CW-A")).toBe(false);
+    expect(draft.summary.addedLineCount).toBe(0);
+  });
+
+  it("widens detection beyond the parent segment vs a v1 rule with no policy", () => {
+    // Same fixture, but the child carries NO duplicatePolicy: v1 only checks the
+    // subscription segment (row 3), which does not contain the row-1 license, so the
+    // license IS added. This contrast proves project_sku scope is broader.
+    const draft = scenario(12, licChild({ duplicatePolicy: undefined }));
+    expect(addedLines(draft).find((l) => l.sku === "LIC-CW-A")?.quantity).toBe(12);
+  });
+
+  it("adds the full required line for review when the existing quantity is insufficient", () => {
+    // Existing 5 < required 12: surface the full 12 for engineer review, NOT a 7-unit
+    // silent delta. The line stays approvalRequired/unapproved.
+    const lic = addedLines(scenario(5, licChild())).find((l) => l.sku === "LIC-CW-A");
+    expect(lic?.quantity).toBe(12);
+    expect(lic?.approvalRequired).toBe(true);
+    expect(lic?.approved).toBe(false);
+  });
+
+  it("leaves v1 parent-segment duplicate behavior unchanged", () => {
+    // A plain v1 child whose SKU already appears in the same segment is skipped, with
+    // no project_sku policy involved.
+    const l1 = line({ sourceRowNumber: 1, originalLineNumber: "1", sku: "PARENT-A" });
+    const l2 = line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "CHILD-1" });
+    const draft = build({
+      lines: [l1, l2],
+      decisions: [accept({ sourceRowNumber: 1, acceptedSku: "PARENT-A" })],
+      rulePack: approvedPack([parent({ childLines: [child({ sku: "CHILD-1" }), child({ sku: "CHILD-2" })] })]),
+    });
+    expect(addedLines(draft).map((l) => l.sku)).toEqual(["CHILD-2"]);
+  });
+});
+
+// --- Batch 1: unsupported advanced model cases -----------------------------
+
+describe("buildConfigurationExpansionDraft - unsupported advanced model rejection", () => {
+  function advChild(overrides: Partial<ConfigExpansionChildRule>): ConfigExpansionChildRule {
+    return child({ sku: "LIC-CW-A", sourceRuleId: "rule-a", ...overrides });
+  }
+
+  it("rejects same_as_related_sku_total with a non-project scope", () => {
+    for (const scope of ["parent_segment", "related_sku_group"] as const) {
+      expect(() =>
+        build({
+          lines: [],
+          decisions: [],
+          rulePack: approvedPack([
+            parent({ childLines: [advChild({ quantityModel: { type: "same_as_related_sku_total", relatedSku: "CW9178I-CFG", scope } })] }),
+          ]),
+        })
+      ).toThrow(/only project scope/);
+    }
+  });
+
+  it("rejects a related_sku_group duplicate policy scope", () => {
+    expect(() =>
+      build({
+        lines: [],
+        decisions: [],
+        rulePack: approvedPack([
+          parent({ childLines: [advChild({ duplicatePolicy: { scope: "related_sku_group", match: "sku", quantitySatisfaction: "existing_satisfies_required" } })] }),
+        ]),
+      })
+    ).toThrow(/duplicate policy supports only project_sku scope/);
+  });
+
+  it("rejects a parent_segment duplicate policy rather than silently ignoring it", () => {
+    // parent_segment is NOT the one supported Batch 1 shape, so it must fail loudly -
+    // it is not silently treated as default v1 segment behavior.
+    expect(() =>
+      build({
+        lines: [],
+        decisions: [],
+        rulePack: approvedPack([
+          parent({ childLines: [advChild({ duplicatePolicy: { scope: "parent_segment", match: "sku", quantitySatisfaction: "existing_satisfies_required" } })] }),
+        ]),
+      })
+    ).toThrow(/duplicate policy supports only project_sku scope/);
+  });
+
+  it("rejects a project_sku duplicate policy with an unsupported match or satisfaction", () => {
+    expect(() =>
+      build({
+        lines: [],
+        decisions: [],
+        rulePack: approvedPack([
+          parent({ childLines: [advChild({ duplicatePolicy: { scope: "project_sku", match: "sku_and_parent", quantitySatisfaction: "existing_satisfies_required" } })] }),
+        ]),
+      })
+    ).toThrow(/existing_satisfies_required/);
+    expect(() =>
+      build({
+        lines: [],
+        decisions: [],
+        rulePack: approvedPack([
+          parent({ childLines: [advChild({ duplicatePolicy: { scope: "project_sku", match: "sku", quantitySatisfaction: "always_add_missing_delta" } })] }),
+        ]),
+      })
+    ).toThrow(/existing_satisfies_required/);
+  });
+
+  it("still rejects an unapproved child even when it carries advanced model fields", () => {
+    expect(() =>
+      build({
+        lines: [],
+        decisions: [],
+        rulePack: approvedPack([
+          parent({ childLines: [child({ approved: false, quantityModel: { type: "selected_option_count", optionGroupId: "g" } })] }),
+        ]),
+      })
+    ).toThrow(/child rule must be approved/);
+  });
+});
+
+// --- Batch 1: out-of-scope tables stay inert -------------------------------
+
+describe("buildConfigurationExpansionDraft - out-of-scope tables are inert", () => {
+  it("ignores replacementCandidates: no SKU substitution, no extra lines", () => {
+    const pack: ConfigExpansionRulePack = {
+      ...approvedPack([parent()]),
+      replacementCandidates: [
+        { historicalSku: "PARENT-A", currentSkus: ["PARENT-A-NEW"], evidence: [citation()], evidenceScope: "quote_observed", approvalRequired: true, approved: false },
+      ],
+    };
+    const draft = build({ lines: [line()], decisions: [accept()], rulePack: pack });
+    // The customer SKU is preserved and the replacement is never applied.
+    expect(draft.lines[0].sku).toBe("PARENT-A");
+    expect(draft.lines.some((l) => l.sku === "PARENT-A-NEW")).toBe(false);
+    expect(addedLines(draft).map((l) => l.sku)).toEqual(["CHILD-1"]);
+  });
+
+  it("ignores termOptionGroups and child termGroupId: no term expansion", () => {
+    const pack: ConfigExpansionRulePack = {
+      ...approvedPack([parent({ childLines: [child({ sku: "CHILD-1", termGroupId: "term-x", termMonths: 36 })] })]),
+      termOptionGroups: [
+        { termGroupId: "term-x", defaultTermMonths: 36, allowedTermMonths: [36, 60, 84], engineerReviewRequired: true, optionSkus: ["CHILD-1"] },
+      ],
+    };
+    const draft = build({ lines: [line()], decisions: [accept()], rulePack: pack });
+    // Exactly one child added; the term group neither multiplied nor added variants.
+    expect(addedLines(draft).map((l) => l.sku)).toEqual(["CHILD-1"]);
+  });
+
+  it("emits no pricing keys on representative generated draft lines", () => {
+    const pricingTokens = ["price", "cost", "discount", "margin", "markup", "vat", "currency", "msrp", "sell", "amount"];
+    const draft = build({
+      lines: [line({ sku: "C9300X-48HX-A", quantity: 7, originalCells: { "#": "1", "Part Number": "C9300X-48HX-A" } })],
+      decisions: [accept({ originalSku: "C9300X-48HX-A", acceptedSku: "C9300X-48HX-A" })],
+      rulePack: approvedPack([
+        parent({
+          ruleId: "rule-sw",
+          parentSku: "C9300X-48HX-A",
+          childLines: [
+            child({ sku: "PWR-C1-1100WAC-P", optionGroupId: "c9300x-ac-power-supplies", sourceRuleId: "rule-sw" }),
+            child({ sku: "CAB-C15-CBN", sourceRuleId: "rule-sw", quantityModel: { type: "selected_option_count", optionGroupId: "c9300x-ac-power-supplies" } }),
+          ],
+        }),
+      ]),
+    });
+    for (const draftLine of draft.lines) {
+      for (const key of Object.keys(draftLine)) {
+        for (const token of pricingTokens) {
+          expect(key.toLowerCase().includes(token), `line key "${key}" contains pricing token "${token}"`).toBe(false);
+        }
+      }
+    }
+  });
+});
+
 // --- Purity / hygiene -------------------------------------------------------
 
 describe("config-expansion module - decoupling and hygiene", () => {

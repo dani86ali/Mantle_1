@@ -7,6 +7,7 @@ import type { CanonicalBoqLine, SkuResolutionDecision } from "@/types/project";
 import type {
   ConfigExpansionChildRule,
   ConfigExpansionParentRule,
+  ConfigExpansionRelationshipType,
   ConfigExpansionRulePack,
   ConfigurationExpansionDraftLine,
   ConfigurationExpansionDraftSummary,
@@ -23,6 +24,10 @@ const DUPLICATE_DECISION = "Duplicate SKU resolution decision for BoQ line.";
 const DUPLICATE_PARENT_RULE_ID = "Configuration expansion rule pack has a duplicate parent ruleId.";
 const DUPLICATE_PARENT_SKU = "Configuration expansion rule pack has a duplicate parent SKU.";
 const CHILD_RULE_ID_MISMATCH = "Configuration expansion child rule sourceRuleId must match its parent ruleId.";
+// Batch 1 advanced-model guards: fail loudly rather than mis-evaluate (RULE_MODEL_GAP_REPORT).
+const RELATED_SKU_SCOPE_UNSUPPORTED = "Configuration expansion same_as_related_sku_total quantity model supports only project scope.";
+const SELECTED_OPTION_GROUP_REQUIRED = "Configuration expansion selected_option_count quantity model requires an optionGroupId.";
+const DUPLICATE_POLICY_UNSUPPORTED = "Configuration expansion duplicate policy supports only project_sku scope with match \"sku\" and existing_satisfies_required.";
 
 /** Input for {@link buildConfigurationExpansionDraft}. All fields are read-only. */
 export interface BuildConfigurationExpansionDraftInput {
@@ -57,7 +62,26 @@ function validateRulePack(pack: ConfigExpansionRulePack): void {
       if (child.evidence.length < 1) throw new Error(CHILD_NO_EVIDENCE);
       if (child.sourceRuleId !== parent.ruleId) throw new Error(CHILD_RULE_ID_MISMATCH);
       if (child.quantityRule !== "same_as_parent" && child.quantityValue === undefined) throw new Error(CHILD_NO_QUANTITY_VALUE);
+      validateAdvancedChild(child);
     }
+  }
+}
+
+/**
+ * Reject the advanced (Batch 1) model fields the runtime evaluator cannot honor,
+ * so an out-of-scope pack fails loudly instead of being silently mis-evaluated.
+ * Supported: same_as_related_sku_total (project scope), selected_option_count, and
+ * a project_sku duplicate policy matched by sku with existing_satisfies_required.
+ */
+function validateAdvancedChild(child: ConfigExpansionChildRule): void {
+  const model = child.quantityModel;
+  if (model?.type === "same_as_related_sku_total" && model.scope !== "project") throw new Error(RELATED_SKU_SCOPE_UNSUPPORTED);
+  if (model?.type === "selected_option_count" && !model.optionGroupId) throw new Error(SELECTED_OPTION_GROUP_REQUIRED);
+  // Batch 1 honors exactly one duplicate policy shape; any other scope/match/
+  // satisfaction is rejected loudly rather than silently ignored.
+  const policy = child.duplicatePolicy;
+  if (policy && (policy.scope !== "project_sku" || policy.match !== "sku" || policy.quantitySatisfaction !== "existing_satisfies_required")) {
+    throw new Error(DUPLICATE_POLICY_UNSUPPORTED);
   }
 }
 
@@ -83,6 +107,55 @@ function childQuantity(child: ConfigExpansionChildRule, parentQuantity: number):
   if (child.quantityValue === undefined) throw new Error(CHILD_NO_QUANTITY_VALUE);
   if (child.quantityRule === "fixed") return child.quantityValue;
   return parentQuantity * child.quantityValue;
+}
+
+/**
+ * Selected-option quantity for a child: the SUM of the resolved quantities of the
+ * parent's sibling option child rules in the referenced group (e.g. CAB-C15-CBN
+ * follows the selected AC PSU lines). Each sibling resolves through its own v1
+ * quantityRule against the parent quantity, so two same_as_parent PSUs under a
+ * parent quantity of 7 yield 14 - the consolidated CCW cord count - not a bare
+ * count of 2. The evaluated child is never counted, even if it shares the
+ * optionGroupId. Optionally narrowed by relationshipFilter. No pricing/catalog/AI.
+ */
+function selectedOptionQuantity(
+  parent: ConfigExpansionParentRule,
+  self: ConfigExpansionChildRule,
+  optionGroupId: string,
+  parentQuantity: number,
+  relationshipFilter?: ConfigExpansionRelationshipType[]
+): number {
+  let total = 0;
+  for (const sibling of parent.childLines) {
+    if (sibling === self) continue;
+    if (sibling.optionGroupId !== optionGroupId) continue;
+    if (relationshipFilter && !relationshipFilter.includes(sibling.relationshipType)) continue;
+    total += childQuantity(sibling, parentQuantity);
+  }
+  return total;
+}
+
+/**
+ * Quantity for an added child line. An advanced quantityModel takes precedence over
+ * the frozen v1 quantityRule/quantityValue (the whole point of GAP-1/GAP-3): a
+ * related-SKU total tracks the project-wide accepted quantity of relatedSku; a
+ * selected-option count follows the chosen options. `advanced` is true for those
+ * derived models so the caller can drop a zero-quantity line instead of adding it.
+ */
+function childAddQuantity(
+  child: ConfigExpansionChildRule,
+  parentQuantity: number,
+  parent: ConfigExpansionParentRule,
+  acceptedQtyBySku: ReadonlyMap<string, number>
+): { quantity: number; advanced: boolean } {
+  const model = child.quantityModel;
+  if (model?.type === "same_as_related_sku_total") {
+    return { quantity: acceptedQtyBySku.get(model.relatedSku) ?? 0, advanced: true };
+  }
+  if (model?.type === "selected_option_count") {
+    return { quantity: selectedOptionQuantity(parent, child, model.optionGroupId, parentQuantity, model.relationshipFilter), advanced: true };
+  }
+  return { quantity: childQuantity(child, parentQuantity), advanced: false };
 }
 
 function customerLine(
@@ -149,6 +222,18 @@ export function buildConfigurationExpansionDraft(
   const acceptedSkus = lines.map((line) => acceptedSkuFor(decisionByKey.get(decisionKey(line))));
   const matchedRules = acceptedSkus.map((sku) => (sku ? parentRuleBySku.get(sku) : undefined));
 
+  // Project-wide accepted customer quantity per effective (accepted) SKU. Backs the
+  // related-SKU quantity model and the project_sku duplicate policy, both of which
+  // reach beyond a single parent segment. addedQtyBySku tracks expansion lines so a
+  // project-unique SKU is not re-added across segments.
+  const acceptedQtyBySku = new Map<string, number>();
+  for (let i = 0; i < lines.length; i++) {
+    const sku = acceptedSkus[i];
+    if (sku === undefined) continue;
+    acceptedQtyBySku.set(sku, (acceptedQtyBySku.get(sku) ?? 0) + lines[i].quantity);
+  }
+  const addedQtyBySku = new Map<string, number>();
+
   const draftLines: ConfigurationExpansionDraftLine[] = [];
   let addedLineCount = 0;
   let requiresReviewCount = 0;
@@ -170,19 +255,29 @@ export function buildConfigurationExpansionDraft(
 
     let ordinal = 0;
     for (const child of rule.childLines) {
-      if (present.has(child.sku)) continue;
+      const { quantity, advanced } = childAddQuantity(child, line.quantity, rule, acceptedQtyBySku);
+      // A derived (advanced) model that resolves to zero adds no line: no related
+      // SKUs, or no options selected.
+      if (advanced && quantity === 0) continue;
+
+      if (child.duplicatePolicy?.scope === "project_sku") {
+        // Project-scoped: an existing accepted/added quantity that already satisfies
+        // the requirement blocks a duplicate, even across parent segments. When it is
+        // insufficient we add the full required line for engineer review rather than
+        // silently reconciling a delta.
+        const existing = (acceptedQtyBySku.get(child.sku) ?? 0) + (addedQtyBySku.get(child.sku) ?? 0);
+        if (existing >= quantity) continue;
+      } else if (present.has(child.sku)) {
+        continue;
+      }
+
       ordinal += 1;
-      const added = expansionLine(
-        child,
-        `${parentLineId}-x${ordinal}`,
-        line,
-        parentLineId,
-        childQuantity(child, line.quantity)
-      );
+      const added = expansionLine(child, `${parentLineId}-x${ordinal}`, line, parentLineId, quantity);
       draftLines.push(added);
       addedLineCount += 1;
       requiresReviewCount += 1;
       if (added.includedItem) includedItemCount += 1;
+      addedQtyBySku.set(child.sku, (addedQtyBySku.get(child.sku) ?? 0) + quantity);
     }
   }
 
