@@ -552,9 +552,16 @@ function timestampSlug(date = new Date()): string {
   ].join("");
 }
 
-function promptDirName(promptNumber: string): string {
-  const digits = promptNumber.replace(/^prompt-/i, "").replace(/\D/g, "");
-  return `prompt-${digits.padStart(3, "0")}`;
+export function promptDirName(promptNumber: string): string {
+  const normalized = promptNumber
+    .replace(/^prompt-/i, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "");
+  const match = normalized.match(/^(\d+)([a-z][a-z0-9-]*)?$/);
+  if (!match) return `prompt-${normalized || "unknown"}`;
+  const [, digits, suffix = ""] = match;
+  return `prompt-${digits.padStart(3, "0")}${suffix}`;
 }
 
 async function createRunDir(runRoot: string, promptNumber: string): Promise<string> {

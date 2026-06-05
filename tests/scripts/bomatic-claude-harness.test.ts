@@ -6,6 +6,7 @@ import {
   normalizeRepoPath,
   parseVerifierVerdict,
   pathMatchesSpec,
+  promptDirName,
 } from "../../scripts/bomatic-claude-harness";
 
 const passingBase = {
@@ -31,6 +32,18 @@ describe("bomatic Claude harness path matching", () => {
     expect(pathMatchesSpec("src/lib/projects/priced-boq.ts", "src/lib/projects")).toBe(true);
     expect(pathMatchesSpec("tests/lib/projects/foo.test.ts", "tests/**/*.test.ts")).toBe(true);
     expect(pathMatchesSpec("src/app/page.tsx", "tests/**/*.test.ts")).toBe(false);
+  });
+});
+
+describe("bomatic Claude harness prompt run directory naming", () => {
+  it("pads numeric prompt numbers", () => {
+    expect(promptDirName("54")).toBe("prompt-054");
+    expect(promptDirName("prompt-54")).toBe("prompt-054");
+  });
+
+  it("preserves cleanup suffixes such as 54b", () => {
+    expect(promptDirName("54b")).toBe("prompt-054b");
+    expect(promptDirName("prompt-54b")).toBe("prompt-054b");
   });
 });
 
