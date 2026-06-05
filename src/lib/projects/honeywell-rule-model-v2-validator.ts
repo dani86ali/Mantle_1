@@ -50,6 +50,12 @@ function childrenOf(pack: Obj): Obj[] {
   for (const p of parentsOf(pack)) for (const c of objs(p.childLines)) out.push(c);
   return out;
 }
+// Honeywell v2 power-cable lookup: child lines with a given sku under a given parentSku.
+function childrenByParentSku(pack: Obj, parentSku: string, childSku: string): Obj[] {
+  const out: Obj[] = [];
+  for (const p of parentsOf(pack)) if (str(p.parentSku) === parentSku) for (const c of objs(p.childLines)) if (str(c.sku) === childSku) out.push(c);
+  return out;
+}
 function collectObjects(node: unknown, acc: Obj[]): Obj[] {
   if (Array.isArray(node)) for (const v of node) collectObjects(v, acc);
   else if (isObj(node)) { acc.push(node); for (const v of Object.values(node)) collectObjects(v, acc); }
@@ -120,17 +126,15 @@ export function validateHoneywellRuleModelV2Artifacts(input: {
     need(str(c.reviewNotes).toLowerCase().includes("not reusable"), code, `${sku} reviewNotes must state not reusable`, sku);
   }
 
-  // 6. Power cable quantity model: one CAB-C15-CBN per switch follows its PSU group.
-  for (const p of v2Parents) {
-    const expected = PSU_GROUP_BY_PARENT[str(p.parentSku)];
-    if (!expected) continue;
-    for (const c of objs(p.childLines)) {
-      if (str(c.sku) !== "CAB-C15-CBN") continue;
-      const qm = obj(c.quantityModel);
-      const code = "POWER_CABLE_QUANTITY_MODEL";
-      need(str(qm.type) === "selected_option_count", code, `CAB-C15-CBN/${str(p.parentSku)} type`, str(p.parentSku));
-      need(str(qm.optionGroupId) === expected, code, `CAB-C15-CBN/${str(p.parentSku)} optionGroupId`, str(p.parentSku));
-    }
+  // 6. Power cable quantity model: exactly one CAB-C15-CBN per switch parent must
+  // follow its selected AC PSU count; a renamed/missing/duplicated CAB still fails.
+  for (const [parentSku, expected] of Object.entries(PSU_GROUP_BY_PARENT)) {
+    const cabs = childrenByParentSku(v2c, parentSku, "CAB-C15-CBN");
+    if (cabs.length !== 1) { err("POWER_CABLE_LINE_PRESENCE", `expected exactly 1 CAB-C15-CBN under ${parentSku}, found ${cabs.length}`, parentSku); continue; }
+    const qm = obj(cabs[0].quantityModel);
+    const code = "POWER_CABLE_QUANTITY_MODEL";
+    need(str(qm.type) === "selected_option_count", code, `CAB-C15-CBN/${parentSku} type`, parentSku);
+    need(str(qm.optionGroupId) === expected, code, `CAB-C15-CBN/${parentSku} optionGroupId`, parentSku);
   }
 
   // 7. Option groups: both AC PSU groups, their PSU SKUs, required + engineerReviewRequired.

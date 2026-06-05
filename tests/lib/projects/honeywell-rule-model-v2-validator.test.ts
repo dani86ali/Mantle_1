@@ -47,6 +47,10 @@ function findChild(pack: any, sku: string): any {
   return undefined;
 }
 
+function findParent(pack: any, parentSku: string): any {
+  return (pack.parentRules ?? []).find((p: any) => p.parentSku === parentSku);
+}
+
 // Validate the pristine base, overriding one artifact with a mutated clone.
 function run(
   over: Partial<{
@@ -135,6 +139,34 @@ describe("Honeywell v2 validator - negative cases", () => {
     const v2 = clone(v2Candidate);
     findChild(v2, "CAB-C15-CBN").quantityModel.type = "fixed_per_parent";
     expectCatch(run({ v2Candidate: v2 }), "POWER_CABLE_QUANTITY_MODEL");
+  });
+
+  it("catches CAB-C15-CBN missing under C9300X-48HX-A even with child count preserved", () => {
+    // Rename (not delete) the C9300X power cable: total child count is unchanged,
+    // but the expected CAB-C15-CBN line is now absent under this switch parent.
+    const v2 = clone(v2Candidate);
+    const cab = findParent(v2, "C9300X-48HX-A").childLines.find(
+      (c: any) => c.sku === "CAB-C15-CBN"
+    );
+    cab.sku = "CAB-C15-CBN-RENAMED";
+    expectCatch(run({ v2Candidate: v2 }), "POWER_CABLE_LINE_PRESENCE");
+  });
+
+  it("catches CAB-C15-CBN missing under C9300L-24P-4X-A even with child count preserved", () => {
+    const v2 = clone(v2Candidate);
+    const cab = findParent(v2, "C9300L-24P-4X-A").childLines.find(
+      (c: any) => c.sku === "CAB-C15-CBN"
+    );
+    cab.sku = "CAB-C15-CBN-RENAMED";
+    expectCatch(run({ v2Candidate: v2 }), "POWER_CABLE_LINE_PRESENCE");
+  });
+
+  it("catches a duplicate CAB-C15-CBN under one expected switch parent", () => {
+    const v2 = clone(v2Candidate);
+    const parent = findParent(v2, "C9300X-48HX-A");
+    const cab = parent.childLines.find((c: any) => c.sku === "CAB-C15-CBN");
+    parent.childLines.push(clone(cab));
+    expectCatch(run({ v2Candidate: v2 }), "POWER_CABLE_LINE_PRESENCE");
   });
 
   it("catches a missing AC PSU option group", () => {
