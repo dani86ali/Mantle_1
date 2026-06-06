@@ -4,9 +4,11 @@
  * the active Honeywell Batch 1 + Batch 2 + Batch 3 composed rule pack, builds the
  * deterministic configuration-expansion draft from already-normalized BoQ lines plus
  * human-accepted SKU resolution decisions, applies EXPLICIT engineer accept/reject
- * expansion-review decisions, and (in one narrow function) prices the accepted
+ * expansion-review decisions, and (in two narrow functions) prices the accepted
  * expanded BoM from the committed Honeywell demo pricing fixture using a
- * caller-supplied pricing config.
+ * caller-supplied pricing config, then composes that priced draft into an in-memory
+ * priced-BoQ payload and Mantle price-estimate export MODEL - writing no workbook and
+ * creating no artifact, approval, or stage transition.
  *
  * Authority stays split (section 11A.1): configuration authority comes ONLY from the
  * approved rule pack plus explicit engineer review; pricing authority comes ONLY from
@@ -34,11 +36,18 @@ import {
 import type { ConfigExpansionRulePack, ConfigExpansionRulePackStatus } from "@/lib/projects/config-expansion-types";
 import { buildPricedExpandedBoqDraft, type PricedBoqDraft } from "@/lib/projects/priced-boq";
 import {
+  getHoneywellDemoMantleCategoryByAcceptedSku,
   getHoneywellDemoPricingFixture,
   getHoneywellDemoUnitListPriceSarBySku,
   type HoneywellDemoPricingFixture,
 } from "@/lib/projects/honeywell-demo-pricing-fixture";
 import type { CanonicalBoqLine, ProjectPricingConfig, SkuResolutionDecision } from "@/types/project";
+// Prompt 70 (Mantle export MODEL composition): the Mantle row-model builder maps an
+// in-memory priced-BoQ payload to Mantle rows. The payload type is imported type-only, so
+// no DB/artifact-store runtime dependency is pulled in. The Mantle workbook writer and the
+// Mantle export-artifact service are deliberately NOT imported here.
+import { buildMantlePriceEstimateModel, type MantlePriceEstimateModel } from "@/lib/projects/mantle-price-estimate-model";
+import type { PricedBoqArtifactPayload } from "@/lib/projects/priced-boq-artifact";
 
 /**
  * Scalar metadata of the rule pack the runner used: identity and approval state
@@ -194,4 +203,106 @@ export function runHoneywellQuickBomDemoPricing(
     ...pricingFixture
   } = getHoneywellDemoPricingFixture();
   return { rulePack, draft, review, pricedBoq, pricingFixture };
+}
+
+/**
+ * Input for {@link runHoneywellQuickBomDemoMantleExportModel}: everything
+ * runHoneywellQuickBomDemoPricing needs, plus the priced-BoQ provenance the in-memory
+ * payload records. The caller supplies these artifact ids/versions explicitly; the runner
+ * reads no artifact store, DB, or persistence layer to discover them and creates no artifact.
+ */
+export interface HoneywellQuickBomDemoMantleExportModelInput extends HoneywellQuickBomDemoPricingInput {
+  sourceConfigurationExpansionArtifactId: string;
+  sourceConfigurationExpansionArtifactVersion: number;
+  sourceNormalizedBoqArtifactId: string;
+  sourceNormalizedBoqArtifactVersion: number;
+  sourceSkuResolutionArtifactId: string;
+  sourceSkuResolutionArtifactVersion: number;
+}
+
+/**
+ * Mantle export-model result: the demo-priced-run result plus the in-memory priced-BoQ
+ * payload the Mantle mapper consumed and the resulting Mantle price-estimate model. No
+ * workbook, priced_boq/export_package artifact, approval, or stage transition is produced.
+ */
+export interface HoneywellQuickBomDemoMantleExportModelResult extends HoneywellQuickBomDemoPricingResult {
+  pricedBoqPayload: PricedBoqArtifactPayload;
+  mantleModel: MantlePriceEstimateModel;
+}
+
+/** Stable, de-duplicated source file ids in first-seen order over the normalized input lines. */
+function deriveSourceFileIds(lines: readonly CanonicalBoqLine[]): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const line of lines) {
+    if (seen.has(line.sourceFileId)) continue;
+    seen.add(line.sourceFileId);
+    ordered.push(line.sourceFileId);
+  }
+  return ordered;
+}
+
+/** Only the demo SAR price entries actually applied to priced lines, each freshly copied. */
+function usedDemoSarPrices(pricedBoq: PricedBoqDraft): PricedBoqArtifactPayload["unitListPriceSarBySku"] {
+  const fixturePrices = getHoneywellDemoUnitListPriceSarBySku();
+  const used: PricedBoqArtifactPayload["unitListPriceSarBySku"] = {};
+  for (const line of pricedBoq.lines) {
+    if (line.status !== "priced" || line.acceptedSku === undefined) continue;
+    if (used[line.acceptedSku] === undefined) used[line.acceptedSku] = { ...fixturePrices[line.acceptedSku] };
+  }
+  return used;
+}
+
+/**
+ * Build the in-memory PricedBoqArtifactPayload the Mantle mapper consumes, WITHOUT
+ * persisting or reading any artifact: caller-supplied provenance, first-seen source file
+ * ids, the used demo SAR prices, and fresh copies of the priced draft's lines and summary
+ * (so the returned priced draft is never mutated). Mirrors the persisted payload shape.
+ */
+function buildHoneywellQuickBomDemoPricedBoqPayload(
+  input: HoneywellQuickBomDemoMantleExportModelInput,
+  pricedBoq: PricedBoqDraft
+): PricedBoqArtifactPayload {
+  return {
+    sourceConfigurationExpansionArtifactId: input.sourceConfigurationExpansionArtifactId,
+    sourceConfigurationExpansionArtifactVersion: input.sourceConfigurationExpansionArtifactVersion,
+    sourceNormalizedBoqArtifactId: input.sourceNormalizedBoqArtifactId,
+    sourceNormalizedBoqArtifactVersion: input.sourceNormalizedBoqArtifactVersion,
+    sourceSkuResolutionArtifactId: input.sourceSkuResolutionArtifactId,
+    sourceSkuResolutionArtifactVersion: input.sourceSkuResolutionArtifactVersion,
+    sourceFileIds: deriveSourceFileIds(input.lines),
+    pricingConfig: { ...input.pricingConfig },
+    unitListPriceSarBySku: usedDemoSarPrices(pricedBoq),
+    lineCount: pricedBoq.lines.length,
+    lines: pricedBoq.lines.map((line) => ({
+      ...line,
+      originalCells: { ...line.originalCells },
+      ...(line.amounts !== undefined ? { amounts: { ...line.amounts } } : {}),
+    })),
+    summary: { ...pricedBoq.summary, totals: { ...pricedBoq.summary.totals } },
+  };
+}
+
+/**
+ * Compose the Mantle price-estimate export MODEL for the Honeywell Quick BoM demo. Prices
+ * first via runHoneywellQuickBomDemoPricing, so its explicit expansion-review guard and
+ * deterministic pricing still gate everything before any model exists. Then builds an
+ * in-memory priced-BoQ payload (caller-supplied provenance; no artifact created, persisted,
+ * or read) and maps it to the Mantle model with the committed demo category map.
+ *
+ * In-memory only: writes NO workbook; creates NO priced_boq or export_package artifact, NO
+ * approval, and NO stage transition; does NO DB/artifact-store, catalog lookup, AI,
+ * replacement, or SKU substitution. Export-artifact creation stays gated by Pricing Review
+ * approval elsewhere. Returns fresh objects and never mutates inputs or the priced draft.
+ */
+export function runHoneywellQuickBomDemoMantleExportModel(
+  input: HoneywellQuickBomDemoMantleExportModelInput
+): HoneywellQuickBomDemoMantleExportModelResult {
+  const priced = runHoneywellQuickBomDemoPricing(input);
+  const pricedBoqPayload = buildHoneywellQuickBomDemoPricedBoqPayload(input, priced.pricedBoq);
+  const mantleModel = buildMantlePriceEstimateModel({
+    payload: pricedBoqPayload,
+    categoryByAcceptedSku: getHoneywellDemoMantleCategoryByAcceptedSku(),
+  });
+  return { ...priced, pricedBoqPayload, mantleModel };
 }

@@ -5,6 +5,7 @@ import {
   buildHoneywellQuickBomConfigurationExpansionDraft,
   runHoneywellQuickBomConfigurationExpansionReview,
   runHoneywellQuickBomDemoPricing,
+  runHoneywellQuickBomDemoMantleExportModel,
 } from "@/lib/projects/quick-bom-runner";
 import {
   HONEYWELL_MVP_CONFIG_EXPANSION_RULE_PACK_ID,
@@ -19,10 +20,11 @@ import type { ConfigurationExpansionDraftLine } from "@/lib/projects/config-expa
  * the active Honeywell Batch 1 + Batch 2 + Batch 3 composed pack, builds the
  * deterministic expansion draft, and applies EXPLICIT engineer review decisions.
  * These tests build small Honeywell-shaped normalized BoQ fixtures inline and
- * accepted SKU resolution decisions inline; they never persist, price, look up the
- * catalog, substitute SKUs, or wire runtime. Distinctive Batch 3 SKUs (each under a
- * single parent) are asserted so cross-segment dedup of shared children cannot
- * perturb them.
+ * accepted SKU resolution decisions inline. They never persist, look up the catalog,
+ * substitute SKUs, write workbooks, create artifacts, or wire runtime. Later sections
+ * exercise the in-memory demo pricing and Mantle export-model composition only.
+ * Distinctive Batch 3 SKUs (each under a single parent) are asserted so
+ * cross-segment dedup of shared children cannot perturb them.
  */
 
 const RUNNER_PATH = join(process.cwd(), "src/lib/projects/quick-bom-runner.ts");
@@ -59,10 +61,10 @@ const DISTINCTIVE_B3 = ["AIR-AP-BRACKET-2", "C9300X-NM-8Y", "FAN-T2", "C9300L-ST
 
 // --- Inline fixture builders ------------------------------------------------
 
-function boqLine(row: number, sku: string, quantity: number): CanonicalBoqLine {
+function boqLine(row: number, sku: string, quantity: number, sourceFileId = "file-1"): CanonicalBoqLine {
   return {
     sourceFormat: "format_2_number_part_qty",
-    sourceFileId: "file-1",
+    sourceFileId,
     sourceRowNumber: row,
     originalLineNumber: String(row),
     sku,
@@ -72,9 +74,9 @@ function boqLine(row: number, sku: string, quantity: number): CanonicalBoqLine {
   };
 }
 
-function acceptDecision(row: number, sku: string): SkuResolutionDecision {
+function acceptDecision(row: number, sku: string, sourceFileId = "file-1"): SkuResolutionDecision {
   return {
-    sourceFileId: "file-1",
+    sourceFileId,
     sourceRowNumber: row,
     originalLineNumber: String(row),
     originalSku: sku,
@@ -84,11 +86,25 @@ function acceptDecision(row: number, sku: string): SkuResolutionDecision {
   };
 }
 
-function fixtureInput(): { lines: CanonicalBoqLine[]; skuDecisions: SkuResolutionDecision[] } {
+function inputFromRows(
+  rows: ReadonlyArray<readonly [number, string, number]>,
+  sourceFileIdForIndex: (index: number) => string = () => "file-1"
+): { lines: CanonicalBoqLine[]; skuDecisions: SkuResolutionDecision[] } {
   return {
-    lines: FIXTURE_ROWS.map(([r, s, q]) => boqLine(r, s, q)),
-    skuDecisions: FIXTURE_ROWS.map(([r, s]) => acceptDecision(r, s)),
+    lines: rows.map(([r, s, q], index) => boqLine(r, s, q, sourceFileIdForIndex(index))),
+    skuDecisions: rows.map(([r, s], index) => acceptDecision(r, s, sourceFileIdForIndex(index))),
   };
+}
+
+function fixtureInput(): { lines: CanonicalBoqLine[]; skuDecisions: SkuResolutionDecision[] } {
+  return inputFromRows(FIXTURE_ROWS);
+}
+
+function fixtureInputWithSourceFiles(sourceFileIds: readonly string[]): {
+  lines: CanonicalBoqLine[];
+  skuDecisions: SkuResolutionDecision[];
+} {
+  return inputFromRows(FIXTURE_ROWS, (index) => sourceFileIds[index] ?? "file-1");
 }
 
 function expansionLines(lines: ConfigurationExpansionDraftLine[]): ConfigurationExpansionDraftLine[] {
@@ -99,8 +115,10 @@ function qtyOf(lines: ConfigurationExpansionDraftLine[], sku: string): number | 
   return lines.find((l) => l.sku === sku)?.quantity;
 }
 
-function acceptAllDecisions(): Array<{ lineId: string; action: "accept" }> {
-  const { draft } = buildHoneywellQuickBomConfigurationExpansionDraft(fixtureInput());
+function acceptAllDecisions(
+  input: { lines: CanonicalBoqLine[]; skuDecisions: SkuResolutionDecision[] } = fixtureInput()
+): Array<{ lineId: string; action: "accept" }> {
+  const { draft } = buildHoneywellQuickBomConfigurationExpansionDraft(input);
   return expansionLines(draft.lines).map((l) => ({ lineId: l.lineId, action: "accept" as const }));
 }
 
@@ -366,6 +384,164 @@ describe("runHoneywellQuickBomDemoPricing", () => {
   });
 });
 
+// --- Demo Mantle export-model run ------------------------------------------
+
+const PROVENANCE = {
+  sourceConfigurationExpansionArtifactId: "ce-demo-1",
+  sourceConfigurationExpansionArtifactVersion: 3,
+  sourceNormalizedBoqArtifactId: "nb-demo-1",
+  sourceNormalizedBoqArtifactVersion: 2,
+  sourceSkuResolutionArtifactId: "sku-demo-1",
+  sourceSkuResolutionArtifactVersion: 4,
+};
+
+describe("runHoneywellQuickBomDemoMantleExportModel", () => {
+  function runAllAccepted(): ReturnType<typeof runHoneywellQuickBomDemoMantleExportModel> {
+    return runHoneywellQuickBomDemoMantleExportModel({
+      ...fixtureInput(),
+      reviewDecisions: acceptAllDecisions(),
+      pricingConfig: pricingConfig(),
+      ...PROVENANCE,
+    });
+  }
+
+  function rowByPart(run: ReturnType<typeof runHoneywellQuickBomDemoMantleExportModel>, sku: string) {
+    return run.mantleModel.rows.find((r) => r.partNumber === sku);
+  }
+
+  it("still requires explicit expansion-review decisions before building the Mantle model", () => {
+    expect(() =>
+      runHoneywellQuickBomDemoMantleExportModel({
+        ...fixtureInput(),
+        reviewDecisions: [],
+        pricingConfig: pricingConfig(),
+        ...PROVENANCE,
+      })
+    ).toThrow(/decision for every expansion line/);
+  });
+
+  it("returns active rule-pack metadata and demo pricing-fixture metadata", () => {
+    const run = runAllAccepted();
+    expect(run.rulePack.rulePackId).toBe(HONEYWELL_MVP_CONFIG_EXPANSION_RULE_PACK_ID);
+    expect(run.rulePack.version).toBe(HONEYWELL_MVP_CONFIG_EXPANSION_RULE_PACK_VERSION);
+    expect(run.rulePack.status).toBe("approved");
+    expect(run.pricingFixture.fixtureId).toBe("honeywell-mvp-demo-pricing-fixture");
+    expect(run.pricingFixture.demoFixtureAuthority).toBe(true);
+    expect(run.pricingFixture.productionPricingAuthority).toBe(false);
+    expect(run.pricingFixture.runtimeAiPricing).toBe(false);
+    expect(run.pricingFixture.runtimeCatalogLookup).toBe(false);
+  });
+
+  it("records caller-supplied provenance and first-seen source file ids in the priced payload", () => {
+    const input = fixtureInputWithSourceFiles(["file-a", "file-b", "file-a", "file-c", "file-b", "file-c", "file-d"]);
+    const run = runHoneywellQuickBomDemoMantleExportModel({
+      ...input,
+      reviewDecisions: acceptAllDecisions(input),
+      pricingConfig: pricingConfig(),
+      ...PROVENANCE,
+    });
+    expect(run.pricedBoqPayload).toMatchObject(PROVENANCE);
+    expect(run.pricedBoqPayload.sourceFileIds).toEqual(["file-a", "file-b", "file-c", "file-d"]);
+  });
+
+  it("builds a priced payload aligned to the priced draft, using fresh copies", () => {
+    const run = runAllAccepted();
+    expect(run.pricedBoqPayload.lineCount).toBe(run.pricedBoq.lines.length);
+    expect(run.pricedBoqPayload.lines).toEqual(run.pricedBoq.lines);
+    expect(run.pricedBoqPayload.lines).not.toBe(run.pricedBoq.lines);
+    expect(run.pricedBoqPayload.lines[0]).not.toBe(run.pricedBoq.lines[0]);
+    expect(run.pricedBoqPayload.lines[0].originalCells).not.toBe(run.pricedBoq.lines[0].originalCells);
+    expect(run.pricedBoqPayload.summary).toEqual(run.pricedBoq.summary);
+    expect(run.pricedBoqPayload.summary).not.toBe(run.pricedBoq.summary);
+    expect(run.pricedBoqPayload.summary.totals).not.toBe(run.pricedBoq.summary.totals);
+  });
+
+  it("stores only SAR prices used by priced lines, not unrelated fixture SKUs", () => {
+    const small = inputFromRows([[1, C9300X, 1]]);
+    const run = runHoneywellQuickBomDemoMantleExportModel({
+      ...small,
+      reviewDecisions: acceptAllDecisions(small),
+      pricingConfig: pricingConfig(),
+      ...PROVENANCE,
+    });
+    const usedSkus = Array.from(
+      new Set(run.pricedBoq.lines.filter((l) => l.status === "priced").map((l) => l.acceptedSku))
+    ).sort();
+    const priceKeys = Object.keys(run.pricedBoqPayload.unitListPriceSarBySku).sort();
+    expect(priceKeys).toEqual(usedSkus);
+    expect(priceKeys).toContain(C9300X);
+    expect(priceKeys).toContain("C9300X-NM-8Y");
+    expect(priceKeys).not.toContain(OPTIC_A);
+    expect(priceKeys.length).toBeLessThan(50);
+    for (const entry of Object.values(run.pricedBoqPayload.unitListPriceSarBySku)) {
+      expect(entry.currency).toBe("SAR");
+    }
+  });
+
+  it("builds a Mantle model row per priced draft line in the same order", () => {
+    const run = runAllAccepted();
+    expect(run.mantleModel.rows).toHaveLength(run.pricedBoq.lines.length);
+    expect(run.mantleModel.rows.map((r) => r.partNumber)).toEqual(
+      run.pricedBoq.lines.map((l) => l.acceptedSku)
+    );
+  });
+
+  it("uses the committed fixture category map without missing-category defaults", () => {
+    const run = runAllAccepted();
+    expect(run.mantleModel.warnings).toEqual([]);
+    expect(run.mantleModel.rows.some((r) => r.categoryWasDefaulted)).toBe(false);
+    expect(rowByPart(run, CW9178)?.category).toBe("product");
+    expect(rowByPart(run, "CON-L1NCD-C9300XY4")?.category).toBe("service");
+    expect(rowByPart(run, "LIC-CW-A")?.category).toBe("subscription");
+    expect(rowByPart(run, OPTIC_A)?.category).toBe("product");
+    expect(rowByPart(run, OPTIC_B)?.category).toBe("product");
+  });
+
+  it("keeps standalone optics as customer-origin priced product rows, not expansion children", () => {
+    const run = runAllAccepted();
+    const acceptedOptics = run.review.acceptedLines.filter((l) => l.sku === OPTIC_A || l.sku === OPTIC_B);
+    expect(acceptedOptics).toHaveLength(2);
+    expect(acceptedOptics.every((l) => l.origin === "customer")).toBe(true);
+    expect(
+      run.review.acceptedLines.some((l) => l.origin === "expansion" && (l.sku === OPTIC_A || l.sku === OPTIC_B))
+    ).toBe(false);
+    expect(rowByPart(run, OPTIC_A)?.unitListPriceSar).toBe(9538.39);
+    expect(rowByPart(run, OPTIC_B)?.unitListPriceSar).toBe(10492.22);
+  });
+
+  it("preserves representative unit list prices in the Mantle rows", () => {
+    const run = runAllAccepted();
+    expect(rowByPart(run, CW9178)?.unitListPriceSar).toBe(15192.64);
+    expect(rowByPart(run, C9300X)?.unitListPriceSar).toBe(90681.40);
+    expect(rowByPart(run, C9300L)?.unitListPriceSar).toBe(38301.90);
+    expect(rowByPart(run, "LIC-CW-A")?.unitListPriceSar).toBe(2811.96);
+    expect(rowByPart(run, "CON-L1NCD-C9300XY4")?.unitListPriceSar).toBe(27246.39);
+  });
+
+  it("does not mutate inputs and returns fresh payload/model objects per call", () => {
+    const input = {
+      ...fixtureInput(),
+      reviewDecisions: acceptAllDecisions(),
+      pricingConfig: pricingConfig(),
+      ...PROVENANCE,
+    };
+    const snapshot = structuredClone(input);
+    const run1 = runHoneywellQuickBomDemoMantleExportModel(input);
+    expect(input).toEqual(snapshot);
+
+    run1.pricedBoq.lines[0].originalCells.injected = "mutated";
+    run1.pricedBoqPayload.lines[0].originalCells.injected = "mutated";
+    run1.mantleModel.rows[0].partNumber = "MUTATED";
+    run1.mantleModel.warnings.push("mutated");
+
+    const run2 = runAllAccepted();
+    expect(run2.pricedBoq.lines[0].originalCells.injected).toBeUndefined();
+    expect(run2.pricedBoqPayload.lines[0].originalCells.injected).toBeUndefined();
+    expect(run2.mantleModel.rows[0].partNumber).toBe(CW9178);
+    expect(run2.mantleModel.warnings).toEqual([]);
+  });
+});
+
 // --- Source hygiene ---------------------------------------------------------
 
 // Exactly the composed helper modules, the pricing helpers, and contract types the
@@ -378,15 +554,19 @@ const EXPECTED_IMPORTS = [
   "@/lib/projects/config-expansion-types",
   "@/lib/projects/priced-boq",
   "@/lib/projects/honeywell-demo-pricing-fixture",
+  "@/lib/projects/mantle-price-estimate-model",
+  "@/lib/projects/priced-boq-artifact",
   "@/types/project",
 ];
 
-// The two pricing-related modules the demo-pricing function may now import. Exempted
-// from the forbidden-token sweep below so the sweep still trips on any OTHER pricing
-// module (e.g. the raw @/lib/projects/pricing engine, which must not be imported here).
-const ALLOWED_PRICING_IMPORTS = [
+// The exact imports that legitimately contain otherwise forbidden tokens. Exempted
+// from the forbidden-token sweep below so the sweep still trips on any OTHER pricing,
+// Mantle, or artifact module (e.g. the workbook writer/export artifact service).
+const ALLOWED_FORBIDDEN_TOKEN_IMPORTS = [
   "@/lib/projects/priced-boq",
   "@/lib/projects/honeywell-demo-pricing-fixture",
+  "@/lib/projects/mantle-price-estimate-model",
+  "@/lib/projects/priced-boq-artifact",
 ];
 
 // Tokens the runner must never reference in an import specifier: pricing/priced-BoQ,
@@ -401,17 +581,18 @@ const FORBIDDEN_IMPORT_TOKENS = [
   "anthropic", "openai", "gemini", "claude", "generative-ai", "/ai", "llm", "agent",
 ];
 
-function importSpecifiers(source: string): string[] {
-  const specs: string[] = [];
-  const re = /\bfrom\s+["']([^"']+)["']/g;
+function importSpecifiers(source: string): Array<{ typeOnly: boolean; from: string }> {
+  const specs: Array<{ typeOnly: boolean; from: string }> = [];
+  const re = /import\s+(type\s+)?[\s\S]*?\bfrom\s+["']([^"']+)["']/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(source)) !== null) specs.push(m[1]);
+  while ((m = re.exec(source)) !== null) specs.push({ typeOnly: Boolean(m[1]), from: m[2] });
   return specs;
 }
 
 describe("quick-bom-runner module - decoupling and hygiene", () => {
   const source = readFileSync(RUNNER_PATH, "utf8");
-  const specs = importSpecifiers(source);
+  const imports = importSpecifiers(source);
+  const specs = imports.map((i) => i.from);
 
   it("imports exactly the composed helper modules and contract types", () => {
     expect(Array.from(new Set(specs)).sort()).toEqual(EXPECTED_IMPORTS.slice().sort());
@@ -424,16 +605,22 @@ describe("quick-bom-runner module - decoupling and hygiene", () => {
     }
   });
 
-  it("references no other pricing, export, catalog, API/UI, DB/artifact, engine, adapter, or AI module", () => {
+  it("references no disallowed pricing, export, catalog, API/UI, DB/artifact, engine, adapter, or AI module", () => {
     for (const s of specs) {
-      // The two approved pricing imports legitimately contain "pric"/"priced"; every
-      // other specifier must still clear every forbidden token.
-      if (ALLOWED_PRICING_IMPORTS.includes(s)) continue;
+      if (ALLOWED_FORBIDDEN_TOKEN_IMPORTS.includes(s)) continue;
       const lower = s.toLowerCase();
       for (const token of FORBIDDEN_IMPORT_TOKENS) {
         expect(lower.includes(token), `import "${s}" matches forbidden "${token}"`).toBe(false);
       }
     }
+    expect(specs).not.toContain("@/lib/projects/mantle-workbook-writer");
+    expect(specs).not.toContain("@/lib/projects/mantle-export-artifact");
+    expect(specs).not.toContain("exceljs");
+  });
+
+  it("keeps the priced-BoQ artifact payload import type-only", () => {
+    const artifactImport = imports.find((i) => i.from === "@/lib/projects/priced-boq-artifact");
+    expect(artifactImport?.typeOnly).toBe(true);
   });
 
   it("adds no pricing-looking keys to the runner output", () => {
