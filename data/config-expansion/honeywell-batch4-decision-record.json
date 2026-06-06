@@ -1,0 +1,281 @@
+{
+  "recordId": "honeywell-batch4-decision-record",
+  "recordVersion": "0.1.0",
+  "recordType": "configuration_expansion_decision_record",
+  "batch": "batch-4",
+  "status": "decision_recorded",
+  "createdDate": "2026-06-06",
+  "sourceApprovalPacketId": "honeywell-batch4-approval-packet",
+  "sourceCandidateRulePackId": "honeywell-candidate-rules-v2",
+  "companionDoc": "docs/config-expansion/HONEYWELL_BATCH4_DECISION_RECORD.md",
+  "scope": "Honeywell MVP only",
+  "runtimeAuthority": false,
+  "configurationExpansionAuthority": false,
+  "createsRuntimeRulePack": false,
+  "approvedRuntimeRulePackId": null,
+  "activeExpansionPackIds": [
+    "honeywell-batch1-approved-rules",
+    "honeywell-batch2-approved-rules",
+    "honeywell-batch3-approved-rules"
+  ],
+  "decisionSummary": "Records the human/business decision after reviewing the Batch 4 approval packet. The two optics are standalone customer BoQ / pricing / export lines, NOT configuration-expansion children, and must not be auto-attached under any switch. The 11 historical-to-current replacement candidates remain deferred with no silent runtime SKU substitution. This record is NOT an approved Batch 4 runtime expansion rule pack and creates none; the configuration-expansion composer/selector remains Batch 1 + Batch 2 + Batch 3 only.",
+  "businessDecision": "Optics appeared in the Batch 4 review because the Honeywell input BoQ listed them as standalone customer-requested SKUs, not because they are children of a switch. In the CCW exercise they were validated separately: SFP-10G-LR-S= is a standalone 10GBASE-LR SFP module at quantity 12, and SFP-10/25G-LR-S= is a standalone 10/25GBASE-LR SFP28 module at quantity 14. They therefore belong in the Honeywell scope as customer BoQ lines and pricing/export lines, but they must not be automatically attached under C9300X-48HX-A or C9300L-24P-4X-A unless a real design/evidence rule says which port or uplink consumes which optic. That is why optics stay out of the approved configuration-expansion batches: they are valid SKUs to price if the customer provides them, but they are not approved expansion children to invent or auto-add. The 11 historical-to-current replacement candidates remain deferred and no silent runtime SKU substitution is approved.",
+  "authoritySeparation": "Configuration-expansion authority (which children to auto-add/default/offer under a parent) is separate from pricing/catalog authority (what a line costs). This record carries configuration-scope decisions only and encodes no price values. Any optic that is present in the accepted customer Honeywell scope is priced and exported from deterministic catalog/pricing inputs at runtime, never from this record and never by a runtime AI decision.",
+  "opticDecisions": [
+    {
+      "decisionId": "optic:SFP-10G-LR-S=",
+      "category": "optic",
+      "sku": "SFP-10G-LR-S=",
+      "description": "10GBASE-LR SFP Module, Enterprise-Class",
+      "quantity": 12,
+      "relationshipType": "standalone_customer_boq_line",
+      "notConfigurationExpansionChild": true,
+      "doNotAutoAttachToParentSkus": [
+        "C9300X-48HX-A",
+        "C9300L-24P-4X-A"
+      ],
+      "allowedWhenCustomerProvided": true,
+      "deterministicPricingRequired": true,
+      "noPriceValuesEncoded": true,
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 62,
+          "evidenceNote": "CCW Line Number 5.0; Item Name SFP-10G-LR-S=; Group Name Default; Quantity 12; top-level configured line in the current Honeywell-scope CCW estimate (standalone customer-requested SKU, not a switch child)."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 2307,
+          "evidenceNote": "SFP-10G-LR-S= 10GBASE-LR SFP module catalog entry (existence/description only; not pricing or configuration authority)."
+        }
+      ],
+      "notes": "Standalone customer BoQ line decision. SFP-10G-LR-S= can be priced and exported when it is present in the accepted customer Honeywell scope, using deterministic catalog/pricing inputs only. It must NOT be invented or auto-added under C9300X-48HX-A, C9300L-24P-4X-A, or any switch/module without a separate design/evidence approval that says which port or uplink consumes the optic. This record encodes no price values and grants no configuration-expansion authority for this optic."
+    },
+    {
+      "decisionId": "optic:SFP-10/25G-LR-S=",
+      "category": "optic",
+      "sku": "SFP-10/25G-LR-S=",
+      "description": "10/25GBASE-LR SFP28 Module",
+      "quantity": 14,
+      "relationshipType": "standalone_customer_boq_line",
+      "notConfigurationExpansionChild": true,
+      "doNotAutoAttachToParentSkus": [
+        "C9300X-48HX-A",
+        "C9300L-24P-4X-A"
+      ],
+      "allowedWhenCustomerProvided": true,
+      "deterministicPricingRequired": true,
+      "noPriceValuesEncoded": true,
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 64,
+          "evidenceNote": "CCW Line Number 6.0; Item Name SFP-10/25G-LR-S=; Group Name Default; Quantity 14; top-level configured line in the current Honeywell-scope CCW estimate (standalone customer-requested SKU, not a switch child)."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 2286,
+          "evidenceNote": "SFP-10/25G-LR-S= 10/25GBASE-LR SFP28 module catalog entry (existence/description only; not pricing or configuration authority)."
+        }
+      ],
+      "notes": "Standalone customer BoQ line decision. SFP-10/25G-LR-S= can be priced and exported when it is present in the accepted customer Honeywell scope, using deterministic catalog/pricing inputs only. It must NOT be invented or auto-added under C9300X-48HX-A, C9300L-24P-4X-A, or any switch/module without a separate design/evidence approval that says which port or uplink consumes the optic. This record encodes no price values and grants no configuration-expansion authority for this optic."
+    }
+  ],
+  "replacementDecisions": [
+    {
+      "decisionId": "replacement:C9300-DNX-A-48-3Y",
+      "category": "replacement_candidate",
+      "candidateReplacementId": "repl-c9300-dnx-a-48-3y",
+      "sku": "C9300-DNX-A-48-3Y",
+      "historicalSku": "C9300-DNX-A-48-3Y",
+      "currentSkus": [
+        "C9300-DNA-A-48-3Y"
+      ],
+      "relationshipType": "replacement_candidate",
+      "status": "deferred",
+      "noSilentRuntimeSubstitution": true,
+      "allowedAtRuntime": false,
+      "notes": "Deferred historical-to-current replacement candidate C9300-DNX-A-48-3Y -> C9300-DNA-A-48-3Y. No silent runtime SKU substitution is approved; any replacement stays a separate, explicit, human-approved decision and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU."
+    },
+    {
+      "decisionId": "replacement:C9300L-DNX-A-24-3Y",
+      "category": "replacement_candidate",
+      "candidateReplacementId": "repl-c9300l-dnx-a-24-3y",
+      "sku": "C9300L-DNX-A-24-3Y",
+      "historicalSku": "C9300L-DNX-A-24-3Y",
+      "currentSkus": [
+        "C9300L-DNA-A-24-3Y"
+      ],
+      "relationshipType": "replacement_candidate",
+      "status": "deferred",
+      "noSilentRuntimeSubstitution": true,
+      "allowedAtRuntime": false,
+      "notes": "Deferred historical-to-current replacement candidate C9300L-DNX-A-24-3Y -> C9300L-DNA-A-24-3Y. No silent runtime SKU substitution is approved; any replacement stays a separate, explicit, human-approved decision and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU."
+    },
+    {
+      "decisionId": "replacement:SC9300UK9-1712",
+      "category": "replacement_candidate",
+      "candidateReplacementId": "repl-sc9300uk9-1712",
+      "sku": "SC9300UK9-1712",
+      "historicalSku": "SC9300UK9-1712",
+      "currentSkus": [
+        "SC9300UK9-1715"
+      ],
+      "relationshipType": "replacement_candidate",
+      "status": "deferred",
+      "noSilentRuntimeSubstitution": true,
+      "allowedAtRuntime": false,
+      "notes": "Deferred historical-to-current replacement candidate SC9300UK9-1712 -> SC9300UK9-1715. No silent runtime SKU substitution is approved; any replacement stays a separate, explicit, human-approved decision and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU."
+    },
+    {
+      "decisionId": "replacement:S9300LUK9-1712",
+      "category": "replacement_candidate",
+      "candidateReplacementId": "repl-s9300luk9-1712",
+      "sku": "S9300LUK9-1712",
+      "historicalSku": "S9300LUK9-1712",
+      "currentSkus": [
+        "S9300LUK9-1718"
+      ],
+      "relationshipType": "replacement_candidate",
+      "status": "deferred",
+      "noSilentRuntimeSubstitution": true,
+      "allowedAtRuntime": false,
+      "notes": "Deferred historical-to-current replacement candidate S9300LUK9-1712 -> S9300LUK9-1718. No silent runtime SKU substitution is approved; any replacement stays a separate, explicit, human-approved decision and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU."
+    },
+    {
+      "decisionId": "replacement:SPACES-EXT-S",
+      "category": "replacement_candidate",
+      "candidateReplacementId": "repl-spaces-ext-s",
+      "sku": "SPACES-EXT-S",
+      "historicalSku": "SPACES-EXT-S",
+      "currentSkus": [
+        "D-DNAS-EXT-S-T",
+        "D-DNAS-EXT-S-3Y"
+      ],
+      "relationshipType": "replacement_candidate",
+      "status": "deferred",
+      "noSilentRuntimeSubstitution": true,
+      "allowedAtRuntime": false,
+      "notes": "Deferred historical-to-current replacement candidate SPACES-EXT-S -> D-DNAS-EXT-S-T, D-DNAS-EXT-S-3Y. No silent runtime SKU substitution is approved; any replacement stays a separate, explicit, human-approved decision and is never applied silently at runtime. The current SKUs may already be approved Batch 2/Batch 3 child lines, but that does not authorize substituting them for the historical SKU."
+    },
+    {
+      "decisionId": "replacement:CON-L1NBX-C9300XY4",
+      "category": "replacement_candidate",
+      "candidateReplacementId": "repl-con-l1nbx-c9300xy4",
+      "sku": "CON-L1NBX-C9300XY4",
+      "historicalSku": "CON-L1NBX-C9300XY4",
+      "currentSkus": [
+        "CON-L1NCD-C9300XY4"
+      ],
+      "relationshipType": "replacement_candidate",
+      "status": "deferred",
+      "noSilentRuntimeSubstitution": true,
+      "allowedAtRuntime": false,
+      "notes": "Deferred historical-to-current replacement candidate CON-L1NBX-C9300XY4 -> CON-L1NCD-C9300XY4. No silent runtime SKU substitution is approved; any replacement stays a separate, explicit, human-approved decision and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU."
+    },
+    {
+      "decisionId": "replacement:CON-L1SWX-93XA48MY",
+      "category": "replacement_candidate",
+      "candidateReplacementId": "repl-con-l1swx-93xa48my",
+      "sku": "CON-L1SWX-93XA48MY",
+      "historicalSku": "CON-L1SWX-93XA48MY",
+      "currentSkus": [
+        "CON-L1SWT-C93A48"
+      ],
+      "relationshipType": "replacement_candidate",
+      "status": "deferred",
+      "noSilentRuntimeSubstitution": true,
+      "allowedAtRuntime": false,
+      "notes": "Deferred historical-to-current replacement candidate CON-L1SWX-93XA48MY -> CON-L1SWT-C93A48. No silent runtime SKU substitution is approved; any replacement stays a separate, explicit, human-approved decision and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU."
+    },
+    {
+      "decisionId": "replacement:CON-L1NBX-C93024PX",
+      "category": "replacement_candidate",
+      "candidateReplacementId": "repl-con-l1nbx-c93024px",
+      "sku": "CON-L1NBX-C93024PX",
+      "historicalSku": "CON-L1NBX-C93024PX",
+      "currentSkus": [
+        "CON-L1NCD-C93024PX"
+      ],
+      "relationshipType": "replacement_candidate",
+      "status": "deferred",
+      "noSilentRuntimeSubstitution": true,
+      "allowedAtRuntime": false,
+      "notes": "Deferred historical-to-current replacement candidate CON-L1NBX-C93024PX -> CON-L1NCD-C93024PX. No silent runtime SKU substitution is approved; any replacement stays a separate, explicit, human-approved decision and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU."
+    },
+    {
+      "decisionId": "replacement:CON-L1SWX-3LXA24MY",
+      "category": "replacement_candidate",
+      "candidateReplacementId": "repl-con-l1swx-3lxa24my",
+      "sku": "CON-L1SWX-3LXA24MY",
+      "historicalSku": "CON-L1SWX-3LXA24MY",
+      "currentSkus": [
+        "CON-L1SWT-C93LA24"
+      ],
+      "relationshipType": "replacement_candidate",
+      "status": "deferred",
+      "noSilentRuntimeSubstitution": true,
+      "allowedAtRuntime": false,
+      "notes": "Deferred historical-to-current replacement candidate CON-L1SWX-3LXA24MY -> CON-L1SWT-C93LA24. No silent runtime SKU substitution is approved; any replacement stays a separate, explicit, human-approved decision and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU."
+    },
+    {
+      "decisionId": "replacement:CON-SNT-P7PK94P1",
+      "category": "replacement_candidate",
+      "candidateReplacementId": "repl-con-snt-p7pk94p1",
+      "sku": "CON-SNT-P7PK94P1",
+      "historicalSku": "CON-SNT-P7PK94P1",
+      "currentSkus": [
+        "CON-L1NBD-P7PK94P1"
+      ],
+      "relationshipType": "replacement_candidate",
+      "status": "deferred",
+      "noSilentRuntimeSubstitution": true,
+      "allowedAtRuntime": false,
+      "notes": "Deferred historical-to-current replacement candidate CON-SNT-P7PK94P1 -> CON-L1NBD-P7PK94P1. No silent runtime SKU substitution is approved; any replacement stays a separate, explicit, human-approved decision and is never applied silently at runtime. The current SKU CON-L1NBD-P7PK94P1 is already an approved Batch 2 phone-support child line, but that does not authorize substituting it for the historical SKU."
+    },
+    {
+      "decisionId": "replacement:C9300L-STACK-BLANK",
+      "category": "replacement_candidate",
+      "candidateReplacementId": "repl-c9300l-stack-blank",
+      "sku": "C9300L-STACK-BLANK",
+      "historicalSku": "C9300L-STACK-BLANK",
+      "currentSkus": [
+        "C9300L-STACK-KIT2",
+        "C9300L-STACK-A",
+        "STACK-T3A-50CM"
+      ],
+      "relationshipType": "replacement_candidate",
+      "status": "deferred",
+      "noSilentRuntimeSubstitution": true,
+      "allowedAtRuntime": false,
+      "notes": "Deferred historical-to-current replacement candidate C9300L-STACK-BLANK -> C9300L-STACK-KIT2, C9300L-STACK-A, STACK-T3A-50CM. No silent runtime SKU substitution is approved; any replacement stays a separate, explicit, human-approved decision and is never applied silently at runtime. The current SKUs are already approved Batch 3 stacking child lines, but that does not authorize substituting them for the historical SKU."
+    }
+  ],
+  "boundary": {
+    "honeywellMvpOnly": true,
+    "notBroadCiscoGeneralApproval": true,
+    "noBatch4RuntimeExpansionPack": true,
+    "noAutoAddedOptics": true,
+    "noReplacementApproval": true,
+    "noSilentSkuSubstitution": true,
+    "noPricingAuthorityBeyondDeterministicInputs": true,
+    "noRuntimeAiPricingOrConfigDecisions": true,
+    "caveats": [
+      "Honeywell MVP only. This record applies to the Honeywell scope and is not broad Cisco-general approval.",
+      "No Batch 4 runtime expansion rule pack is created by this record; the configuration-expansion composer/selector remains Batch 1 + Batch 2 + Batch 3 only.",
+      "No optic is auto-added under any switch/module. The two optics are standalone customer BoQ lines, not expansion children.",
+      "No replacement candidate is approved; all 11 historical-to-current replacements remain deferred.",
+      "No silent runtime SKU substitution is approved or modeled anywhere.",
+      "No pricing authority is granted beyond deterministic catalog/pricing inputs applied only when a line is present in the accepted customer scope.",
+      "No runtime AI pricing or configuration decision is introduced; runtime AI does no math, pricing, SKU replacement, validation, catalog lookup, or configuration decision.",
+      "Pricing/catalog authority and configuration-expansion authority stay separate; this record encodes no unit prices, totals, discounts, margins, markups, VAT, currency amounts, or price maps."
+    ]
+  },
+  "notes": "DECISION RECORD ONLY. This is not runtime authority and is not an approved Batch 4 runtime expansion rule pack; it creates none. It records a configuration-scope decision: the two optics are standalone customer BoQ / pricing / export lines (not expansion children) and the 11 replacement candidates remain deferred with no silent runtime SKU substitution. The Batch 4 approval packet (honeywell-batch4-approval-packet) remains pending_human_approval and the approved Batch 1, Batch 2, and Batch 3 runtime packs are unchanged. No runtime evaluator, pricing, catalog, API, UI, DB, or export behavior is added, and no unit prices are encoded."
+}
