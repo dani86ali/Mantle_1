@@ -13,20 +13,22 @@ import type {
 } from "@/lib/projects/config-expansion-types";
 
 /**
- * Behavior tests for the approved rule-pack composer (Prompt 59). The composer merges
- * separately-approved packs by parentSku so the Honeywell Batch 1 + Batch 2 approved
- * packs - which intentionally share C9300X-48HX-A, C9300L-24P-4X-A, and
- * CISCO-NETWORK-SUB - compose into one in-memory approved pack that
+ * Behavior tests for the approved rule-pack composer. The composer merges
+ * separately-approved packs by parentSku so the Honeywell Batch 1 + Batch 2 + Batch 3
+ * approved packs - which intentionally share parents (C9300X-48HX-A and
+ * C9300L-24P-4X-A across all three batches; CISCO-NETWORK-SUB across Batch 1 + Batch 2;
+ * CW9178I-CFG across Batch 2 + Batch 3) - compose into one in-memory approved pack that
  * buildConfigurationExpansionDraft accepts without duplicate-parent-SKU or
- * sourceRuleId-mismatch errors. It approves nothing new and carries no pricing
- * authority. Committed packs are read from disk and never mutated by these tests.
+ * sourceRuleId-mismatch errors. It approves nothing new, introduces no replacement
+ * handling, and carries no pricing authority. Committed packs are read from disk and
+ * never mutated by these tests.
  */
 
 const COMPOSER_PATH = join(process.cwd(), "src/lib/projects/config-expansion-rule-pack-composer.ts");
 const TEST_PATH = join(process.cwd(), "tests/lib/projects/config-expansion-rule-pack-composer.test.ts");
 const dataPath = (f: string) => join(process.cwd(), "data/config-expansion", f);
 
-const RULE_PACK_ID = "honeywell-mvp-composed-batch1-batch2";
+const RULE_PACK_ID = "honeywell-mvp-composed-batch1-batch2-batch3";
 
 // Fresh parses so any test that mutates never corrupts another (advisor guidance).
 function freshBatch1(): ConfigExpansionRulePack {
@@ -35,16 +37,19 @@ function freshBatch1(): ConfigExpansionRulePack {
 function freshBatch2(): ConfigExpansionRulePack {
   return JSON.parse(readFileSync(dataPath("honeywell-batch2-approved-rules.json"), "utf8")) as ConfigExpansionRulePack;
 }
+function freshBatch3(): ConfigExpansionRulePack {
+  return JSON.parse(readFileSync(dataPath("honeywell-batch3-approved-rules.json"), "utf8")) as ConfigExpansionRulePack;
+}
 
 function composeBatches(
   overrides: Partial<Parameters<typeof composeApprovedConfigExpansionRulePacks>[0]> = {},
 ): ConfigExpansionRulePack {
   return composeApprovedConfigExpansionRulePacks({
     rulePackId: RULE_PACK_ID,
-    name: "Honeywell MVP Composed Batch 1 + Batch 2 (in-memory)",
+    name: "Honeywell MVP Composed Batch 1 + Batch 2 + Batch 3 (in-memory)",
     version: "1.0.0",
-    sourceScope: "Honeywell MVP / Batch 1 + Batch 2 (composed)",
-    rulePacks: [freshBatch1(), freshBatch2()],
+    sourceScope: "Honeywell MVP / Batch 1 + Batch 2 + Batch 3 (composed)",
+    rulePacks: [freshBatch1(), freshBatch2(), freshBatch3()],
     ...overrides,
   });
 }
@@ -52,7 +57,9 @@ function composeBatches(
 // Shared read-only composition for the happy-path assertions.
 const composed = composeBatches();
 
-// First-seen parentSku union across [Batch 1, Batch 2].
+// First-seen parentSku union across [Batch 1, Batch 2, Batch 3]. Batch 3 adds no new
+// parent SKU (all three of its parents already appear in Batch 1 or Batch 2), so the
+// parent order is unchanged from the Batch 1 + Batch 2 composition.
 const EXPECTED_PARENT_ORDER = [
   "CISCO-NETWORK-SUB",
   "C9300X-48HX-A",
@@ -67,12 +74,22 @@ const B2_C9300X = [
   "TE-EMBEDDED-T", "TE-EMBEDDED-T-3Y", "D-DNAS-EXT-S-T", "D-DNAS-EXT-S-3Y",
   "C9300-NW-A-48", "SC9300UK9-1715", "TE-C9K-SW", "NETWORK-PNP-LIC",
 ];
+const B3_C9300X = [
+  "C9300-SSD-NONE", "STACK-T1-50CM", "CAB-SPWR-30CM", "C9K-ACC-RBFT",
+  "C9K-ACC-SCR-4", "CAB-GUIDE-1RU", "C9300X-NM-8Y",
+];
 const B1_C9300L = ["PWR-C1-715WAC-P", "PWR-C1-715WAC-P/2", "CAB-C15-CBN"];
 const B2_C9300L = [
   "CON-L1NCD-C93024PX", "C9300L-DNA-A-24", "CON-L1SWT-C93LA24", "C9300L-DNA-A-24-3Y",
   "TE-EMBEDDED-T", "TE-EMBEDDED-T-3Y", "D-DNAS-EXT-S-T", "D-DNAS-EXT-S-3Y",
   "S9300LUK9-1718", "C9300L-NW-A-24", "TE-C9K-SW", "NETWORK-PNP-LIC",
 ];
+const B3_C9300L = [
+  "FAN-T2", "C9300L-SSD-NONE", "C9K-ACC-RBFT", "C9K-ACC-SCR-4",
+  "CAB-GUIDE-1RU", "C9300L-STACK-KIT2", "C9300L-STACK-A", "STACK-T3A-50CM",
+];
+// Batch 3 wireless mounting/bracket/single-pack accessories under CW9178I-CFG.
+const B3_CW9178 = ["AIR-AP-BRACKET-2", "AIR-AP-T-RAIL-F", "CW9178-SINGLE"];
 const PRICING_TOKENS = ["price", "cost", "discount", "margin", "markup", "vat", "currency", "msrp", "sell", "amount"];
 
 function parentBySku(pack: ConfigExpansionRulePack, sku: string): ConfigExpansionParentRule | undefined {
@@ -194,7 +211,7 @@ describe("composeApprovedConfigExpansionRulePacks - composed pack shape", () => 
     expect(composed.approvalRequired).toBe(false);
     expect(composed.rulePackId).toBe(RULE_PACK_ID);
     expect(composed.version).toBe("1.0.0");
-    expect(composed.sourceScope).toBe("Honeywell MVP / Batch 1 + Batch 2 (composed)");
+    expect(composed.sourceScope).toBe("Honeywell MVP / Batch 1 + Batch 2 + Batch 3 (composed)");
   });
 
   it("emits one parent per parentSku in first-seen union order (no duplicate shared parents)", () => {
@@ -215,20 +232,23 @@ describe("composeApprovedConfigExpansionRulePacks - composed pack shape", () => 
 // --- Merged child sets ------------------------------------------------------
 
 describe("composeApprovedConfigExpansionRulePacks - merged child sets", () => {
-  it("merges C9300X-48HX-A Batch 1 power children then Batch 2 software/support children", () => {
-    expect(childSkus(composed, "C9300X-48HX-A")).toEqual([...B1_C9300X, ...B2_C9300X]);
+  it("merges C9300X-48HX-A: Batch 1 power, then Batch 2 software/support, then Batch 3 hardware/accessories", () => {
+    expect(childSkus(composed, "C9300X-48HX-A")).toEqual([...B1_C9300X, ...B2_C9300X, ...B3_C9300X]);
   });
 
-  it("merges C9300L-24P-4X-A Batch 1 power children then Batch 2 software/support children", () => {
-    expect(childSkus(composed, "C9300L-24P-4X-A")).toEqual([...B1_C9300L, ...B2_C9300L]);
+  it("merges C9300L-24P-4X-A: Batch 1 power, then Batch 2 software/support, then Batch 3 hardware/accessories", () => {
+    expect(childSkus(composed, "C9300L-24P-4X-A")).toEqual([...B1_C9300L, ...B2_C9300L, ...B3_C9300L]);
   });
 
-  it("merges CISCO-NETWORK-SUB Batch 1 licenses then the Batch 2 support line, in order", () => {
+  it("merges CISCO-NETWORK-SUB: Batch 1 wireless licenses then the Batch 2 support line, in order", () => {
     expect(childSkus(composed, "CISCO-NETWORK-SUB")).toEqual(["LIC-CW-A", "LIC-SPACES-ADV", "SVS-L0SPT-CN"]);
   });
 
-  it("carries the Batch 2-only parents and their single children", () => {
-    expect(childSkus(composed, "CW9178I-CFG")).toEqual(["CON-ROB-CW9178IC"]);
+  it("merges CW9178I-CFG: the Batch 2 support attach then the Batch 3 wireless accessories, in order", () => {
+    expect(childSkus(composed, "CW9178I-CFG")).toEqual(["CON-ROB-CW9178IC", ...B3_CW9178]);
+  });
+
+  it("carries the Batch 2-only CP-7841-K9= parent and its single child", () => {
     expect(childSkus(composed, "CP-7841-K9=")).toEqual(["CON-L1NBD-P7PK94P1"]);
   });
 });
@@ -268,6 +288,39 @@ describe("composeApprovedConfigExpansionRulePacks - preserves child authority pr
     expect(support?.termMonths).toBe(36);
     expect(support?.relationshipType).toBe("service_or_support");
   });
+
+  it("preserves the Batch 3 fixed_per_parent fan-module multiplier (x3) and zero-price policy", () => {
+    const fan = composedChild("C9300L-24P-4X-A", "FAN-T2");
+    expect(fan?.quantityRule).toBe("fixed_per_parent");
+    expect(fan?.quantityValue).toBe(3);
+    expect(fan?.includedItem).toBe(true);
+    expect(fan?.relationshipType).toBe("included_zero_price");
+    expect(fan?.evidenceScope).toBe("quote_observed");
+  });
+
+  it("preserves the Batch 3 fixed_per_parent stack-module multiplier (x2) and zero-price policy", () => {
+    const stack = composedChild("C9300L-24P-4X-A", "C9300L-STACK-A");
+    expect(stack?.quantityRule).toBe("fixed_per_parent");
+    expect(stack?.quantityValue).toBe(2);
+    expect(stack?.includedItem).toBe(true);
+    expect(stack?.relationshipType).toBe("included_zero_price");
+  });
+
+  it("preserves a Batch 3 default-selected wireless accessory under CW9178I-CFG", () => {
+    const bracket = composedChild("CW9178I-CFG", "AIR-AP-BRACKET-2");
+    expect(bracket?.relationshipType).toBe("default_selected");
+    expect(bracket?.quantityRule).toBe("same_as_parent");
+    expect(bracket?.includedItem).toBe(false);
+    expect(bracket?.evidenceScope).toBe("reusable_logic");
+  });
+
+  it("preserves the Batch 3 default-selected uplink network module under C9300X-48HX-A", () => {
+    const nm = composedChild("C9300X-48HX-A", "C9300X-NM-8Y");
+    expect(nm?.relationshipType).toBe("default_selected");
+    expect(nm?.quantityRule).toBe("same_as_parent");
+    expect(nm?.includedItem).toBe(false);
+    expect(nm?.evidenceScope).toBe("reusable_logic");
+  });
 });
 
 // --- Evidence, option groups, createdFromEvidence ---------------------------
@@ -296,11 +349,14 @@ describe("composeApprovedConfigExpansionRulePacks - evidence and tables", () => 
     }
   });
 
-  it("unions createdFromEvidence first-seen and dedupes the shared CCW source", () => {
+  it("unions createdFromEvidence first-seen across all three batches and dedupes shared sources", () => {
     const cfe = composed.createdFromEvidence ?? [];
-    expect(cfe).toHaveLength(9);
+    expect(cfe).toHaveLength(10);
     expect(cfe.filter((e) => e.sourceType === "ccw_export")).toHaveLength(1);
+    // Batch 2 marker (IP Phone data sheet) and Batch 3 marker (wireless install guide)
+    // both present, proving all three batches contributed to the union.
     expect(cfe.some((e) => e.sourcePath.includes("Cisco IP Phone 7800 Series Data Sheet.pdf"))).toBe(true);
+    expect(cfe.some((e) => e.sourceType === "install_guide")).toBe(true);
   });
 
   it("uses a supplied createdFromEvidence verbatim (deep-copied) when provided", () => {
@@ -344,13 +400,15 @@ describe("composeApprovedConfigExpansionRulePacks - authority boundaries", () =>
 // --- Deep copy --------------------------------------------------------------
 
 describe("composeApprovedConfigExpansionRulePacks - deep copy", () => {
-  it("deep-copies sources: mutating the composed output does not mutate Batch 1/Batch 2", () => {
+  it("deep-copies sources: mutating the composed output does not mutate Batch 1/Batch 2/Batch 3", () => {
     const b1 = freshBatch1();
     const b2 = freshBatch2();
+    const b3 = freshBatch3();
     const snap1 = JSON.stringify(b1);
     const snap2 = JSON.stringify(b2);
+    const snap3 = JSON.stringify(b3);
     const c = composeApprovedConfigExpansionRulePacks({
-      rulePackId: RULE_PACK_ID, name: "n", version: "1.0.0", sourceScope: "s", rulePacks: [b1, b2],
+      rulePackId: RULE_PACK_ID, name: "n", version: "1.0.0", sourceScope: "s", rulePacks: [b1, b2, b3],
     });
     for (const p of c.parentRules) {
       p.ruleId = "MUT";
@@ -368,6 +426,7 @@ describe("composeApprovedConfigExpansionRulePacks - deep copy", () => {
     }
     expect(JSON.stringify(b1)).toBe(snap1);
     expect(JSON.stringify(b2)).toBe(snap2);
+    expect(JSON.stringify(b3)).toBe(snap3);
   });
 });
 
@@ -378,32 +437,43 @@ describe("composeApprovedConfigExpansionRulePacks - runtime expansion smoke", ()
     expect(() => buildConfigurationExpansionDraft({ lines: [], decisions: [], rulePack: composed })).not.toThrow();
   });
 
-  it("expands C9300X-48HX-A qty 7 into all 15 Batch 1 + Batch 2 children", () => {
+  it("expands C9300X-48HX-A qty 7 into all 22 Batch 1 + Batch 2 + Batch 3 children", () => {
     const draft = expand([[1, "C9300X-48HX-A", 7]]);
     const skus = added(draft).map((l) => l.sku);
-    expect(skus.slice().sort()).toEqual([...B1_C9300X, ...B2_C9300X].sort());
-    expect(added(draft)).toHaveLength(15);
+    expect(skus.slice().sort()).toEqual([...B1_C9300X, ...B2_C9300X, ...B3_C9300X].sort());
+    expect(added(draft)).toHaveLength(22);
     // Batch 1 selected-option power cord follows the two AC PSUs (7 + 7); Batch 2 license tracks parent.
     expect(addedQty(draft, "CAB-C15-CBN")).toBe(14);
     expect(addedQty(draft, "C9300-DNA-A-48-3Y")).toBe(7);
+    // Representative Batch 3 hardware line (uplink network module) tracks the parent.
+    expect(addedQty(draft, "C9300X-NM-8Y")).toBe(7);
   });
 
-  it("expands C9300L-24P-4X-A qty 6 into all 15 Batch 1 + Batch 2 children", () => {
+  it("expands C9300L-24P-4X-A qty 6 into all 23 Batch 1 + Batch 2 + Batch 3 children", () => {
     const draft = expand([[1, "C9300L-24P-4X-A", 6]]);
     const skus = added(draft).map((l) => l.sku);
-    expect(skus.slice().sort()).toEqual([...B1_C9300L, ...B2_C9300L].sort());
-    expect(added(draft)).toHaveLength(15);
+    expect(skus.slice().sort()).toEqual([...B1_C9300L, ...B2_C9300L, ...B3_C9300L].sort());
+    expect(added(draft)).toHaveLength(23);
     expect(addedQty(draft, "CAB-C15-CBN")).toBe(12);
     expect(addedQty(draft, "C9300L-DNA-A-24-3Y")).toBe(6);
+    // Batch 3 fixed_per_parent multipliers: FAN-T2 x3 and C9300L-STACK-A x2 of parent qty 6.
+    expect(addedQty(draft, "FAN-T2")).toBe(18);
+    expect(addedQty(draft, "C9300L-STACK-A")).toBe(12);
+    // Representative Batch 3 same_as_parent accessory line.
+    expect(addedQty(draft, "STACK-T3A-50CM")).toBe(6);
   });
 
-  it("expands CISCO-NETWORK-SUB with CW9178I-CFG qty 12 into the wireless/subscription children", () => {
+  it("expands CW9178I-CFG qty 12 + CISCO-NETWORK-SUB qty 1 into wireless support, Batch 3 accessories, and subscription children", () => {
     const draft = expand([[1, "CW9178I-CFG", 12], [2, "CISCO-NETWORK-SUB", 1]]);
     expect(addedQty(draft, "CON-ROB-CW9178IC")).toBe(12);
+    // Batch 3 wireless accessories under CW9178I-CFG track the access-point parent qty.
+    expect(addedQty(draft, "AIR-AP-BRACKET-2")).toBe(12);
+    expect(addedQty(draft, "AIR-AP-T-RAIL-F")).toBe(12);
+    expect(addedQty(draft, "CW9178-SINGLE")).toBe(12);
     expect(addedQty(draft, "LIC-CW-A")).toBe(12);
     expect(addedQty(draft, "LIC-SPACES-ADV")).toBe(12);
     expect(addedQty(draft, "SVS-L0SPT-CN")).toBe(1);
-    expect(added(draft)).toHaveLength(4);
+    expect(added(draft)).toHaveLength(7);
   });
 
   it("expands CP-7841-K9= qty 59 into CON-L1NBD-P7PK94P1 qty 59", () => {
