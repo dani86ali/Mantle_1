@@ -1,0 +1,589 @@
+{
+  "packetId": "honeywell-batch4-approval-packet",
+  "packetVersion": "0.1.0",
+  "batch": "batch-4",
+  "status": "pending_human_approval",
+  "purpose": "optics_replacements_deferred_oddities_review_packet",
+  "reviewOnly": true,
+  "runtimeAuthority": false,
+  "createdDate": "2026-06-06",
+  "sourceScope": "honeywell_current_ccw_2026_06_02",
+  "sourceCandidateRulePackId": "honeywell-candidate-rules-v2",
+  "sourceCandidateRulePackVersion": "0.2.0-candidate",
+  "sourceCandidateRulePackStatus": "candidate",
+  "sourceApprovalPacketId": "honeywell-rule-approval-packet-v2",
+  "batch1ApprovedPackId": "honeywell-batch1-approved-rules",
+  "batch2ApprovedPackId": "honeywell-batch2-approved-rules",
+  "batch3ApprovedPackId": "honeywell-batch3-approved-rules",
+  "batchStrategyDoc": "docs/config-expansion/HONEYWELL_RULE_APPROVAL_BATCH_STRATEGY.md",
+  "honeywellMvpBoundary": "Honeywell MVP review only. This packet is NOT broad Cisco-general approval. It approves no optic, no replacement candidate, no pricing authority, and no silent runtime SKU substitution. Every entry stays pending_human_approval and recommendedDecision is advisory only.",
+  "sequencingNote": "Batch 4 here is the remaining-review batch: the 2 optics and the 11 historical-to-current replacement candidates that approved Batch 1, Batch 2, and Batch 3 intentionally left deferred. This matches the existing Batch 3 approval packet's deferred set. docs/config-expansion/HONEYWELL_RULE_APPROVAL_BATCH_STRATEGY.md earlier used a different per-batch labelling; that strategy doc is unchanged by this packet. No approved Batch 4 runtime pack exists or is created here; optics and replacement candidates remain deferred and no silent runtime SKU substitution is modeled.",
+  "notes": "REVIEW-ONLY Batch 4 optics / replacement-candidate review packet. It is not runtime authority and is not an approved rule pack. Every entry stays pending_human_approval; recommendedDecision is advisory only and approves, activates, and runtime-enables nothing. No approved Batch 4 runtime pack is created by this packet, and no runtime evaluator, pricing, catalog, API, UI, DB, or export behavior is added. Configuration authority (what to add/default/offer) stays strictly separate from pricing authority; this packet carries no pricing fields. The approved Batch 1 pack (honeywell-batch1-approved-rules), Batch 2 pack (honeywell-batch2-approved-rules), and Batch 3 pack (honeywell-batch3-approved-rules) are already approved and are unchanged by this packet. The source v2 candidate pack (honeywell-candidate-rules-v2) and v2 approval packet (honeywell-rule-approval-packet-v2) remain candidate/pending. Optics are NOT approved here. Replacement candidates are separate historical-to-current review decisions and authorize NO silent runtime SKU substitution. Evidence with GPL or catalog references is SKU existence/description evidence only, not pricing or configuration authority.",
+  "recommendedDecisionVocabulary": [
+    {
+      "decision": "defer_needs_more_evidence",
+      "description": "Reviewer recommends deferring: more authoritative evidence is needed before any approved runtime decision. This is the advisory default for the Batch 4 optics and replacement candidates."
+    },
+    {
+      "decision": "reject_for_runtime",
+      "description": "Reviewer recommends the item must not enter any approved runtime rule pack."
+    },
+    {
+      "decision": "review_option_only",
+      "description": "Reviewer recommends treating this as an engineer-review option only, never a silently forced default and never a silent runtime SKU substitution."
+    }
+  ],
+  "riskFlagVocabulary": [
+    {
+      "flag": "optic_requires_review",
+      "description": "Line is an optic (SFP / SFP28 module) that remains a human-review item; optics are not approved by this packet."
+    },
+    {
+      "flag": "replacement_requires_review",
+      "description": "Line is a historical-to-current SKU replacement candidate that remains a human-review item; it is not approved by this packet."
+    },
+    {
+      "flag": "historical_sku_mismatch",
+      "description": "A historical SKU differs from the current CCW SKU; handled as a separate replacement decision, never a silent substitution."
+    },
+    {
+      "flag": "no_silent_substitution",
+      "description": "This entry authorizes no silent runtime SKU substitution; any replacement is a separate, explicit, human-approved decision and is never applied silently at runtime."
+    },
+    {
+      "flag": "catalog_existence_only",
+      "description": "Non-CCW (GPL / catalog) evidence is SKU existence/description only; not pricing or configuration authority."
+    },
+    {
+      "flag": "ccw_only_evidence",
+      "description": "Evidence is current-CCW quote-observed only; not yet reusable logic."
+    },
+    {
+      "flag": "honeywell_mvp_scope_only",
+      "description": "Item is scoped to Honeywell MVP review only; this packet is not broad Cisco-general approval."
+    }
+  ],
+  "batch1AlreadyApproved": {
+    "rulePackId": "honeywell-batch1-approved-rules",
+    "scope": "Honeywell MVP / Batch 1",
+    "summary": "Batch 1 is already approved as a separate runtime pack covering only deterministic model-safety decisions: wireless license quantity from the access-point total (LIC-CW-A, LIC-SPACES-ADV), power-cord quantity from the selected PSU count (CAB-C15-CBN), the project-level duplicate policy for the wireless licenses, and the C9300X/C9300L AC PSU option groups.",
+    "note": "Batch 1 is unchanged by this packet. This Batch 4 packet adds no approval and does not modify the Batch 1 pack."
+  },
+  "batch2AlreadyApproved": {
+    "rulePackId": "honeywell-batch2-approved-rules",
+    "scope": "Honeywell MVP / Batch 2",
+    "summary": "Batch 2 is already approved as a separate runtime pack covering the term/support/software decisions: the C9300X and C9300L term-coupled licenses/support at the 3Y (36-month) default and their included zero-price software/subscriptions, the wireless support/subscription-support attach, and the phone support attach using the current CON-L1NBD-P7PK94P1.",
+    "note": "Batch 2 is unchanged by this packet. This Batch 4 packet adds no approval and does not modify the Batch 2 pack."
+  },
+  "batch3AlreadyApproved": {
+    "rulePackId": "honeywell-batch3-approved-rules",
+    "scope": "Honeywell MVP / Batch 3",
+    "summary": "Batch 3 is already approved as a separate runtime pack covering the non-term hardware/accessory child lines: the default-selected wireless mounting/bracket/single-pack accessories under CW9178I-CFG, and the default-selected and bundled zero-price non-term hardware accessories under the C9300X-48HX-A and C9300L-24P-4X-A switches (SSD placeholders, stacking/power cables, uplink network module, rack rubber feet/screws/cable guides, fan modules, and the stacking kit/module/cable).",
+    "note": "Batch 3 is unchanged by this packet. This Batch 4 packet adds no approval and does not modify the Batch 3 pack. The Batch 3 approval explicitly left optics and replacement candidates deferred; those are exactly the items reviewed here."
+  },
+  "batch4Scope": "Batch 4 is the remaining human-review batch: the 2 optics (SFP-10G-LR-S=, SFP-10/25G-LR-S=) and the 11 historical-to-current replacement candidates that the approved Batch 1, Batch 2, and Batch 3 packs intentionally left deferred. Optics are review items, not auto-approved. Replacement candidates are separate historical-to-current review decisions and authorize no silent runtime SKU substitution. This packet is Honeywell MVP review only and is not broad Cisco-general approval; it carries no pricing fields and adds no runtime behavior.",
+  "coverageReconciliation": {
+    "summary": "Completeness check for the 'any remaining deferred oddity' question. All 43 distinct child-line SKUs in the honeywell-candidate-rules-v2 parent rules are already covered by the approved Batch 1, Batch 2, and Batch 3 runtime packs. The only honeywell-candidate-rules-v2 artifacts never covered by an approved pack are the 2 optic standalone parent rules and the 11 replacement candidates, which are exactly the Batch 4 review entries in this packet.",
+    "v2DistinctChildSkuCount": 43,
+    "v2ChildSkusCoveredByApprovedPacks": 43,
+    "v2ChildSkusUncovered": 0,
+    "remainingUncoveredArtifacts": "2 optic standalone parent rules + 11 replacement candidates",
+    "additionalDeferredOdditiesFound": "none",
+    "deferredOdditiesGroupOmittedReason": "No remaining deferred oddity exists beyond the optics and the replacement candidates: every other honeywell-candidate-rules-v2 child line is already covered by an approved Batch 1, Batch 2, or Batch 3 pack, so no deferred-oddities group is included. The broader-Cisco generalization of the Batch 1 power-cord selected_option_count rule remains a generalization-scope concern (the CAB-C15-CBN cord line is already approved for Honeywell MVP in Batch 1); it is not a discrete uncovered SKU and is intentionally not re-listed as a Batch 4 review entry."
+  },
+  "outOfScope": [
+    "Approving any optic - optics remain deferred human-review items in this packet.",
+    "Approving any replacement candidate - replacements remain deferred and authorize no silent runtime SKU substitution.",
+    "Creating an approved Batch 4 runtime rule pack - this packet is review-only and authors no runtime pack.",
+    "Batch 1 deterministic model-safety lines - stay in the separate approved Batch 1 pack.",
+    "Batch 2 term/support/software lines - stay in the separate approved Batch 2 pack.",
+    "Batch 3 non-term hardware/accessory lines - stay in the separate approved Batch 3 pack.",
+    "Broader Cisco generalization beyond Honeywell scope (including the Batch 1 power-cord selected_option_count generalization).",
+    "Pricing, catalog, API, UI, DB, and export behavior - configuration authority only; no pricing fields.",
+    "Any runtime evaluator behavior - this packet is review-only and adds no runtime behavior."
+  ],
+  "groups": [
+    {
+      "groupId": "optics",
+      "title": "Optics (pending human review)",
+      "parentSkus": [
+        "SFP-10G-LR-S=",
+        "SFP-10/25G-LR-S="
+      ],
+      "description": "The two top-level optic modules configured in the current Honeywell CCW. They are pending human-review items in Batch 4: optics are NOT approved by this packet and no optic is auto-approved.",
+      "entries": [
+        {
+          "decisionId": "optics:SFP-10G-LR-S=",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "optic",
+          "sku": "SFP-10G-LR-S=",
+          "description": "10GBASE-LR SFP Module, Enterprise-Class",
+          "relationshipType": "standalone",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 62,
+              "evidenceNote": "CCW Line Number 5.0; Item Name SFP-10G-LR-S=; Group Name Default; Quantity 12; top-level configured line in the current Honeywell-scope CCW estimate."
+            },
+            {
+              "sourceType": "gpl",
+              "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+              "lineNumber": 2307,
+              "evidenceNote": "SFP-10G-LR-S= 10GBASE-LR SFP module catalog entry (existence/description only; not pricing or configuration authority)."
+            }
+          ],
+          "riskFlags": [
+            "optic_requires_review",
+            "honeywell_mvp_scope_only",
+            "catalog_existence_only",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Does Honeywell MVP require approving the optic SFP-10G-LR-S= as a configuration-expansion item, or does it stay deferred pending more evidence? Approving it approves no pricing, no other optic, and no silent substitution.",
+          "notes": "Batch 4 REVIEW-ONLY optic entry. Optics are NOT approved by this packet and no optic is auto-approved. GPL/catalog evidence is SKU existence/description only, not pricing or configuration authority. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "optics:SFP-10/25G-LR-S=",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "optic",
+          "sku": "SFP-10/25G-LR-S=",
+          "description": "10/25GBASE-LR SFP28 Module",
+          "relationshipType": "standalone",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 64,
+              "evidenceNote": "CCW Line Number 6.0; Item Name SFP-10/25G-LR-S=; Group Name Default; Quantity 14; top-level configured line in the current Honeywell-scope CCW estimate."
+            },
+            {
+              "sourceType": "gpl",
+              "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+              "lineNumber": 2286,
+              "evidenceNote": "SFP-10/25G-LR-S= 10/25GBASE-LR SFP28 module catalog entry (existence/description only; not pricing or configuration authority)."
+            }
+          ],
+          "riskFlags": [
+            "optic_requires_review",
+            "honeywell_mvp_scope_only",
+            "catalog_existence_only",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Does Honeywell MVP require approving the optic SFP-10/25G-LR-S= as a configuration-expansion item, or does it stay deferred pending more evidence? Approving it approves no pricing, no other optic, and no silent substitution.",
+          "notes": "Batch 4 REVIEW-ONLY optic entry. Optics are NOT approved by this packet and no optic is auto-approved. GPL/catalog evidence is SKU existence/description only, not pricing or configuration authority. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        }
+      ]
+    },
+    {
+      "groupId": "replacement-candidates",
+      "title": "Replacement candidates (historical-to-current, pending human review)",
+      "parentSkus": [],
+      "description": "The 11 historical-to-current SKU replacement candidates carried in honeywell-candidate-rules-v2.replacementCandidates. Each is a SEPARATE human-review decision. Listing them here authorizes NO silent runtime SKU substitution: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The 'sku' field is the historical SKU; 'currentSkus' are the current CCW SKUs it would map to (those current SKUs may already be approved in Batch 2 or Batch 3 as ordinary child lines, but that approval is NOT a replacement authorization).",
+      "entries": [
+        {
+          "decisionId": "replacement-candidates:C9300-DNX-A-48-3Y",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "replacement_candidate",
+          "candidateReplacementId": "repl-c9300-dnx-a-48-3y",
+          "sku": "C9300-DNX-A-48-3Y",
+          "historicalSku": "C9300-DNX-A-48-3Y",
+          "currentSkus": [
+            "C9300-DNA-A-48-3Y"
+          ],
+          "relationshipType": "replacement_candidate",
+          "description": "Historical-to-current SKU replacement candidate: C9300-DNX-A-48-3Y -> C9300-DNA-A-48-3Y",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 17,
+              "evidenceNote": "Current SKU C9300-DNA-A-48-3Y present at CCW Line Number 3.1.1."
+            }
+          ],
+          "riskFlags": [
+            "replacement_requires_review",
+            "historical_sku_mismatch",
+            "no_silent_substitution",
+            "honeywell_mvp_scope_only"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Confirm the replacement of historical C9300-DNX-A-48-3Y with C9300-DNA-A-48-3Y stays a separate, non-silent, human-approved decision and is NOT approved by this review-only packet?",
+          "notes": "Batch 4 REVIEW-ONLY replacement entry. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "replacement-candidates:C9300L-DNX-A-24-3Y",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "replacement_candidate",
+          "candidateReplacementId": "repl-c9300l-dnx-a-24-3y",
+          "sku": "C9300L-DNX-A-24-3Y",
+          "historicalSku": "C9300L-DNX-A-24-3Y",
+          "currentSkus": [
+            "C9300L-DNA-A-24-3Y"
+          ],
+          "relationshipType": "replacement_candidate",
+          "description": "Historical-to-current SKU replacement candidate: C9300L-DNX-A-24-3Y -> C9300L-DNA-A-24-3Y",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 41,
+              "evidenceNote": "Current SKU C9300L-DNA-A-24-3Y present at CCW Line Number 4.1.1."
+            }
+          ],
+          "riskFlags": [
+            "replacement_requires_review",
+            "historical_sku_mismatch",
+            "no_silent_substitution",
+            "honeywell_mvp_scope_only"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Confirm the replacement of historical C9300L-DNX-A-24-3Y with C9300L-DNA-A-24-3Y stays a separate, non-silent, human-approved decision and is NOT approved by this review-only packet?",
+          "notes": "Batch 4 REVIEW-ONLY replacement entry. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "replacement-candidates:SC9300UK9-1712",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "replacement_candidate",
+          "candidateReplacementId": "repl-sc9300uk9-1712",
+          "sku": "SC9300UK9-1712",
+          "historicalSku": "SC9300UK9-1712",
+          "currentSkus": [
+            "SC9300UK9-1715"
+          ],
+          "relationshipType": "replacement_candidate",
+          "description": "Historical-to-current SKU replacement candidate: SC9300UK9-1712 -> SC9300UK9-1715",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 23,
+              "evidenceNote": "Current SKU SC9300UK9-1715 present at CCW Line Number 3.5."
+            }
+          ],
+          "riskFlags": [
+            "replacement_requires_review",
+            "historical_sku_mismatch",
+            "no_silent_substitution",
+            "honeywell_mvp_scope_only"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Confirm the replacement of historical SC9300UK9-1712 with SC9300UK9-1715 stays a separate, non-silent, human-approved decision and is NOT approved by this review-only packet?",
+          "notes": "Batch 4 REVIEW-ONLY replacement entry. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "replacement-candidates:S9300LUK9-1712",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "replacement_candidate",
+          "candidateReplacementId": "repl-s9300luk9-1712",
+          "sku": "S9300LUK9-1712",
+          "historicalSku": "S9300LUK9-1712",
+          "currentSkus": [
+            "S9300LUK9-1718"
+          ],
+          "relationshipType": "replacement_candidate",
+          "description": "Historical-to-current SKU replacement candidate: S9300LUK9-1712 -> S9300LUK9-1718",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 46,
+              "evidenceNote": "Current SKU S9300LUK9-1718 present at CCW Line Number 4.4."
+            }
+          ],
+          "riskFlags": [
+            "replacement_requires_review",
+            "historical_sku_mismatch",
+            "no_silent_substitution",
+            "honeywell_mvp_scope_only"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Confirm the replacement of historical S9300LUK9-1712 with S9300LUK9-1718 stays a separate, non-silent, human-approved decision and is NOT approved by this review-only packet?",
+          "notes": "Batch 4 REVIEW-ONLY replacement entry. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "replacement-candidates:SPACES-EXT-S",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "replacement_candidate",
+          "candidateReplacementId": "repl-spaces-ext-s",
+          "sku": "SPACES-EXT-S",
+          "historicalSku": "SPACES-EXT-S",
+          "currentSkus": [
+            "D-DNAS-EXT-S-T",
+            "D-DNAS-EXT-S-3Y"
+          ],
+          "relationshipType": "replacement_candidate",
+          "description": "Historical-to-current SKU replacement candidate: SPACES-EXT-S -> D-DNAS-EXT-S-T, D-DNAS-EXT-S-3Y",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 20,
+              "evidenceNote": "Current SKU D-DNAS-EXT-S-T present at CCW Line Number 3.3."
+            },
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 21,
+              "evidenceNote": "Current SKU D-DNAS-EXT-S-3Y present at CCW Line Number 3.3.1."
+            }
+          ],
+          "riskFlags": [
+            "replacement_requires_review",
+            "historical_sku_mismatch",
+            "no_silent_substitution",
+            "honeywell_mvp_scope_only"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Confirm the replacement of historical SPACES-EXT-S with D-DNAS-EXT-S-T, D-DNAS-EXT-S-3Y stays a separate, non-silent, human-approved decision and is NOT approved by this review-only packet?",
+          "notes": "Batch 4 REVIEW-ONLY replacement entry. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The current SKUs may already be approved Batch 2/Batch 3 child lines, but that does not authorize substituting them for the historical SKU. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "replacement-candidates:CON-L1NBX-C9300XY4",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "replacement_candidate",
+          "candidateReplacementId": "repl-con-l1nbx-c9300xy4",
+          "sku": "CON-L1NBX-C9300XY4",
+          "historicalSku": "CON-L1NBX-C9300XY4",
+          "currentSkus": [
+            "CON-L1NCD-C9300XY4"
+          ],
+          "relationshipType": "replacement_candidate",
+          "description": "Historical-to-current SKU replacement candidate: CON-L1NBX-C9300XY4 -> CON-L1NCD-C9300XY4",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 14,
+              "evidenceNote": "Current SKU CON-L1NCD-C9300XY4 present at CCW Line Number 3.0.1."
+            }
+          ],
+          "riskFlags": [
+            "replacement_requires_review",
+            "historical_sku_mismatch",
+            "no_silent_substitution",
+            "honeywell_mvp_scope_only"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Confirm the replacement of historical CON-L1NBX-C9300XY4 with CON-L1NCD-C9300XY4 stays a separate, non-silent, human-approved decision and is NOT approved by this review-only packet?",
+          "notes": "Batch 4 REVIEW-ONLY replacement entry. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "replacement-candidates:CON-L1SWX-93XA48MY",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "replacement_candidate",
+          "candidateReplacementId": "repl-con-l1swx-93xa48my",
+          "sku": "CON-L1SWX-93XA48MY",
+          "historicalSku": "CON-L1SWX-93XA48MY",
+          "currentSkus": [
+            "CON-L1SWT-C93A48"
+          ],
+          "relationshipType": "replacement_candidate",
+          "description": "Historical-to-current SKU replacement candidate: CON-L1SWX-93XA48MY -> CON-L1SWT-C93A48",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 16,
+              "evidenceNote": "Current SKU CON-L1SWT-C93A48 present at CCW Line Number 3.1.0.1."
+            }
+          ],
+          "riskFlags": [
+            "replacement_requires_review",
+            "historical_sku_mismatch",
+            "no_silent_substitution",
+            "honeywell_mvp_scope_only"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Confirm the replacement of historical CON-L1SWX-93XA48MY with CON-L1SWT-C93A48 stays a separate, non-silent, human-approved decision and is NOT approved by this review-only packet?",
+          "notes": "Batch 4 REVIEW-ONLY replacement entry. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "replacement-candidates:CON-L1NBX-C93024PX",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "replacement_candidate",
+          "candidateReplacementId": "repl-con-l1nbx-c93024px",
+          "sku": "CON-L1NBX-C93024PX",
+          "historicalSku": "CON-L1NBX-C93024PX",
+          "currentSkus": [
+            "CON-L1NCD-C93024PX"
+          ],
+          "relationshipType": "replacement_candidate",
+          "description": "Historical-to-current SKU replacement candidate: CON-L1NBX-C93024PX -> CON-L1NCD-C93024PX",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 38,
+              "evidenceNote": "Current SKU CON-L1NCD-C93024PX present at CCW Line Number 4.0.1."
+            }
+          ],
+          "riskFlags": [
+            "replacement_requires_review",
+            "historical_sku_mismatch",
+            "no_silent_substitution",
+            "honeywell_mvp_scope_only"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Confirm the replacement of historical CON-L1NBX-C93024PX with CON-L1NCD-C93024PX stays a separate, non-silent, human-approved decision and is NOT approved by this review-only packet?",
+          "notes": "Batch 4 REVIEW-ONLY replacement entry. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "replacement-candidates:CON-L1SWX-3LXA24MY",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "replacement_candidate",
+          "candidateReplacementId": "repl-con-l1swx-3lxa24my",
+          "sku": "CON-L1SWX-3LXA24MY",
+          "historicalSku": "CON-L1SWX-3LXA24MY",
+          "currentSkus": [
+            "CON-L1SWT-C93LA24"
+          ],
+          "relationshipType": "replacement_candidate",
+          "description": "Historical-to-current SKU replacement candidate: CON-L1SWX-3LXA24MY -> CON-L1SWT-C93LA24",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 40,
+              "evidenceNote": "Current SKU CON-L1SWT-C93LA24 present at CCW Line Number 4.1.0.1."
+            }
+          ],
+          "riskFlags": [
+            "replacement_requires_review",
+            "historical_sku_mismatch",
+            "no_silent_substitution",
+            "honeywell_mvp_scope_only"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Confirm the replacement of historical CON-L1SWX-3LXA24MY with CON-L1SWT-C93LA24 stays a separate, non-silent, human-approved decision and is NOT approved by this review-only packet?",
+          "notes": "Batch 4 REVIEW-ONLY replacement entry. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The current SKU may already be an approved Batch 2/Batch 3 child line, but that does not authorize substituting it for the historical SKU. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "replacement-candidates:CON-SNT-P7PK94P1",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "replacement_candidate",
+          "candidateReplacementId": "repl-con-snt-p7pk94p1",
+          "sku": "CON-SNT-P7PK94P1",
+          "historicalSku": "CON-SNT-P7PK94P1",
+          "currentSkus": [
+            "CON-L1NBD-P7PK94P1"
+          ],
+          "relationshipType": "replacement_candidate",
+          "description": "Historical-to-current SKU replacement candidate: CON-SNT-P7PK94P1 -> CON-L1NBD-P7PK94P1",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 67,
+              "evidenceNote": "Current SKU CON-L1NBD-P7PK94P1 present at CCW Line Number 7.0.1."
+            }
+          ],
+          "riskFlags": [
+            "replacement_requires_review",
+            "historical_sku_mismatch",
+            "no_silent_substitution",
+            "honeywell_mvp_scope_only"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Confirm the replacement of historical CON-SNT-P7PK94P1 with CON-L1NBD-P7PK94P1 stays a separate, non-silent, human-approved decision and is NOT approved by this review-only packet?",
+          "notes": "Batch 4 REVIEW-ONLY replacement entry. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The current SKU CON-L1NBD-P7PK94P1 is already an approved Batch 2 phone-support child line, but that approval does not authorize silently substituting it for the historical CON-SNT-P7PK94P1. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "replacement-candidates:C9300L-STACK-BLANK",
+          "batch": "batch-4",
+          "status": "pending_human_approval",
+          "category": "replacement_candidate",
+          "candidateReplacementId": "repl-c9300l-stack-blank",
+          "sku": "C9300L-STACK-BLANK",
+          "historicalSku": "C9300L-STACK-BLANK",
+          "currentSkus": [
+            "C9300L-STACK-KIT2",
+            "C9300L-STACK-A",
+            "STACK-T3A-50CM"
+          ],
+          "relationshipType": "replacement_candidate",
+          "description": "Historical-to-current SKU replacement candidate: C9300L-STACK-BLANK -> C9300L-STACK-KIT2, C9300L-STACK-A, STACK-T3A-50CM",
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 57,
+              "evidenceNote": "Current SKU C9300L-STACK-KIT2 present at CCW Line Number 4.15."
+            },
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 58,
+              "evidenceNote": "Current SKU C9300L-STACK-A present at CCW Line Number 4.16."
+            },
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 59,
+              "evidenceNote": "Current SKU STACK-T3A-50CM present at CCW Line Number 4.17."
+            }
+          ],
+          "riskFlags": [
+            "replacement_requires_review",
+            "historical_sku_mismatch",
+            "no_silent_substitution",
+            "honeywell_mvp_scope_only"
+          ],
+          "recommendedDecision": "defer_needs_more_evidence",
+          "reviewQuestion": "Confirm the replacement of historical C9300L-STACK-BLANK with C9300L-STACK-KIT2, C9300L-STACK-A, STACK-T3A-50CM stays a separate, non-silent, human-approved decision and is NOT approved by this review-only packet?",
+          "notes": "Batch 4 REVIEW-ONLY replacement entry. This does NOT authorize silent runtime SKU replacement: a replacement is a separate decision from configuration expansion, must be approved on its own, and is never applied silently at runtime. The current SKUs are already approved Batch 3 stacking child lines, but that does not authorize silently substituting them for the historical C9300L-STACK-BLANK. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        }
+      ]
+    }
+  ],
+  "questionsForHumanApproval": [
+    "Do the optics SFP-10G-LR-S= and SFP-10/25G-LR-S= stay deferred, or does Honeywell MVP require approving either as a configuration-expansion item (noting that approving an optic approves no pricing and no other optic)?",
+    "Do all 11 historical-to-current replacement candidates stay separate, non-silent, human-approved decisions, with NO silent runtime SKU substitution authorized by this packet?",
+    "Confirm that approving a current SKU as an ordinary Batch 2 or Batch 3 child line does NOT by itself authorize substituting it for the corresponding historical SKU at runtime?",
+    "Confirm there is no remaining deferred oddity beyond these optics and replacement candidates: every other honeywell-candidate-rules-v2 child line is already covered by an approved Batch 1, Batch 2, or Batch 3 pack?",
+    "Confirm that any later approved Batch 4 runtime pack is authored as a separate new artifact, flips no candidate status, and does not modify the approved Batch 1, Batch 2, or Batch 3 packs?",
+    "Confirm this packet adds no pricing, catalog, API, UI, DB, export, or runtime evaluator behavior?"
+  ]
+}
