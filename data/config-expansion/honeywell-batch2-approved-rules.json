@@ -1,0 +1,827 @@
+{
+  "rulePackId": "honeywell-batch2-approved-rules",
+  "name": "Honeywell MVP Batch 2 Approved Runtime Configuration Expansion Rules (Term / Support / Software)",
+  "version": "1.0.0",
+  "status": "approved",
+  "approvalRequired": false,
+  "sourceScope": "Honeywell MVP / Batch 2",
+  "createdDate": "2026-06-05",
+  "derivedFrom": {
+    "candidateRulePackId": "honeywell-candidate-rules-v2",
+    "candidateRulePackVersion": "0.2.0-candidate",
+    "candidateRulePackStatus": "candidate",
+    "reviewPacketId": "honeywell-rule-approval-packet-v2",
+    "approvalPacketId": "honeywell-batch2-approval-packet",
+    "batchStrategyDoc": "docs/config-expansion/HONEYWELL_RULE_APPROVAL_BATCH_STRATEGY.md",
+    "note": "Authored as a NEW artifact from the explicit human/business Batch 2 approval. The source candidate packs and the review/approval packets are unchanged and remain candidate/pending; no candidate or packet status was flipped to author this approved pack."
+  },
+  "approval": {
+    "decision": "I approve Batch 2 for Honeywell MVP: approve questions 1-6 with 3Y default terms, and confirm questions 7-8 remain deferred/out of scope.",
+    "batch": "batch-2",
+    "scope": "honeywell_mvp_batch_2",
+    "approvedDecisions": [
+      "C9300X included zero-price software/subscriptions bundled with C9300X-48HX-A",
+      "C9300X term-coupled licenses/support at the 3Y (36-month) default",
+      "C9300L included zero-price software/subscriptions bundled with C9300L-24P-4X-A",
+      "C9300L term-coupled licenses/support at the 3Y (36-month) default",
+      "wireless support/subscription-support attach (CON-ROB-CW9178IC under CW9178I-CFG, SVS-L0SPT-CN under CISCO-NETWORK-SUB)",
+      "phone support attach using the current CON-L1NBD-P7PK94P1 under CP-7841-K9="
+    ],
+    "caveats": [
+      "Honeywell MVP only.",
+      "This is not broad Cisco-general approval.",
+      "3Y is the approved default for Batch 2.",
+      "5Y/7Y remain engineer-review alternatives only and are not represented by invented SKU names.",
+      "This does not approve replacement candidates (Batch 3 deferred).",
+      "This does not approve optics.",
+      "This does not approve non-term hardware accessories outside Batch 1.",
+      "This does not approve broader Cisco generalization (Batch 4 deferred).",
+      "No pricing authority is encoded."
+    ]
+  },
+  "notes": "PARTIAL approved runtime rule pack: only the Honeywell MVP Batch 2 term/support/software configuration-expansion decisions are active. Batch 1 is a SEPARATE approved pack (honeywell-batch1-approved-rules) and is unchanged by this pack. The full 53-child-line Honeywell candidate pack is NOT approved. Batch 3 replacement candidates and Batch 4 broader Cisco generalization remain deferred and out of scope. 3Y (36-month) is the approved default term for Batch 2; 5Y/7Y (60/84-month) remain engineer-review alternatives only and no 5Y/7Y SKU name is invented or included. No pricing authority is encoded here; what to add/default/offer is configuration authority, while pricing is resolved separately from the catalog/price source at runtime, so the two stay strictly separate. The source candidate packs (honeywell-candidate-rules.json, honeywell-candidate-rules-v2.json) and the review/approval packets (honeywell-rule-approval-packet.json, honeywell-rule-approval-packet-v2.json, honeywell-batch2-approval-packet.json) remain unchanged and candidate/pending; this approved pack is a new, separate artifact.",
+  "createdFromEvidence": [
+    {
+      "sourceType": "ccw_export",
+      "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+      "title": "Current Cisco CCW estimate export (Honeywell scope)."
+    },
+    {
+      "sourceType": "datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300_datasheet.pdf",
+      "title": "Cisco Catalyst 9300 data sheet."
+    },
+    {
+      "sourceType": "datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178 Series_datasheet.pdf",
+      "title": "Cisco Wireless 9178 Series data sheet."
+    },
+    {
+      "sourceType": "datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco IP Phone 7800 Series Data Sheet.pdf",
+      "title": "Cisco IP Phone 7800 Series data sheet."
+    },
+    {
+      "sourceType": "subscription_datasheet",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Networking Subscription Data Sheet.pdf",
+      "title": "Cisco Networking Subscription data sheet."
+    },
+    {
+      "sourceType": "ordering_guide",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless Ordering.pdf",
+      "title": "Cisco Wireless ordering guide."
+    },
+    {
+      "sourceType": "gpl",
+      "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+      "title": "Cisco GPL/SAR catalog export (SKU existence and descriptions only; not price authority)."
+    }
+  ],
+  "parentRules": [
+    {
+      "ruleId": "honeywell-batch2-c9300x-48hx-a",
+      "parentSku": "C9300X-48HX-A",
+      "parentDescription": "Catalyst 9300 48-port mGig UPoE+, Network Advantage",
+      "approved": true,
+      "approvalRequired": false,
+      "evidenceScope": "reusable_logic",
+      "reviewNotes": "Approved for Honeywell MVP Batch 2: only the C9300X-48HX-A term-coupled licenses/support (3Y default) and included zero-price software/subscriptions are in scope. The Batch 1 AC power-supply/power-cord lines stay in the separate Batch 1 pack, and replacement candidates, optics, and non-term hardware accessories remain deferred and are intentionally not included here.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 13,
+          "evidenceNote": "CCW Line Number 3.0; Item Name C9300X-48HX-A; Group Name Default; Quantity 7; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300_datasheet.pdf",
+          "pageNumber": 62,
+          "evidenceNote": "C9300X-48HX-A model referenced on this page."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 561,
+          "evidenceNote": "C9300X-48HX-A catalog entry (existence/description only; not price authority)."
+        }
+      ],
+      "childLines": [
+        {
+          "sku": "CON-L1NCD-C9300XY4",
+          "description": "CX LEVEL 1 8X7NCD Catalyst 9300 48-port mGig UPoE+, Networ",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 36,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 at the 3Y (36-month) default term. 5Y/7Y (60/84-month) remain engineer-review alternatives only and no 5Y/7Y SKU is invented. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 14,
+              "evidenceNote": "CCW Line Number 3.0.1; Item Name CON-L1NCD-C9300XY4; Included Item No; Service Duration (Months) 36; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "C9300-DNA-A-48",
+          "description": "C9300 DNA Advantage, 48-Port Term Licenses",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 as an engineer-reviewed software/license line. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 15,
+              "evidenceNote": "CCW Line Number 3.1; Item Name C9300-DNA-A-48; Included Item No; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "CON-L1SWT-C93A48",
+          "description": "CX LEVEL 1 SW SUB C9300 DNA Advantage",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 36,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 at the 3Y (36-month) default term. 5Y/7Y (60/84-month) remain engineer-review alternatives only and no 5Y/7Y SKU is invented. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 16,
+              "evidenceNote": "CCW Line Number 3.1.0.1; Item Name CON-L1SWT-C93A48; Included Item No; Service Duration (Months) 36; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "C9300-DNA-A-48-3Y",
+          "description": "C9300 DNA Advantage, 48-Port, 3 Year Term License",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 36,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 at the 3Y (36-month) default term. 5Y/7Y (60/84-month) remain engineer-review alternatives only and no 5Y/7Y SKU is invented. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 17,
+              "evidenceNote": "CCW Line Number 3.1.1; Item Name C9300-DNA-A-48-3Y; Included Item No; Service Duration (Months) 36; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "TE-EMBEDDED-T",
+          "description": "Cisco ThousandEyes Enterprise Agent IBN Embedded",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 18,
+              "evidenceNote": "CCW Line Number 3.2; Item Name TE-EMBEDDED-T; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "TE-EMBEDDED-T-3Y",
+          "description": "ThousandEyes - Enterprise Agents",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 36,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 at the 3Y (36-month) default term. 5Y/7Y (60/84-month) remain engineer-review alternatives only and no 5Y/7Y SKU is invented. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 19,
+              "evidenceNote": "CCW Line Number 3.2.1; Item Name TE-EMBEDDED-T-3Y; Included Item No; Service Duration (Months) 36; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "D-DNAS-EXT-S-T",
+          "description": "Cisco DNA Spaces Extend Term License for Catalyst Switches",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 20,
+              "evidenceNote": "CCW Line Number 3.3; Item Name D-DNAS-EXT-S-T; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "D-DNAS-EXT-S-3Y",
+          "description": "Cisco DNA Spaces Extend for Catalyst Switching - 3Year",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 36,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 at the 3Y (36-month) default term. 5Y/7Y (60/84-month) remain engineer-review alternatives only and no 5Y/7Y SKU is invented. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 21,
+              "evidenceNote": "CCW Line Number 3.3.1; Item Name D-DNAS-EXT-S-3Y; Included Item No; Service Duration (Months) 36; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "C9300-NW-A-48",
+          "description": "C9300 Network Advantage, 48-port license",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 22,
+              "evidenceNote": "CCW Line Number 3.4; Item Name C9300-NW-A-48; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "SC9300UK9-1715",
+          "description": "CAT9300/9400/9500/9600 UNIVERSAL",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price universal image line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 23,
+              "evidenceNote": "CCW Line Number 3.5; Item Name SC9300UK9-1715; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "TE-C9K-SW",
+          "description": "TE agent for IOSXE on C9K",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 24,
+              "evidenceNote": "CCW Line Number 3.6; Item Name TE-C9K-SW; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "NETWORK-PNP-LIC",
+          "description": "Network Plug-n-Play Connect for zero-touch device deployment",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 34,
+              "evidenceNote": "CCW Line Number 3.16; Item Name NETWORK-PNP-LIC; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-batch2-c9300l-24p-4x-a",
+      "parentSku": "C9300L-24P-4X-A",
+      "parentDescription": "Catalyst 9300L 24p PoE, Network Advantage ,4x10G Uplink",
+      "approved": true,
+      "approvalRequired": false,
+      "evidenceScope": "reusable_logic",
+      "reviewNotes": "Approved for Honeywell MVP Batch 2: only the C9300L-24P-4X-A term-coupled licenses/support (3Y default) and included zero-price software/subscriptions are in scope. The Batch 1 AC power-supply/power-cord lines stay in the separate Batch 1 pack, and replacement candidates, optics, and non-term hardware accessories remain deferred and are intentionally not included here.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 37,
+          "evidenceNote": "CCW Line Number 4.0; Item Name C9300L-24P-4X-A; Group Name Default; Quantity 6; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300_datasheet.pdf",
+          "pageNumber": 66,
+          "evidenceNote": "C9300L-24P-4X-A model referenced on this page."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 499,
+          "evidenceNote": "C9300L-24P-4X-A catalog entry (existence/description only; not price authority)."
+        }
+      ],
+      "childLines": [
+        {
+          "sku": "CON-L1NCD-C93024PX",
+          "description": "CX LEVEL 1 8X7NCDCatalyst 9300L 24p PoE Network Advantag",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 36,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 at the 3Y (36-month) default term. 5Y/7Y (60/84-month) remain engineer-review alternatives only and no 5Y/7Y SKU is invented. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 38,
+              "evidenceNote": "CCW Line Number 4.0.1; Item Name CON-L1NCD-C93024PX; Included Item No; Service Duration (Months) 36; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "C9300L-DNA-A-24",
+          "description": "C9300L Cisco DNA Advantage, 24-port Term Licenses",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 as an engineer-reviewed software/license line. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 39,
+              "evidenceNote": "CCW Line Number 4.1; Item Name C9300L-DNA-A-24; Included Item No; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "CON-L1SWT-C93LA24",
+          "description": "CX LEVEL 1 SW SUB C9300L Cisco DNA Adv",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 36,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 at the 3Y (36-month) default term. 5Y/7Y (60/84-month) remain engineer-review alternatives only and no 5Y/7Y SKU is invented. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 40,
+              "evidenceNote": "CCW Line Number 4.1.0.1; Item Name CON-L1SWT-C93LA24; Included Item No; Service Duration (Months) 36; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "C9300L-DNA-A-24-3Y",
+          "description": "C9300L Cisco DNA Advantage, 24-port, 3 Year Term license",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 36,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 at the 3Y (36-month) default term. 5Y/7Y (60/84-month) remain engineer-review alternatives only and no 5Y/7Y SKU is invented. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 41,
+              "evidenceNote": "CCW Line Number 4.1.1; Item Name C9300L-DNA-A-24-3Y; Included Item No; Service Duration (Months) 36; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "TE-EMBEDDED-T",
+          "description": "Cisco ThousandEyes Enterprise Agent IBN Embedded",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 42,
+              "evidenceNote": "CCW Line Number 4.2; Item Name TE-EMBEDDED-T; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "TE-EMBEDDED-T-3Y",
+          "description": "ThousandEyes - Enterprise Agents",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 36,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 at the 3Y (36-month) default term. 5Y/7Y (60/84-month) remain engineer-review alternatives only and no 5Y/7Y SKU is invented. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 43,
+              "evidenceNote": "CCW Line Number 4.2.1; Item Name TE-EMBEDDED-T-3Y; Included Item No; Service Duration (Months) 36; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "D-DNAS-EXT-S-T",
+          "description": "Cisco DNA Spaces Extend Term License for Catalyst Switches",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 44,
+              "evidenceNote": "CCW Line Number 4.3; Item Name D-DNAS-EXT-S-T; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "D-DNAS-EXT-S-3Y",
+          "description": "Cisco DNA Spaces Extend for Catalyst Switching - 3Year",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 36,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2 at the 3Y (36-month) default term. 5Y/7Y (60/84-month) remain engineer-review alternatives only and no 5Y/7Y SKU is invented. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 45,
+              "evidenceNote": "CCW Line Number 4.3.1; Item Name D-DNAS-EXT-S-3Y; Included Item No; Service Duration (Months) 36; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "S9300LUK9-1718",
+          "description": "CAT9300/9400/9500/9600 UNIVERSAL",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price universal image line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 46,
+              "evidenceNote": "CCW Line Number 4.4; Item Name S9300LUK9-1718; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "C9300L-NW-A-24",
+          "description": "C9300L Network Advantage, 24-port license",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 47,
+              "evidenceNote": "CCW Line Number 4.5; Item Name C9300L-NW-A-24; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "TE-C9K-SW",
+          "description": "TE agent for IOSXE on C9K",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 48,
+              "evidenceNote": "CCW Line Number 4.6; Item Name TE-C9K-SW; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "NETWORK-PNP-LIC",
+          "description": "Network Plug-n-Play Connect for zero-touch device deployment",
+          "relationshipType": "subscription",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch2-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: bundled, included zero-price line in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 60,
+              "evidenceNote": "CCW Line Number 4.18; Item Name NETWORK-PNP-LIC; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-batch2-cw9178i-cfg",
+      "parentSku": "CW9178I-CFG",
+      "parentDescription": "Cisco Wireless 9178I(W7,4 radio,3 band 4x4,UWB), Global",
+      "approved": true,
+      "approvalRequired": false,
+      "evidenceScope": "reusable_logic",
+      "reviewNotes": "Approved for Honeywell MVP Batch 2: only the wireless support attach (CON-ROB-CW9178IC) is in scope. The default-selected mounting/bracket/single-pack accessories remain deferred and are intentionally not included here.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 2,
+          "evidenceNote": "CCW Line Number 1.0; Item Name CW9178I-CFG; Group Name Default; Quantity 12; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178 Series_datasheet.pdf",
+          "pageNumber": 7,
+          "evidenceNote": "Cisco Wireless 9178I Wi-Fi 7 access point model referenced on this page."
+        },
+        {
+          "sourceType": "ordering_guide",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless Ordering.pdf",
+          "pageNumber": 18,
+          "evidenceNote": "CW9178I wireless access point ordering reference."
+        }
+      ],
+      "childLines": [
+        {
+          "sku": "CON-ROB-CW9178IC",
+          "description": "RMA UPGRADE 8X5XNBD Cisco Wireless 9178I",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-cw9178i-cfg",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 12,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: 12-month support attach observed in the current Honeywell CCW. Support level and term are confirmed at engineer review.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 3,
+              "evidenceNote": "CCW Line Number 1.0.1; Item Name CON-ROB-CW9178IC; Included Item No; Service Duration (Months) 12; Quantity 12."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-batch2-cisco-network-sub",
+      "parentSku": "CISCO-NETWORK-SUB",
+      "parentDescription": "Cisco Networking Subscription",
+      "approved": true,
+      "approvalRequired": false,
+      "evidenceScope": "reusable_logic",
+      "reviewNotes": "Approved for Honeywell MVP Batch 2: only the Cisco network product support attach (SVS-L0SPT-CN) is in scope. The Batch 1 wireless license children (LIC-CW-A, LIC-SPACES-ADV) stay in the separate Batch 1 pack and are intentionally not included here.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 8,
+          "evidenceNote": "CCW Line Number 2.0; Item Name CISCO-NETWORK-SUB; Group Name Default; Quantity 1; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "subscription_datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Networking Subscription Data Sheet.pdf",
+          "pageNumber": 3,
+          "evidenceNote": "Cisco Networking Subscription Advantage tier overview."
+        },
+        {
+          "sourceType": "ordering_guide",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless Ordering.pdf",
+          "pageNumber": 17,
+          "evidenceNote": "Subscription requirement (mandatory) referenced on this page."
+        }
+      ],
+      "childLines": [
+        {
+          "sku": "SVS-L0SPT-CN",
+          "description": "Cisco Network Product Support",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-cisco-network-sub",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "reusable_logic",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: Cisco network product support attach. Evidence includes reusable ordering/data-sheet logic. Support level and term are confirmed at engineer review.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 11,
+              "evidenceNote": "CCW Line Number 2.3; Item Name SVS-L0SPT-CN; Included Item No; Service Duration (Months) N/A; Quantity 1."
+            },
+            {
+              "sourceType": "subscription_datasheet",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Networking Subscription Data Sheet.pdf",
+              "pageNumber": 6,
+              "evidenceNote": "Cisco network product support referenced on this page."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-batch2-cp-7841-k9",
+      "parentSku": "CP-7841-K9=",
+      "parentDescription": "Cisco IP Phone 7841",
+      "approved": true,
+      "approvalRequired": false,
+      "evidenceScope": "reusable_logic",
+      "reviewNotes": "Approved for Honeywell MVP Batch 2: only the current phone support attach (CON-L1NBD-P7PK94P1) is in scope. The historical phone support SKU remains a separate deferred Batch 3 replacement candidate and is not represented here; no silent runtime SKU substitution is authorized.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 66,
+          "evidenceNote": "CCW Line Number 7.0; Item Name CP-7841-K9=; Group Name Default; Quantity 59; top-level configured line in the current Honeywell-scope CCW estimate."
+        },
+        {
+          "sourceType": "datasheet",
+          "sourcePath": "C:/Pre-Sales/catalogues/Cisco IP Phone 7800 Series Data Sheet.pdf",
+          "pageNumber": 3,
+          "evidenceNote": "Cisco IP Phone 7841 model overview."
+        },
+        {
+          "sourceType": "gpl",
+          "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+          "lineNumber": 842,
+          "evidenceNote": "CP-7841-K9= Cisco UC Phone 7841 catalog entry (existence/description only; not price authority)."
+        }
+      ],
+      "childLines": [
+        {
+          "sku": "CON-L1NBD-P7PK94P1",
+          "description": "CX LEVEL 1 8X5XNBDCisco UC Phone 7841",
+          "relationshipType": "service_or_support",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch2-cp-7841-k9",
+          "approved": true,
+          "approvalRequired": false,
+          "termMonths": 12,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 2: 12-month support attach to the Cisco IP Phone 7841 observed in the current Honeywell CCW. Support level and term are confirmed at engineer review.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 67,
+              "evidenceNote": "CCW Line Number 7.0.1; Item Name CON-L1NBD-P7PK94P1; Included Item No; Service Duration (Months) 12; Quantity 59."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
