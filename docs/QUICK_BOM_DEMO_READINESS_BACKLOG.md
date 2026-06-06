@@ -1,5 +1,11 @@
 # Quick BoM Demo-Readiness Product Fix Backlog
 
+Execution tracker only. `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md`
+is the architecture source of truth; this backlog never overrides it and is not a
+planning document. Last refreshed by Prompt 65 to match the current Honeywell
+configuration-expansion state (approved Batch 1+2+3 authority, the Batch 4
+decision record, and the P65-P71 path).
+
 ## 2. Status
 
 This is a demo-readiness triage document for the current Quick BoM product
@@ -31,6 +37,11 @@ written as a testing task rather than an assertion.
 - Pricing authority and configuration authority stay separate: pricing comes
   from the catalog/price source; what to add/default/offer comes from approved
   rule packs.
+- A future Honeywell MVP demo pricing fixture (sourced from
+  `Estimate_NB167337237YA.xlsx` and/or the local `cisco_gpl_sar.csv`) is
+  temporary demo-fixture pricing evidence only - fixture authority, not permanent
+  or production Cisco pricing authority. Temporary fixture pricing must never be
+  treated as production pricing authority.
 
 ## 4. Demo Target
 
@@ -39,7 +50,8 @@ Minimum credible Quick BoM demo path:
 1. Upload/ingest a Honeywell-format (Format #2) BoQ.
 2. Normalize rows into canonical BoQ lines (order and hierarchy preserved).
 3. Resolve SKUs through human-approved decisions.
-4. Expand configuration from an approved Honeywell rule pack.
+4. Expand configuration from the approved Honeywell rule packs (Batch 1+2+3,
+   composed).
 5. Engineer reviews the configuration expansion draft.
 6. Persist the accepted `configuration_expansion` artifact.
 7. Price from the approved `configuration_expansion`.
@@ -136,12 +148,52 @@ Readiness/reporting (confirmed):
 - Pure staleness planner that walks the artifact dependency graph and returns
   planned `stale` transitions (`staleness.ts`) - planning only.
 
-Tests (confirmed): 31 test files under `tests/lib/projects/` cover the modules
-above, including readiness, the artifact services, the Mantle writer, and the
-Honeywell candidate rule pack.
+Tests (confirmed): a broad suite under `tests/lib/projects/` covers the modules
+above, including readiness, the artifact services, the Mantle writer, the
+approved Honeywell Batch 1/2/3 rule packs, the rule-pack composer, and the Batch 4
+decision record.
 
 This is a real, well-tested spine. It is NOT a runnable end-to-end product: no
 coordinator, API, or UI invokes these services (Section 6, B1).
+
+## 5A. Honeywell Configuration Expansion Authority (Current)
+
+Approved runtime configuration expansion authority now exists for the Honeywell
+Quick BoM MVP. Three approved rule packs are committed and accepted by the
+deterministic expansion builder (`validateRulePack` in `config-expansion.ts`):
+
+- `data/config-expansion/honeywell-batch1-approved-rules.json`
+- `data/config-expansion/honeywell-batch2-approved-rules.json`
+- `data/config-expansion/honeywell-batch3-approved-rules.json`
+
+Composer coverage for Batch 1+2+3 exists:
+`composeApprovedConfigExpansionRulePacks` (`config-expansion-rule-pack-composer.ts`)
+merges these separately-approved packs by parentSku into one in-memory approved
+pack that `buildConfigurationExpansionDraft` accepts, so packs that intentionally
+share parent SKUs (C9300X / C9300L) can be used together without tripping the
+duplicate-parent-SKU guard.
+
+`data/config-expansion/honeywell-batch4-decision-record.json` is a decision
+record only, not runtime expansion authority. It creates no Batch 4 runtime
+expansion rule pack; the composer/selector remains Batch 1 + Batch 2 + Batch 3
+only.
+
+Optics are standalone customer BoQ lines, not configuration-expansion children.
+The two Batch 4 optics (`SFP-10G-LR-S=`, `SFP-10/25G-LR-S=`) can be priced and
+exported when they are present in the customer BoQ and deterministic pricing
+evidence exists, but they must not be auto-attached as expansion children under
+any switch or module.
+
+Replacement candidates remain deferred. The Batch 4 historical-to-current
+replacement candidates authorize no silent runtime SKU substitution; a
+replacement stays a separate, explicit, human-approved decision and is never
+applied silently at runtime.
+
+What is still missing: no committed runtime selector/loader assembles the Batch
+1+2+3 packs from disk and composes them into the active expansion set yet -
+nothing in `src/` loads the approved pack JSON or calls the composer (grep). That
+active expansion pack selection/composition is the next implementation step (P66),
+and it stays separate from pricing authority.
 
 ## 6. Demo Blockers
 
@@ -150,16 +202,16 @@ visible manual workaround. P2 is polish/follow-up.
 
 | ID | Priority | Area | Issue | Evidence from repo | Demo impact | Recommended fix prompt |
 |----|----------|------|-------|--------------------|-------------|------------------------|
-| B1 | P0 | Orchestration | No end-to-end Quick BoM wiring. The spine services exist only as libraries; nothing composes them into a runnable flow. | No `src/app/api/projects/**` (glob empty); no projects UI under `src/app/**/projects/**` (glob empty); the artifact-creation + approval services are referenced only within `src/lib/projects/` and `src/lib/db/` (grep), never from a coordinator/API/UI. | Cannot run the demo without writing a custom script that calls each service by hand. | P48 |
-| B2 | P0 | Rule pack authority | No approved/active configuration-expansion rule pack. Only a candidate pack exists, and the expansion builder rejects it. | `data/config-expansion/honeywell-candidate-rules.json` has `status: "candidate"`, `approvalRequired: true`, version `0.1.0-candidate`; `config-expansion.ts validateRulePack` throws `PACK_NOT_APPROVED` unless the pack and every parent/child rule are approved with evidence. | Configuration expansion cannot run, so pricing and export are unreachable. Requires human per-rule approval/authoring, not a status flip. See Open Questions Q1. | P47 |
-| B3 | P0 | Demo fixture | No persisted real Honeywell project/run carried through the full spine. | No seed/fixture composes `normalized_boq -> sku_resolution -> configuration_expansion -> priced_boq -> export_package`; tests use hand-built artifact stubs (e.g. `quick-bom-readiness.test.ts`). | No durable demo state to show; every run starts from scratch via manual steps. | P49 |
-| B4 | P1 | Review surfaces | No product-facing review UI/API for SKU resolution, configuration expansion, or pricing approvals. | Approval logic exists as a pure helper (`approvals.ts`) and a DB store (`project-approval-store.ts`) that transitions artifact + stage status, but has no caller outside tests; no API/UI. | Approvals are demoable only by direct service/script calls, not by a reviewer clicking approve. | P50 |
-| B5 | P1 | Orchestration | Demo readiness depends on manual artifact construction. The readiness report is read-only and nothing advances the spine. | `quick-bom-readiness.ts` only inspects artifacts; the create-next-artifact services must each be invoked manually (no driver exists - same root cause as B1). | Operator must manually create each artifact in order; error-prone live. | P48 |
-| B6 | P1 | Staleness | Upstream changes do not automatically mark downstream artifacts stale at runtime. | `staleness.ts planStaleArtifactUpdates` is pure planning with no caller in `src` (grep); `project-approval-store.ts` and `project-artifact-store.ts` explicitly do not propagate staleness. | Regenerating an upstream artifact mid-demo leaves stale downstream artifacts looking valid; the canonical "auto-stale" rule is not enforced. | P51 |
-| B7 | P1 | Demo data | No committed SAR price source or Mantle category map for the Honeywell scope. Pricing and the Mantle product/service/subscription split both depend on caller-supplied maps. | `priced-boq.ts` consumes explicit `unitListPriceSarBySku` (no catalog->SAR); `mantle-price-estimate-model.ts` uses caller `categoryByAcceptedSku` and defaults unmapped priced rows to product with a warning. No committed Honeywell SAR/category map found. | Pricing returns mostly unpriced lines and the Mantle category totals are wrong unless the operator hand-builds both maps. | P49 |
-| B8 | P1 | Mantle export tests | No real customer-input export tests for Honeywell, Marafiq, or EnergyTech formats. | Glob/grep of `tests/lib/projects/` finds no Honeywell/Marafiq/EnergyTech or `Benchmarck_Files` references in the Mantle tests; `mantle-workbook-writer.test.ts` asserts structure against the committed template only. | Section 10/19 require real-input export proof; without it, "customer-ready without manual reformatting" is unproven for real BoQ shapes. | P52 |
-| B9 | P2 | Catalog coverage (needs verification) | SKU resolution resolves only against a committed local STC mock catalog; whether the Honeywell-scope SKUs are present is unverified. | `catalog-lookup.ts` reads `getCatalogMock()` (`LOCAL_CATALOG_SOURCE = local_stc_historical_mock`); exact + normalized only, no fuzzy/AI. Honeywell SKU coverage in the mock not checked. | If Honeywell SKUs are absent, every line is unresolved and must be accepted by hand SKU entry. Needs verification, then a fixture decision. | P49 |
-| B10 | P2 | DB provisioning (needs verification) | Project-table provisioning for a demo DB is unproven; no committed migration directory. | `schema.ts` line ~301 `export * from "./project-schema"` with a "Not yet wired to runtime" note; `drizzle.config.ts` present; no `drizzle/` migration dir (glob empty). | A demo against real DB persistence may need `drizzle-kit push` or equivalent first; needs verification. | P49 |
+| B1 | P0 | Orchestration | No end-to-end Quick BoM wiring. The spine services exist only as libraries; nothing composes them into a runnable flow. | No `src/app/api/projects/**` (glob empty); no projects UI under `src/app/**/projects/**` (glob empty); the artifact-creation + approval services are referenced only within `src/lib/projects/` and `src/lib/db/` (grep), never from a coordinator/API/UI. | Cannot run the demo without writing a custom script that calls each service by hand. | P67 |
+| B2 | P0 | Expansion pack selection | Approved Batch 1+2+3 packs and the composer both exist, but no committed runtime selector/loader assembles them from disk into the active expansion set. | `honeywell-batch1/2/3-approved-rules.json` are `status: "approved"`; `composeApprovedConfigExpansionRulePacks` merges them in memory and `validateRulePack` accepts the result, but nothing in `src/` loads the pack JSON or calls the composer (grep). | Expansion cannot run in a product flow until selection/composition is wired, so pricing and export stay unreachable. This is wiring, not rule authoring. | P66 |
+| B3 | P0 | Demo fixture | No persisted real Honeywell project/run carried through the full spine. | No seed/fixture composes `normalized_boq -> sku_resolution -> configuration_expansion -> priced_boq -> export_package`; tests use hand-built artifact stubs (e.g. `quick-bom-readiness.test.ts`). | No durable demo state to show; every run starts from scratch via manual steps. | P68 |
+| B4 | P1 | Review surfaces | No product-facing review UI/API for SKU resolution, configuration expansion, or pricing approvals. | Approval logic exists as a pure helper (`approvals.ts`) and a DB store (`project-approval-store.ts`) that transitions artifact + stage status, but has no caller outside tests; no API/UI. | Approvals are demoable only by direct service/script calls, not by a reviewer clicking approve. | later/post-MVP |
+| B5 | P1 | Orchestration | Demo readiness depends on manual artifact construction. The readiness report is read-only and nothing advances the spine. | `quick-bom-readiness.ts` only inspects artifacts; the create-next-artifact services must each be invoked manually (no driver exists - same root cause as B1). | Operator must manually create each artifact in order; error-prone live. | P67 |
+| B6 | P1 | Staleness | Upstream changes do not automatically mark downstream artifacts stale at runtime. | `staleness.ts planStaleArtifactUpdates` is pure planning with no caller in `src` (grep); `project-approval-store.ts` and `project-artifact-store.ts` explicitly do not propagate staleness. | Regenerating an upstream artifact mid-demo leaves stale downstream artifacts looking valid; the canonical "auto-stale" rule is not enforced. | later/post-MVP |
+| B7 | P1 | Demo data | No committed SAR price source or Mantle category map for the Honeywell scope. Pricing and the Mantle product/service/subscription split both depend on caller-supplied maps. | `priced-boq.ts` consumes explicit `unitListPriceSarBySku` (no catalog->SAR); `mantle-price-estimate-model.ts` uses caller `categoryByAcceptedSku` and defaults unmapped priced rows to product with a warning. No committed Honeywell SAR/category map found. | Pricing returns mostly unpriced lines and the Mantle category totals are wrong unless the operator hand-builds both maps. Fixture pricing is temporary demo-fixture evidence only, never production authority. | P68 |
+| B8 | P1 | Mantle export tests | No real customer-input export tests for Honeywell, Marafiq, or EnergyTech formats. | Glob/grep of `tests/lib/projects/` finds no Honeywell/Marafiq/EnergyTech or `Benchmarck_Files` references in the Mantle tests; `mantle-workbook-writer.test.ts` asserts structure against the committed template only. | Section 10/19 require real-input export proof; without it, "customer-ready without manual reformatting" is unproven for real BoQ shapes. | P70/P71 |
+| B9 | P2 | Catalog coverage (needs verification) | SKU resolution resolves only against a committed local STC mock catalog; whether the Honeywell-scope SKUs are present is unverified. | `catalog-lookup.ts` reads `getCatalogMock()` (`LOCAL_CATALOG_SOURCE = local_stc_historical_mock`); exact + normalized only, no fuzzy/AI. Honeywell SKU coverage in the mock not checked. | If Honeywell SKUs are absent, every line is unresolved and must be accepted by hand SKU entry. Needs verification, then a fixture decision. | P68 |
+| B10 | P2 | DB provisioning (needs verification) | Project-table provisioning for a demo DB is unproven; no committed migration directory. | `schema.ts` line ~301 `export * from "./project-schema"` with a "Not yet wired to runtime" note; `drizzle.config.ts` present; no `drizzle/` migration dir (glob empty). | A demo against real DB persistence may need `drizzle-kit push` or equivalent first; needs verification. | P67/P68 |
 
 ## 7. Missing Functions / Product Gaps
 
@@ -182,11 +234,9 @@ SKU review:
   (only the pure review helper + DB store exist).
 
 Configuration expansion review:
-- No approved Honeywell runtime rule pack (only candidate) - the gating P0
-  blocker, since each rule needs human per-rule pre-sales approval before an
-  approved pack can be committed (B2, P47).
-- No offline rule-authoring/approval workflow to promote candidate rules into a
-  committed approved pack (Section 19 tasks 8d/8e).
+- Approved Batch 1+2+3 runtime rule packs exist and the composer merges them, but
+  no committed runtime selector/loader assembles them into the active expansion
+  set yet - the remaining P0 wiring gap (B2, P66). See Section 5A.
 - No API/UI to present the expansion draft and capture per-line accept/reject.
 
 Pricing review:
@@ -245,70 +295,87 @@ where it depends on caller-supplied data, the test must supply realistic inputs.
 
 ## 9. Recommended Next Prompts
 
-In order. The sequence makes one real demo path runnable before any broad UI
-polish. This backlog is Prompt 46, so implementation resumes at Prompt 47. Each
-prompt stays narrow (one verifiable success criterion).
+In order. The sequence makes one real Honeywell Quick BoM demo path runnable
+before any broad UI polish. Each prompt stays narrow (one verifiable success
+criterion). These P65-P71 prompts are the next slice of the roughly 10-14 prompt
+Honeywell Quick BoM MVP path; that narrow Quick BoM path is the first target and
+RFP remains out of current scope.
 
-- P47 - Approve/commit active Honeywell rule pack after human per-rule approval
-  - Goal: after human pre-sales approval of each parent and child rule, commit a
-    narrow Honeywell runtime rule pack (`status: approved`, every parent/child
-    approved with evidence) the expansion builder accepts. This is NOT a status
-    flip on the candidate pack: each rule requires human per-rule pre-sales
-    approval before the approved pack can be committed.
-  - Files: new committed approved pack under `data/config-expansion/`; a loader/
-    selector; tests asserting `validateRulePack` accepts it.
-  - Stop: `buildConfigurationExpansionDraft` runs on the Honeywell scope without
-    throwing, using the committed approved pack.
+- P65 - Backlog refresh (this prompt)
+  - Goal: refresh this backlog to match the current Honeywell configuration-
+    expansion state - approved Batch 1+2+3 authority, the Batch 4 decision record,
+    the optics-standalone and replacements-deferred boundaries, and the P65-P71
+    path.
+  - Files: this doc plus a focused doc regression test in `tests/lib/projects/`.
+  - Stop: the doc and its test reflect the current state.
 
-- P48 - Quick BoM demo orchestration service (CLI/service composition)
-  - Goal: add one deterministic service that drives the spine end to end
-    (create project, normalize, resolve, expand, price, export) by composing the
-    existing services, with no new business logic.
-  - Files: new `src/lib/projects/quick-bom-runner.ts` (or
-    `src/services/quick-bom/`), composing the existing artifact services + the
-    approval and readiness helpers; tests in `tests/lib/projects/`.
-  - Stop: a test (or script) runs a synthetic project from upload to
-    `export_package` and the readiness report reports customer-deliverable ready.
+- P66 - Active Honeywell Batch 1+2+3 selector/composer support
+  - Goal: add a committed runtime selector/loader that reads the approved Batch 1,
+    Batch 2, and Batch 3 pack JSON and composes them (via
+    `composeApprovedConfigExpansionRulePacks`) into the active expansion pack for
+    the Honeywell scope. Composition only - approves nothing new, infers no lines,
+    replaces no SKUs, prices nothing. This is the next implementation step (B2).
+  - Files: a loader/selector under `src/lib/projects/`; tests in
+    `tests/lib/projects/`.
+  - Stop: `buildConfigurationExpansionDraft` runs on the Honeywell scope using the
+    composed Batch 1+2+3 pack assembled from disk, without throwing.
 
-- P49 - Honeywell demo fixture + price/category maps + DB/catalog check
-  - Goal: provide a reproducible Honeywell demo dataset: a committed sample BoQ
-    input path, a SAR `unitListPriceSarBySku` map, a SKU->Mantle-category map,
-    plus verification that Honeywell SKUs resolve and project tables provision.
+- P67 - Quick BoM runner skeleton
+  - Goal: add one deterministic service that drives the spine end to end (create
+    project, normalize, resolve, expand using the P66 composed pack, price,
+    export) by composing the existing services, with no new business logic. This
+    resolves the B1/B5 orchestration gap.
+  - Files: new `src/lib/projects/quick-bom-runner.ts` (or `src/services/quick-bom/`),
+    composing the existing artifact services + the approval and readiness helpers;
+    tests in `tests/lib/projects/`.
+  - Stop: a test runs a synthetic project from upload to `export_package` and the
+    readiness report reports customer-deliverable ready.
+
+- P68 - Honeywell demo price/category fixture
+  - Goal: provide a reproducible Honeywell demo dataset - a committed sample BoQ
+    input path, a SAR `unitListPriceSarBySku` map, and a SKU->Mantle-category map -
+    plus verification that Honeywell SKUs resolve and project tables provision. The
+    fixture pricing is temporary demo-fixture evidence only, never production
+    pricing authority (Section 3).
   - Files: fixtures under `tests/fixtures/` or `data/`; a documented provisioning
-    step; tests pricing/exporting the Honeywell fixture through the runner.
-  - Stop: the P48 runner produces a fully priced Mantle workbook for the
-    Honeywell fixture with correct category totals.
+    step; tests.
+  - Stop: the P67 runner produces a fully priced Mantle workbook for the Honeywell
+    fixture with correct category totals.
 
-- P50 - Quick BoM review API/UI for SKU, expansion, and pricing approvals
-  - Goal: expose project-domain read + approve/reject endpoints (and a minimal
-    UI) so a reviewer can advance the spine without scripts.
-  - Files: `src/app/api/projects/**`; minimal `src/app/**/projects/**` pages
-    reusing the readiness report and approval store.
-  - Stop: a reviewer can approve `sku_resolution`, `configuration_expansion`, and
-    `priced_boq` through the UI/API and reach export.
+- P69 - Deterministic pricing from approved expansion
+  - Goal: price the accepted expanded BoM deterministically from the P68 fixture
+    inputs, keeping standalone optics priced as customer BoQ lines (not expansion
+    children) when present in scope. No runtime AI, catalog, or pricing decision.
+  - Files: tests and any thin glue under `src/lib/projects/`; no new pricing
+    authority.
+  - Stop: pricing returns SAR-priced lines for the Honeywell fixture with VAT/
+    margin per Section 9 of the planning file.
 
-- P51 - Apply staleness on upstream change
-  - Goal: invoke `planStaleArtifactUpdates` when an upstream artifact is
-    (re)created/approved and persist the planned `stale` transitions.
-  - Files: `project-artifact-store.ts` / `project-approval-store.ts` write-through
-    using `staleness.ts`; tests for transitive staleness.
-  - Stop: regenerating an upstream artifact marks the latest downstream artifacts
-    stale, and the readiness report flags them.
+- P70 - Mantle export path from approved priced BoQ
+  - Goal: drive the Mantle-format export from the approved priced BoQ produced by
+    P69, preserving all Mantle output requirements (Section 10 of the planning
+    file).
+  - Files: tests under `tests/lib/projects/` using the committed template (not the
+    confidential benchmark workbooks).
+  - Stop: the runner exports a customer-ready Mantle workbook from the Honeywell
+    priced BoQ without manual reformatting.
 
-- P52 - Real-input Mantle export tests (Honeywell, Marafiq, EnergyTech)
-  - Goal: prove the Mantle export survives real customer BoQ shapes and stays
-    customer-ready without manual reformatting.
-  - Files: tests under `tests/lib/projects/` using committed/sanitized real-shape
-    inputs and the committed template (not the confidential benchmark workbooks).
-  - Stop: export tests pass for all three formats with structure/totals assertions.
+- P71 - Honeywell end-to-end validation
+  - Goal: prove the full Honeywell Quick BoM path (normalize -> resolve -> expand
+    -> price -> export) end to end on the committed fixture, including real-input
+    Mantle export assertions for the Honeywell shape.
+  - Files: an end-to-end test under `tests/lib/projects/`.
+  - Stop: the Honeywell end-to-end test passes with structure/totals assertions and
+    the readiness report reports customer-deliverable ready.
 
 ## 10. Open Questions
 
-- Q1: Should the Honeywell candidate rules now be human-approved into an active
-  rule pack, and who signs off per rule? (Blocks B2/P47; the candidate pack is
-  inert until approved.)
-- Q2: Should the first demo be CLI/service-only (P48) or API/UI-first (P50)? The
-  recommended order is service-first, then UI.
+- Q1: Batch 1+2+3 rules are human-approved and committed (Section 5A); the open
+  question is now narrower - wire the active selector/composer (B2/P66), and
+  decide who signs off on any future Batch 4 expansion pack (optics and
+  replacements stay out of expansion until then).
+- Q2: Should the first demo be CLI/service-only (P67) or API/UI-first
+  (later/post-MVP)? The recommended order is service-first, then UI.
 - Q3: Should the first demo use real project DB persistence (requires DB
   provisioning, B10) or in-memory service composition for speed?
 - Q4: Which files are allowed as regression references for the demo, and what is
