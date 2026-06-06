@@ -4,12 +4,13 @@ import { join } from "path";
 import {
   buildHoneywellQuickBomConfigurationExpansionDraft,
   runHoneywellQuickBomConfigurationExpansionReview,
+  runHoneywellQuickBomDemoPricing,
 } from "@/lib/projects/quick-bom-runner";
 import {
   HONEYWELL_MVP_CONFIG_EXPANSION_RULE_PACK_ID,
   HONEYWELL_MVP_CONFIG_EXPANSION_RULE_PACK_VERSION,
 } from "@/lib/projects/honeywell-config-expansion-rule-pack";
-import type { CanonicalBoqLine, SkuResolutionDecision } from "@/types/project";
+import type { CanonicalBoqLine, ProjectPricingConfig, SkuResolutionDecision } from "@/types/project";
 import type { ConfigurationExpansionDraftLine } from "@/lib/projects/config-expansion-types";
 
 /**
@@ -227,15 +228,165 @@ describe("runHoneywellQuickBomConfigurationExpansionReview", () => {
   });
 });
 
+// --- Demo-priced run --------------------------------------------------------
+
+// Caller-supplied pricing config; the runner never invents one. unitListPriceSar
+// assertions below are rate-independent (they echo the fixture list price), so the
+// chosen markup only proves the caller config flows through to the priced amounts.
+function pricingConfig(): ProjectPricingConfig {
+  return { currency: "SAR", mode: "markup", ratePercent: 20, vatRatePercent: 15, roundingDecimals: 2 };
+}
+
+describe("runHoneywellQuickBomDemoPricing", () => {
+  // The single priced line for an orderable SKU (a customer line's acceptedSku or an
+  // expansion line's own sku, both surfaced as the priced line's acceptedSku).
+  function priced(run: ReturnType<typeof runHoneywellQuickBomDemoPricing>, sku: string) {
+    return run.pricedBoq.lines.find((l) => l.acceptedSku === sku);
+  }
+
+  function runAllAccepted(): ReturnType<typeof runHoneywellQuickBomDemoPricing> {
+    return runHoneywellQuickBomDemoPricing({
+      ...fixtureInput(),
+      reviewDecisions: acceptAllDecisions(),
+      pricingConfig: pricingConfig(),
+    });
+  }
+
+  it("still requires an explicit decision for every expansion line before pricing", () => {
+    // The review runner's guard fires before any pricing, even though a config is supplied.
+    expect(() =>
+      runHoneywellQuickBomDemoPricing({
+        ...fixtureInput(),
+        reviewDecisions: [],
+        pricingConfig: pricingConfig(),
+      })
+    ).toThrow(/decision for every expansion line/);
+  });
+
+  it("returns the active composed Batch 1+2+3 rule-pack metadata", () => {
+    const run = runAllAccepted();
+    expect(run.rulePack.rulePackId).toBe(HONEYWELL_MVP_CONFIG_EXPANSION_RULE_PACK_ID);
+    expect(run.rulePack.version).toBe(HONEYWELL_MVP_CONFIG_EXPANSION_RULE_PACK_VERSION);
+    expect(run.rulePack.status).toBe("approved");
+  });
+
+  it("returns demo pricing-fixture metadata with the demo-only authority boundaries", () => {
+    const { pricingFixture } = runAllAccepted();
+    expect(pricingFixture.fixtureId).toBe("honeywell-mvp-demo-pricing-fixture");
+    expect(pricingFixture.scope).toBe("honeywell_mvp_demo_only");
+    expect(pricingFixture.status).toBe("approved_demo_fixture");
+    expect(pricingFixture.currency).toBe("SAR");
+    expect(pricingFixture.demoFixtureAuthority).toBe(true);
+    expect(pricingFixture.productionPricingAuthority).toBe(false);
+    expect(pricingFixture.runtimeAiPricing).toBe(false);
+    expect(pricingFixture.runtimeCatalogLookup).toBe(false);
+    expect(pricingFixture.replacementAuthority).toBe(false);
+    expect(pricingFixture.silentSkuSubstitution).toBe(false);
+    // Small metadata only: the full per-SKU price/evidence/category maps are not exposed.
+    expect("unitListPriceSarBySku" in pricingFixture).toBe(false);
+    expect("priceSourceEvidenceBySku" in pricingFixture).toBe(false);
+    expect("categoryByAcceptedSku" in pricingFixture).toBe(false);
+  });
+
+  it("prices every accepted customer and accepted expansion line", () => {
+    const run = runAllAccepted();
+    const unpriced = run.pricedBoq.lines.filter((l) => l.status !== "priced");
+    // Name any gap so a missing fixture SKU is surfaced, not silently tolerated.
+    expect(unpriced.map((l) => l.acceptedSku ?? l.originalSku)).toEqual([]);
+    expect(run.pricedBoq.summary.unpricedLineCount).toBe(0);
+    expect(run.pricedBoq.summary.pricedLineCount).toBe(run.review.acceptedLines.length);
+    // The caller-supplied pricing config flows through to the priced amounts.
+    expect(priced(run, C9300X)?.amounts?.pricingMode).toBe("markup");
+    expect(priced(run, C9300X)?.amounts?.ratePercent).toBe(20);
+  });
+
+  it("retains standalone optics as priced customer lines with no optic expansion children", () => {
+    const run = runAllAccepted();
+    // Optics stay customer-origin in the accepted BoM...
+    const opticAccepted = run.review.acceptedLines.filter((l) => l.sku === OPTIC_A || l.sku === OPTIC_B);
+    expect(opticAccepted).toHaveLength(2);
+    expect(opticAccepted.every((l) => l.origin === "customer")).toBe(true);
+    // ...and never appear as expansion lines.
+    expect(
+      run.review.acceptedLines.some((l) => l.origin === "expansion" && (l.sku === OPTIC_A || l.sku === OPTIC_B))
+    ).toBe(false);
+    // They price only as customer-provided lines, at the fixture optic list prices.
+    expect(priced(run, OPTIC_A)?.amounts?.unitListPriceSar).toBe(9538.39);
+    expect(priced(run, OPTIC_B)?.amounts?.unitListPriceSar).toBe(10492.22);
+  });
+
+  it("prices representative customer and expansion lines at fixture unit list prices and quantities", () => {
+    const run = runAllAccepted();
+    expect(priced(run, CW9178)?.amounts?.unitListPriceSar).toBe(15192.64);
+    expect(priced(run, C9300X)?.amounts?.unitListPriceSar).toBe(90681.40);
+    expect(priced(run, C9300L)?.amounts?.unitListPriceSar).toBe(38301.90);
+    expect(priced(run, "LIC-CW-A")?.amounts?.unitListPriceSar).toBe(2811.96);
+    expect(priced(run, "CON-L1NCD-C9300XY4")?.amounts?.unitListPriceSar).toBe(27246.39);
+
+    // Batch 3 zero-price children: quantity follows the C9300L parent multiplier.
+    const fan = priced(run, "FAN-T2");
+    expect(fan?.quantity).toBe(C9300L_QTY * 3);
+    expect(fan?.amounts?.unitListPriceSar).toBe(0);
+
+    const stack = priced(run, "C9300L-STACK-A");
+    expect(stack?.quantity).toBe(C9300L_QTY * 2);
+    expect(stack?.amounts?.unitListPriceSar).toBe(0);
+  });
+
+  it("excludes a rejected expansion line from both the accepted review and the priced draft", () => {
+    const { draft } = buildHoneywellQuickBomConfigurationExpansionDraft(fixtureInput());
+    const bracket = expansionLines(draft.lines).find((l) => l.sku === "AIR-AP-BRACKET-2");
+    expect(bracket).toBeDefined();
+    const reviewDecisions = expansionLines(draft.lines).map((l) => ({
+      lineId: l.lineId,
+      action: l.lineId === bracket?.lineId ? ("reject" as const) : ("accept" as const),
+    }));
+
+    const run = runHoneywellQuickBomDemoPricing({ ...fixtureInput(), reviewDecisions, pricingConfig: pricingConfig() });
+    expect(run.review.acceptedLines.some((l) => l.sku === "AIR-AP-BRACKET-2")).toBe(false);
+    expect(run.pricedBoq.lines.some((l) => l.acceptedSku === "AIR-AP-BRACKET-2")).toBe(false);
+  });
+
+  it("does not mutate inputs and returns fresh fixture metadata per call", () => {
+    const input = {
+      ...fixtureInput(),
+      reviewDecisions: acceptAllDecisions(),
+      pricingConfig: pricingConfig(),
+    };
+    const snapshot = structuredClone(input);
+    const run1 = runHoneywellQuickBomDemoPricing(input);
+    expect(input).toEqual(snapshot);
+
+    // Mutating one run's returned fixture metadata cannot leak into a later call.
+    run1.pricingFixture.standaloneOptics.push("MUTANT");
+    run1.pricingFixture.skuCount = -1;
+    const run2 = runAllAccepted();
+    expect(run2.pricingFixture.standaloneOptics).toEqual([OPTIC_A, OPTIC_B]);
+    expect(run2.pricingFixture.skuCount).toBe(50);
+  });
+});
+
 // --- Source hygiene ---------------------------------------------------------
 
-// Exactly the composed helper modules and contract types the runner may import.
+// Exactly the composed helper modules, the pricing helpers, and contract types the
+// runner may import. The priced-BoQ builder and the demo pricing fixture loader were
+// added for runHoneywellQuickBomDemoPricing (Prompt 69).
 const EXPECTED_IMPORTS = [
   "@/lib/projects/honeywell-config-expansion-rule-pack",
   "@/lib/projects/config-expansion",
   "@/lib/projects/config-expansion-review",
   "@/lib/projects/config-expansion-types",
+  "@/lib/projects/priced-boq",
+  "@/lib/projects/honeywell-demo-pricing-fixture",
   "@/types/project",
+];
+
+// The two pricing-related modules the demo-pricing function may now import. Exempted
+// from the forbidden-token sweep below so the sweep still trips on any OTHER pricing
+// module (e.g. the raw @/lib/projects/pricing engine, which must not be imported here).
+const ALLOWED_PRICING_IMPORTS = [
+  "@/lib/projects/priced-boq",
+  "@/lib/projects/honeywell-demo-pricing-fixture",
 ];
 
 // Tokens the runner must never reference in an import specifier: pricing/priced-BoQ,
@@ -273,8 +424,11 @@ describe("quick-bom-runner module - decoupling and hygiene", () => {
     }
   });
 
-  it("references no pricing, export, catalog, API/UI, DB/artifact, engine, adapter, or AI module", () => {
+  it("references no other pricing, export, catalog, API/UI, DB/artifact, engine, adapter, or AI module", () => {
     for (const s of specs) {
+      // The two approved pricing imports legitimately contain "pric"/"priced"; every
+      // other specifier must still clear every forbidden token.
+      if (ALLOWED_PRICING_IMPORTS.includes(s)) continue;
       const lower = s.toLowerCase();
       for (const token of FORBIDDEN_IMPORT_TOKENS) {
         expect(lower.includes(token), `import "${s}" matches forbidden "${token}"`).toBe(false);
