@@ -75,15 +75,16 @@ describe("honeywell quick bom demo runbook - defines the Mantle workbook", () =>
   });
 });
 
-describe("honeywell quick bom demo runbook - status after Prompt 71", () => {
+describe("honeywell quick bom demo runbook - status after Prompt 73", () => {
   it("records the automated e2e proof of the path and the temp workbook write/reopen", () => {
     expect(docText).toContain("honeywell-quick-bom-demo-e2e.test.ts");
     expect(docTextLower).toContain("writes the mantle model to a temporary");
     expect(docTextLower).toContain("re-opens that");
   });
 
-  it("states no stable manual command exists until Prompt 73", () => {
-    expect(docText).toContain("No stable manual command exists until Prompt 73");
+  it("states the Prompt 73 operator command now exists, with its path", () => {
+    expect(docTextLower).toContain("operator command now exists");
+    expect(docText).toContain("scripts/write-honeywell-quick-bom-demo.ts");
   });
 });
 
@@ -105,9 +106,9 @@ describe("honeywell quick bom demo runbook - authority boundaries", () => {
 });
 
 describe("honeywell quick bom demo runbook - manual checklist", () => {
-  it("includes the manual checklist framed for after Prompt 73", () => {
+  it("includes the manual checklist for the Prompt 73 command", () => {
     expect(docText).toContain("Manual checklist");
-    expect(docTextLower).toContain("after prompt 73 adds the command");
+    expect(docTextLower).toContain("with the prompt 73 operator command");
     expect(docTextLower).toContain("run the command");
     expect(docTextLower).toContain("temp/demo output folder");
     expect(docTextLower).toContain("open the workbook");

@@ -4,8 +4,8 @@ Status: operator runbook for the Honeywell MVP Quick BoM demo (demo scope only).
 
 Operator-facing runbook for the Honeywell Quick BoM demo. It defines what the
 generated Honeywell Mantle workbook is, the current status after Prompt 71, the
-authority boundaries, and the manual checklist to run once Prompt 73 adds the
-operator command. It is a demo runbook, not an architecture source of truth;
+authority boundaries, and the manual checklist for the Prompt 73 operator
+command. It is a demo runbook, not an architecture source of truth;
 `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md` remains the source
 of truth and `docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md` is the execution tracker.
 
@@ -41,16 +41,20 @@ It is explicitly **not**:
   Mantle template and writes a fresh output file; it never edits the customer's
   workbook in place.
 
-## 2. Current status (after Prompt 71)
+## 2. Current status (after Prompt 73)
 
 - The full path is **proven by an automated end-to-end test**:
   `tests/lib/projects/honeywell-quick-bom-demo-e2e.test.ts` runs the whole path on
   the committed fixture, writes the Mantle model to a temporary `.xlsx` with
   `writeMantlePriceEstimateWorkbook`, and re-opens that workbook through the Mantle
   layout locator to assert rows, order, category footers, and totals.
-- **No stable manual command exists until Prompt 73.** Today the workbook is
-  produced only by the automated e2e test; there is no committed operator command
-  or script that writes it on demand. Prompt 73 adds that command.
+- **The operator command now exists (Prompt 73).** Run
+  `npx.cmd tsx scripts/write-honeywell-quick-bom-demo.ts` from the repo root to
+  write the Honeywell Mantle demo workbook on demand. It runs the same verified
+  in-memory path the e2e test proves and writes a fresh `.xlsx`; pass
+  `--output <path>` to choose where it lands (default: a temp/demo output folder
+  under the OS temp dir). The command prints an operator summary (output path, line
+  counts, representative quantities, and totals) for cross-checking the workbook.
 
 ## 3. Authority boundaries
 
@@ -73,10 +77,15 @@ The demo holds these boundaries:
 - **No runtime AI, catalog, or pricing decisions.** All math, lookups, and rule
   checks are deterministic TypeScript over committed/approved data.
 
-## 4. Manual checklist (use after Prompt 73 adds the command)
+## 4. Manual checklist (Prompt 73 command)
 
-This checklist is for once the Prompt 73 operator command exists. It does not work
-today, because no manual command exists yet (Section 2).
+Run this checklist with the Prompt 73 operator command. From the repo root:
+
+`npx.cmd tsx scripts/write-honeywell-quick-bom-demo.ts --output <path>`
+
+Omit `--output` to write to the default temp/demo output folder under the OS temp
+dir. The command prints the output path, line counts, representative quantities,
+and totals; cross-check those against the opened workbook.
 
 1. **Run the command** that writes the Honeywell Mantle demo workbook.
 2. **Verify the output path** is under a temp/demo output folder (a generated
