@@ -1,0 +1,1105 @@
+{
+  "packetId": "honeywell-batch3-approval-packet",
+  "packetVersion": "0.1.0",
+  "batch": "batch-3",
+  "status": "pending_human_approval",
+  "purpose": "non_term_hardware_accessory_review_packet",
+  "reviewOnly": true,
+  "runtimeAuthority": false,
+  "createdDate": "2026-06-05",
+  "sourceScope": "honeywell_current_ccw_2026_06_02",
+  "sourceCandidateRulePackId": "honeywell-candidate-rules-v2",
+  "sourceCandidateRulePackVersion": "0.2.0-candidate",
+  "sourceCandidateRulePackStatus": "candidate",
+  "sourceApprovalPacketId": "honeywell-rule-approval-packet-v2",
+  "batch1ApprovedPackId": "honeywell-batch1-approved-rules",
+  "batch2ApprovedPackId": "honeywell-batch2-approved-rules",
+  "batchStrategyDoc": "docs/config-expansion/HONEYWELL_RULE_APPROVAL_BATCH_STRATEGY.md",
+  "sequencingNote": "This packet treats the current implementation prompt as the sequencing authority: Batch 3 here is the non-term hardware/accessory child lines (wireless mounting/bracket/single-pack accessories; switch stacking/power-cable/SSD-placeholder/network-module default-selected lines; and bundled zero-price rack/fan/stack hardware). This intentionally differs from docs/config-expansion/HONEYWELL_RULE_APPROVAL_BATCH_STRATEGY.md, which earlier labelled Batch 3 as replacement candidates; that strategy doc is unchanged by this packet. Under this packet, replacement candidates AND optics both remain deferred and are not approved here, and no silent runtime SKU substitution is modeled.",
+  "notes": "REVIEW-ONLY Batch 3 non-term hardware/accessory approval packet. It is not runtime authority and is not an approved rule pack. Every entry stays pending_human_approval; recommendedDecision is advisory only and approves, activates, and runtime-enables nothing. No approved Batch 3 runtime pack is created by this packet, and no runtime evaluator, pricing, catalog, API, UI, DB, or export behavior is added. Configuration authority (what to add/default/offer) stays strictly separate from pricing authority; this packet carries no pricing fields. The Batch 1 approved pack (honeywell-batch1-approved-rules) and the Batch 2 approved pack (honeywell-batch2-approved-rules) are already approved and are unchanged by this packet. The source v2 candidate pack and v2 approval packet remain candidate/pending. Batch 3 approval, when later recorded, still does NOT approve optics or replacement candidates and authorizes no silent SKU substitution; any approved Batch 3 runtime pack is authored by a separate later prompt as a new artifact.",
+  "recommendedDecisionVocabulary": [
+    {
+      "decision": "approve_for_honeywell_mvp",
+      "description": "Reviewer recommends approving this item for the later Honeywell MVP Batch 3 runtime pack. Recording it here does not itself activate the item."
+    },
+    {
+      "decision": "defer_needs_more_evidence",
+      "description": "Reviewer recommends deferring: more authoritative evidence is needed, or the item belongs to a later batch."
+    },
+    {
+      "decision": "reject_for_runtime",
+      "description": "Reviewer recommends the item must not enter any approved runtime rule pack."
+    },
+    {
+      "decision": "review_option_only",
+      "description": "Reviewer recommends treating this as an engineer-review option only (for example a default-selected accessory), never a silently forced universal default."
+    }
+  ],
+  "riskFlagVocabulary": [
+    {
+      "flag": "default_selected_requires_review",
+      "description": "Line is a default-selected option that must be treated as an advisory engineer-review option, not a silently forced universal default."
+    },
+    {
+      "flag": "included_zero_price_hardware",
+      "description": "Line is a bundled, included zero-price hardware accessory in the current CCW configuration."
+    },
+    {
+      "flag": "fixed_per_parent_multiplier_requires_review",
+      "description": "Line quantity is a fixed_per_parent multiplier (more than one per parent) and the multiplier must be confirmed at engineer review."
+    },
+    {
+      "flag": "ccw_only_evidence",
+      "description": "Evidence is current-CCW quote-observed only; not yet reusable logic."
+    },
+    {
+      "flag": "catalog_existence_only",
+      "description": "Non-CCW evidence is catalog existence/description only; not configuration logic."
+    },
+    {
+      "flag": "historical_sku_mismatch",
+      "description": "A historical SKU differs from the current CCW SKU; handled as a separate replacement decision."
+    },
+    {
+      "flag": "deferred_not_batch_3",
+      "description": "Item is intentionally out of Batch 3 scope."
+    }
+  ],
+  "batch1AlreadyApproved": {
+    "rulePackId": "honeywell-batch1-approved-rules",
+    "scope": "Honeywell MVP / Batch 1",
+    "summary": "Batch 1 is already approved as a separate runtime pack covering only deterministic model-safety decisions: wireless license quantity from the access-point total (LIC-CW-A, LIC-SPACES-ADV), power-cord quantity from the selected PSU count (CAB-C15-CBN), the project-level duplicate policy for the wireless licenses, and the C9300X/C9300L AC PSU option groups.",
+    "note": "Batch 1 is unchanged by this packet. This Batch 3 packet adds no approval and does not modify the Batch 1 pack."
+  },
+  "batch2AlreadyApproved": {
+    "rulePackId": "honeywell-batch2-approved-rules",
+    "scope": "Honeywell MVP / Batch 2",
+    "summary": "Batch 2 is already approved as a separate runtime pack covering the term/support/software decisions: the C9300X and C9300L term-coupled licenses/support at the 3Y (36-month) default and their included zero-price software/subscriptions, the wireless support/subscription-support attach, and the phone support attach using the current CON-L1NBD-P7PK94P1.",
+    "note": "Batch 2 is unchanged by this packet. This Batch 3 packet adds no approval and does not modify the Batch 2 pack."
+  },
+  "batch3Scope": "Batch 3 (per this packet's sequencing authority) is the non-term hardware/accessory child-line review batch: the default-selected wireless mounting/bracket/single-pack accessories under CW9178I-CFG, and the default-selected and bundled zero-price non-term hardware accessories under the C9300X-48HX-A and C9300L-24P-4X-A switches (stacking kit/module/cables, power/stack cables, SSD placeholders, fan modules, rack rubber feet/screws/cable guides, and the selected uplink network module). Default-selected lines are advisory engineer-review options, not forced universal defaults; bundled zero-price hardware may be recommended for Honeywell MVP review with quote-observed/CCW-only caveats.",
+  "outOfScope": [
+    "Optics (SFP-10G-LR-S=, SFP-10/25G-LR-S=) - remain deferred; not part of Batch 3.",
+    "All replacement candidates (historical-to-current SKU mappings) - remain deferred; no silent runtime SKU substitution.",
+    "Batch 1 deterministic model-safety lines - stay in the separate approved Batch 1 pack.",
+    "Batch 2 term/support/software lines - stay in the separate approved Batch 2 pack.",
+    "Broader Cisco generalization beyond Honeywell scope.",
+    "Pricing, catalog, API, UI, DB, and export behavior - configuration authority only; no pricing fields.",
+    "Any runtime evaluator behavior or an approved Batch 3 runtime pack - this packet is review-only."
+  ],
+  "groups": [
+    {
+      "groupId": "wireless-accessories",
+      "title": "Wireless non-term hardware accessories",
+      "parentSkus": [
+        "CW9178I-CFG"
+      ],
+      "description": "Default-selected mounting/bracket and single-pack hardware accessories attached to the CW9178I-CFG wireless access points in the current Honeywell CCW.",
+      "entries": [
+        {
+          "decisionId": "wireless-accessories:CW9178I-CFG:AIR-AP-BRACKET-2",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "CW9178I-CFG",
+          "sku": "AIR-AP-BRACKET-2",
+          "description": "802.11 AP Universal Mounting Bracket",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "evidenceScope": "reusable_logic",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 4,
+              "evidenceNote": "CCW Line Number 1.1; Item Name AIR-AP-BRACKET-2; Included Item No; Service Duration (Months) N/A; Quantity 12."
+            },
+            {
+              "sourceType": "install_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178I Series Wi-Fi 7Access PointHardware Installation.pdf",
+              "pageNumber": 19,
+              "evidenceNote": "AIR-AP-BRACKET-2 universal mounting bracket referenced on this page."
+            }
+          ],
+          "riskFlags": [
+            "default_selected_requires_review"
+          ],
+          "recommendedDecision": "review_option_only",
+          "reviewQuestion": "Approve AIR-AP-BRACKET-2 under CW9178I-CFG as an advisory engineer-review option (not a silently forced universal default) for Honeywell MVP?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. default_selected line: treated as an advisory engineer-review option, never a silently forced universal default. Evidence includes reusable ordering/install-guide logic. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "wireless-accessories:CW9178I-CFG:AIR-AP-T-RAIL-F",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "CW9178I-CFG",
+          "sku": "AIR-AP-T-RAIL-F",
+          "description": "Flush Mount for APs & Cellular Gateways-Recessed",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "evidenceScope": "reusable_logic",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 5,
+              "evidenceNote": "CCW Line Number 1.2; Item Name AIR-AP-T-RAIL-F; Included Item No; Service Duration (Months) N/A; Quantity 12."
+            },
+            {
+              "sourceType": "install_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178I Series Wi-Fi 7Access PointHardware Installation.pdf",
+              "pageNumber": 20,
+              "evidenceNote": "AIR-AP-T-RAIL flush/recessed mount referenced on this page."
+            }
+          ],
+          "riskFlags": [
+            "default_selected_requires_review"
+          ],
+          "recommendedDecision": "review_option_only",
+          "reviewQuestion": "Approve AIR-AP-T-RAIL-F under CW9178I-CFG as an advisory engineer-review option (not a silently forced universal default) for Honeywell MVP?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. default_selected line: treated as an advisory engineer-review option, never a silently forced universal default. Evidence includes reusable ordering/install-guide logic. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "wireless-accessories:CW9178I-CFG:CW9178-SINGLE",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "CW9178I-CFG",
+          "sku": "CW9178-SINGLE",
+          "description": "SINGLE PACK OPTION",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 6,
+              "evidenceNote": "CCW Line Number 1.3; Item Name CW9178-SINGLE; Included Item No; Service Duration (Months) N/A; Quantity 12."
+            }
+          ],
+          "riskFlags": [
+            "default_selected_requires_review",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "review_option_only",
+          "reviewQuestion": "Approve CW9178-SINGLE under CW9178I-CFG as an advisory engineer-review option (not a silently forced universal default) for Honeywell MVP?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. default_selected line: treated as an advisory engineer-review option, never a silently forced universal default. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        }
+      ]
+    },
+    {
+      "groupId": "c9300x-nonterm-hardware-accessories",
+      "title": "Catalyst 9300X non-term hardware/accessories",
+      "parentSkus": [
+        "C9300X-48HX-A"
+      ],
+      "description": "Default-selected and bundled zero-price non-term hardware accessories attached to the C9300X-48HX-A switch in the current Honeywell CCW (stacking/power cables, SSD placeholder, rack hardware, and the selected uplink network module).",
+      "entries": [
+        {
+          "decisionId": "c9300x-nonterm-hardware-accessories:C9300X-48HX-A:C9300-SSD-NONE",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300X-48HX-A",
+          "sku": "C9300-SSD-NONE",
+          "description": "No SSD Card Selected",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 27,
+              "evidenceNote": "CCW Line Number 3.9; Item Name C9300-SSD-NONE; Included Item No; Service Duration (Months) N/A; Quantity 7. Configurator no-SSD placeholder line."
+            }
+          ],
+          "riskFlags": [
+            "default_selected_requires_review",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "review_option_only",
+          "reviewQuestion": "Approve C9300-SSD-NONE under C9300X-48HX-A as an advisory engineer-review option (not a silently forced universal default) for Honeywell MVP?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. default_selected line: treated as an advisory engineer-review option, never a silently forced universal default. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300x-nonterm-hardware-accessories:C9300X-48HX-A:STACK-T1-50CM",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300X-48HX-A",
+          "sku": "STACK-T1-50CM",
+          "description": "50CM Type 1 Stacking Cable",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "evidenceScope": "reusable_logic",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 28,
+              "evidenceNote": "CCW Line Number 3.10; Item Name STACK-T1-50CM; Included Item No; Service Duration (Months) N/A; Quantity 7."
+            },
+            {
+              "sourceType": "ordering_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+              "pageNumber": 29,
+              "evidenceNote": "STACK-T1-50CM stacking cable referenced on this page."
+            }
+          ],
+          "riskFlags": [
+            "default_selected_requires_review"
+          ],
+          "recommendedDecision": "review_option_only",
+          "reviewQuestion": "Approve STACK-T1-50CM under C9300X-48HX-A as an advisory engineer-review option (not a silently forced universal default) for Honeywell MVP?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. default_selected line: treated as an advisory engineer-review option, never a silently forced universal default. Evidence includes reusable ordering/install-guide logic. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300x-nonterm-hardware-accessories:C9300X-48HX-A:CAB-SPWR-30CM",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300X-48HX-A",
+          "sku": "CAB-SPWR-30CM",
+          "description": "Catalyst Stack Power Cable 30 CM",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 29,
+              "evidenceNote": "CCW Line Number 3.11; Item Name CAB-SPWR-30CM; Included Item No; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "riskFlags": [
+            "default_selected_requires_review",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "review_option_only",
+          "reviewQuestion": "Approve CAB-SPWR-30CM under C9300X-48HX-A as an advisory engineer-review option (not a silently forced universal default) for Honeywell MVP?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. default_selected line: treated as an advisory engineer-review option, never a silently forced universal default. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300x-nonterm-hardware-accessories:C9300X-48HX-A:C9K-ACC-RBFT",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300X-48HX-A",
+          "sku": "C9K-ACC-RBFT",
+          "description": "RUBBER FEET FOR TABLE TOP SETUP 9200 and 93xx",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 30,
+              "evidenceNote": "CCW Line Number 3.12; Item Name C9K-ACC-RBFT; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "riskFlags": [
+            "included_zero_price_hardware",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "approve_for_honeywell_mvp",
+          "reviewQuestion": "Approve auto-including the bundled zero-price hardware accessory C9K-ACC-RBFT with C9300X-48HX-A for Honeywell MVP review?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. Bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300x-nonterm-hardware-accessories:C9300X-48HX-A:C9K-ACC-SCR-4",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300X-48HX-A",
+          "sku": "C9K-ACC-SCR-4",
+          "description": "12-24 and 10-32 SCREWS FOR RACK INSTALLATION, QTY 4",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 31,
+              "evidenceNote": "CCW Line Number 3.13; Item Name C9K-ACC-SCR-4; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "riskFlags": [
+            "included_zero_price_hardware",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "approve_for_honeywell_mvp",
+          "reviewQuestion": "Approve auto-including the bundled zero-price hardware accessory C9K-ACC-SCR-4 with C9300X-48HX-A for Honeywell MVP review?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. Bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300x-nonterm-hardware-accessories:C9300X-48HX-A:CAB-GUIDE-1RU",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300X-48HX-A",
+          "sku": "CAB-GUIDE-1RU",
+          "description": "1RU CABLE MANAGEMENT GUIDES 9200 and 9300",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 32,
+              "evidenceNote": "CCW Line Number 3.14; Item Name CAB-GUIDE-1RU; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ],
+          "riskFlags": [
+            "included_zero_price_hardware",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "approve_for_honeywell_mvp",
+          "reviewQuestion": "Approve auto-including the bundled zero-price hardware accessory CAB-GUIDE-1RU with C9300X-48HX-A for Honeywell MVP review?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. Bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300x-nonterm-hardware-accessories:C9300X-48HX-A:C9300X-NM-8Y",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300X-48HX-A",
+          "sku": "C9300X-NM-8Y",
+          "description": "Catalyst 9300 8 x 10G/25G Network Module SFP+/SFP28",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "evidenceScope": "reusable_logic",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 33,
+              "evidenceNote": "CCW Line Number 3.15; Item Name C9300X-NM-8Y; Included Item No; Service Duration (Months) N/A; Quantity 7."
+            },
+            {
+              "sourceType": "ordering_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+              "pageNumber": 28,
+              "evidenceNote": "C9300X-NM-8Y uplink network module referenced on this page."
+            }
+          ],
+          "riskFlags": [
+            "default_selected_requires_review"
+          ],
+          "recommendedDecision": "review_option_only",
+          "reviewQuestion": "Approve C9300X-NM-8Y under C9300X-48HX-A as an advisory engineer-review option (not a silently forced universal default) for Honeywell MVP?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. default_selected line: treated as an advisory engineer-review option, never a silently forced universal default. Evidence includes reusable ordering/install-guide logic. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        }
+      ]
+    },
+    {
+      "groupId": "c9300l-nonterm-hardware-accessories",
+      "title": "Catalyst 9300L non-term hardware/accessories",
+      "parentSkus": [
+        "C9300L-24P-4X-A"
+      ],
+      "description": "Default-selected and bundled zero-price non-term hardware accessories attached to the C9300L-24P-4X-A switch in the current Honeywell CCW (fan modules, SSD placeholder, rack hardware, and stacking kit/module/cable).",
+      "entries": [
+        {
+          "decisionId": "c9300l-nonterm-hardware-accessories:C9300L-24P-4X-A:FAN-T2",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300L-24P-4X-A",
+          "sku": "FAN-T2",
+          "description": "Cisco Type 2 Fan Module",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "fixed_per_parent",
+          "quantityValue": 3,
+          "includedItem": true,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 49,
+              "evidenceNote": "CCW Line Number 4.7; Item Name FAN-T2; Included Item Yes; Service Duration (Months) N/A; Quantity 18. Quantity 18 equals 3 fan modules per switch (parent quantity 6); fixed_per_parent multiplier 3."
+            }
+          ],
+          "riskFlags": [
+            "included_zero_price_hardware",
+            "fixed_per_parent_multiplier_requires_review",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "approve_for_honeywell_mvp",
+          "reviewQuestion": "Approve auto-including the bundled zero-price hardware accessory FAN-T2 with C9300L-24P-4X-A for Honeywell MVP review?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. Bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Quantity is a fixed_per_parent multiplier of 3 per parent (not same_as_parent); the per-parent multiplier requires engineer review. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300l-nonterm-hardware-accessories:C9300L-24P-4X-A:C9300L-SSD-NONE",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300L-24P-4X-A",
+          "sku": "C9300L-SSD-NONE",
+          "description": "No SSD Card Selected",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 53,
+              "evidenceNote": "CCW Line Number 4.11; Item Name C9300L-SSD-NONE; Included Item No; Service Duration (Months) N/A; Quantity 6. Configurator no-SSD placeholder line."
+            }
+          ],
+          "riskFlags": [
+            "default_selected_requires_review",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "review_option_only",
+          "reviewQuestion": "Approve C9300L-SSD-NONE under C9300L-24P-4X-A as an advisory engineer-review option (not a silently forced universal default) for Honeywell MVP?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. default_selected line: treated as an advisory engineer-review option, never a silently forced universal default. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300l-nonterm-hardware-accessories:C9300L-24P-4X-A:C9K-ACC-RBFT",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300L-24P-4X-A",
+          "sku": "C9K-ACC-RBFT",
+          "description": "RUBBER FEET FOR TABLE TOP SETUP 9200 and 93xx",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 54,
+              "evidenceNote": "CCW Line Number 4.12; Item Name C9K-ACC-RBFT; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "riskFlags": [
+            "included_zero_price_hardware",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "approve_for_honeywell_mvp",
+          "reviewQuestion": "Approve auto-including the bundled zero-price hardware accessory C9K-ACC-RBFT with C9300L-24P-4X-A for Honeywell MVP review?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. Bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300l-nonterm-hardware-accessories:C9300L-24P-4X-A:C9K-ACC-SCR-4",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300L-24P-4X-A",
+          "sku": "C9K-ACC-SCR-4",
+          "description": "12-24 and 10-32 SCREWS FOR RACK INSTALLATION, QTY 4",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 55,
+              "evidenceNote": "CCW Line Number 4.13; Item Name C9K-ACC-SCR-4; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "riskFlags": [
+            "included_zero_price_hardware",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "approve_for_honeywell_mvp",
+          "reviewQuestion": "Approve auto-including the bundled zero-price hardware accessory C9K-ACC-SCR-4 with C9300L-24P-4X-A for Honeywell MVP review?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. Bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300l-nonterm-hardware-accessories:C9300L-24P-4X-A:CAB-GUIDE-1RU",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300L-24P-4X-A",
+          "sku": "CAB-GUIDE-1RU",
+          "description": "1RU CABLE MANAGEMENT GUIDES 9200 and 9300",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 56,
+              "evidenceNote": "CCW Line Number 4.14; Item Name CAB-GUIDE-1RU; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "riskFlags": [
+            "included_zero_price_hardware",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "approve_for_honeywell_mvp",
+          "reviewQuestion": "Approve auto-including the bundled zero-price hardware accessory CAB-GUIDE-1RU with C9300L-24P-4X-A for Honeywell MVP review?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. Bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300l-nonterm-hardware-accessories:C9300L-24P-4X-A:C9300L-STACK-KIT2",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300L-24P-4X-A",
+          "sku": "C9300L-STACK-KIT2",
+          "description": "Cisco Catalyst 9300L and 9300LM Stacking Kit",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "evidenceScope": "reusable_logic",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 57,
+              "evidenceNote": "CCW Line Number 4.15; Item Name C9300L-STACK-KIT2; Included Item No; Service Duration (Months) N/A; Quantity 6."
+            },
+            {
+              "sourceType": "ordering_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+              "pageNumber": 29,
+              "evidenceNote": "C9300L-STACK-KIT2 stacking kit referenced on this page."
+            }
+          ],
+          "riskFlags": [
+            "default_selected_requires_review"
+          ],
+          "recommendedDecision": "review_option_only",
+          "reviewQuestion": "Approve C9300L-STACK-KIT2 under C9300L-24P-4X-A as an advisory engineer-review option (not a silently forced universal default) for Honeywell MVP?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. default_selected line: treated as an advisory engineer-review option, never a silently forced universal default. Evidence includes reusable ordering/install-guide logic. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300l-nonterm-hardware-accessories:C9300L-24P-4X-A:C9300L-STACK-A",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300L-24P-4X-A",
+          "sku": "C9300L-STACK-A",
+          "description": "Catalyst 9300L & 9300LM Stack Module",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "fixed_per_parent",
+          "quantityValue": 2,
+          "includedItem": true,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 58,
+              "evidenceNote": "CCW Line Number 4.16; Item Name C9300L-STACK-A; Included Item Yes; Service Duration (Months) N/A; Quantity 12. Quantity 12 equals 2 stack modules per switch (parent quantity 6); fixed_per_parent multiplier 2."
+            }
+          ],
+          "riskFlags": [
+            "included_zero_price_hardware",
+            "fixed_per_parent_multiplier_requires_review",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "approve_for_honeywell_mvp",
+          "reviewQuestion": "Approve auto-including the bundled zero-price hardware accessory C9300L-STACK-A with C9300L-24P-4X-A for Honeywell MVP review?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. Bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Quantity is a fixed_per_parent multiplier of 2 per parent (not same_as_parent); the per-parent multiplier requires engineer review. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        },
+        {
+          "decisionId": "c9300l-nonterm-hardware-accessories:C9300L-24P-4X-A:STACK-T3A-50CM",
+          "batch": "batch-3",
+          "status": "pending_human_approval",
+          "parentSku": "C9300L-24P-4X-A",
+          "sku": "STACK-T3A-50CM",
+          "description": "C9300L & C9300LM 50CM Type 3A Stacking Cable",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "evidenceScope": "quote_observed",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 59,
+              "evidenceNote": "CCW Line Number 4.17; Item Name STACK-T3A-50CM; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ],
+          "riskFlags": [
+            "included_zero_price_hardware",
+            "ccw_only_evidence"
+          ],
+          "recommendedDecision": "approve_for_honeywell_mvp",
+          "reviewQuestion": "Approve auto-including the bundled zero-price hardware accessory STACK-T3A-50CM with C9300L-24P-4X-A for Honeywell MVP review?",
+          "notes": "Batch 3 non-term hardware/accessory review entry. Bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed only. recommendedDecision is advisory only; status stays pending_human_approval and this packet approves nothing and authors no runtime pack."
+        }
+      ]
+    }
+  ],
+  "deferred": {
+    "groupId": "deferred-from-batch-3",
+    "title": "Explicitly deferred from Batch 3",
+    "description": "Items intentionally NOT approved in Batch 3: the two optics and all replacement candidates. Listed for audit completeness only. None is an approval entry, every one stays pending_human_approval with a defer/reject recommendation, and no silent runtime SKU substitution is modeled.",
+    "entries": [
+      {
+        "decisionId": "deferred-from-batch-3:SFP-10G-LR-S=:SFP-10G-LR-S=",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "optic",
+        "parentSku": "SFP-10G-LR-S=",
+        "sku": "SFP-10G-LR-S=",
+        "description": "10GBASE-LR SFP Module, Enterprise-Class",
+        "relationshipType": "standalone",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 62,
+            "evidenceNote": "CCW Line Number 5.0; Item Name SFP-10G-LR-S=; Group Name Default; Quantity 12; top-level configured line in the current Honeywell-scope CCW estimate."
+          },
+          {
+            "sourceType": "gpl",
+            "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+            "lineNumber": 2307,
+            "evidenceNote": "SFP-10G-LR-S= 10GBASE-LR SFP module catalog entry (existence/description only; not price authority)."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "catalog_existence_only",
+          "ccw_only_evidence"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm SFP-10G-LR-S= (optic) stays deferred and is NOT approved in Batch 3 (optics remain out of the Batch 3 non-term hardware/accessory scope)?",
+        "notes": "Out of Batch 3 scope (optic). Optics remain deferred; this packet approves no optic and models no silent SKU substitution. recommendedDecision is advisory and this packet approves nothing."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:SFP-10/25G-LR-S=:SFP-10/25G-LR-S=",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "optic",
+        "parentSku": "SFP-10/25G-LR-S=",
+        "sku": "SFP-10/25G-LR-S=",
+        "description": "10/25GBASE-LR SFP28 Module",
+        "relationshipType": "standalone",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 64,
+            "evidenceNote": "CCW Line Number 6.0; Item Name SFP-10/25G-LR-S=; Group Name Default; Quantity 14; top-level configured line in the current Honeywell-scope CCW estimate."
+          },
+          {
+            "sourceType": "gpl",
+            "sourcePath": "C:/Pre-Sales/cisco_gpl/gpl_data/cisco_gpl_sar.csv",
+            "lineNumber": 2286,
+            "evidenceNote": "SFP-10/25G-LR-S= 10/25GBASE-LR SFP28 module catalog entry (existence/description only; not price authority)."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "catalog_existence_only",
+          "ccw_only_evidence"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm SFP-10/25G-LR-S= (optic) stays deferred and is NOT approved in Batch 3 (optics remain out of the Batch 3 non-term hardware/accessory scope)?",
+        "notes": "Out of Batch 3 scope (optic). Optics remain deferred; this packet approves no optic and models no silent SKU substitution. recommendedDecision is advisory and this packet approves nothing."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:replacement:C9300-DNX-A-48-3Y",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "replacement_candidate",
+        "parentSku": null,
+        "sku": "C9300-DNX-A-48-3Y",
+        "historicalSku": "C9300-DNX-A-48-3Y",
+        "currentSkus": [
+          "C9300-DNA-A-48-3Y"
+        ],
+        "description": "Historical-to-current SKU replacement candidate: C9300-DNX-A-48-3Y -> C9300-DNA-A-48-3Y",
+        "relationshipType": "replacement_candidate",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 17,
+            "evidenceNote": "Current SKU C9300-DNA-A-48-3Y present at CCW Line Number 3.1.1."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "historical_sku_mismatch"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm the replacement of historical C9300-DNX-A-48-3Y with C9300-DNA-A-48-3Y stays a separate, non-silent deferred decision and is NOT approved in Batch 3?",
+        "notes": "Replacement candidates are deferred and out of Batch 3 scope; they are handled as separate, non-silent decisions. Listing here authorizes no runtime SKU substitution."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:replacement:C9300L-DNX-A-24-3Y",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "replacement_candidate",
+        "parentSku": null,
+        "sku": "C9300L-DNX-A-24-3Y",
+        "historicalSku": "C9300L-DNX-A-24-3Y",
+        "currentSkus": [
+          "C9300L-DNA-A-24-3Y"
+        ],
+        "description": "Historical-to-current SKU replacement candidate: C9300L-DNX-A-24-3Y -> C9300L-DNA-A-24-3Y",
+        "relationshipType": "replacement_candidate",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 41,
+            "evidenceNote": "Current SKU C9300L-DNA-A-24-3Y present at CCW Line Number 4.1.1."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "historical_sku_mismatch"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm the replacement of historical C9300L-DNX-A-24-3Y with C9300L-DNA-A-24-3Y stays a separate, non-silent deferred decision and is NOT approved in Batch 3?",
+        "notes": "Replacement candidates are deferred and out of Batch 3 scope; they are handled as separate, non-silent decisions. Listing here authorizes no runtime SKU substitution."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:replacement:SC9300UK9-1712",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "replacement_candidate",
+        "parentSku": null,
+        "sku": "SC9300UK9-1712",
+        "historicalSku": "SC9300UK9-1712",
+        "currentSkus": [
+          "SC9300UK9-1715"
+        ],
+        "description": "Historical-to-current SKU replacement candidate: SC9300UK9-1712 -> SC9300UK9-1715",
+        "relationshipType": "replacement_candidate",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 23,
+            "evidenceNote": "Current SKU SC9300UK9-1715 present at CCW Line Number 3.5."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "historical_sku_mismatch"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm the replacement of historical SC9300UK9-1712 with SC9300UK9-1715 stays a separate, non-silent deferred decision and is NOT approved in Batch 3?",
+        "notes": "Replacement candidates are deferred and out of Batch 3 scope; they are handled as separate, non-silent decisions. Listing here authorizes no runtime SKU substitution."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:replacement:S9300LUK9-1712",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "replacement_candidate",
+        "parentSku": null,
+        "sku": "S9300LUK9-1712",
+        "historicalSku": "S9300LUK9-1712",
+        "currentSkus": [
+          "S9300LUK9-1718"
+        ],
+        "description": "Historical-to-current SKU replacement candidate: S9300LUK9-1712 -> S9300LUK9-1718",
+        "relationshipType": "replacement_candidate",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 46,
+            "evidenceNote": "Current SKU S9300LUK9-1718 present at CCW Line Number 4.4."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "historical_sku_mismatch"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm the replacement of historical S9300LUK9-1712 with S9300LUK9-1718 stays a separate, non-silent deferred decision and is NOT approved in Batch 3?",
+        "notes": "Replacement candidates are deferred and out of Batch 3 scope; they are handled as separate, non-silent decisions. Listing here authorizes no runtime SKU substitution."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:replacement:SPACES-EXT-S",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "replacement_candidate",
+        "parentSku": null,
+        "sku": "SPACES-EXT-S",
+        "historicalSku": "SPACES-EXT-S",
+        "currentSkus": [
+          "D-DNAS-EXT-S-T",
+          "D-DNAS-EXT-S-3Y"
+        ],
+        "description": "Historical-to-current SKU replacement candidate: SPACES-EXT-S -> D-DNAS-EXT-S-T, D-DNAS-EXT-S-3Y",
+        "relationshipType": "replacement_candidate",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 20,
+            "evidenceNote": "Current SKU D-DNAS-EXT-S-T present at CCW Line Number 3.3."
+          },
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 21,
+            "evidenceNote": "Current SKU D-DNAS-EXT-S-3Y present at CCW Line Number 3.3.1."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "historical_sku_mismatch"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm the replacement of historical SPACES-EXT-S with D-DNAS-EXT-S-T, D-DNAS-EXT-S-3Y stays a separate, non-silent deferred decision and is NOT approved in Batch 3?",
+        "notes": "Replacement candidates are deferred and out of Batch 3 scope; they are handled as separate, non-silent decisions. Listing here authorizes no runtime SKU substitution."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:replacement:CON-L1NBX-C9300XY4",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "replacement_candidate",
+        "parentSku": null,
+        "sku": "CON-L1NBX-C9300XY4",
+        "historicalSku": "CON-L1NBX-C9300XY4",
+        "currentSkus": [
+          "CON-L1NCD-C9300XY4"
+        ],
+        "description": "Historical-to-current SKU replacement candidate: CON-L1NBX-C9300XY4 -> CON-L1NCD-C9300XY4",
+        "relationshipType": "replacement_candidate",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 14,
+            "evidenceNote": "Current SKU CON-L1NCD-C9300XY4 present at CCW Line Number 3.0.1."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "historical_sku_mismatch"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm the replacement of historical CON-L1NBX-C9300XY4 with CON-L1NCD-C9300XY4 stays a separate, non-silent deferred decision and is NOT approved in Batch 3?",
+        "notes": "Replacement candidates are deferred and out of Batch 3 scope; they are handled as separate, non-silent decisions. Listing here authorizes no runtime SKU substitution."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:replacement:CON-L1SWX-93XA48MY",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "replacement_candidate",
+        "parentSku": null,
+        "sku": "CON-L1SWX-93XA48MY",
+        "historicalSku": "CON-L1SWX-93XA48MY",
+        "currentSkus": [
+          "CON-L1SWT-C93A48"
+        ],
+        "description": "Historical-to-current SKU replacement candidate: CON-L1SWX-93XA48MY -> CON-L1SWT-C93A48",
+        "relationshipType": "replacement_candidate",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 16,
+            "evidenceNote": "Current SKU CON-L1SWT-C93A48 present at CCW Line Number 3.1.0.1."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "historical_sku_mismatch"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm the replacement of historical CON-L1SWX-93XA48MY with CON-L1SWT-C93A48 stays a separate, non-silent deferred decision and is NOT approved in Batch 3?",
+        "notes": "Replacement candidates are deferred and out of Batch 3 scope; they are handled as separate, non-silent decisions. Listing here authorizes no runtime SKU substitution."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:replacement:CON-L1NBX-C93024PX",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "replacement_candidate",
+        "parentSku": null,
+        "sku": "CON-L1NBX-C93024PX",
+        "historicalSku": "CON-L1NBX-C93024PX",
+        "currentSkus": [
+          "CON-L1NCD-C93024PX"
+        ],
+        "description": "Historical-to-current SKU replacement candidate: CON-L1NBX-C93024PX -> CON-L1NCD-C93024PX",
+        "relationshipType": "replacement_candidate",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 38,
+            "evidenceNote": "Current SKU CON-L1NCD-C93024PX present at CCW Line Number 4.0.1."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "historical_sku_mismatch"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm the replacement of historical CON-L1NBX-C93024PX with CON-L1NCD-C93024PX stays a separate, non-silent deferred decision and is NOT approved in Batch 3?",
+        "notes": "Replacement candidates are deferred and out of Batch 3 scope; they are handled as separate, non-silent decisions. Listing here authorizes no runtime SKU substitution."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:replacement:CON-L1SWX-3LXA24MY",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "replacement_candidate",
+        "parentSku": null,
+        "sku": "CON-L1SWX-3LXA24MY",
+        "historicalSku": "CON-L1SWX-3LXA24MY",
+        "currentSkus": [
+          "CON-L1SWT-C93LA24"
+        ],
+        "description": "Historical-to-current SKU replacement candidate: CON-L1SWX-3LXA24MY -> CON-L1SWT-C93LA24",
+        "relationshipType": "replacement_candidate",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 40,
+            "evidenceNote": "Current SKU CON-L1SWT-C93LA24 present at CCW Line Number 4.1.0.1."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "historical_sku_mismatch"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm the replacement of historical CON-L1SWX-3LXA24MY with CON-L1SWT-C93LA24 stays a separate, non-silent deferred decision and is NOT approved in Batch 3?",
+        "notes": "Replacement candidates are deferred and out of Batch 3 scope; they are handled as separate, non-silent decisions. Listing here authorizes no runtime SKU substitution."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:replacement:CON-SNT-P7PK94P1",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "replacement_candidate",
+        "parentSku": null,
+        "sku": "CON-SNT-P7PK94P1",
+        "historicalSku": "CON-SNT-P7PK94P1",
+        "currentSkus": [
+          "CON-L1NBD-P7PK94P1"
+        ],
+        "description": "Historical-to-current SKU replacement candidate: CON-SNT-P7PK94P1 -> CON-L1NBD-P7PK94P1",
+        "relationshipType": "replacement_candidate",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 67,
+            "evidenceNote": "Current SKU CON-L1NBD-P7PK94P1 present at CCW Line Number 7.0.1."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "historical_sku_mismatch"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm the replacement of historical CON-SNT-P7PK94P1 with CON-L1NBD-P7PK94P1 stays a separate, non-silent deferred decision and is NOT approved in Batch 3?",
+        "notes": "Replacement candidates are deferred and out of Batch 3 scope; they are handled as separate, non-silent decisions. Listing here authorizes no runtime SKU substitution."
+      },
+      {
+        "decisionId": "deferred-from-batch-3:replacement:C9300L-STACK-BLANK",
+        "batch": "batch-3",
+        "status": "pending_human_approval",
+        "deferredCategory": "replacement_candidate",
+        "parentSku": null,
+        "sku": "C9300L-STACK-BLANK",
+        "historicalSku": "C9300L-STACK-BLANK",
+        "currentSkus": [
+          "C9300L-STACK-KIT2",
+          "C9300L-STACK-A",
+          "STACK-T3A-50CM"
+        ],
+        "description": "Historical-to-current SKU replacement candidate: C9300L-STACK-BLANK -> C9300L-STACK-KIT2, C9300L-STACK-A, STACK-T3A-50CM",
+        "relationshipType": "replacement_candidate",
+        "evidenceScope": "quote_observed",
+        "evidence": [
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 57,
+            "evidenceNote": "Current SKU C9300L-STACK-KIT2 present at CCW Line Number 4.15."
+          },
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 58,
+            "evidenceNote": "Current SKU C9300L-STACK-A present at CCW Line Number 4.16."
+          },
+          {
+            "sourceType": "ccw_export",
+            "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+            "sheetName": "EstimateDetails_NB167337237YA",
+            "lineNumber": 59,
+            "evidenceNote": "Current SKU STACK-T3A-50CM present at CCW Line Number 4.17."
+          }
+        ],
+        "riskFlags": [
+          "deferred_not_batch_3",
+          "historical_sku_mismatch"
+        ],
+        "recommendedDecision": "defer_needs_more_evidence",
+        "reviewQuestion": "Confirm the replacement of historical C9300L-STACK-BLANK with C9300L-STACK-KIT2, C9300L-STACK-A, STACK-T3A-50CM stays a separate, non-silent deferred decision and is NOT approved in Batch 3?",
+        "notes": "Replacement candidates are deferred and out of Batch 3 scope; they are handled as separate, non-silent decisions. Listing here authorizes no runtime SKU substitution."
+      }
+    ]
+  },
+  "questionsForHumanApproval": [
+    "Approve the wireless non-term accessories (AIR-AP-BRACKET-2, AIR-AP-T-RAIL-F, CW9178-SINGLE) under CW9178I-CFG as advisory engineer-review options (not forced universal defaults) for Honeywell MVP?",
+    "Approve the C9300X-48HX-A bundled zero-price rack hardware (C9K-ACC-RBFT, C9K-ACC-SCR-4, CAB-GUIDE-1RU) for Honeywell MVP review?",
+    "Approve the C9300X-48HX-A default-selected hardware options (C9300-SSD-NONE, STACK-T1-50CM, CAB-SPWR-30CM, C9300X-NM-8Y) as advisory engineer-review options for Honeywell MVP?",
+    "Approve the C9300L-24P-4X-A bundled zero-price rack/stacking hardware (FAN-T2 at 3 per parent, C9K-ACC-RBFT, C9K-ACC-SCR-4, CAB-GUIDE-1RU, C9300L-STACK-A at 2 per parent, STACK-T3A-50CM) for Honeywell MVP review?",
+    "Approve the C9300L-24P-4X-A default-selected hardware options (C9300L-SSD-NONE, C9300L-STACK-KIT2) as advisory engineer-review options for Honeywell MVP?",
+    "Confirm the FAN-T2 (3 per parent) and C9300L-STACK-A (2 per parent) fixed_per_parent quantity multipliers at engineer review before any MVP runtime pack uses them?",
+    "Confirm that the optics (SFP-10G-LR-S=, SFP-10/25G-LR-S=) and all 11 replacement candidates remain DEFERRED and are NOT part of Batch 3, with no silent runtime SKU substitution?",
+    "Confirm that Batch 3 approval, once recorded, is authored as a separate later runtime pack artifact, flips no candidate status, and does not modify the approved Batch 1 or Batch 2 packs?"
+  ]
+}
