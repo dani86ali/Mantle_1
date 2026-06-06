@@ -66,6 +66,26 @@ const B3_C9300L = [
 // Batch 3 wireless mounting/bracket/single-pack accessories under CW9178I-CFG.
 const B3_CW9178 = ["AIR-AP-BRACKET-2", "AIR-AP-T-RAIL-F", "CW9178-SINGLE"];
 
+// CCW-like child order the active selector applies under the two switch parents
+// (Prompt 75). Each is an exact permutation of the composed Batch 1+2+3 set above:
+// only the sequence changes, no child is added, dropped, or replaced.
+const CCW_C9300X_ORDER = [
+  "CON-L1NCD-C9300XY4", "C9300-DNA-A-48", "CON-L1SWT-C93A48", "C9300-DNA-A-48-3Y",
+  "TE-EMBEDDED-T", "TE-EMBEDDED-T-3Y", "D-DNAS-EXT-S-T", "D-DNAS-EXT-S-3Y",
+  "C9300-NW-A-48", "SC9300UK9-1715", "TE-C9K-SW", "PWR-C1-1100WAC-P",
+  "PWR-C1-1100WAC-P/2", "C9300-SSD-NONE", "STACK-T1-50CM", "CAB-SPWR-30CM",
+  "C9K-ACC-RBFT", "C9K-ACC-SCR-4", "CAB-GUIDE-1RU", "C9300X-NM-8Y",
+  "NETWORK-PNP-LIC", "CAB-C15-CBN",
+];
+const CCW_C9300L_ORDER = [
+  "CON-L1NCD-C93024PX", "C9300L-DNA-A-24", "CON-L1SWT-C93LA24", "C9300L-DNA-A-24-3Y",
+  "TE-EMBEDDED-T", "TE-EMBEDDED-T-3Y", "D-DNAS-EXT-S-T", "D-DNAS-EXT-S-3Y",
+  "S9300LUK9-1718", "C9300L-NW-A-24", "TE-C9K-SW", "FAN-T2",
+  "PWR-C1-715WAC-P", "PWR-C1-715WAC-P/2", "CAB-C15-CBN", "C9300L-SSD-NONE",
+  "C9K-ACC-RBFT", "C9K-ACC-SCR-4", "CAB-GUIDE-1RU", "C9300L-STACK-KIT2",
+  "C9300L-STACK-A", "STACK-T3A-50CM", "NETWORK-PNP-LIC",
+];
+
 const PRICING_TOKENS = ["price", "cost", "discount", "margin", "markup", "vat", "currency", "msrp", "sell", "amount"];
 
 const EXPECTED_IMPORT_SPECIFIERS = [
@@ -193,17 +213,9 @@ describe("getHoneywellMvpConfigExpansionRulePack - composed pack shape", () => {
 
 // --- Merged child sets under shared parents ---------------------------------
 
-describe("getHoneywellMvpConfigExpansionRulePack - merged child sets", () => {
+describe("getHoneywellMvpConfigExpansionRulePack - merged child sets (non-switch parents)", () => {
   it("merges CW9178I-CFG: Batch 2 support then Batch 3 wireless accessories, in order", () => {
     expect(childSkus(pack, "CW9178I-CFG")).toEqual(["CON-ROB-CW9178IC", ...B3_CW9178]);
-  });
-
-  it("merges C9300X-48HX-A: Batch 1 power, Batch 2 software/support, then Batch 3 hardware/accessories", () => {
-    expect(childSkus(pack, "C9300X-48HX-A")).toEqual([...B1_C9300X, ...B2_C9300X, ...B3_C9300X]);
-  });
-
-  it("merges C9300L-24P-4X-A: Batch 1 power, Batch 2 software/support, then Batch 3 hardware/accessories", () => {
-    expect(childSkus(pack, "C9300L-24P-4X-A")).toEqual([...B1_C9300L, ...B2_C9300L, ...B3_C9300L]);
   });
 
   it("merges CISCO-NETWORK-SUB: Batch 1 wireless licenses then the Batch 2 support line", () => {
@@ -212,6 +224,40 @@ describe("getHoneywellMvpConfigExpansionRulePack - merged child sets", () => {
 
   it("keeps CP-7841-K9= Batch 2-only with its single support child", () => {
     expect(childSkus(pack, "CP-7841-K9=")).toEqual(["CON-L1NBD-P7PK94P1"]);
+  });
+});
+
+// --- CCW-like switch child order (Prompt 75) --------------------------------
+
+describe("getHoneywellMvpConfigExpansionRulePack - CCW-like switch child order", () => {
+  it("orders C9300X-48HX-A children in the CCW sequence", () => {
+    expect(childSkus(pack, "C9300X-48HX-A")).toEqual(CCW_C9300X_ORDER);
+  });
+
+  it("orders C9300L-24P-4X-A children in the CCW sequence", () => {
+    expect(childSkus(pack, "C9300L-24P-4X-A")).toEqual(CCW_C9300L_ORDER);
+  });
+
+  it("reorders only: each switch child SKU set still equals the composed Batch 1+2+3 set", () => {
+    const composedX = [...B1_C9300X, ...B2_C9300X, ...B3_C9300X];
+    const composedL = [...B1_C9300L, ...B2_C9300L, ...B3_C9300L];
+    // The CCW order tables are exact permutations of the composed sets (no add/drop).
+    expect(CCW_C9300X_ORDER.slice().sort()).toEqual(composedX.slice().sort());
+    expect(CCW_C9300L_ORDER.slice().sort()).toEqual(composedL.slice().sort());
+    // The active pack carries exactly those sets under each switch, only reordered.
+    expect(childSkus(pack, "C9300X-48HX-A").slice().sort()).toEqual(composedX.slice().sort());
+    expect(childSkus(pack, "C9300L-24P-4X-A").slice().sort()).toEqual(composedL.slice().sort());
+  });
+
+  it("keeps each reordered switch child sourceRuleId pointing at its composed parent ruleId", () => {
+    for (const parentSku of ["C9300X-48HX-A", "C9300L-24P-4X-A"]) {
+      const parent = parentBySku(pack, parentSku);
+      expect(parent, parentSku).not.toBeUndefined();
+      expect(parent!.childLines.length).toBeGreaterThan(0);
+      for (const child of parent!.childLines) {
+        expect(child.sourceRuleId, `${parentSku}/${child.sku}`).toBe(`${RULE_PACK_ID}::${parentSku}`);
+      }
+    }
   });
 });
 
@@ -298,6 +344,16 @@ describe("getHoneywellMvpConfigExpansionRulePack - runtime expansion smoke", () 
     const parentQty = 7;
     const draft = expand(pack, [[1, "C9300X-48HX-A", parentQty]]);
     expect(addedQty(draft, "C9300X-NM-8Y")).toBe(parentQty);
+  });
+
+  it("adds every C9300X-48HX-A expansion child in the CCW order at runtime", () => {
+    const draft = expand(pack, [[1, "C9300X-48HX-A", 7]]);
+    expect(added(draft).map((l) => l.sku)).toEqual(CCW_C9300X_ORDER);
+  });
+
+  it("adds every C9300L-24P-4X-A expansion child in the CCW order at runtime", () => {
+    const draft = expand(pack, [[1, "C9300L-24P-4X-A", 6]]);
+    expect(added(draft).map((l) => l.sku)).toEqual(CCW_C9300L_ORDER);
   });
 });
 
