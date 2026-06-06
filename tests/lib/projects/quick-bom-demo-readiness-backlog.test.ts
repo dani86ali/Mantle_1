@@ -4,18 +4,19 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Quick BoM demo-readiness backlog
- * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 65 to match the
- * current Honeywell configuration-expansion state.
+ * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 72 to reflect the
+ * verified P66-P71 Honeywell Quick BoM path.
  *
  * It asserts the backlog reflects the now-approved Batch 1+2+3 runtime expansion
  * authority, names the Batch 4 record as a decision record only (not runtime
  * authority), keeps the optics-standalone and replacements-deferred boundaries,
  * preserves the pricing/configuration authority separation and the temporary
- * demo-fixture pricing boundary, carries the current P65-P71 sequence, and is free
- * of the stale Prompt 46/47-era phrasing. The doc is read from disk and never
- * mutated; no runtime evaluator, composer, pricing, or expansion code is imported
- * or run, and the backlog stays an execution tracker (the planning file remains
- * the source of truth).
+ * demo-fixture pricing boundary, marks P66-P71 complete and proven, names P73 as
+ * the next operator demo command/script (no longer P66 as the next implementation
+ * step), and is free of the stale Prompt 46/47-era phrasing. The doc is read from
+ * disk and never mutated; no runtime evaluator, composer, pricing, or expansion
+ * code is imported or run, and the backlog stays an execution tracker (the planning
+ * file remains the source of truth).
  */
 
 const DOC_PATH = join(process.cwd(), "docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md");
@@ -33,7 +34,10 @@ const APPROVED_PACK_FILES = [
   "honeywell-batch3-approved-rules.json",
 ];
 const BATCH4_DECISION_RECORD_FILE = "honeywell-batch4-decision-record.json";
-const PROMPT_SEQUENCE = ["P65", "P66", "P67", "P68", "P69", "P70", "P71"];
+// P65-P71 are now completed execution-record items; P72 (this refresh) and P73
+// (the operator demo command) are the live next prompts.
+const COMPLETED_PROMPTS = ["P65", "P66", "P67", "P68", "P69", "P70", "P71"];
+const NEXT_PROMPTS = ["P72", "P73"];
 
 // Stale Prompt 46/47-era phrases that must NOT survive the refresh. Matched
 // case-sensitively and exactly, as they appeared in the pre-refresh backlog.
@@ -108,16 +112,40 @@ describe("quick bom demo-readiness backlog - authority separation and fixture bo
   });
 });
 
-describe("quick bom demo-readiness backlog - current P65-P71 sequence", () => {
-  it("carries each prompt id from P65 through P71 as a list item", () => {
-    for (const prompt of PROMPT_SEQUENCE) {
+describe("quick bom demo-readiness backlog - P66-P71 complete, P73 next", () => {
+  it("carries P65-P71 as completed execution-record list items", () => {
+    expect(docLower).toContain("completed (p65-p71)");
+    for (const prompt of COMPLETED_PROMPTS) {
       expect(doc, prompt).toContain(`- ${prompt} -`);
     }
   });
 
-  it("names active Batch 1+2+3 selection/composition (P66) as the next step", () => {
-    expect(docLower).toContain("next implementation step");
-    expect(doc).toContain("P66");
+  it("marks the six P66-P71 implementation items complete and proven", () => {
+    expect(docLower).toContain("p66-p71 are now complete and proven");
+    expect(doc).toContain("Active Honeywell Batch 1+2+3 selector/composer exists (P66)");
+    expect(doc).toContain("Pure Quick BoM runner exists (P67)");
+    expect(doc).toContain("Honeywell demo price/category fixture exists (P68)");
+    expect(doc).toContain("Deterministic demo pricing exists (P69)");
+    expect(docLower).toContain("in-memory mantle export-model composition exists (p70)");
+    expect(docLower).toContain("prompt 71 end-to-end validation");
+  });
+
+  it("records that Prompt 71 writes and re-opens a temporary workbook with structure/totals checks", () => {
+    expect(docLower).toContain("temporary");
+    expect(docLower).toContain("re-open");
+    expect(docLower).toContain("structure and totals");
+  });
+
+  it("names P72 (this refresh) and P73 (the operator demo command) as the next prompts", () => {
+    for (const prompt of NEXT_PROMPTS) {
+      expect(doc, prompt).toContain(`- ${prompt} -`);
+    }
+    expect(docLower).toContain("p73 - local honeywell mantle demo command");
+    expect(docLower).toContain("on demand");
+  });
+
+  it("no longer frames P66 (or anything) as the next implementation step", () => {
+    expect(doc.includes("next implementation step")).toBe(false);
   });
 
   it("frames the Honeywell Quick BoM MVP path as first target, RFP out of scope", () => {
