@@ -31,9 +31,17 @@ const SESSION = {
 const WORKSPACE = {
   project: {
     id: PROJECT,
+    tenantId: "11111111-1111-1111-1111-111111111111",
     name: "Honeywell Quick BoM",
     customerName: "Honeywell",
     mode: "quick_bom",
+    pricingConfig: {
+      currency: "SAR",
+      mode: "margin",
+      ratePercent: 30,
+      vatRatePercent: 15,
+      roundingDecimals: 2,
+    },
     createdAt: "2026-06-01T10:00:00.000Z",
     updatedAt: "2026-06-02T11:30:00.000Z",
   },
@@ -109,8 +117,16 @@ describe("GET /api/projects/[id]/quick-bom - result mapping", () => {
   it("maps wrong_mode to 409 with code wrong_project_mode and the project summary", async () => {
     const project = {
       id: PROJECT,
+      tenantId: "11111111-1111-1111-1111-111111111111",
       name: "RFP Bid",
       mode: "rfp",
+      pricingConfig: {
+        currency: "SAR",
+        mode: "markup",
+        ratePercent: 20,
+        vatRatePercent: 15,
+        roundingDecimals: 2,
+      },
       createdAt: "2026-06-01T10:00:00.000Z",
       updatedAt: "2026-06-02T11:30:00.000Z",
     };
@@ -130,6 +146,21 @@ describe("GET /api/projects/[id]/quick-bom - result mapping", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.workspace).toEqual(WORKSPACE);
+  });
+});
+
+describe("GET /api/projects/[id]/quick-bom - loader failure", () => {
+  it("maps an unexpected loader error to a controlled 500 without exposing the thrown error", async () => {
+    const secret = "boom-internal-stack-detail";
+    mockLoadWorkspace.mockRejectedValue(new Error(secret));
+
+    const res = await GET(req(), { params: { id: PROJECT } });
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe("project_quick_bom_workspace_failed");
+    expect(body.error).toBe("Unable to load Quick BoM workspace.");
+    expect(JSON.stringify(body)).not.toContain(secret);
   });
 });
 

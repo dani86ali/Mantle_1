@@ -7,6 +7,7 @@ import type {
   ProjectArtifact,
   ProjectArtifactStatus,
   ProjectArtifactType,
+  ProjectPricingConfig,
   ProjectStage,
   ProjectStageId,
   ProjectStageStatus,
@@ -44,6 +45,14 @@ const PROJECT = "proj-1";
 const TS1 = new Date("2026-06-01T10:00:00.000Z");
 const TS2 = new Date("2026-06-02T11:30:00.000Z");
 const PAYLOAD_SENTINEL = "payload-only-do-not-leak";
+
+const PRICING: ProjectPricingConfig = {
+  currency: "SAR",
+  mode: "margin",
+  ratePercent: 30,
+  vatRatePercent: 15,
+  roundingDecimals: 2,
+};
 
 const STAGE_BY_TYPE: Partial<Record<ProjectArtifactType, ProjectStageId>> = {
   input_package: "intake_package_review",
@@ -151,10 +160,14 @@ describe("loadProjectQuickBomWorkspace - discriminated result", () => {
     expect(mockListApprovals).not.toHaveBeenCalled();
   });
 
-  it("returns wrong_mode with a project summary for an rfp project, without loading artifacts/approvals", async () => {
-    mockGetProjectById.mockResolvedValue(
-      makeProject({ mode: "rfp", customerName: "Marafiq", name: "RFP Bid" })
-    );
+  it("returns wrong_mode with a project summary (tenantId + copied pricingConfig) for an rfp project, without loading artifacts/approvals", async () => {
+    const source = makeProject({
+      mode: "rfp",
+      customerName: "Marafiq",
+      name: "RFP Bid",
+      pricingConfig: { ...PRICING },
+    });
+    mockGetProjectById.mockResolvedValue(source);
 
     const result = await loadProjectQuickBomWorkspace(TENANT, PROJECT);
 
@@ -162,12 +175,15 @@ describe("loadProjectQuickBomWorkspace - discriminated result", () => {
     if (result.status !== "wrong_mode") throw new Error("unreachable");
     expect(result.project).toEqual({
       id: PROJECT,
+      tenantId: TENANT,
       name: "RFP Bid",
       customerName: "Marafiq",
       mode: "rfp",
+      pricingConfig: PRICING,
       createdAt: TS1.toISOString(),
       updatedAt: TS2.toISOString(),
     });
+    expect(result.project.pricingConfig).not.toBe(source.pricingConfig);
     expect(mockListArtifacts).not.toHaveBeenCalled();
     expect(mockListApprovals).not.toHaveBeenCalled();
   });
@@ -196,16 +212,28 @@ describe("loadProjectQuickBomWorkspace - ok workspace", () => {
     mockListApprovals.mockResolvedValue(APPROVALS);
   });
 
-  it("includes the project summary with ISO dates", async () => {
+  it("includes the project summary with tenantId and ISO dates, omitting pricingConfig when absent", async () => {
     const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
     expect(ws.project).toEqual({
       id: PROJECT,
+      tenantId: TENANT,
       name: "Honeywell Quick BoM",
       customerName: "Honeywell",
       mode: "quick_bom",
       createdAt: TS1.toISOString(),
       updatedAt: TS2.toISOString(),
     });
+    expect("pricingConfig" in ws.project).toBe(false);
+  });
+
+  it("includes a copied pricingConfig on the project summary when present", async () => {
+    const source = makeProject({ stages: STAGES, pricingConfig: { ...PRICING } });
+    mockGetProjectById.mockResolvedValue(source);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+
+    expect(ws.project.pricingConfig).toEqual(PRICING);
+    expect(ws.project.pricingConfig).not.toBe(source.pricingConfig);
   });
 
   it("includes stage summaries with ISO dates", async () => {
@@ -293,6 +321,19 @@ describe("loadProjectQuickBomWorkspace - ok workspace", () => {
     expect(mockGetProjectById).toHaveBeenCalledWith(TENANT, PROJECT);
     expect(mockListArtifacts).toHaveBeenCalledWith(TENANT, PROJECT);
     expect(mockListApprovals).toHaveBeenCalledWith(TENANT, PROJECT);
+  });
+
+  it("copies pricingConfig so mutating the workspace never mutates the source project", async () => {
+    const source = makeProject({ stages: STAGES, pricingConfig: { ...PRICING } });
+    mockGetProjectById.mockResolvedValue(source);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    expect(ws.project.pricingConfig).toEqual(PRICING);
+    expect(ws.project.pricingConfig).not.toBe(source.pricingConfig);
+
+    ws.project.pricingConfig!.ratePercent = 99;
+
+    expect(source.pricingConfig!.ratePercent).toBe(PRICING.ratePercent);
   });
 });
 

@@ -1,15 +1,4 @@
-/**
- * Read-only Quick BoM workspace read model.
- * Source of truth: C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md
- * (sections 2, 3, 11, 11A, 14, 16).
- *
- * Loads one Project plus its artifacts, approvals, and Quick BoM readiness into a
- * fully JSON-serializable read model. It is strictly read-only: it makes no
- * versions, no approvals, no stage transitions; it prices nothing, exports
- * nothing, resolves no SKUs, runs no expansion, invokes no runner, and reads no
- * catalog/AI. Dates are converted to ISO strings at this boundary and full
- * artifact payloads are never surfaced (only summaries).
- */
+/** Read-only Quick BoM workspace read model: no mutation, pricing, export, runner, catalog, or AI. */
 import { getProjectById } from "@/lib/db/project-store";
 import { listProjectArtifacts } from "@/lib/db/project-artifact-store";
 import { listProjectApprovals } from "@/lib/db/project-approval-store";
@@ -24,22 +13,23 @@ import type {
   ProjectArtifactStatus,
   ProjectArtifactType,
   ProjectMode,
+  ProjectPricingConfig,
   ProjectStage,
   ProjectStageId,
   ProjectStageStatus,
 } from "@/types/project";
 
-/** Scalar Project identity for the read model. */
 export interface ProjectSummary {
   id: string;
+  tenantId: string;
   name: string;
   customerName?: string;
   mode: ProjectMode;
+  pricingConfig?: ProjectPricingConfig;
   createdAt: string;
   updatedAt: string;
 }
 
-/** One materialized stage, ISO-dated. */
 export interface ProjectStageSummary {
   id: string;
   stageId: ProjectStageId;
@@ -49,7 +39,6 @@ export interface ProjectStageSummary {
   updatedAt: string;
 }
 
-/** One artifact version without its payload. */
 export interface ProjectArtifactSummary {
   id: string;
   stageId: ProjectStageId;
@@ -63,7 +52,6 @@ export interface ProjectArtifactSummary {
   updatedAt: string;
 }
 
-/** One approval pointing at an exact artifact version, ISO-dated. */
 export interface ProjectApprovalSummary {
   id: string;
   stageId: ProjectStageId;
@@ -75,7 +63,6 @@ export interface ProjectApprovalSummary {
   note?: string;
 }
 
-/** Latest artifact summary per Quick BoM spine type, or null when absent. */
 export interface QuickBomSpineArtifacts {
   normalized_boq: ProjectArtifactSummary | null;
   sku_resolution: ProjectArtifactSummary | null;
@@ -84,7 +71,6 @@ export interface QuickBomSpineArtifacts {
   export_package: ProjectArtifactSummary | null;
 }
 
-/** The serializable Quick BoM workspace read model. */
 export interface ProjectQuickBomWorkspace {
   project: ProjectSummary;
   stages: ProjectStageSummary[];
@@ -94,7 +80,6 @@ export interface ProjectQuickBomWorkspace {
   readiness: QuickBomReadinessReport;
 }
 
-/** Discriminated load outcome. */
 export type ProjectQuickBomWorkspaceResult =
   | { status: "not_found" }
   | { status: "wrong_mode"; project: ProjectSummary }
@@ -107,11 +92,15 @@ function iso(value: Date): string {
 function toProjectSummary(project: Project): ProjectSummary {
   return {
     id: project.id,
+    tenantId: project.tenantId,
     name: project.name,
     ...(project.customerName !== undefined
       ? { customerName: project.customerName }
       : {}),
     mode: project.mode,
+    ...(project.pricingConfig !== undefined
+      ? { pricingConfig: { ...project.pricingConfig } }
+      : {}),
     createdAt: iso(project.createdAt),
     updatedAt: iso(project.updatedAt),
   };
