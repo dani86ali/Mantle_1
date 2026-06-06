@@ -3,9 +3,10 @@
 Status: read-only parity evidence for the Honeywell MVP Quick BoM demo (demo scope
 only).
 
-This document records the Prompt 74 parity check between the configured/priced CCW
-reference estimate and the generated Honeywell Mantle demo workbook. It is evidence
-and regression only: it adds no runtime authority, no pricing authority, no
+This document records the parity check between the configured/priced CCW reference
+estimate and the generated Honeywell Mantle demo workbook, originally captured in
+Prompt 74 and re-run in Prompt 76 after the Prompt 75 CCW-like switch child ordering.
+It is evidence and regression only: it adds no runtime authority, no pricing authority, no
 configuration authority, no app/API/UI/DB wiring, and no export-package behavior. It
 changes no approved rule pack, candidate pack, approval packet, pricing fixture,
 composer, runner, or workbook writer. The automated check lives in
@@ -61,7 +62,7 @@ Worked example - `LIC-CW-A`:
 - Extended amounts agree on both sides (33743.52), so the line is at parity even
   though the raw per-unit bases differ.
 
-## 4. Expected Prompt 74 parity baseline
+## 4. Expected parity baseline
 
 | Measure | CCW | Generated Mantle |
 | --- | --- | --- |
@@ -72,6 +73,8 @@ Worked example - `LIC-CW-A`:
 | Quantity differences (by SKU) | none | none |
 | Extended amount differences (by SKU) | none | none |
 | Total extended amount (SAR) | 2185708.76 | 2185708.76 |
+| Row sequence (all 60 item rows) | reference order | exact match |
+| Documented sequence exceptions | none | none |
 
 Notes on the baseline:
 
@@ -85,11 +88,13 @@ Notes on the baseline:
   aggregated per SKU.
 - `LIC-CW-A` raw CCW `ListPrice` 78.11 is **not** the full per-unit demo price; the
   effective unit is 2811.96 from `Extended ListPrice / Quantity`.
-- **Child-line sequence may currently differ under the switch sections.** The set,
-  quantities, and pricing of the children under `C9300X-48HX-A` and
-  `C9300L-24P-4X-A` match, but the child row order can differ. Prompt 75 will
-  address CCW-like child ordering without changing content, quantities, or pricing.
-  This evidence does not fail merely because that ordering later matches.
+- **Child-line sequence now matches CCW exactly under the switch sections.** Prompt
+  75 applied CCW-like child ordering to `C9300X-48HX-A` and `C9300L-24P-4X-A`,
+  reordering only - it adds, removes, and reprices nothing. The set, quantities, and
+  pricing were already at parity; after Prompt 75 the child row order is identical
+  too, so the generated row sequence now matches the CCW item-row sequence exactly
+  across all 60 item rows for the Honeywell MVP demo path. Row sequence: exact match.
+  Documented exceptions: none.
 
 ## 5. What this evidence does NOT do
 

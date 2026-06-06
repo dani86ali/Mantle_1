@@ -1,14 +1,17 @@
 /**
- * Honeywell CCW parity evidence (Prompt 74). Read-only regression/evidence proving
- * the generated Honeywell Mantle demo workbook is at parity with the primary
- * configured/priced CCW reference estimate for the Honeywell MVP demo scope.
+ * Honeywell CCW parity evidence (Prompt 74; exact row-sequence proof tightened in
+ * Prompt 76 after the Prompt 75 CCW-like switch child ordering). Read-only
+ * regression/evidence proving the generated Honeywell Mantle demo workbook is at
+ * parity with the primary configured/priced CCW reference estimate for the Honeywell
+ * MVP demo scope.
  *
  * It generates a FRESH temporary Mantle workbook through the verified in-memory path
  * (runHoneywellQuickBomDemoMantleExportModel + writeMantlePriceEstimateWorkbook - the
  * same deterministic Prompt 73 path), never by reading a committed output workbook,
  * then re-opens it through the existing Mantle layout locator. It reads the live CCW
  * reference workbook (Estimate_NB167337237YA.xlsx, sheet
- * EstimateDetails_NB167337237YA) and asserts row/SKU/quantity/extended-amount parity.
+ * EstimateDetails_NB167337237YA) and asserts row/SKU/quantity/extended-amount parity,
+ * including exact row-sequence parity across all 60 item rows.
  *
  * Pricing representation: CCW raw ListPrice for term lines (e.g. LIC-CW-A 78.11) can
  * be a monthly/term-rate basis while Extended ListPrice captures the full term. Parity
@@ -94,8 +97,9 @@ const PROVENANCE = {
 
 const META = { projectId: "HW-DEMO-PRJ", dealId: "HW-DEMO-DEAL", priceList: "STC SAR Price List" };
 
-// Customer parents in customer order; the two switch parents own the only sections
-// whose child ordering may currently differ from CCW (Prompt 75 addresses ordering).
+// Customer parents in customer order. After Prompt 75 the two switch parents emit
+// their children in the exact CCW print order, so every section now matches CCW in
+// sequence; SWITCH_PARENTS drives the focused exact-child-order assertion below.
 const CUSTOMER_PARENTS = [CW9178, SUB, C9300X, C9300L, OPTIC_A, OPTIC_B, PHONE];
 const SWITCH_PARENTS = [C9300X, C9300L];
 
@@ -444,27 +448,24 @@ describe("Honeywell CCW parity - standalone optics", () => {
   });
 });
 
-// --- Row sequence: differences limited to switch child ordering --------------
+// --- Row sequence: exact CCW parity (after Prompt 75 switch child ordering) ---
 
-describe("Honeywell CCW parity - row sequence", () => {
-  it("aligns the customer parents at the same positions on both sides", () => {
+describe("Honeywell CCW parity - row sequence (exact)", () => {
+  it("matches the full CCW SKU sequence across all 60 item rows", () => {
+    expect(genSkus).toHaveLength(EXPECTED_ITEM_ROWS);
+    expect(ccwSkus).toHaveLength(EXPECTED_ITEM_ROWS);
+    // Strongest, least-foolable check: the entire ordered row sequence is identical.
+    expect(genSkus).toEqual(ccwSkus);
+  });
+
+  it("aligns the customer parents at identical positions on both sides", () => {
     expect(ccwParentIdx.every((i) => i >= 0)).toBe(true);
     expect(genParentIdx.every((i) => i >= 0)).toBe(true);
     expect(genParentIdx).toEqual(ccwParentIdx);
   });
 
-  it("has identical content per section (set, regardless of order)", () => {
+  it("matches the exact ordered sequence of every customer section, including both switches", () => {
     for (let s = 0; s < CUSTOMER_PARENTS.length; s += 1) {
-      const { start, end } = sectionRange(ccwParentIdx, s, ccwSkus.length);
-      const ccwSection = ccwSkus.slice(start, end).sort();
-      const genSection = genSkus.slice(start, end).sort();
-      expect(genSection, `section ${CUSTOMER_PARENTS[s]}`).toEqual(ccwSection);
-    }
-  });
-
-  it("preserves exact order in every non-switch section", () => {
-    for (let s = 0; s < CUSTOMER_PARENTS.length; s += 1) {
-      if (SWITCH_PARENTS.indexOf(CUSTOMER_PARENTS[s]) >= 0) continue;
       const { start, end } = sectionRange(ccwParentIdx, s, ccwSkus.length);
       expect(genSkus.slice(start, end), `order in section ${CUSTOMER_PARENTS[s]}`).toEqual(
         ccwSkus.slice(start, end)
@@ -472,17 +473,28 @@ describe("Honeywell CCW parity - row sequence", () => {
     }
   });
 
-  it("limits any sequence mismatch to the two switch sections (Prompt 75 may later remove it)", () => {
-    const switchRanges = SWITCH_PARENTS.map((parent) =>
-      sectionRange(ccwParentIdx, CUSTOMER_PARENTS.indexOf(parent), ccwSkus.length)
-    );
-    const inSwitchRange = (i: number): boolean => switchRanges.some((rng) => i >= rng.start && i < rng.end);
+  it("matches the CCW child order exactly under each switch, not merely set-equal", () => {
+    for (const parent of SWITCH_PARENTS) {
+      const { start, end } = sectionRange(ccwParentIdx, CUSTOMER_PARENTS.indexOf(parent), ccwSkus.length);
+      const ccwSection = ccwSkus.slice(start, end);
+      const genSection = genSkus.slice(start, end);
+      // Each switch leads its own section, with children following it, on both sides.
+      expect(ccwSection[0], `${parent} parent position`).toBe(parent);
+      expect(genSection[0], `${parent} parent position`).toBe(parent);
+      expect(genSection.length, `${parent} child count`).toBeGreaterThan(1);
+      // Set-equal diagnostic: separates a wrong order from wrong membership on failure.
+      expect(genSection.slice().sort(), `${parent} child set`).toEqual(ccwSection.slice().sort());
+      // The actual proof: identical ORDERED child sequence, not just the same set.
+      expect(genSection, `${parent} child order`).toEqual(ccwSection);
+    }
+  });
+
+  it("documents no row-sequence parity exceptions", () => {
     const mismatches: number[] = [];
     for (let i = 0; i < ccwSkus.length; i += 1) {
       if (ccwSkus[i] !== genSkus[i]) mismatches.push(i);
     }
-    // Vacuously true if Prompt 75 later makes the sequence match exactly.
-    expect(mismatches.every((i) => inSwitchRange(i))).toBe(true);
+    expect(mismatches).toEqual([]);
   });
 });
 
