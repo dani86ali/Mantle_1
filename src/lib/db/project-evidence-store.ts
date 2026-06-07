@@ -14,7 +14,7 @@
  * - {@link toProjectEvidenceItem} projects it out.
  */
 import { and, asc, eq } from "drizzle-orm";
-import { db } from "./index";
+import { withTenantDb } from "./index";
 import { projectEvidenceItems } from "./schema";
 import { materializeProjectEvidenceItem } from "@/lib/projects/evidence";
 import type { ProjectEvidenceItem } from "@/types/project";
@@ -58,8 +58,13 @@ export async function createProjectEvidenceItem(
   input: CreateProjectEvidenceItemInput
 ): Promise<ProjectEvidenceItem> {
   const record = materializeProjectEvidenceItem(input);
-  const [row] = await db.insert(projectEvidenceItems).values(record).returning();
-  return toProjectEvidenceItem(row);
+  return withTenantDb(input.tenantId, async (tx) => {
+    const [row] = await tx
+      .insert(projectEvidenceItems)
+      .values(record)
+      .returning();
+    return toProjectEvidenceItem(row);
+  });
 }
 
 /**
@@ -70,17 +75,19 @@ export async function listProjectEvidenceItems(
   tenantId: string,
   projectId: string
 ): Promise<ProjectEvidenceItem[]> {
-  const rows = await db
-    .select()
-    .from(projectEvidenceItems)
-    .where(
-      and(
-        eq(projectEvidenceItems.tenantId, tenantId),
-        eq(projectEvidenceItems.projectId, projectId)
+  return withTenantDb(tenantId, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(projectEvidenceItems)
+      .where(
+        and(
+          eq(projectEvidenceItems.tenantId, tenantId),
+          eq(projectEvidenceItems.projectId, projectId)
+        )
       )
-    )
-    .orderBy(asc(projectEvidenceItems.extractedAt));
-  return rows.map(toProjectEvidenceItem);
+      .orderBy(asc(projectEvidenceItems.extractedAt));
+    return rows.map(toProjectEvidenceItem);
+  });
 }
 
 /**
@@ -92,18 +99,20 @@ export async function listProjectEvidenceForFile(
   projectId: string,
   sourceFileId: string
 ): Promise<ProjectEvidenceItem[]> {
-  const rows = await db
-    .select()
-    .from(projectEvidenceItems)
-    .where(
-      and(
-        eq(projectEvidenceItems.tenantId, tenantId),
-        eq(projectEvidenceItems.projectId, projectId),
-        eq(projectEvidenceItems.sourceFileId, sourceFileId)
+  return withTenantDb(tenantId, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(projectEvidenceItems)
+      .where(
+        and(
+          eq(projectEvidenceItems.tenantId, tenantId),
+          eq(projectEvidenceItems.projectId, projectId),
+          eq(projectEvidenceItems.sourceFileId, sourceFileId)
+        )
       )
-    )
-    .orderBy(asc(projectEvidenceItems.extractedAt));
-  return rows.map(toProjectEvidenceItem);
+      .orderBy(asc(projectEvidenceItems.extractedAt));
+    return rows.map(toProjectEvidenceItem);
+  });
 }
 
 /**
@@ -115,16 +124,18 @@ export async function getProjectEvidenceItemById(
   projectId: string,
   evidenceItemId: string
 ): Promise<ProjectEvidenceItem | null> {
-  const [row] = await db
-    .select()
-    .from(projectEvidenceItems)
-    .where(
-      and(
-        eq(projectEvidenceItems.tenantId, tenantId),
-        eq(projectEvidenceItems.projectId, projectId),
-        eq(projectEvidenceItems.id, evidenceItemId)
+  return withTenantDb(tenantId, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(projectEvidenceItems)
+      .where(
+        and(
+          eq(projectEvidenceItems.tenantId, tenantId),
+          eq(projectEvidenceItems.projectId, projectId),
+          eq(projectEvidenceItems.id, evidenceItemId)
+        )
       )
-    )
-    .limit(1);
-  return row ? toProjectEvidenceItem(row) : null;
+      .limit(1);
+    return row ? toProjectEvidenceItem(row) : null;
+  });
 }

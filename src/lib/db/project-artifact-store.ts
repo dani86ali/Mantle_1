@@ -16,7 +16,7 @@
  * {@link toProjectArtifact} projects it out and maps DB nulls/odd JSONB safely.
  */
 import { and, asc, eq } from "drizzle-orm";
-import { db } from "./index";
+import { withTenantDb } from "./index";
 import { projectArtifacts } from "./schema";
 import { materializeProjectArtifactVersion } from "@/lib/projects/artifacts";
 import type {
@@ -84,37 +84,39 @@ function toProjectArtifact(row: ProjectArtifactRow): ProjectArtifact {
 export async function createProjectArtifactVersion(
   input: CreateProjectArtifactVersionInput
 ): Promise<ProjectArtifact> {
-  const existing = await db
-    .select()
-    .from(projectArtifacts)
-    .where(
-      and(
-        eq(projectArtifacts.tenantId, input.tenantId),
-        eq(projectArtifacts.projectId, input.projectId),
-        eq(projectArtifacts.type, input.type)
-      )
-    );
+  return withTenantDb(input.tenantId, async (tx) => {
+    const existing = await tx
+      .select()
+      .from(projectArtifacts)
+      .where(
+        and(
+          eq(projectArtifacts.tenantId, input.tenantId),
+          eq(projectArtifacts.projectId, input.projectId),
+          eq(projectArtifacts.type, input.type)
+        )
+      );
 
-  const record = materializeProjectArtifactVersion({
-    projectId: input.projectId,
-    tenantId: input.tenantId,
-    stageId: input.stageId,
-    type: input.type,
-    status: input.status,
-    payload: input.payload,
-    filePath: input.filePath,
-    sourceFileIds: input.sourceFileIds,
-    sourceArtifactIds: input.sourceArtifactIds,
-    existingArtifacts: existing.map((row) => ({
-      projectId: row.projectId,
-      type: row.type as ProjectArtifactType,
-      version: row.version,
-      status: row.status as ProjectArtifactStatus,
-    })),
+    const record = materializeProjectArtifactVersion({
+      projectId: input.projectId,
+      tenantId: input.tenantId,
+      stageId: input.stageId,
+      type: input.type,
+      status: input.status,
+      payload: input.payload,
+      filePath: input.filePath,
+      sourceFileIds: input.sourceFileIds,
+      sourceArtifactIds: input.sourceArtifactIds,
+      existingArtifacts: existing.map((row) => ({
+        projectId: row.projectId,
+        type: row.type as ProjectArtifactType,
+        version: row.version,
+        status: row.status as ProjectArtifactStatus,
+      })),
+    });
+
+    const [row] = await tx.insert(projectArtifacts).values(record).returning();
+    return toProjectArtifact(row);
   });
-
-  const [row] = await db.insert(projectArtifacts).values(record).returning();
-  return toProjectArtifact(row);
 }
 
 /**
@@ -125,17 +127,19 @@ export async function listProjectArtifacts(
   tenantId: string,
   projectId: string
 ): Promise<ProjectArtifact[]> {
-  const rows = await db
-    .select()
-    .from(projectArtifacts)
-    .where(
-      and(
-        eq(projectArtifacts.tenantId, tenantId),
-        eq(projectArtifacts.projectId, projectId)
+  return withTenantDb(tenantId, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(projectArtifacts)
+      .where(
+        and(
+          eq(projectArtifacts.tenantId, tenantId),
+          eq(projectArtifacts.projectId, projectId)
+        )
       )
-    )
-    .orderBy(asc(projectArtifacts.type), asc(projectArtifacts.version));
-  return rows.map(toProjectArtifact);
+      .orderBy(asc(projectArtifacts.type), asc(projectArtifacts.version));
+    return rows.map(toProjectArtifact);
+  });
 }
 
 /**
@@ -147,18 +151,20 @@ export async function listProjectArtifactsByType(
   projectId: string,
   type: ProjectArtifactType
 ): Promise<ProjectArtifact[]> {
-  const rows = await db
-    .select()
-    .from(projectArtifacts)
-    .where(
-      and(
-        eq(projectArtifacts.tenantId, tenantId),
-        eq(projectArtifacts.projectId, projectId),
-        eq(projectArtifacts.type, type)
+  return withTenantDb(tenantId, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(projectArtifacts)
+      .where(
+        and(
+          eq(projectArtifacts.tenantId, tenantId),
+          eq(projectArtifacts.projectId, projectId),
+          eq(projectArtifacts.type, type)
+        )
       )
-    )
-    .orderBy(asc(projectArtifacts.version));
-  return rows.map(toProjectArtifact);
+      .orderBy(asc(projectArtifacts.version));
+    return rows.map(toProjectArtifact);
+  });
 }
 
 /**
@@ -185,16 +191,18 @@ export async function getProjectArtifactById(
   projectId: string,
   artifactId: string
 ): Promise<ProjectArtifact | null> {
-  const [row] = await db
-    .select()
-    .from(projectArtifacts)
-    .where(
-      and(
-        eq(projectArtifacts.tenantId, tenantId),
-        eq(projectArtifacts.projectId, projectId),
-        eq(projectArtifacts.id, artifactId)
+  return withTenantDb(tenantId, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(projectArtifacts)
+      .where(
+        and(
+          eq(projectArtifacts.tenantId, tenantId),
+          eq(projectArtifacts.projectId, projectId),
+          eq(projectArtifacts.id, artifactId)
+        )
       )
-    )
-    .limit(1);
-  return row ? toProjectArtifact(row) : null;
+      .limit(1);
+    return row ? toProjectArtifact(row) : null;
+  });
 }

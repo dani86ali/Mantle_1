@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// ─── In-memory fake db ─────────────────────────────────────────────────────
+// --- In-memory fake db ------------------------------------------------------
 // Mirrors only the chained calls project-artifact-store uses against ONE table
 // (project_artifacts), so routing is trivial - every query targets
 // store.artifacts:
@@ -30,7 +30,7 @@ interface StoredArtifact {
   updatedAt: Date;
 }
 
-const { store, mockDb } = vi.hoisted(() => {
+const { store, mockDb, withTenantDb } = vi.hoisted(() => {
   let counter = 0;
   const genId = (prefix: string) => `${prefix}-${++counter}`;
 
@@ -141,10 +141,17 @@ const { store, mockDb } = vi.hoisted(() => {
     },
   };
 
-  return { store, mockDb };
+  // Records the tenant id each repository function opens its tenant-scoped
+  // transaction with, then runs the callback against the in-memory mockDb (the
+  // real helper would set app.tenant_id transaction-locally first).
+  const withTenantDb = vi.fn(
+    async (_tenantId: string, cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)
+  );
+
+  return { store, mockDb, withTenantDb };
 });
 
-vi.mock("@/lib/db/index", () => ({ db: mockDb }));
+vi.mock("@/lib/db/index", () => ({ db: mockDb, withTenantDb }));
 vi.mock("drizzle-orm", async () => {
   const actual = await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
   return {
@@ -195,6 +202,7 @@ function seedArtifact(overrides: Partial<StoredArtifact> = {}): StoredArtifact {
 beforeEach(() => {
   store.artifacts.length = 0;
   store.artifactInserts.length = 0;
+  withTenantDb.mockClear();
 });
 
 describe("createProjectArtifactVersion", () => {
@@ -440,6 +448,33 @@ describe("getProjectArtifactById", () => {
     expect(await getProjectArtifactById(OTHER_TENANT, PROJECT, "a-1")).toBeNull();
     expect(await getProjectArtifactById(TENANT, OTHER_PROJECT, "a-1")).toBeNull();
     expect(await getProjectArtifactById(TENANT, PROJECT, "missing")).toBeNull();
+  });
+});
+
+describe("tenant-scoped execution", () => {
+  it("createProjectArtifactVersion opens a tenant-scoped transaction for the input tenant", async () => {
+    await createProjectArtifactVersion({
+      projectId: PROJECT,
+      tenantId: TENANT,
+      stageId: "boq_pricing_review",
+      type: "priced_boq",
+    });
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("listProjectArtifacts opens a tenant-scoped transaction for the requested tenant", async () => {
+    await listProjectArtifacts(TENANT, PROJECT);
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("getProjectArtifactById opens a tenant-scoped transaction for the requested tenant", async () => {
+    await getProjectArtifactById(TENANT, PROJECT, "art-x");
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("getLatestProjectArtifactVersion opens a tenant-scoped transaction for the requested tenant", async () => {
+    await getLatestProjectArtifactVersion(TENANT, PROJECT, "priced_boq");
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
   });
 });
 

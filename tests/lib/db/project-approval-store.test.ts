@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// ─── In-memory fake db ─────────────────────────────────────────────────────
+// --- In-memory fake db ------------------------------------------------------
 // Mirrors the chained calls project-approval-store uses across THREE tables
 // (project_approvals, project_artifacts, project_stages):
 //   db.transaction(cb) -> resolves cb's return value (tx === mockDb)
@@ -49,7 +49,7 @@ interface StoredStage {
   updatedAt: Date;
 }
 
-const { store, mockDb } = vi.hoisted(() => {
+const { store, mockDb, withTenantDb } = vi.hoisted(() => {
   let counter = 0;
   const genId = (prefix: string) => `${prefix}-${++counter}`;
 
@@ -104,9 +104,6 @@ const { store, mockDb } = vi.hoisted(() => {
   };
 
   const mockDb: any = {
-    async transaction<T>(cb: (tx: unknown) => Promise<T>): Promise<T> {
-      return cb(mockDb);
-    },
     select() {
       return {
         from(table: { [TABLE_NAME]: string }) {
@@ -194,10 +191,19 @@ const { store, mockDb } = vi.hoisted(() => {
     },
   };
 
-  return { store, mockDb };
+  // Records the tenant id each repository function opens its tenant-scoped
+  // transaction with, then runs the callback against the in-memory mockDb (the
+  // real helper would set app.tenant_id transaction-locally first). It replaces
+  // the prior db.transaction wrapper: createProjectApproval now runs inside the
+  // transaction withTenantDb provides, so the mock owns the transaction boundary.
+  const withTenantDb = vi.fn(
+    async (_tenantId: string, cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)
+  );
+
+  return { store, mockDb, withTenantDb };
 });
 
-vi.mock("@/lib/db/index", () => ({ db: mockDb }));
+vi.mock("@/lib/db/index", () => ({ db: mockDb, withTenantDb }));
 vi.mock("drizzle-orm", async () => {
   const actual = await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
   return {
@@ -290,6 +296,7 @@ beforeEach(() => {
   store.artifacts.length = 0;
   store.stages.length = 0;
   store.approvalInserts.length = 0;
+  withTenantDb.mockClear();
 });
 
 describe("createProjectApproval - missing rows", () => {
@@ -561,6 +568,25 @@ describe("getProjectApprovalById", () => {
     expect(await getProjectApprovalById(OTHER_TENANT, PROJECT, "appr-1")).toBeNull();
     expect(await getProjectApprovalById(TENANT, OTHER_PROJECT, "appr-1")).toBeNull();
     expect(await getProjectApprovalById(TENANT, PROJECT, "missing")).toBeNull();
+  });
+});
+
+describe("tenant-scoped execution", () => {
+  it("createProjectApproval opens a tenant-scoped transaction for the input tenant", async () => {
+    seedArtifact();
+    seedStage();
+    await createProjectApproval(baseInput);
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("listProjectApprovals opens a tenant-scoped transaction for the requested tenant", async () => {
+    await listProjectApprovals(TENANT, PROJECT);
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("getProjectApprovalById opens a tenant-scoped transaction for the requested tenant", async () => {
+    await getProjectApprovalById(TENANT, PROJECT, "appr-x");
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
   });
 });
 

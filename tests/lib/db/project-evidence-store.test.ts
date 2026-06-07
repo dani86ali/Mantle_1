@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// ─── In-memory fake db ─────────────────────────────────────────────────────
+// --- In-memory fake db ------------------------------------------------------
 // Mirrors only the chained calls project-evidence-store uses against ONE table
 // (project_evidence_items), so routing is trivial - every query targets
 // store.evidence:
@@ -22,7 +22,7 @@ interface StoredEvidence {
   retainUntil: Date;
 }
 
-const { store, mockDb } = vi.hoisted(() => {
+const { store, mockDb, withTenantDb } = vi.hoisted(() => {
   let counter = 0;
   const genId = (prefix: string) => `${prefix}-${++counter}`;
 
@@ -119,10 +119,17 @@ const { store, mockDb } = vi.hoisted(() => {
     },
   };
 
-  return { store, mockDb };
+  // Records the tenant id each repository function opens its tenant-scoped
+  // transaction with, then runs the callback against the in-memory mockDb (the
+  // real helper would set app.tenant_id transaction-locally first).
+  const withTenantDb = vi.fn(
+    async (_tenantId: string, cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)
+  );
+
+  return { store, mockDb, withTenantDb };
 });
 
-vi.mock("@/lib/db/index", () => ({ db: mockDb }));
+vi.mock("@/lib/db/index", () => ({ db: mockDb, withTenantDb }));
 vi.mock("drizzle-orm", async () => {
   const actual = await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
   return {
@@ -169,6 +176,7 @@ function seedEvidence(overrides: Partial<StoredEvidence> = {}): StoredEvidence {
 beforeEach(() => {
   store.evidence.length = 0;
   store.evidenceInserts.length = 0;
+  withTenantDb.mockClear();
 });
 
 describe("createProjectEvidenceItem", () => {
@@ -297,6 +305,29 @@ describe("immutability", () => {
     const snapshot = structuredClone(createInput);
     await createProjectEvidenceItem(createInput);
     expect(createInput).toEqual(snapshot);
+  });
+});
+
+describe("tenant-scoped execution", () => {
+  it("createProjectEvidenceItem opens a tenant-scoped transaction for the input tenant", async () => {
+    await createProjectEvidenceItem({
+      projectId: PROJECT,
+      tenantId: TENANT,
+      sourceFileId: FILE_A,
+      kind: "boq_summary",
+      content: { lineCount: 1 },
+    });
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("listProjectEvidenceItems opens a tenant-scoped transaction for the requested tenant", async () => {
+    await listProjectEvidenceItems(TENANT, PROJECT);
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("getProjectEvidenceItemById opens a tenant-scoped transaction for the requested tenant", async () => {
+    await getProjectEvidenceItemById(TENANT, PROJECT, "ev-x");
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
   });
 });
 

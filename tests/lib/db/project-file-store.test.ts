@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// ─── In-memory fake db ─────────────────────────────────────────────────────
+// --- In-memory fake db ------------------------------------------------------
 // Mirrors only the chained calls project-file-store uses against ONE table
 // (project_files), so routing is trivial - every query targets store.files:
 //   db.insert(table).values(v).returning()
@@ -26,7 +26,7 @@ interface StoredFile {
   createdAt: Date;
 }
 
-const { store, mockDb } = vi.hoisted(() => {
+const { store, mockDb, withTenantDb } = vi.hoisted(() => {
   let counter = 0;
   const genId = (prefix: string) => `${prefix}-${++counter}`;
 
@@ -151,10 +151,17 @@ const { store, mockDb } = vi.hoisted(() => {
     },
   };
 
-  return { store, mockDb };
+  // Records the tenant id each repository function opens its tenant-scoped
+  // transaction with, then runs the callback against the in-memory mockDb (the
+  // real helper would set app.tenant_id transaction-locally first).
+  const withTenantDb = vi.fn(
+    async (_tenantId: string, cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)
+  );
+
+  return { store, mockDb, withTenantDb };
 });
 
-vi.mock("@/lib/db/index", () => ({ db: mockDb }));
+vi.mock("@/lib/db/index", () => ({ db: mockDb, withTenantDb }));
 vi.mock("drizzle-orm", async () => {
   const actual = await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
   return {
@@ -206,6 +213,7 @@ function seedFile(overrides: Partial<StoredFile> = {}): StoredFile {
 beforeEach(() => {
   store.files.length = 0;
   store.fileInserts.length = 0;
+  withTenantDb.mockClear();
 });
 
 describe("createProjectFileRecord", () => {
@@ -395,6 +403,35 @@ describe("null mapping & immutability", () => {
     const correctSnapshot = structuredClone(correctInput);
     await correctProjectFileRole(correctInput);
     expect(correctInput).toEqual(correctSnapshot);
+  });
+});
+
+describe("tenant-scoped execution", () => {
+  it("createProjectFileRecord opens a tenant-scoped transaction for the input tenant", async () => {
+    await createProjectFileRecord({
+      projectId: PROJECT,
+      tenantId: TENANT,
+      fileRole: "boq",
+      fileName: "x.xlsx",
+      storagePath: "s3://bucket/x.xlsx",
+    });
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("listProjectFiles opens a tenant-scoped transaction for the requested tenant", async () => {
+    await listProjectFiles(TENANT, PROJECT);
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("correctProjectFileRole opens a tenant-scoped transaction for the requested tenant", async () => {
+    await correctProjectFileRole({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      fileId: "file-x",
+      fileRole: "boq",
+      roleCorrectedBy: "user-1",
+    });
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
   });
 });
 

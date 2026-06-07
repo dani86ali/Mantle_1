@@ -14,7 +14,7 @@
  * tables duplicate tenant_id per row, but the TS child shapes do not surface it.
  */
 import { and, asc, eq } from "drizzle-orm";
-import { db } from "./index";
+import { withTenantDb } from "./index";
 import { projects, projectStages } from "./schema";
 import { materializeProjectStages } from "@/lib/projects/stages";
 import type {
@@ -96,7 +96,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
     includeNotApplicableStages = false,
   } = input;
 
-  return db.transaction(async (tx) => {
+  return withTenantDb(tenantId, async (tx) => {
     const [projectRow] = await tx
       .insert(projects)
       .values({
@@ -132,23 +132,25 @@ export async function getProjectById(
   tenantId: string,
   projectId: string
 ): Promise<Project | null> {
-  const [projectRow] = await db
-    .select()
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)))
-    .limit(1);
-  if (!projectRow) return null;
+  return withTenantDb(tenantId, async (tx) => {
+    const [projectRow] = await tx
+      .select()
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)))
+      .limit(1);
+    if (!projectRow) return null;
 
-  const stageRows = await db
-    .select()
-    .from(projectStages)
-    .where(
-      and(
-        eq(projectStages.projectId, projectId),
-        eq(projectStages.tenantId, tenantId)
+    const stageRows = await tx
+      .select()
+      .from(projectStages)
+      .where(
+        and(
+          eq(projectStages.projectId, projectId),
+          eq(projectStages.tenantId, tenantId)
+        )
       )
-    )
-    .orderBy(asc(projectStages.stageOrder));
+      .orderBy(asc(projectStages.stageOrder));
 
-  return toProject(projectRow, stageRows);
+    return toProject(projectRow, stageRows);
+  });
 }

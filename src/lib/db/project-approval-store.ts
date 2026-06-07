@@ -13,7 +13,7 @@
  * does not surface tenantId - {@link toProjectApproval} projects it out.
  */
 import { and, asc, eq } from "drizzle-orm";
-import { db } from "./index";
+import { withTenantDb } from "./index";
 import { projectApprovals, projectArtifacts, projectStages } from "./schema";
 import {
   materializeProjectApproval,
@@ -76,7 +76,7 @@ function toProjectApproval(row: ProjectApprovalRow): ProjectApproval {
 export async function createProjectApproval(
   input: CreateProjectApprovalInput
 ): Promise<CreateProjectApprovalResult | null> {
-  return db.transaction(async (tx) => {
+  return withTenantDb(input.tenantId, async (tx) => {
     const [artifactRow] = await tx
       .select()
       .from(projectArtifacts)
@@ -162,17 +162,19 @@ export async function listProjectApprovals(
   tenantId: string,
   projectId: string
 ): Promise<ProjectApproval[]> {
-  const rows = await db
-    .select()
-    .from(projectApprovals)
-    .where(
-      and(
-        eq(projectApprovals.tenantId, tenantId),
-        eq(projectApprovals.projectId, projectId)
+  return withTenantDb(tenantId, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(projectApprovals)
+      .where(
+        and(
+          eq(projectApprovals.tenantId, tenantId),
+          eq(projectApprovals.projectId, projectId)
+        )
       )
-    )
-    .orderBy(asc(projectApprovals.decidedAt));
-  return rows.map(toProjectApproval);
+      .orderBy(asc(projectApprovals.decidedAt));
+    return rows.map(toProjectApproval);
+  });
 }
 
 /**
@@ -184,21 +186,23 @@ export async function listProjectApprovalsForArtifact(
   projectId: string,
   artifactId: string
 ): Promise<ProjectApproval[]> {
-  const rows = await db
-    .select()
-    .from(projectApprovals)
-    .where(
-      and(
-        eq(projectApprovals.tenantId, tenantId),
-        eq(projectApprovals.projectId, projectId),
-        eq(projectApprovals.artifactId, artifactId)
+  return withTenantDb(tenantId, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(projectApprovals)
+      .where(
+        and(
+          eq(projectApprovals.tenantId, tenantId),
+          eq(projectApprovals.projectId, projectId),
+          eq(projectApprovals.artifactId, artifactId)
+        )
       )
-    )
-    .orderBy(
-      asc(projectApprovals.artifactVersion),
-      asc(projectApprovals.decidedAt)
-    );
-  return rows.map(toProjectApproval);
+      .orderBy(
+        asc(projectApprovals.artifactVersion),
+        asc(projectApprovals.decidedAt)
+      );
+    return rows.map(toProjectApproval);
+  });
 }
 
 /**
@@ -209,16 +213,18 @@ export async function getProjectApprovalById(
   projectId: string,
   approvalId: string
 ): Promise<ProjectApproval | null> {
-  const [row] = await db
-    .select()
-    .from(projectApprovals)
-    .where(
-      and(
-        eq(projectApprovals.tenantId, tenantId),
-        eq(projectApprovals.projectId, projectId),
-        eq(projectApprovals.id, approvalId)
+  return withTenantDb(tenantId, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(projectApprovals)
+      .where(
+        and(
+          eq(projectApprovals.tenantId, tenantId),
+          eq(projectApprovals.projectId, projectId),
+          eq(projectApprovals.id, approvalId)
+        )
       )
-    )
-    .limit(1);
-  return row ? toProjectApproval(row) : null;
+      .limit(1);
+    return row ? toProjectApproval(row) : null;
+  });
 }

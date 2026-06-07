@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// ─── In-memory fake db ─────────────────────────────────────────────────────
+// --- In-memory fake db ------------------------------------------------------
 // Mirrors only the chained calls project-store uses:
 //   db.transaction(cb) -> resolves cb's return value
 //   tx.insert(table).values(v).returning()
@@ -33,7 +33,7 @@ interface StoredStage {
   updatedAt: Date;
 }
 
-const { store, mockDb } = vi.hoisted(() => {
+const { store, mockDb, withTenantDb } = vi.hoisted(() => {
   let counter = 0;
   const genId = (prefix: string) => `${prefix}-${++counter}`;
 
@@ -97,9 +97,6 @@ const { store, mockDb } = vi.hoisted(() => {
 
   const mockDb: any = {
     ...insertApi,
-    async transaction<T>(cb: (tx: unknown) => Promise<T>): Promise<T> {
-      return cb(mockDb);
-    },
     select() {
       return {
         from(_table: unknown) {
@@ -131,10 +128,17 @@ const { store, mockDb } = vi.hoisted(() => {
     },
   };
 
-  return { store, mockDb };
+  // Records the tenant id each repository function opens its tenant-scoped
+  // transaction with, then runs the callback against the in-memory mockDb (the
+  // real helper would set app.tenant_id transaction-locally first).
+  const withTenantDb = vi.fn(
+    async (_tenantId: string, cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)
+  );
+
+  return { store, mockDb, withTenantDb };
 });
 
-vi.mock("@/lib/db/index", () => ({ db: mockDb }));
+vi.mock("@/lib/db/index", () => ({ db: mockDb, withTenantDb }));
 vi.mock("drizzle-orm", async () => {
   const actual = await vi.importActual<typeof import("drizzle-orm")>(
     "drizzle-orm"
@@ -180,9 +184,15 @@ beforeEach(() => {
   store.projects.length = 0;
   store.stages.length = 0;
   store.projectInserts.length = 0;
+  withTenantDb.mockClear();
 });
 
 describe("createProject", () => {
+  it("opens a tenant-scoped transaction for the input tenant", async () => {
+    await createProject({ tenantId: TENANT, name: "P", mode: "quick_bom" });
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
   it("inserts one project row with tenantId, name, mode, customerName, pricingConfig", async () => {
     await createProject({
       tenantId: TENANT,
@@ -345,6 +355,14 @@ describe("getProjectById", () => {
       updatedAt: now,
     });
   }
+
+  it("opens a tenant-scoped transaction for the requested tenant", async () => {
+    seedProject();
+    seedStage("intake_package_review", 10);
+
+    await getProjectById(TENANT, "proj-1");
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
 
   it("filters by tenantId and projectId", async () => {
     seedProject();
