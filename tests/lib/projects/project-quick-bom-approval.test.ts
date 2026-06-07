@@ -343,6 +343,119 @@ describe("reviewProjectQuickBomArtifact - configuration_expansion draft guard", 
   });
 });
 
+describe("reviewProjectQuickBomArtifact - allowedArtifactTypes override", () => {
+  it("approves a priced_boq artifact when the allowlist is narrowed to priced_boq", async () => {
+    mockGetArtifactById.mockResolvedValue(makeArtifact("priced_boq", "needs_review"));
+
+    const result = await review({ allowedArtifactTypes: ["priced_boq"] });
+
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a rejection for a priced_boq artifact when the allowlist is narrowed to priced_boq", async () => {
+    mockGetArtifactById.mockResolvedValue(makeArtifact("priced_boq", "needs_review"));
+    mockCreateApproval.mockResolvedValue(makeCreated({ decision: "rejected" }));
+
+    const result = await review({
+      decision: "rejected",
+      allowedArtifactTypes: ["priced_boq"],
+    });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.approval.decision).toBe("rejected");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+    expect(mockCreateApproval).toHaveBeenCalledWith(
+      expect.objectContaining({ decision: "rejected", artifactId: ARTIFACT })
+    );
+  });
+
+  it("returns artifact_not_quick_bom (no approval) for other gated types when the allowlist is narrowed to priced_boq", async () => {
+    const otherGated: ProjectArtifactType[] = [
+      "sku_resolution",
+      "configuration_expansion",
+      "export_package",
+    ];
+    for (const type of otherGated) {
+      mockCreateApproval.mockClear();
+      // needs_review is itself reviewable, proving the narrowed type gate fires first.
+      mockGetArtifactById.mockResolvedValue(makeArtifact(type, "needs_review"));
+
+      const result = await review({ allowedArtifactTypes: ["priced_boq"] });
+
+      expect(result.status).toBe("artifact_not_quick_bom");
+      if (result.status !== "artifact_not_quick_bom") throw new Error("unreachable");
+      expect(result.artifact.type).toBe(type);
+      expect("payload" in result.artifact).toBe(false);
+      expect(mockCreateApproval).not.toHaveBeenCalled();
+    }
+  });
+
+  it("still blocks a configuration_expansion DRAFT as artifact_not_reviewable even when configuration_expansion is allowed", async () => {
+    mockGetArtifactById.mockResolvedValue(
+      makeArtifact("configuration_expansion", "needs_review", {
+        payload: {
+          payloadKind: "configuration_expansion_draft",
+          secret: PAYLOAD_SENTINEL,
+        },
+      })
+    );
+
+    const result = await review({
+      allowedArtifactTypes: ["configuration_expansion"],
+    });
+
+    expect(result.status).toBe("artifact_not_reviewable");
+    if (result.status !== "artifact_not_reviewable") throw new Error("unreachable");
+    expect(result.artifact.type).toBe("configuration_expansion");
+    expect("payload" in result.artifact).toBe(false);
+    expect(JSON.stringify(result)).not.toContain(PAYLOAD_SENTINEL);
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("cannot widen approval to a non-Quick-BoM type (technical_proposal) even when it is explicitly allowed", async () => {
+    // technical_proposal as needs_review is itself reviewable, so only the
+    // narrowing intersection (not the reviewability gate) keeps it unapprovable.
+    mockGetArtifactById.mockResolvedValue(
+      makeArtifact("technical_proposal", "needs_review")
+    );
+
+    const result = await review({
+      allowedArtifactTypes: ["technical_proposal"],
+    });
+
+    expect(result.status).toBe("artifact_not_quick_bom");
+    if (result.status !== "artifact_not_quick_bom") throw new Error("unreachable");
+    expect(result.artifact.type).toBe("technical_proposal");
+    expect("payload" in result.artifact).toBe(false);
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("drops non-canonical types from a mixed allowlist but still approves the canonical priced_boq", async () => {
+    // A widening attempt: technical_proposal is dropped from the intersection, so
+    // it stays unapprovable, while the canonical priced_boq still narrows through.
+    mockGetArtifactById.mockResolvedValue(
+      makeArtifact("technical_proposal", "needs_review")
+    );
+    let result = await review({
+      allowedArtifactTypes: ["priced_boq", "technical_proposal"],
+    });
+    expect(result.status).toBe("artifact_not_quick_bom");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+
+    mockCreateApproval.mockClear().mockResolvedValue(makeCreated());
+    mockGetArtifactById.mockResolvedValue(
+      makeArtifact("priced_boq", "needs_review")
+    );
+    result = await review({
+      allowedArtifactTypes: ["priced_boq", "technical_proposal"],
+    });
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("reviewProjectQuickBomArtifact - approval", () => {
   it("calls createProjectApproval with the exact artifactId, tenant, project, decision, decidedBy, decidedAt, and note", async () => {
     await review({ decision: "rejected", decidedAt: DECIDED_AT, note: "fix pricing" });

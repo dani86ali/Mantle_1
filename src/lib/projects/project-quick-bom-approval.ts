@@ -55,6 +55,19 @@ export interface ReviewProjectQuickBomArtifactInput {
   /** Defaults to now downstream (via the materializer) when omitted. */
   decidedAt?: Date;
   note?: string;
+  /**
+   * Optional narrower allowlist of approvable artifact types for this exact
+   * review. When omitted, the default Quick BoM approval-gated set is used. A
+   * caller (e.g. the priced_boq-specific review route) supplies a single-type
+   * allowlist so its route can never approve a different approval-gated type; an
+   * artifact whose type is outside the effective allowlist returns
+   * artifact_not_quick_bom. The effective allowlist is the INTERSECTION of this
+   * list with the canonical Quick BoM approval-gated set, so this can only narrow
+   * the type gate, never widen it: a type outside the canonical set (e.g.
+   * technical_proposal) is dropped even if supplied here. It also never makes a
+   * configuration_expansion draft approvable.
+   */
+  allowedArtifactTypes?: readonly ProjectArtifactType[];
 }
 
 /** Discriminated result of {@link reviewProjectQuickBomArtifact}. */
@@ -141,7 +154,8 @@ function toArtifactSummary(artifact: ProjectArtifact): ProjectArtifactSummary {
  * Review (approve/reject) one EXACT Quick BoM artifact version, tenant-scoped on
  * every store/service call. Validates nonblank artifactId then decidedBy before
  * any store call. Gates in order: project existence, quick_bom mode, exact
- * artifact existence, Quick BoM approval-gated type, reviewable status. On a
+ * artifact existence, approval-gated type (the default Quick BoM set, or
+ * input.allowedArtifactTypes when the caller narrows it), reviewable status. On a
  * passing gate it persists exactly one approval (the only mutation) and returns
  * the refreshed workspace result. Unexpected errors (including a race where the
  * artifact became non-reviewable between load and write) bubble to the caller;
@@ -158,6 +172,16 @@ export async function reviewProjectQuickBomArtifact(
   }
 
   const { tenantId, projectId, artifactId, decision, decidedBy } = input;
+  // The effective allowlist is the INTERSECTION of any caller-supplied list with
+  // the canonical Quick BoM approval-gated set, so a caller can only narrow what
+  // is approvable, never widen it. A supplied type outside the canonical set
+  // (e.g. technical_proposal) is dropped and yields artifact_not_quick_bom.
+  const allowedArtifactTypes =
+    input.allowedArtifactTypes === undefined
+      ? QUICK_BOM_APPROVAL_GATED_ARTIFACT_TYPES
+      : input.allowedArtifactTypes.filter((type) =>
+          QUICK_BOM_APPROVAL_GATED_ARTIFACT_TYPES.includes(type)
+        );
 
   const project = await getProjectById(tenantId, projectId);
   if (project === null) return { status: "not_found" };
@@ -167,7 +191,7 @@ export async function reviewProjectQuickBomArtifact(
 
   const artifact = await getProjectArtifactById(tenantId, projectId, artifactId);
   if (artifact === null) return { status: "artifact_not_found" };
-  if (!QUICK_BOM_APPROVAL_GATED_ARTIFACT_TYPES.includes(artifact.type)) {
+  if (!allowedArtifactTypes.includes(artifact.type)) {
     return {
       status: "artifact_not_quick_bom",
       artifact: toArtifactSummary(artifact),
