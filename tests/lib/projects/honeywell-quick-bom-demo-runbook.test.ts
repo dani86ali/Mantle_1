@@ -4,16 +4,18 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Honeywell Quick BoM demo operator runbook
- * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), added by Prompt 72.
+ * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 82.
  *
- * It asserts the runbook defines the generated Honeywell Mantle workbook correctly
- * (what it is, and the historical/CCW/customer-input files it is NOT), records the
- * post-Prompt-71 status (e2e-proven, no stable manual command until Prompt 73),
- * preserves the Batch 4 / optics / replacement / pricing / runtime-AI boundaries,
- * carries the manual checklist with the key Prompt 71 counts/totals, and does not
- * claim app-level UI/manual testing is ready. The doc is read from disk only; no
- * runtime runner, composer, pricing, export, or other source module is imported or
- * run (this stays a pure documentation regression test).
+ * It asserts the runbook: records the Prompt 82 refresh; still defines the generated
+ * Honeywell Mantle workbook correctly (what it is, and the historical/CCW/customer-input
+ * files it is NOT); keeps the Prompt 73 local operator command and its manual workbook
+ * checklist with the key counts/totals; preserves the Batch 4 / optics / replacement /
+ * pricing / runtime-AI boundaries; documents the Prompt 81 app-level E2E proof (the real
+ * GET route, POST route/service, UI page, seeded fixture, on-disk workbook, export
+ * approval to customer-deliverable ready, and no payload leak); and no longer says
+ * app-level testing is "not ready yet" or "comes later" as a blanket statement. The doc
+ * is read from disk only; no runtime module is imported (a pure documentation regression
+ * test).
  */
 
 const DOC_PATH = join(
@@ -35,6 +37,10 @@ describe("honeywell quick bom demo runbook - exists and is hygienic", () => {
   it("exists and is non-empty", () => {
     expect(existsSync(DOC_PATH)).toBe(true);
     expect(doc.length).toBeGreaterThan(0);
+  });
+
+  it("records the Prompt 82 refresh", () => {
+    expect(docTextLower).toContain("refreshed by prompt 82");
   });
 
   it("keeps the runbook ASCII-only", () => {
@@ -75,14 +81,14 @@ describe("honeywell quick bom demo runbook - defines the Mantle workbook", () =>
   });
 });
 
-describe("honeywell quick bom demo runbook - status after Prompt 73", () => {
+describe("honeywell quick bom demo runbook - Prompt 73 local command", () => {
   it("records the automated e2e proof of the path and the temp workbook write/reopen", () => {
     expect(docText).toContain("honeywell-quick-bom-demo-e2e.test.ts");
     expect(docTextLower).toContain("writes the mantle model to a temporary");
     expect(docTextLower).toContain("re-opens that");
   });
 
-  it("states the Prompt 73 operator command now exists, with its path", () => {
+  it("states the Prompt 73 operator command exists, with its path", () => {
     expect(docTextLower).toContain("operator command now exists");
     expect(docText).toContain("scripts/write-honeywell-quick-bom-demo.ts");
   });
@@ -143,18 +149,47 @@ describe("honeywell quick bom demo runbook - manual checklist", () => {
   });
 });
 
-describe("honeywell quick bom demo runbook - app-level testing deferred", () => {
-  it("states full app-level manual testing comes later, not now", () => {
-    expect(docTextLower).toContain("full app-level manual testing");
-    expect(docTextLower).toContain("not ready yet");
-    expect(docTextLower).toContain("comes later");
+describe("honeywell quick bom demo runbook - app-level demo proof (Prompt 81)", () => {
+  it("names the app-level E2E and the real wired product pieces", () => {
+    expect(docText).toContain("honeywell-quick-bom-app-e2e.test.tsx");
+    expect(docText).toContain("src/app/api/projects/[id]/quick-bom/route.ts");
+    expect(docText).toContain(
+      "src/app/api/projects/[id]/quick-bom/approvals/route.ts"
+    );
+    expect(docText).toContain("project-quick-bom-approval.ts");
+    expect(docText).toContain("src/app/projects/[id]/quick-bom/page.tsx");
+    expect(docText).toContain("honeywell-demo-project-fixture.ts");
   });
 
-  it("does not claim app-level manual testing is ready", () => {
+  it("states the workbook is generated on disk and the export is approved to ready", () => {
+    expect(docTextLower).toContain("generated on disk");
+    expect(docTextLower).toContain("approves the export package");
+    expect(docTextLower).toContain("customer-deliverable ready");
+  });
+
+  it("states payload-only artifact values never leak into the UI", () => {
+    expect(docTextLower).toContain("payload-only");
+    expect(docTextLower).toContain("never leak");
+  });
+});
+
+describe("honeywell quick bom demo runbook - app-level status is accurate", () => {
+  it("says the automated app-level demo path is proven for the seeded fixture", () => {
+    expect(docTextLower).toContain("proven for the seeded honeywell demo project");
+  });
+
+  it("says manual browser QA and production provisioning remain follow-up", () => {
+    expect(docTextLower).toContain("manual browser qa");
+    expect(docTextLower).toContain("follow-up work");
+  });
+
+  it("no longer says app-level testing is 'not ready yet' or 'comes later'", () => {
+    expect(docTextLower.includes("not ready yet")).toBe(false);
+    expect(docTextLower.includes("comes later")).toBe(false);
     expect(docTextLower.includes("app-level manual testing is ready")).toBe(false);
   });
 
-  it("says app wiring must not shortcut through legacy E2", () => {
+  it("keeps the boundary that app wiring must not shortcut through legacy E2", () => {
     expect(docTextLower).toContain("must not shortcut through the legacy");
   });
 });

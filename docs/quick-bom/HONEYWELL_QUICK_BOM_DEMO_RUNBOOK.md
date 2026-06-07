@@ -1,11 +1,12 @@
 # Honeywell Quick BoM Demo Runbook
 
 Status: operator runbook for the Honeywell MVP Quick BoM demo (demo scope only).
+Refreshed by Prompt 82.
 
 Operator-facing runbook for the Honeywell Quick BoM demo. It defines what the
-generated Honeywell Mantle workbook is, the current status after Prompt 71, the
-authority boundaries, and the manual checklist for the Prompt 73 operator
-command. It is a demo runbook, not an architecture source of truth;
+generated Honeywell Mantle workbook is, the local operator command (Prompt 73), the
+authority boundaries, the manual workbook checklist, and the app-level demo proof
+(Prompt 81). It is a demo runbook, not an architecture source of truth;
 `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md` remains the source
 of truth and `docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md` is the execution tracker.
 
@@ -41,7 +42,7 @@ It is explicitly **not**:
   Mantle template and writes a fresh output file; it never edits the customer's
   workbook in place.
 
-## 2. Current status (after Prompt 73)
+## 2. Local operator command (Prompt 73)
 
 - The full path is **proven by an automated end-to-end test**:
   `tests/lib/projects/honeywell-quick-bom-demo-e2e.test.ts` runs the whole path on
@@ -102,10 +103,36 @@ and totals; cross-check those against the opened workbook.
 8. **Confirm the workbook is customer-facing Mantle format** and does not require
    manual reformatting for the demo.
 
-## 5. App-level testing comes later
+## 5. App-level demo proof (Prompt 81)
 
-Full app-level manual testing (Project create -> review -> approval -> export
-through Project/API/UI/DB) is **not ready yet**; it **comes later**, after the
-Project/API/UI wiring (P74+). This runbook covers only the in-memory demo path and
-the Prompt 73 local command. App wiring must build the canonical Project Quick BoM
-flow and must not shortcut through the legacy estimate/pipeline (E2) UI.
+The app-level Quick BoM demo path is proven for the seeded Honeywell demo Project by
+`tests/app/honeywell-quick-bom-app-e2e.test.tsx`. It wires the real product pieces
+together (only framework/store boundaries are mocked):
+
+- It seeds the real Honeywell demo Project fixture
+  (`createHoneywellQuickBomDemoProjectFixture`,
+  `src/lib/projects/honeywell-demo-project-fixture.ts`).
+- It renders the real Prompt 80 UI page (`src/app/projects/[id]/quick-bom/page.tsx`)
+  over the real GET workspace route
+  (`src/app/api/projects/[id]/quick-bom/route.ts`).
+- It approves the export package through the real POST approval route
+  (`src/app/api/projects/[id]/quick-bom/approvals/route.ts`) and service
+  (`src/lib/projects/project-quick-bom-approval.ts`).
+- The Mantle export workbook is **generated on disk** during the test.
+- After approving the export package, the export artifact moves from `needs_review`
+  to `approved` and the readiness state changes to **customer-deliverable ready**.
+- It verifies **payload-only** artifact values (a customer SKU, the demo source
+  filename, an optic SKU) **never leak** into the UI/DOM.
+
+This proves the seeded Honeywell demo Project path through the real GET route, the
+real POST route/service, and the real UI page work together. It runs against an
+in-memory Project store under the test harness; it is not a production database run.
+
+## 6. App-level manual testing status
+
+The automated app-level demo path above is proven for the seeded Honeywell demo
+Project (Prompt 81). Manual browser QA of that flow, and production project
+upload/provisioning (arbitrary project creation, a general BoQ upload endpoint, and a
+provisioned database with migrations), are follow-up work and are not part of this
+demo slice. Broad app wiring must build the canonical Project Quick BoM flow and must
+not shortcut through the legacy estimate/pipeline (E2) UI.

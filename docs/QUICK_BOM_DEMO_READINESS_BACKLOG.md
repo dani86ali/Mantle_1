@@ -2,14 +2,24 @@
 
 Execution tracker only. `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md`
 is the architecture source of truth; this backlog never overrides it and is not a
-planning document. Last refreshed by Prompt 72 to reflect the verified P66-P71
-Honeywell Quick BoM path: the active Batch 1+2+3 selector/composer, the pure
-Quick BoM runner, the demo price/category fixture, deterministic demo pricing,
-the in-memory Mantle model, and the Prompt 71 end-to-end validation that writes
-and re-opens a temporary Mantle workbook. The Batch 4 record stays a decision
-record only. The proven path is in Section 5B; the remaining boundary (no
-operator-facing demo command until P73, no app-level Project/API/UI/DB wiring) is
-in Sections 6 and 9.
+planning document. Last refreshed by Prompt 82 to reflect the committed repo state
+after Prompts 73-81. The proven in-memory P66-P71 Honeywell Quick BoM spine (active
+Batch 1+2+3 selector/composer, the pure Quick BoM runner, the demo price/category
+fixture, deterministic demo pricing, the in-memory Mantle model, and the Prompt 71
+end-to-end validation that writes and re-opens a temporary Mantle workbook) stays
+intact in Section 5B. On top of it: Prompt 73 added the operator-facing demo command
+(`scripts/write-honeywell-quick-bom-demo.ts`); Prompts 74-76 added CCW parity
+evidence and proved exact 60-row CCW sequence parity after switch child ordering
+(Section 5C); and Prompts 77-81 added a narrow app-level seeded-demo surface - a
+read-only workspace model and GET route, a persisted Honeywell demo Project fixture,
+an approval service and POST route, a minimal Project Quick BoM UI, and an app-level
+end-to-end proof (Section 5D). The Batch 4 record stays a decision record only.
+
+This backlog remains an execution tracker, not the architecture source of truth. The
+app-level proof is scoped to the seeded Honeywell demo Project path under the test
+harness/in-memory store; it is NOT a claim that production upload, arbitrary project
+creation, real DB provisioning/migrations, broad customer formats, or manual browser
+QA are complete (Sections 5D, 6, 7).
 
 ## 2. Status
 
@@ -68,9 +78,11 @@ Minimum credible Quick BoM demo path:
 
 All items in this section were confirmed by reading the named files. The spine
 is implemented as pure helpers plus narrow DB-backed services under
-`src/lib/projects/` and `src/lib/db/`. A pure in-memory Quick BoM runner now
-drives this spine end to end (Section 5B), but no app-level product surface
-(Project/API/UI/DB) is wired yet (see Section 6).
+`src/lib/projects/` and `src/lib/db/`. A pure in-memory Quick BoM runner drives
+this spine end to end (Section 5B). A narrow app-level surface now wraps the spine
+for the seeded Honeywell demo Project only (Section 5D); broad app-level product
+wiring (general upload, arbitrary project creation, real DB provisioning) is still
+out of scope (see Section 6).
 
 Project/stage/artifact foundation (confirmed):
 
@@ -160,10 +172,11 @@ approved Honeywell Batch 1/2/3 rule packs, the rule-pack composer, and the Batch
 decision record.
 
 This is a real, well-tested spine. A pure in-memory Quick BoM runner composes it
-end to end and is proven by the Prompt 71 end-to-end test (Section 5B). It is
-still NOT an app-level product: no coordinator, API, or UI invokes these services
-(Section 6, B1), and the legacy estimate/pipeline UI is not the canonical Project
-Quick BoM flow.
+end to end and is proven by the Prompt 71 end-to-end test (Section 5B). A narrow
+app-level surface (GET workspace route, approval POST route/service, and a minimal
+Project Quick BoM UI) now drives the spine for the seeded Honeywell demo Project
+(Section 5D); it does not replace the legacy estimate/pipeline UI, which remains the
+E2 path and is not the canonical Project Quick BoM flow.
 
 ## 5A. Honeywell Configuration Expansion Authority (Current)
 
@@ -262,90 +275,179 @@ Proven counts and totals on the committed fixture (the spec the e2e test pins):
   `productTotalSar` 1669647.61, `serviceTotalSar` 304972.06,
   `subscriptionTotalSar` 211089.09, VAT 327856.31, `totalIncVatSar` 2513565.07.
 
-Remaining boundary (still NOT done):
+Status after Prompts 73-81 (the in-memory spine above is unchanged):
 
-- No operator-facing demo workbook command/script exists yet; the path is proven
-  only by the automated e2e test. That stable manual command is Prompt 73.
-- No app-level Project/API/UI/DB wiring exists. The runner is in-memory only and
-  persists/approves nothing.
-- The current estimate UI is legacy pipeline UI, not the canonical Project Quick
-  BoM flow. App wiring must not shortcut through legacy E2.
+- The operator-facing demo workbook command now exists (Prompt 73,
+  `scripts/write-honeywell-quick-bom-demo.ts`); see Section 5C.
+- A narrow app-level surface now drives the spine for the seeded Honeywell demo
+  Project (Prompts 77-81); see Section 5D. It is scoped to the seeded demo path
+  under the test harness/in-memory store, not production app wiring.
+- The legacy estimate/pipeline UI remains the E2 path, not the canonical Project
+  Quick BoM flow. Broad app wiring must build the canonical Project flow and must
+  not shortcut through legacy E2.
 - No Batch 4 runtime expansion pack; optics stay standalone customer BoQ lines;
   replacements remain deferred with no silent SKU substitution.
 - The demo pricing fixture is Honeywell MVP demo-only authority, not production
   pricing authority.
+
+## 5C. Honeywell CCW Parity And Operator Command (P73-P76)
+
+Evidence and workbook-readiness work completed and committed after the in-memory
+spine. It adds no runtime authority, no pricing authority, no configuration
+authority, and no app/API/UI/DB behavior.
+
+- Operator command exists (P73): `scripts/write-honeywell-quick-bom-demo.ts` runs
+  the same verified in-memory path the Prompt 71 e2e proves and writes a fresh
+  Mantle `.xlsx` on demand (default under the OS temp dir; `--output <path>` to
+  choose). Composition only - no new pricing, configuration, AI, catalog, or
+  SKU-substitution behavior. P73 itself added no app/API/UI/DB behavior; the
+  seeded-demo app surface was added later in P77-P81. See
+  `docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md`.
+- CCW parity evidence exists (P74):
+  `docs/quick-bom/HONEYWELL_CCW_PARITY_EVIDENCE.md` plus
+  `tests/lib/projects/honeywell-ccw-parity-evidence.test.ts` compare the generated
+  Honeywell Mantle workbook against the configured/priced CCW reference
+  `Estimate_NB167337237YA.xlsx`. The CCW estimate is regression/evidence for
+  Honeywell MVP parity only, not permanent Cisco authority.
+- CCW-like switch child ordering exists (P75):
+  `getHoneywellMvpConfigExpansionRulePack`
+  (`src/lib/projects/honeywell-config-expansion-rule-pack.ts`) reorders existing
+  child lines under the two approved switch parents (`C9300X-48HX-A`,
+  `C9300L-24P-4X-A`) into the CCW print sequence, adding/removing/repricing nothing.
+- Exact 60-row CCW sequence parity is proven (P76): after the Prompt 75 ordering,
+  the parity evidence and test confirm the generated row sequence matches the CCW
+  item-row sequence across all 60 item rows, with no documented exceptions. The set,
+  quantities, and pricing were already at parity; Prompt 75 closed the row order.
+
+## 5D. App-Level Seeded Honeywell Demo Surface (P77-P81)
+
+A narrow app-level surface now drives the Quick BoM spine for the seeded Honeywell
+demo Project. It is a real GET/POST route pair, a real review/approval service, a
+real UI page, a persisted demo Project fixture, and an app-level end-to-end proof.
+
+- Read-only workspace model + GET route (P77): `loadProjectQuickBomWorkspace`
+  (`src/lib/projects/project-quick-bom-workspace.ts`) builds a serializable,
+  payload-free Quick BoM workspace (project summary, stages, latest spine artifacts,
+  approvals, readiness report); `GET /api/projects/[id]/quick-bom`
+  (`src/app/api/projects/[id]/quick-bom/route.ts`) returns it, tenant-scoped, with
+  not_found -> 404 / wrong_mode -> 409 / ok -> 200. Read-only: no mutation, pricing,
+  export, runner, catalog, or AI.
+- Persisted Honeywell demo Project fixture (P78):
+  `createHoneywellQuickBomDemoProjectFixture`
+  (`src/lib/projects/honeywell-demo-project-fixture.ts`) seeds the one canonical
+  Honeywell quick_bom demo Project end to end through the existing Project stores
+  (normalized_boq -> draft/reviewed sku_resolution -> configuration_expansion ->
+  priced_boq -> Mantle export_package), approving each gated step and leaving the
+  export package needs_review. DEMO-ONLY, not a production seeder.
+- Approval service + POST route (P79): `reviewProjectQuickBomArtifact`
+  (`src/lib/projects/project-quick-bom-approval.ts`) records an approve/reject
+  decision against an EXACT artifact version for the four approval-gated Quick BoM
+  artifact types only (sku_resolution, configuration_expansion, priced_boq,
+  export_package) and returns the refreshed workspace;
+  `POST /api/projects/[id]/quick-bom/approvals`
+  (`src/app/api/projects/[id]/quick-bom/approvals/route.ts`) exposes it. Approval is
+  per exact artifact id, never by type/latest/stage; the decider is the session user.
+- Minimal Project Quick BoM UI (P80):
+  `src/app/projects/[id]/quick-bom/page.tsx` GETs the read-only workspace and renders
+  the project summary, readiness, stages, latest spine artifacts, and approvals; its
+  only mutation is an approve/reject POST for the four gated types. It never renders
+  or depends on artifact payloads and imports the read-model shapes with `import type`.
+- App-level Honeywell E2E (P81):
+  `tests/app/honeywell-quick-bom-app-e2e.test.tsx` seeds the real fixture, renders the
+  real UI over the real GET route, approves the export package over the real POST
+  route/service, and generates the export workbook on disk. It asserts the export
+  package moves needs_review -> approved, readiness becomes customer-deliverable
+  ready, and payload-only artifact values never reach the DOM. Only framework/store
+  boundaries are mocked (useParams, requireAuth, the three Project DB stores via one
+  in-memory store).
+
+Scope of this app-level proof: it covers the seeded Honeywell demo Project path under
+the test harness/in-memory store. It is NOT a claim that production upload, arbitrary
+project creation, real DB provisioning/migrations, broad customer formats, or manual
+browser QA are complete. Those remain open (Section 6, Section 7).
 
 ## 6. Demo Blockers
 
 Priority key: P0 blocks a credible demo. P1 means the demo can proceed with a
 visible manual workaround. P2 is polish/follow-up. Blockers resolved since Prompt
 65 are kept for the audit trail and marked Done with the prompt that closed them;
-see Section 5B for the proven path.
+see Sections 5B-5D for the proven path.
 
 | ID | Priority | Area | Issue | Evidence from repo | Demo impact | Status / next prompt |
 |----|----------|------|-------|--------------------|-------------|----------------------|
-| B1 | P0 | Orchestration | End-to-end Quick BoM wiring at the runner level. | The pure in-memory runner `src/lib/projects/quick-bom-runner.ts` composes the spine end to end and is proven by `honeywell-quick-bom-demo-e2e.test.ts` (Section 5B). No `src/app/api/projects/**` and no projects UI exist yet (glob empty); nothing app-level invokes the runner. | The demo path runs in-memory via the runner/e2e test; an operator still has no app surface and no standalone command (B11). | Done at runner level (P67); app-level wiring later (B12) |
+| B1 | P0 | Orchestration | End-to-end Quick BoM wiring at the runner level. | The pure in-memory runner `src/lib/projects/quick-bom-runner.ts` composes the spine end to end and is proven by `honeywell-quick-bom-demo-e2e.test.ts` (Section 5B). A narrow app-level surface (GET/POST routes, approval service, UI page) now drives the spine for the seeded Honeywell demo Project (Section 5D, P77-P81). | The demo path runs in-memory via the runner and, for the seeded demo Project, through the app-level routes/UI. | Done at runner level (P67); seeded-demo app surface done (P77-P81); broad app wiring still scoped out (B12) |
 | B2 | P0 | Expansion pack selection | Active runtime selector/composer for the Batch 1+2+3 packs. | `getHoneywellMvpConfigExpansionRulePack` (`src/lib/projects/honeywell-config-expansion-rule-pack.ts`) reads the committed Batch 1+2+3 approved pack JSON and composes them via `composeApprovedConfigExpansionRulePacks` into the active pack that `buildConfigurationExpansionDraft` accepts. | Expansion now runs from disk-loaded approved packs; pricing and export are reachable. Composition only - no new approval, no pricing. | Done (P66) |
-| B3 | P0 | Demo fixture | A reproducible Honeywell demo run through the spine. | The committed fixture `data/quick-bom/honeywell-demo-pricing-fixture.json` plus the runner carry one Honeywell-shaped run `normalize-input -> expand -> review -> price -> Mantle model`, proven by the P71 e2e test. No persisted DB-backed project/run yet (still in-memory; see B10). | The in-memory demo state is reproducible and proven; a persisted DB demo run is not built. | In-memory demo proven (P68/P71); persisted DB run still open (B10) |
-| B4 | P1 | Review surfaces | No product-facing review UI/API for SKU resolution, configuration expansion, or pricing approvals. | Approval logic exists as a pure helper (`approvals.ts`) and a DB store (`project-approval-store.ts`) that transitions artifact + stage status, but has no caller outside tests; no API/UI. The runner takes EXPLICIT review decisions as inputs, but exposes no reviewer surface. | Approvals are demoable only by direct service/script/runner calls, not by a reviewer clicking approve. | later/post-MVP |
-| B5 | P1 | Orchestration | Driving the spine no longer needs hand-built artifacts. | The runner advances input -> expand -> review -> price -> Mantle model deterministically; `quick-bom-readiness.ts` remains a read-only report alongside it. | Operator no longer hand-assembles each step in-memory; an app-level driver/readiness surface is still future. | Done at runner level (P67) |
+| B3 | P0 | Demo fixture | A reproducible Honeywell demo run through the spine. | The committed fixture `data/quick-bom/honeywell-demo-pricing-fixture.json` plus the runner carry one Honeywell-shaped run `normalize-input -> expand -> review -> price -> Mantle model`, proven by the P71 e2e test. A persisted Honeywell demo Project fixture now seeds the same run through the Project stores (`honeywell-demo-project-fixture.ts`, P78), exercised against an in-memory store in the P81 app E2E. Real DB provisioning/migrations remain open (B10). | The in-memory demo and the seeded demo Project are reproducible and proven; a run against a provisioned real DB is still verification work. | In-memory demo proven (P68/P71); seeded demo Project present (P78); real DB provisioning still open (B10) |
+| B4 | P1 | Review surfaces | Product-facing review/approval surface for the approval-gated Quick BoM artifacts. | A review/approval service (`project-quick-bom-approval.ts`, P79) and POST route (`approvals/route.ts`) record an approve/reject decision against an EXACT artifact version for the four gated types, and the minimal UI page (`page.tsx`, P80) offers Approve/Reject; proven by the P81 app E2E. The reviewer surface is minimal (whole-artifact approve/reject); per-line review is still future. | A reviewer can approve/reject the gated artifacts for the seeded demo Project; deeper per-line review surfaces remain future. | Minimally present (P79/P80); richer per-line review later/post-MVP |
+| B5 | P1 | Orchestration | Driving the spine no longer needs hand-built artifacts. | The runner advances input -> expand -> review -> price -> Mantle model deterministically; `quick-bom-readiness.ts` remains a read-only report alongside it. The P77-P81 seeded-demo app surface now renders that readiness state for the Honeywell demo Project. | Operator no longer hand-assembles each step in-memory, and the seeded demo Project has a minimal app-level driver/readiness surface; broad product orchestration is still future. | Done at runner level (P67); seeded-demo readiness surface done (P77-P81) |
 | B6 | P1 | Staleness | Upstream changes do not automatically mark downstream artifacts stale at runtime. | `staleness.ts planStaleArtifactUpdates` is pure planning with no caller in `src` (grep); `project-approval-store.ts` and `project-artifact-store.ts` explicitly do not propagate staleness. | Regenerating an upstream artifact mid-demo leaves stale downstream artifacts looking valid; the canonical "auto-stale" rule is not enforced. | later/post-MVP |
 | B7 | P1 | Demo data | Committed SAR price source and Mantle category map for the Honeywell scope. | The committed demo fixture supplies a SAR `unitListPriceSarBySku` map and a SKU->Mantle-category map for exactly the 50 demo SKUs (loader `honeywell-demo-pricing-fixture.ts`); the P71 e2e test prices all 60 lines with correct category totals and no warnings. Fixture pricing is temporary demo-fixture evidence only, never production authority (Section 3). | Pricing and category totals are correct for the Honeywell demo scope. | Done (P68) |
 | B8 | P1 | Mantle export tests | Real-input Mantle export proof for the Honeywell shape. | `honeywell-quick-bom-demo-e2e.test.ts` writes the Honeywell Mantle model to a temporary workbook and re-opens it to assert rows, order, category footers, and totals against the committed template. Marafiq/EnergyTech real-input export tests are still not present. | Honeywell "customer-ready without manual reformatting" is now proven; other customer formats remain unproven. | Done for Honeywell (P71); other formats later |
 | B9 | P2 | Catalog coverage (needs verification) | SKU resolution resolves only against a committed local STC mock catalog; whether the Honeywell-scope SKUs are present is unverified. | `catalog-lookup.ts` reads `getCatalogMock()` (`LOCAL_CATALOG_SOURCE = local_stc_historical_mock`); exact + normalized only, no fuzzy/AI. The demo runner sidesteps this by taking human-accepted SKU decisions as inputs (acceptedSku == originalSku), so catalog coverage is still unverified. | If Honeywell SKUs are absent from the mock, a real resolution step (not the demo's inline accept) would leave lines unresolved. Needs verification, then a fixture decision. | open / needs verification |
 | B10 | P2 | DB provisioning (needs verification) | Project-table provisioning for a demo DB is unproven; no committed migration directory. | `schema.ts` line ~301 `export * from "./project-schema"` with a "Not yet wired to runtime" note; `drizzle.config.ts` present; no `drizzle/` migration dir (glob empty). The runner is in-memory and sidesteps DB persistence entirely. | A demo against real DB persistence may need `drizzle-kit push` or equivalent first; needs verification. | open / needs verification |
-| B11 | P0 | Operator command | No operator-facing command/script writes the Honeywell Mantle demo workbook on demand. | The path is proven only by the automated e2e test; no committed CLI/script invokes `runHoneywellQuickBomDemoMantleExportModel` + `writeMantlePriceEstimateWorkbook` to produce a file an operator can open. | An operator cannot regenerate the demo workbook live without running the test harness. | P73 |
-| B12 | P1 | App-level wiring | No canonical Project/API/UI/DB flow drives the Quick BoM path; the existing estimate UI is legacy pipeline UI. | No `src/app/api/projects/**` or projects UI (glob empty); the legacy estimate/pipeline UI is the E2 path, not the canonical Project Quick BoM flow. | The demo runs only in-memory/script; app wiring must build the canonical Project flow and not shortcut through legacy E2. | later (P74+) |
+| B11 | P0 | Operator command | Operator-facing command/script that writes the Honeywell Mantle demo workbook on demand. | `scripts/write-honeywell-quick-bom-demo.ts` (P73) invokes `runHoneywellQuickBomDemoMantleExportModel` + `writeMantlePriceEstimateWorkbook` to write a fresh `.xlsx` an operator can open (`--output <path>`; default under the OS temp dir), and prints an operator summary derived from the computed model. | An operator can regenerate the demo workbook live without the test harness. | Done (P73) |
+| B12 | P1 | App-level wiring | Broad canonical Project/API/UI/DB flow for the Quick BoM path (general upload, arbitrary project creation, real DB provisioning). | A narrow app-level surface now exists for the seeded Honeywell demo Project: `GET /api/projects/[id]/quick-bom`, `POST /api/projects/[id]/quick-bom/approvals`, and `src/app/projects/[id]/quick-bom/page.tsx` (P77-P81). Broad product wiring (general upload endpoint, arbitrary project creation, provisioned DB/migrations, broad customer formats) is not built; the legacy estimate/pipeline UI remains the E2 path. | The seeded demo runs through the app routes/UI; broad app wiring must build the canonical Project flow and not shortcut through legacy E2. | Seeded-demo surface done (P77-P81); broad wiring later |
 
 ## 7. Missing Functions / Product Gaps
 
 Grouped by workflow stage. Each item is a missing capability, not a vague
-improvement.
+improvement. The P77-P81 surface added a narrow seeded-demo path; the gaps below
+are what remains beyond it.
 
 Intake/upload:
-- No upload endpoint or service that records a BoQ `project_file` and triggers
-  `normalizeProjectBoqFile` (the normalization service exists but has no caller).
-- No project-creation + stage-materialization entry point a demo can call.
+- No general upload endpoint or product action that records an arbitrary customer
+  BoQ `project_file` and triggers `normalizeProjectBoqFile`. The Prompt 78 demo
+  fixture seeds the one Honeywell demo Project through the Project stores; it is
+  DEMO-ONLY and is not an arbitrary-project creation/upload path.
 
 Normalization:
-- No driver that turns an uploaded file into a `normalized_boq` artifact in one
-  product-facing action (the pieces exist; wiring does not).
+- No driver that turns an arbitrary uploaded file into a `normalized_boq` artifact
+  in one product-facing action. The demo fixture seeds `normalized_boq` for the
+  seeded Honeywell Project only.
 
 SKU review:
-- No fuzzy (step 3) or AI-assisted (step 4) suggestion path; only exact +
-  normalized are wired.
-- No API/UI to present `sku_resolution` decisions and capture accept/reject
-  (only the pure review helper + DB store exist).
+- No deterministic fuzzy (step 3) or AI-assisted (step 4) suggestion path; only
+  exact + normalized lookup is wired. Both remaining steps are suggestion-only and
+  human-approved by design - never a runtime AI decision.
+- The Prompt 79/80 surface approves/rejects the `sku_resolution` artifact as a
+  whole; there is no per-line UI to present individual suggestions and capture
+  per-line accept/reject.
 
 Configuration expansion review:
-- Active selector/composer now exists (P66, Section 5B); the active Batch 1+2+3
-  pack is assembled from disk and the runner takes explicit per-line review
-  decisions. Remaining gap: no API/UI to present the expansion draft and capture
-  per-line accept/reject (B12).
+- Active selector/composer exists (P66, Section 5B) and the
+  `configuration_expansion` artifact is approve/reject gated via the Prompt 79/80
+  surface. Remaining gap: no per-line UI to present the expansion draft and capture
+  per-line accept/reject.
 
 Pricing review:
-- Committed Honeywell demo SAR price map now exists (P68, B7); it is demo-fixture
-  authority only. Still missing: production catalog->SAR sourcing/conversion and
-  any API/UI to present priced lines and capture pricing approval (B12).
+- Committed Honeywell demo SAR price map exists (P68, B7), demo-fixture authority
+  only, and the `priced_boq` artifact is approve/reject gated via the Prompt 79/80
+  surface. Still missing: production catalog->SAR sourcing/conversion (no production
+  pricing authority beyond the demo fixture) and any per-line pricing review UI.
 
 Export approval:
-- Committed Honeywell SKU->Mantle-category map now exists (P68, B7) and the
-  in-memory Mantle model is composed by the runner (P70). Still missing: no
-  API/UI to trigger `createMantleExportArtifact` after pricing approval and
-  surface the generated workbook for download/approval (B12), and no
-  operator-facing command writes the workbook on demand (B11, P73).
+- The `export_package` artifact is approve/reject gated via the Prompt 79/80
+  surface, and the Prompt 73 operator command writes the workbook on demand. Still
+  missing: a product surface to download/serve the generated workbook and a
+  production (non-seeded) export path.
 
 Demo data/fixtures:
-- In-memory Honeywell demo run through the spine now exists and is proven (P68/
-  P71, Section 5B); a persisted DB-backed demo project/run is still missing (B3/
-  B10).
-- Honeywell SKU coverage in the local mock catalog unverified; the demo runner
-  sidesteps it with human-accepted SKU decisions (B9).
-- DB provisioning for project tables unverified (B10).
+- In-memory Honeywell demo run is proven (P68/P71, Section 5B) and a persisted
+  Honeywell demo Project fixture exists (P78), exercised against an in-memory store
+  in the P81 app E2E. Real DB provisioning/migrations for project tables remain
+  unbuilt/unverified (B10).
+- Honeywell SKU coverage in the local mock catalog is unverified; the demo path
+  uses human-accepted SKU decisions (B9).
+- Marafiq and EnergyTech app-level/real-input paths remain unproven (B8).
 
 Error handling/readiness/status display:
-- Staleness is planned but never applied at runtime (B6).
-- No surface renders the readiness report's next-step/blocking-step to a user.
+- The readiness report's next-step/blocking-step is now rendered by the Prompt 80
+  UI for the seeded demo Project; no broader status surface exists.
+- Staleness is planned but never applied at runtime; no automatic staleness
+  propagation caller exists (B6).
+
+Out of scope for this slice:
+- RFP remains out of current scope (Section 9).
 
 ## 8. Output Issues To Test
 
@@ -382,18 +484,17 @@ where it depends on caller-supplied data, the test must supply realistic inputs.
   downstream create and customer-deliverable readiness in the report, AND
   (after B6) that regenerating an upstream actually marks downstream stale.
 
-## 9. Recommended Next Prompts
+## 9. Completed Demo-Readiness Slice And Follow-Ups
 
-The Honeywell Quick BoM MVP path is the roughly 10-14 prompt slice that makes one
-real demo path runnable before any broad UI polish; that narrow Quick BoM path is
-the first target and RFP remains out of current scope. Each prompt stays narrow
-(one verifiable success criterion). Prompts P66-P71 are now complete and proven
-(Section 5B); P72 is this refresh; P73 is the operator demo command; later prompts
-wire the canonical Project app flow.
+The Honeywell Quick BoM MVP path was the roughly 10-14 prompt slice that makes one
+real demo path runnable before any broad UI polish; that narrow Quick BoM path was
+the first target and RFP remains out of current scope. Each prompt stayed narrow
+(one verifiable success criterion). With Prompt 82 this demo-readiness slice is
+closed: Prompts P65-P82 are complete, and the proof lives in Sections 5B-5D.
 
-Completed (P65-P71) - kept as the execution record; the proof is in Section 5B:
+Completed (P65-P82) - the closed demo-readiness slice, kept as the execution record:
 
-- P65 - Backlog refresh (the prior refresh; superseded by this P72 refresh).
+- P65 - Backlog refresh (prior; superseded by later refreshes).
 - P66 - Active Honeywell Batch 1+2+3 selector/composer - DONE
   (`honeywell-config-expansion-rule-pack.ts`).
 - P67 - Pure Quick BoM runner - DONE (`quick-bom-runner.ts`).
@@ -406,41 +507,48 @@ Completed (P65-P71) - kept as the execution record; the proof is in Section 5B:
 - P71 - Honeywell end-to-end validation (writes and re-opens a temporary Mantle
   workbook; structure/totals checks pass) - DONE
   (`honeywell-quick-bom-demo-e2e.test.ts`).
+- P72 - Backlog refresh + Honeywell Quick BoM demo operator runbook - DONE
+  (`docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md`).
+- P73 - Local Honeywell Mantle demo command/script - DONE
+  (`scripts/write-honeywell-quick-bom-demo.ts`); writes the workbook on demand.
+- P74 - Honeywell CCW parity evidence doc/test - DONE
+  (`docs/quick-bom/HONEYWELL_CCW_PARITY_EVIDENCE.md`,
+  `tests/lib/projects/honeywell-ccw-parity-evidence.test.ts`).
+- P75 - CCW-like switch child ordering - DONE (in
+  `honeywell-config-expansion-rule-pack.ts`; reorders only).
+- P76 - Exact 60-row CCW sequence parity proof - DONE (Section 5C).
+- P77 - Read-only Quick BoM workspace read model + GET route - DONE
+  (`project-quick-bom-workspace.ts`, `api/projects/[id]/quick-bom/route.ts`).
+- P78 - Persisted Honeywell demo Project fixture - DONE
+  (`honeywell-demo-project-fixture.ts`).
+- P79 - Quick BoM artifact approval service + POST route - DONE
+  (`project-quick-bom-approval.ts`,
+  `api/projects/[id]/quick-bom/approvals/route.ts`).
+- P80 - Minimal Project Quick BoM UI - DONE
+  (`src/app/projects/[id]/quick-bom/page.tsx`).
+- P81 - App-level Honeywell Quick BoM E2E - DONE
+  (`tests/app/honeywell-quick-bom-app-e2e.test.tsx`); generates the export workbook
+  on disk.
+- P82 - Demo-readiness closure: this refresh (this doc and the runbook, plus their
+  doc regression tests).
 
-Recommended next prompts, in order:
+Post-closure follow-ups (no prompt numbers assigned; ordering is a recommendation,
+not a commitment):
 
-- P72 - Backlog refresh + Honeywell Quick BoM demo operator runbook (this prompt)
-  - Goal: refresh this backlog so it reflects the verified P66-P71 path and add an
-    operator-facing runbook/checklist at
-    `docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md` defining what the
-    Honeywell Mantle workbook is, the post-P71 status, the authority boundaries,
-    and the manual checklist to use after P73.
-  - Files: this doc, the runbook, and their doc regression tests in
-    `tests/lib/projects/`.
-  - Stop: the backlog and runbook reflect the current state and their tests pass.
-
-- P73 - Local Honeywell Mantle demo command/script
-  - Goal: add a committed, operator-runnable local command/script that calls
-    `runHoneywellQuickBomDemoMantleExportModel` and
-    `writeMantlePriceEstimateWorkbook` to write the Honeywell Mantle demo workbook
-    to a temp/demo output folder on demand. Composition only - no new pricing,
-    configuration, AI, catalog, or SKU-substitution behavior; no app-level
-    Project/API/UI/DB wiring. This closes B11.
-  - Files: a script/command entry under the repo's existing script location plus a
-    test; no `src/**` runtime behavior change beyond a thin command wrapper.
-  - Stop: running the command writes a customer-facing Honeywell Mantle workbook
-    matching the Section 5B counts/totals, openable without manual reformatting.
-
-- P74+ - Canonical Project app flow wiring
-  - Goal: wire the canonical Project Quick BoM flow (project create -> normalize
-    -> SKU review -> expansion review -> pricing approval -> Mantle export) through
-    Project/API/UI/DB, driven by the runner and the existing artifact/approval
-    stores. It must build the canonical Project flow and must NOT shortcut through
-    the legacy estimate/pipeline (E2) UI. This closes B4/B6/B12 and the persisted-
-    DB part of B3/B10.
-  - Files: API routes, UI, and DB provisioning under `src/`; tests.
-  - Stop: an operator can drive the Honeywell Quick BoM demo through the app, with
-    real review/approval surfaces and persisted state.
+- General upload endpoint/product action that records an arbitrary customer BoQ
+  `project_file` and triggers normalization (beyond the seeded demo fixture).
+- Arbitrary Project creation flow and broad app wiring that drive the canonical
+  Project Quick BoM flow without shortcutting through legacy E2.
+- Real DB provisioning/migrations plus a demo/run against a provisioned database,
+  and production deployment verification.
+- Production pricing authority (catalog->SAR sourcing/conversion) beyond the demo
+  fixture.
+- Deterministic fuzzy SKU suggestion (step 3), then human-approved AI-assisted
+  suggestion (step 4) - suggestions only, never a runtime AI decision.
+- Per-line review UI for SKU resolution, configuration expansion, and pricing.
+- Automatic staleness propagation caller so upstream changes mark downstream stale.
+- Marafiq and EnergyTech real-input/app-level paths.
+- RFP workflow (out of current scope).
 
 ## 10. Open Questions
 
@@ -448,10 +556,12 @@ Recommended next prompts, in order:
   composer is now wired and proven (Section 5B, P66); the open question is now
   only who signs off on any future Batch 4 expansion pack (optics and replacements
   stay out of expansion until then).
-- Q2: Should the first operator demo be the local command/script (P73) or app/UI-
-  first (P74+)? The recommended order is command-first, then app.
-- Q3: Should the first demo use real project DB persistence (requires DB
-  provisioning, B10) or in-memory service composition for speed?
+- Q2: Resolved for this slice - both shipped: the local command/script (P73) and a
+  narrow seeded-demo app surface (P77-P81). Broad app/UI wiring remains a follow-up
+  (Section 9).
+- Q3: The seeded-demo app E2E (P81) runs against an in-memory store; whether the
+  first live demo uses real project DB persistence (requires DB provisioning, B10)
+  or the in-memory path remains open.
 - Q4: Which files are allowed as regression references for the demo, and what is
   the committed/sanitized source for the Honeywell SAR price and category maps
   (B7)? Benchmark/priced workbooks are references only, never rule sources.
