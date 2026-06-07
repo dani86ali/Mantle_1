@@ -16,7 +16,11 @@
  * expansion depends on human-accepted SKU decisions. Review-helper errors bubble with
  * no artifact created; inputs/sources are never mutated; no pricing fields are added.
  * The artifact is created `needs_review`, NOT approved - approval stays the canonical
- * Project flow.
+ * Project flow. Optional source-draft provenance (the persisted
+ * `configuration_expansion` DRAFT artifact id/version this reviewed artifact was
+ * produced from) may be supplied: the id is appended as a third sourceArtifactIds
+ * entry and, with its version, echoed onto the payload. It never adds a `payloadKind`
+ * marker, so a reviewed artifact stays approvable through the generic approval path.
  */
 import {
   createProjectArtifactVersion,
@@ -63,6 +67,14 @@ export interface CreateConfigurationExpansionArtifactInput {
   /** Optional reviewer identity/timestamp, persisted only when supplied (never generated here). */
   reviewedBy?: string;
   reviewedAt?: string;
+  /**
+   * Optional provenance of the configuration_expansion DRAFT artifact this reviewed
+   * artifact is produced from (the explicit per-line review path). When the id is
+   * supplied it is appended as a third sourceArtifactIds entry; when both id and
+   * version are supplied they are echoed onto the reviewed payload.
+   */
+  sourceConfigurationExpansionDraftArtifactId?: string;
+  sourceConfigurationExpansionDraftArtifactVersion?: number;
 }
 
 /** The created artifact, both source artifacts, the exact payload, and the review result. */
@@ -82,6 +94,9 @@ export interface BuildConfigurationExpansionArtifactPayloadInput {
   rulePackVersion: string;
   rulePackStatus: ConfigExpansionRulePackStatus;
   reviewResult: ConfigurationExpansionReviewResult;
+  /** Optional source-draft provenance; echoed onto the payload only when both are supplied. */
+  sourceConfigurationExpansionDraftArtifactId?: string;
+  sourceConfigurationExpansionDraftArtifactVersion?: number;
 }
 
 /** The `sku_resolution` provenance fields this service requires to verify the chain. */
@@ -130,7 +145,16 @@ function parseSkuProvenance(payload: Record<string, unknown>): ParsedSkuProvenan
 export function buildConfigurationExpansionArtifactPayload(
   input: BuildConfigurationExpansionArtifactPayloadInput
 ): ConfigurationExpansionArtifactPayload {
-  const { normalizedBoqArtifact, skuResolutionArtifact, rulePackId, rulePackVersion, rulePackStatus, reviewResult } = input;
+  const {
+    normalizedBoqArtifact,
+    skuResolutionArtifact,
+    rulePackId,
+    rulePackVersion,
+    rulePackStatus,
+    reviewResult,
+    sourceConfigurationExpansionDraftArtifactId,
+    sourceConfigurationExpansionDraftArtifactVersion,
+  } = input;
   if (rulePackStatus !== "approved") throw new Error(RULE_PACK_NOT_APPROVED_MESSAGE);
   const acceptedLines = reviewResult.acceptedLines.map(copyLine);
   return {
@@ -138,6 +162,15 @@ export function buildConfigurationExpansionArtifactPayload(
     sourceNormalizedBoqArtifactVersion: normalizedBoqArtifact.version,
     sourceSkuResolutionArtifactId: skuResolutionArtifact.id,
     sourceSkuResolutionArtifactVersion: skuResolutionArtifact.version,
+    // Echo source-draft provenance only when BOTH coordinates are supplied; a
+    // reviewed artifact built without a source draft carries neither field.
+    ...(sourceConfigurationExpansionDraftArtifactId !== undefined &&
+    sourceConfigurationExpansionDraftArtifactVersion !== undefined
+      ? {
+          sourceConfigurationExpansionDraftArtifactId,
+          sourceConfigurationExpansionDraftArtifactVersion,
+        }
+      : {}),
     sourceFileIds: unionSourceFileIds(
       normalizedBoqArtifact.sourceFileIds,
       skuResolutionArtifact.sourceFileIds
@@ -196,7 +229,16 @@ export async function createConfigurationExpansionArtifact(
     rulePackVersion,
     rulePackStatus,
     reviewResult,
+    sourceConfigurationExpansionDraftArtifactId: input.sourceConfigurationExpansionDraftArtifactId,
+    sourceConfigurationExpansionDraftArtifactVersion: input.sourceConfigurationExpansionDraftArtifactVersion,
   });
+
+  // Source artifacts in [normalized, sku] order; when this reviewed artifact was
+  // produced from a persisted draft, that draft id is appended as a third entry.
+  const sourceArtifactIds = [normalizedBoqArtifact.id, skuResolutionArtifact.id];
+  if (input.sourceConfigurationExpansionDraftArtifactId !== undefined) {
+    sourceArtifactIds.push(input.sourceConfigurationExpansionDraftArtifactId);
+  }
 
   const artifact = await createProjectArtifactVersion({
     projectId,
@@ -206,7 +248,7 @@ export async function createConfigurationExpansionArtifact(
     status: "needs_review",
     payload,
     sourceFileIds: [...payload.sourceFileIds],
-    sourceArtifactIds: [normalizedBoqArtifact.id, skuResolutionArtifact.id],
+    sourceArtifactIds,
   });
 
   return { artifact, normalizedBoqArtifact, skuResolutionArtifact, payload, reviewResult };

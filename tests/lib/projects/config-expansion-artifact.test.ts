@@ -504,6 +504,60 @@ describe("createConfigurationExpansionArtifact - payload shape", () => {
   });
 });
 
+// --- Source draft provenance (optional extension) ---------------------------
+
+describe("createConfigurationExpansionArtifact - source draft provenance", () => {
+  const DRAFT_ID = "art-ce-draft-1";
+  const DRAFT_VERSION = 4;
+
+  beforeEach(() => {
+    mockArtifacts(normalizedArtifact(), skuArtifact());
+  });
+
+  it("omits source draft fields and keeps [normalized, sku] source when no draft provenance is supplied", async () => {
+    const { payload } = await createConfigurationExpansionArtifact(input());
+    expect(payload).not.toHaveProperty("sourceConfigurationExpansionDraftArtifactId");
+    expect(payload).not.toHaveProperty("sourceConfigurationExpansionDraftArtifactVersion");
+    expect(createMock.mock.calls[0][0].sourceArtifactIds).toEqual([NORMALIZED_ID, SKU_ID]);
+    // A reviewed artifact never carries the draft discriminator, so it stays
+    // approvable through the generic exact-artifact approval path.
+    expect(payload).not.toHaveProperty("payloadKind");
+  });
+
+  it("echoes source draft id/version and appends the draft as a third source artifact when both are supplied", async () => {
+    const { payload } = await createConfigurationExpansionArtifact(
+      input({
+        sourceConfigurationExpansionDraftArtifactId: DRAFT_ID,
+        sourceConfigurationExpansionDraftArtifactVersion: DRAFT_VERSION,
+      })
+    );
+    expect(payload.sourceConfigurationExpansionDraftArtifactId).toBe(DRAFT_ID);
+    expect(payload.sourceConfigurationExpansionDraftArtifactVersion).toBe(DRAFT_VERSION);
+    expect(createMock.mock.calls[0][0].sourceArtifactIds).toEqual([
+      NORMALIZED_ID,
+      SKU_ID,
+      DRAFT_ID,
+    ]);
+    // Reviewed/non-draft: still no payloadKind marker even with draft provenance.
+    expect(payload).not.toHaveProperty("payloadKind");
+  });
+
+  it("gates the payload fields on BOTH coordinates but the source entry on the id alone", async () => {
+    const { payload } = await createConfigurationExpansionArtifact(
+      input({ sourceConfigurationExpansionDraftArtifactId: DRAFT_ID })
+    );
+    // Payload echo requires both id and version...
+    expect(payload).not.toHaveProperty("sourceConfigurationExpansionDraftArtifactId");
+    expect(payload).not.toHaveProperty("sourceConfigurationExpansionDraftArtifactVersion");
+    // ...while the third sourceArtifactIds entry is gated on the id alone.
+    expect(createMock.mock.calls[0][0].sourceArtifactIds).toEqual([
+      NORMALIZED_ID,
+      SKU_ID,
+      DRAFT_ID,
+    ]);
+  });
+});
+
 // --- Freshness & purity -----------------------------------------------------
 
 describe("createConfigurationExpansionArtifact - freshness & purity", () => {

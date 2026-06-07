@@ -410,6 +410,17 @@ export type ConfigurationExpansionArtifactPayload = {
   sourceNormalizedBoqArtifactVersion: number;
   sourceSkuResolutionArtifactId: string;
   sourceSkuResolutionArtifactVersion: number;
+  /**
+   * Optional provenance of the `configuration_expansion` DRAFT artifact this
+   * reviewed artifact was produced from, present only when the reviewed artifact
+   * was created by reviewing a persisted draft (the explicit per-line review path).
+   * Absent on a reviewed artifact built without a source draft. Does NOT mark the
+   * artifact as a draft: the draft discriminator is `payloadKind`, which a reviewed
+   * payload never carries, so this field never affects approvability.
+   */
+  sourceConfigurationExpansionDraftArtifactId?: string;
+  /** Version of the source configuration_expansion DRAFT artifact, paired with its id. */
+  sourceConfigurationExpansionDraftArtifactVersion?: number;
   /** Copied provenance: source files behind the upstream artifacts. */
   sourceFileIds: string[];
   rulePackId: string;
