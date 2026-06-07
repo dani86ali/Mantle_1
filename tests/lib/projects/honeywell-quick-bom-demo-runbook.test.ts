@@ -4,18 +4,18 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Honeywell Quick BoM demo operator runbook
- * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 82.
+ * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 98.
  *
- * It asserts the runbook: records the Prompt 82 refresh; still defines the generated
+ * It asserts the runbook: records the Prompt 98 refresh; still defines the generated
  * Honeywell Mantle workbook correctly (what it is, and the historical/CCW/customer-input
  * files it is NOT); keeps the Prompt 73 local operator command and its manual workbook
  * checklist with the key counts/totals; preserves the Batch 4 / optics / replacement /
  * pricing / runtime-AI boundaries; documents the Prompt 81 app-level E2E proof (the real
  * GET route, POST route/service, UI page, seeded fixture, on-disk workbook, export
- * approval to customer-deliverable ready, and no payload leak); and no longer says
- * app-level testing is "not ready yet" or "comes later" as a blanket statement. The doc
- * is read from disk only; no runtime module is imported (a pure documentation regression
- * test).
+ * approval to customer-deliverable ready, and no payload leak); documents the Prompt 97
+ * arbitrary-flow proof and its honest limitations; and no longer says app-level testing
+ * is "not ready yet" or "comes later" as a blanket statement. The doc is read from disk
+ * only; no runtime module is imported (a pure documentation regression test).
  */
 
 const DOC_PATH = join(
@@ -39,8 +39,8 @@ describe("honeywell quick bom demo runbook - exists and is hygienic", () => {
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 82 refresh", () => {
-    expect(docTextLower).toContain("refreshed by prompt 82");
+  it("records the Prompt 98 refresh", () => {
+    expect(docTextLower).toContain("refreshed by prompt 98");
   });
 
   it("keeps the runbook ASCII-only", () => {
@@ -173,6 +173,44 @@ describe("honeywell quick bom demo runbook - app-level demo proof (Prompt 81)", 
   });
 });
 
+describe("honeywell quick bom demo runbook - arbitrary flow proof (Prompt 97)", () => {
+  it("names the arbitrary-flow e2e and the route/action chain it proves", () => {
+    expect(docText).toContain("project-quick-bom-arbitrary-flow-e2e.test.tsx");
+    expect(docTextLower).toContain("non-seeded, arbitrary quick_bom project");
+    expect(docTextLower).toContain("create project");
+    expect(docTextLower).toContain("upload boq");
+    expect(docTextLower).toContain("normalize");
+    expect(docTextLower).toContain("sku draft/review");
+    expect(docTextLower).toContain("configuration draft/review");
+    expect(docTextLower).toContain("pricing review");
+    expect(docTextLower).toContain("export approval");
+    expect(docTextLower).toContain("download");
+  });
+
+  it("splits the seeded Honeywell proof from the reduced arbitrary-flow proof", () => {
+    expect(docTextLower).toContain("full 60-row honeywell ccw parity demo path");
+    expect(docTextLower).toContain("route/action chain proof");
+    expect(docTextLower).toContain("reduced catalog-resolvable input");
+    expect(docTextLower).toContain("not a full customer boq run");
+  });
+
+  it("states SKU and configuration line review still use direct route calls", () => {
+    expect(docText).toContain(".../sku-resolution/review");
+    expect(docText).toContain(".../configuration-expansion/review");
+    expect(docTextLower).toContain("line-review-required notice");
+  });
+
+  it("keeps the arbitrary-flow limitations explicit", () => {
+    expect(docTextLower).toContain("no production db provisioning/rls/migrations");
+    expect(docTextLower).toContain("no manual browser qa");
+    expect(docTextLower).toContain("no full uploaded honeywell boq through real sku resolution");
+    expect(docTextLower).toContain("full local catalog coverage for honeywell parent skus");
+    expect(docTextLower).toContain("no production pricing authority");
+    expect(docTextLower).toContain("no broad cisco-general configuration authority");
+    expect(docTextLower).toContain("no line-level sku/config/pricing review ui screens");
+  });
+});
+
 describe("honeywell quick bom demo runbook - app-level status is accurate", () => {
   it("says the automated app-level demo path is proven for the seeded fixture", () => {
     expect(docTextLower).toContain("proven for the seeded honeywell demo project");
@@ -181,12 +219,14 @@ describe("honeywell quick bom demo runbook - app-level status is accurate", () =
   it("says manual browser QA and production provisioning remain follow-up", () => {
     expect(docTextLower).toContain("manual browser qa");
     expect(docTextLower).toContain("follow-up work");
+    expect(docTextLower).toContain("provisioned database");
   });
 
   it("no longer says app-level testing is 'not ready yet' or 'comes later'", () => {
     expect(docTextLower.includes("not ready yet")).toBe(false);
     expect(docTextLower.includes("comes later")).toBe(false);
     expect(docTextLower.includes("app-level manual testing is ready")).toBe(false);
+    expect(docTextLower.includes("arbitrary project creation, a general boq upload endpoint")).toBe(false);
   });
 
   it("keeps the boundary that app wiring must not shortcut through legacy E2", () => {

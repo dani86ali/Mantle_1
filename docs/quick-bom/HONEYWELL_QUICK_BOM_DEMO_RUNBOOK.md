@@ -1,12 +1,13 @@
 # Honeywell Quick BoM Demo Runbook
 
 Status: operator runbook for the Honeywell MVP Quick BoM demo (demo scope only).
-Refreshed by Prompt 82.
+Refreshed by Prompt 98.
 
 Operator-facing runbook for the Honeywell Quick BoM demo. It defines what the
 generated Honeywell Mantle workbook is, the local operator command (Prompt 73), the
-authority boundaries, the manual workbook checklist, and the app-level demo proof
-(Prompt 81). It is a demo runbook, not an architecture source of truth;
+authority boundaries, the manual workbook checklist, the app-level seeded demo proof
+(Prompt 81), and the app-level arbitrary flow proof (Prompt 97). It is a demo runbook,
+not an architecture source of truth;
 `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md` remains the source
 of truth and `docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md` is the execution tracker.
 
@@ -128,11 +129,59 @@ This proves the seeded Honeywell demo Project path through the real GET route, t
 real POST route/service, and the real UI page work together. It runs against an
 in-memory Project store under the test harness; it is not a production database run.
 
-## 6. App-level manual testing status
+## 6. App-level arbitrary flow proof (Prompt 97)
 
-The automated app-level demo path above is proven for the seeded Honeywell demo
-Project (Prompt 81). Manual browser QA of that flow, and production project
-upload/provisioning (arbitrary project creation, a general BoQ upload endpoint, and a
-provisioned database with migrations), are follow-up work and are not part of this
-demo slice. Broad app wiring must build the canonical Project Quick BoM flow and must
-not shortcut through the legacy estimate/pipeline (E2) UI.
+Beyond the seeded Honeywell demo Project (Section 5), the Quick BoM app route/action
+chain now exists for a non-seeded, arbitrary quick_bom Project, and is proved end to
+end by `tests/app/project-quick-bom-arbitrary-flow-e2e.test.tsx` (Prompt 97). It runs
+the current app routes/services - create Project, upload BoQ, normalize, SKU
+draft/review, configuration draft/review, pricing, pricing review, export creation,
+export approval, and download - under the test harness/in-memory store. The proved
+chain is: upload -> normalize -> SKU draft -> explicit SKU review -> SKU approval ->
+configuration draft -> explicit configuration review -> configuration approval ->
+pricing -> priced approval -> export -> export approval -> download.
+
+The split between the two app-level proofs:
+
+- **Seeded Honeywell fixture** (Section 5) is the **full 60-row Honeywell CCW parity
+  demo path** - the real customer-facing demo, with full set/quantity/pricing/row-order
+  parity against the CCW reference.
+- **Arbitrary Project app E2E** (Prompt 97) is the **route/action chain proof on a
+  reduced catalog-resolvable input** (a small CSV subset whose SKUs resolve against the
+  committed local catalog). It proves the wiring works for a non-seeded Project; it is
+  not a full customer BoQ run.
+
+In the Prompt 97 flow the SKU and configuration line reviews are made through direct
+route calls (`.../sku-resolution/review`, `.../configuration-expansion/review`) while
+the UI shows a line-review-required notice; priced review is driven UI-only and export
+approval runs through the UI.
+
+Honest limitations of the arbitrary flow proof (the same boundaries as the backlog):
+
+- No production DB provisioning/RLS/migrations; the E2E runs against an in-memory store.
+- No manual browser QA of the arbitrary-Project flow.
+- No full uploaded Honeywell BoQ through real SKU resolution, and no full local catalog
+  coverage for Honeywell parent SKUs (the proof uses a reduced catalog-resolvable
+  subset).
+- No production pricing authority (the demo pricing fixture is demo-only authority).
+- No broad Cisco-general configuration authority (only the approved Honeywell Batch
+  1+2+3 packs).
+- No line-level SKU/config/pricing review UI screens.
+
+All authority boundaries in Section 3 stay intact: no runtime AI/catalog/pricing/
+configuration decisions; configuration and pricing authority stay separate; Batch 4 is
+a decision record only; optics are standalone customer BoQ lines; replacements remain
+deferred with no silent substitution.
+
+## 7. App-level manual testing status
+
+The automated app-level demo paths above are proven for the seeded Honeywell demo
+Project (Prompt 81) and, for a non-seeded arbitrary quick_bom Project, by the Prompt 97
+route/action chain E2E. The app route/action chain - create Project, upload, normalize,
+SKU draft/review, configuration draft/review, pricing, pricing review, export creation,
+and download - now exists beyond the seeded fixture. Still follow-up work and not part
+of this demo slice: manual browser QA of the flow, production DB provisioning with
+migrations (a provisioned database), full uploaded Honeywell BoQ through real SKU
+resolution, production pricing authority, and line-level SKU/config/pricing review UI.
+Broad app wiring must build the canonical Project Quick BoM flow and must not shortcut
+through the legacy estimate/pipeline (E2) UI.

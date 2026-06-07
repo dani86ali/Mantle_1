@@ -4,20 +4,27 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Quick BoM demo-readiness backlog
- * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 82 to reflect the
- * committed repo state after Prompts 73-81.
+ * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 98 to reflect the
+ * committed repo state after Prompts 83-97 (the broader Quick BoM app route/action
+ * chain), closing the Prompt 83-98 app-readiness sequence.
  *
- * It asserts the backlog: records Prompt 82 as the refresh and still treats the
- * planning file as the source of truth (itself an execution tracker); marks the whole
- * P65-P82 demo-readiness slice complete; names the Prompt 73 operator command, the
- * Prompt 74-76 CCW parity/order evidence, and the Prompt 77-81 app-level pieces; no
- * longer carries the stale negatives that there is no app route, no projects UI, no
- * app-level wiring, or no operator command; preserves the demo-only pricing boundary,
- * the pricing/configuration authority separation, the no-runtime-AI rule, Batch 4 as a
- * decision record only, standalone optics, and deferred replacements with no silent
- * substitution; keeps the honest remaining gaps; and stays ASCII-only. The doc is read
- * from disk and never mutated; no runtime evaluator, composer, pricing, or expansion
- * code is imported or run.
+ * It asserts the backlog: records Prompt 98 as the refresh and still treats the
+ * planning file as the source of truth (itself an execution tracker); preserves the
+ * P65-P82 seeded Honeywell closure record and adds the P83-P98 app-readiness closure;
+ * names the Prompt 73 operator command, the Prompt 74-76 CCW parity/order evidence, the
+ * Prompt 77-81 seeded app-level pieces, and the Prompt 83-97 app route/action chain by
+ * route/file; no longer carries the stale negatives that there is no general upload
+ * endpoint, no driver from an arbitrary uploaded file, or no download/serve surface;
+ * documents the seven honest limitations of the P97 arbitrary-flow proof (no production
+ * DB provisioning/RLS/migrations, no full uploaded Honeywell BoQ through real SKU
+ * resolution, no full local catalog coverage for Honeywell parent SKUs, no production
+ * pricing authority, no broad Cisco-general configuration authority, no line-level
+ * SKU/config/pricing review UI, no manual browser QA); preserves the demo-only pricing
+ * boundary, the pricing/configuration authority separation, the no-runtime-AI rule,
+ * Batch 4 as a decision record only, standalone optics, and deferred replacements with
+ * no silent substitution; and stays ASCII-only. The doc is read from disk and never
+ * mutated; no runtime evaluator, composer, pricing, or expansion code is imported or
+ * run.
  */
 
 const DOC_PATH = join(process.cwd(), "docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md");
@@ -39,11 +46,14 @@ const APPROVED_PACK_FILES = [
 ];
 const BATCH4_DECISION_RECORD_FILE = "honeywell-batch4-decision-record.json";
 
-// The whole demo-readiness slice P65-P82 is now closed and kept as the execution
-// record; Prompt 82 is the closure refresh, not a "next" prompt.
+// Both closed slices are kept as the execution record: the seeded slice P65-P82
+// (Prompt 82 closure) and the app-readiness slice P83-P98 (Prompt 98 closure). Each
+// closure prompt is the refresh itself, not a "next" prompt.
 const COMPLETED_PROMPTS = [
   "P65", "P66", "P67", "P68", "P69", "P70", "P71", "P72", "P73",
   "P74", "P75", "P76", "P77", "P78", "P79", "P80", "P81", "P82",
+  "P83", "P84", "P85", "P86", "P87", "P88", "P89", "P90", "P91",
+  "P92", "P93", "P94", "P95", "P96", "P97", "P98",
 ];
 
 // Pieces committed in Prompts 73-81 the refreshed backlog must name by file/route.
@@ -62,12 +72,29 @@ const P73_TO_P81_PIECES = [
   "honeywell-quick-bom-app-e2e.test.tsx",             // P81 app-level E2E
 ];
 
-// Stale framing that must NOT survive the Prompt 82 refresh. Each appeared verbatim
-// in the pre-refresh (Prompt 72) backlog, so its absence fails on the stale doc and
-// passes on the refreshed one. Matched case-sensitively and exactly. (B10's drizzle
-// migration "(glob empty)" is a genuine, still-open DB gap and is intentionally kept.)
+// Pieces committed in Prompts 83-97 the Prompt 98 backlog must name by route/file.
+const P83_TO_P97_PIECES = [
+  "POST /api/projects/quick-bom",
+  "src/app/api/projects/quick-bom/route.ts",
+  "POST /api/projects/[id]/quick-bom/files",
+  "POST /api/projects/[id]/quick-bom/files/[fileId]/normalize",
+  ".../artifacts/[artifactId]/sku-resolution",
+  ".../sku-resolution/review",
+  ".../artifacts/[artifactId]/configuration-expansion",
+  ".../configuration-expansion/review",
+  ".../artifacts/[artifactId]/priced-boq",
+  ".../priced-boq/review",
+  ".../artifacts/[artifactId]/export-package",
+  ".../export-package/download",
+  "tests/app/project-quick-bom-arbitrary-flow-e2e.test.tsx",
+];
+
+// Stale framing that must NOT survive the Prompt 98 refresh. Matched
+// case-sensitively and exactly. (B10's drizzle migration "(glob empty)" is a genuine,
+// still-open DB gap and is intentionally kept.)
 const STALE_PHRASES = [
   "Last refreshed by Prompt 72",
+  "Last refreshed by Prompt 82",
   "No `src/app/api/projects/**`",
   "no projects UI exist yet",
   "no app-level Project/API/UI/DB wiring",
@@ -75,6 +102,10 @@ const STALE_PHRASES = [
   "No operator-facing command/script writes the Honeywell Mantle demo workbook on demand.",
   "No operator-facing demo workbook command/script exists yet",
   "an app-level driver/readiness surface is still future.",
+  "No general upload endpoint",
+  "No driver that turns an arbitrary uploaded file",
+  "Still missing: a product surface to download/serve",
+  "arbitrary project creation, a general BoQ upload endpoint",
   "next implementation step",
 ];
 
@@ -84,8 +115,9 @@ describe("quick bom demo-readiness backlog - exists and stays an execution track
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 82 refresh and keeps the planning file as source of truth", () => {
-    expect(docFlat).toContain("refreshed by prompt 82");
+  it("records the Prompt 98 refresh and keeps the planning file as source of truth", () => {
+    expect(docFlat).toContain("refreshed by prompt 98");
+    expect(docFlat).toContain("prompt 83-98 app-readiness sequence");
     expect(doc).toContain("MVP_CANONICAL_PROJECT_STATE.md");
     expect(docFlat).toContain("execution tracker");
     expect(docFlat).toContain("source of truth");
@@ -148,9 +180,10 @@ describe("quick bom demo-readiness backlog - authority separation and fixture bo
   });
 });
 
-describe("quick bom demo-readiness backlog - P65-P82 slice complete", () => {
-  it("carries P65-P82 as the closed completed execution-record list", () => {
+describe("quick bom demo-readiness backlog - P65-P98 slices complete", () => {
+  it("carries P65-P98 as the closed completed execution-record list", () => {
     expect(docFlat).toContain("completed (p65-p82)");
+    expect(docFlat).toContain("completed (p83-p98)");
     for (const prompt of COMPLETED_PROMPTS) {
       expect(doc, prompt).toContain(`- ${prompt} -`);
     }
@@ -158,6 +191,12 @@ describe("quick bom demo-readiness backlog - P65-P82 slice complete", () => {
 
   it("names the Prompt 73 command, P74-P76 CCW evidence, and P77-P81 app pieces", () => {
     for (const piece of P73_TO_P81_PIECES) {
+      expect(doc, piece).toContain(piece);
+    }
+  });
+
+  it("names the P83-P97 app route/action chain pieces", () => {
+    for (const piece of P83_TO_P97_PIECES) {
       expect(doc, piece).toContain(piece);
     }
   });
@@ -181,15 +220,24 @@ describe("quick bom demo-readiness backlog - app-level proof is scoped honestly"
     expect(docFlat).toContain("in-memory store");
   });
 
-  it("does not claim production upload, arbitrary creation, or real DB are complete", () => {
-    expect(docFlat).toContain("production upload");
-    expect(docFlat).toContain("arbitrary project creation");
+  it("scopes the arbitrary-flow proof to reduced catalog-resolvable input", () => {
+    expect(docFlat).toContain("arbitrary quick_bom project");
+    expect(docFlat).toContain("reduced catalog-resolvable csv subset");
+    expect(docFlat).toContain("route/action chain proof");
+  });
+
+  it("does not claim production DB, full Honeywell upload, or browser QA are complete", () => {
     expect(docFlat).toContain("real db provisioning");
+    expect(docFlat).toContain("production db provisioning/rls/migrations");
+    expect(docFlat).toContain("manual browser qa");
+    expect(docFlat).toContain("full uploaded honeywell boq through real sku resolution");
   });
 
   it("keeps the honest remaining gaps clear", () => {
-    expect(docFlat).toContain("no general upload endpoint");
+    expect(docFlat).toContain("full local catalog coverage for honeywell parent skus");
     expect(docFlat).toContain("no production pricing authority beyond the demo fixture");
+    expect(docFlat).toContain("broad cisco-general configuration authority");
+    expect(docFlat).toContain("line-level sku/config/pricing review ui");
     expect(docFlat).toContain("deterministic fuzzy");
     expect(docFlat).toContain("ai-assisted");
     expect(docFlat).toContain("automatic staleness propagation caller");
@@ -199,9 +247,10 @@ describe("quick bom demo-readiness backlog - app-level proof is scoped honestly"
 });
 
 describe("quick bom demo-readiness backlog - resolved blockers no longer marked missing", () => {
-  it("marks the operator command done and the seeded-demo app surface done", () => {
+  it("marks the operator command, seeded-demo app surface, and route/action chain done", () => {
     expect(doc).toContain("| Done (P73) |");
     expect(docFlat).toContain("seeded-demo surface done (p77-p81)");
+    expect(docFlat).toContain("route/action chain done (p83-p97)");
   });
 
   it("notes the persisted demo Project fixture and minimal review/approval surface", () => {
