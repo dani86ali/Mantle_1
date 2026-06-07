@@ -99,6 +99,26 @@ function toProjectSummary(project: Project): ProjectSummary {
 }
 
 /**
+ * True only for a persisted configuration-expansion DRAFT artifact - one whose
+ * payload carries the draft marker "configuration_expansion_draft" written by the
+ * Quick BoM configuration-expansion draft service. A draft is NOT the
+ * reviewed/accepted expanded BoM, so it must not be approvable through this
+ * generic exact-artifact approval path; the explicit per-line configuration-
+ * expansion review produces the reviewed `configuration_expansion` artifact (which
+ * carries no such marker) that this path may approve. Local payload check only: no
+ * config-expansion module is imported, keeping configuration authority out of the
+ * approval service.
+ */
+function isConfigurationExpansionDraftArtifact(
+  artifact: ProjectArtifact
+): boolean {
+  return (
+    artifact.type === "configuration_expansion" &&
+    artifact.payload.payloadKind === "configuration_expansion_draft"
+  );
+}
+
+/**
  * Intentional payload-free projection mirroring the Quick BoM workspace read
  * model; the artifact payload must never leak into an approval response.
  */
@@ -150,6 +170,16 @@ export async function reviewProjectQuickBomArtifact(
   if (!QUICK_BOM_APPROVAL_GATED_ARTIFACT_TYPES.includes(artifact.type)) {
     return {
       status: "artifact_not_quick_bom",
+      artifact: toArtifactSummary(artifact),
+    };
+  }
+  // A configuration_expansion DRAFT is not the reviewed/accepted expanded BoM, so
+  // it is never approvable through this generic path even though a fresh draft is
+  // created `needs_review` (an otherwise reviewable status). Reviewed/non-draft
+  // configuration_expansion artifacts carry no draft marker and stay approvable.
+  if (isConfigurationExpansionDraftArtifact(artifact)) {
+    return {
+      status: "artifact_not_reviewable",
       artifact: toArtifactSummary(artifact),
     };
   }

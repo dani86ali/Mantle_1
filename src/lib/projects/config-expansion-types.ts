@@ -428,3 +428,42 @@ export type ConfigurationExpansionArtifactPayload = {
   /** Review timestamp, present only when supplied. */
   reviewedAt?: string;
 };
+
+/**
+ * JSONB payload of a DRAFT `configuration_expansion` artifact: the deterministic
+ * configuration-expansion draft built from one APPROVED `sku_resolution` artifact
+ * (and its `normalized_boq` source) plus one APPROVED rule-pack version, BEFORE any
+ * per-line engineer review. The `payloadKind` discriminator
+ * "configuration_expansion_draft" marks it as an unreviewed draft so the generic
+ * exact-artifact approval path refuses it: a draft is NOT the reviewed/accepted
+ * expanded BoM that {@link ConfigurationExpansionArtifactPayload} carries (that
+ * payload has no `payloadKind` marker and stays approvable). The reviewed artifact
+ * is produced only by the explicit per-line configuration-expansion review. `lines`
+ * is the full draft in customer-then-children order (its length is `lineCount`);
+ * auto-added expansion lines stay `approvalRequired`/unapproved. Declared as a type
+ * alias (not an interface) so it carries an implicit index signature and stays
+ * assignable to the artifact repository's Record<string, unknown> payload, matching
+ * the reviewed/sku-resolution/priced-boq payloads. No pricing fields.
+ * (section 3, section 11A.3, section 14, section 15)
+ */
+export type ConfigurationExpansionDraftArtifactPayload = {
+  /** Draft discriminator; absent on a reviewed/accepted configuration_expansion payload. */
+  payloadKind: "configuration_expansion_draft";
+  sourceNormalizedBoqArtifactId: string;
+  sourceNormalizedBoqArtifactVersion: number;
+  sourceSkuResolutionArtifactId: string;
+  sourceSkuResolutionArtifactVersion: number;
+  /** Copied provenance: source files behind the upstream artifacts, first-seen union. */
+  sourceFileIds: string[];
+  rulePackId: string;
+  rulePackVersion: string;
+  /** Always "approved": only an approved-rule-pack expansion may be drafted. (section 11A.1, 11A.5) */
+  rulePackStatus: "approved";
+  /** Scope label of the approved rule pack the draft was built from. (section 11A.2) */
+  rulePackSourceScope: string;
+  /** Total draft-line count; equals lines.length. */
+  lineCount: number;
+  /** Full configuration-expansion draft, in customer-then-children order. */
+  lines: ConfigurationExpansionDraftLine[];
+  summary: ConfigurationExpansionDraftSummary;
+};

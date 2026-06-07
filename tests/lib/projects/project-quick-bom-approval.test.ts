@@ -304,6 +304,45 @@ describe("reviewProjectQuickBomArtifact - artifact gates", () => {
   });
 });
 
+describe("reviewProjectQuickBomArtifact - configuration_expansion draft guard", () => {
+  it("rejects a configuration_expansion DRAFT as artifact_not_reviewable without creating an approval", async () => {
+    // A fresh draft is needs_review (otherwise reviewable), so only the draft
+    // marker keeps it out of the generic approval path.
+    mockGetArtifactById.mockResolvedValue(
+      makeArtifact("configuration_expansion", "needs_review", {
+        payload: {
+          payloadKind: "configuration_expansion_draft",
+          secret: PAYLOAD_SENTINEL,
+        },
+      })
+    );
+
+    const result = await review();
+
+    expect(result.status).toBe("artifact_not_reviewable");
+    if (result.status !== "artifact_not_reviewable") throw new Error("unreachable");
+    expect(result.artifact.type).toBe("configuration_expansion");
+    expect("payload" in result.artifact).toBe(false);
+    expect(JSON.stringify(result)).not.toContain(PAYLOAD_SENTINEL);
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("still approves a reviewed (non-draft) configuration_expansion artifact when generated or needs_review", async () => {
+    for (const status of ["generated", "needs_review"] as ProjectArtifactStatus[]) {
+      mockCreateApproval.mockClear().mockResolvedValue(makeCreated());
+      // makeArtifact's default payload carries no draft marker -> stays approvable.
+      mockGetArtifactById.mockResolvedValue(
+        makeArtifact("configuration_expansion", status)
+      );
+
+      const result = await review();
+
+      expect(result.status).toBe("ok");
+      expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+    }
+  });
+});
+
 describe("reviewProjectQuickBomArtifact - approval", () => {
   it("calls createProjectApproval with the exact artifactId, tenant, project, decision, decidedBy, decidedAt, and note", async () => {
     await review({ decision: "rejected", decidedAt: DECIDED_AT, note: "fix pricing" });
