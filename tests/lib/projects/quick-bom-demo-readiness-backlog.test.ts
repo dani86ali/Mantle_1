@@ -22,9 +22,17 @@ import { join } from "path";
  * SKU/config/pricing review UI, no manual browser QA); preserves the demo-only pricing
  * boundary, the pricing/configuration authority separation, the no-runtime-AI rule,
  * Batch 4 as a decision record only, standalone optics, and deferred replacements with
- * no silent substitution; and stays ASCII-only. The doc is read from disk and never
- * mutated; no runtime evaluator, composer, pricing, or expansion code is imported or
- * run.
+ * no silent substitution; and stays ASCII-only.
+ *
+ * Prompt 101 additionally aligns the DB-readiness evidence after Prompt 100: the backlog
+ * names the committed migration SQL under src/lib/db/migrations/ (including
+ * 0004_project_state.sql) and the withTenantDb tenant-context wrapper proven by
+ * tests/lib/db/tenant-db.test.ts, drops the stale "no committed migration directory" /
+ * "glob empty" claim, and still says a live/provisioned Postgres run is unverified
+ * (production DB readiness still open).
+ *
+ * The doc is read from disk and never mutated; no runtime evaluator, composer, pricing,
+ * or expansion code is imported or run.
  */
 
 const DOC_PATH = join(process.cwd(), "docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md");
@@ -90,8 +98,9 @@ const P83_TO_P97_PIECES = [
 ];
 
 // Stale framing that must NOT survive the Prompt 98 refresh. Matched
-// case-sensitively and exactly. (B10's drizzle migration "(glob empty)" is a genuine,
-// still-open DB gap and is intentionally kept.)
+// case-sensitively and exactly. (B10's old "no committed migration directory" /
+// "(glob empty)" DB claim is corrected by Prompt 101; its absence is checked by the
+// DB-readiness alignment block below, not here.)
 const STALE_PHRASES = [
   "Last refreshed by Prompt 72",
   "Last refreshed by Prompt 82",
@@ -270,6 +279,29 @@ describe("quick bom demo-readiness backlog - stale phrasing removed", () => {
     for (const old of ["P47", "P48", "P49", "P50", "P51", "P52"]) {
       expect(doc.includes(old), old).toBe(false);
     }
+  });
+});
+
+describe("quick bom demo-readiness backlog - DB readiness evidence aligned (P100/P101)", () => {
+  it("no longer claims an absent committed migration dir or a glob-empty one", () => {
+    expect(doc.includes("no committed migration directory")).toBe(false);
+    expect(doc.toLowerCase().includes("glob empty")).toBe(false);
+  });
+
+  it("names the committed migration dir and the project-state migration", () => {
+    expect(doc).toContain("src/lib/db/migrations/");
+    expect(doc).toContain("0004_project_state.sql");
+  });
+
+  it("credits the withTenantDb tenant-context wrapper and its committed proof", () => {
+    expect(doc).toContain("withTenantDb");
+    expect(docFlat).toContain("app.tenant_id");
+    expect(doc).toContain("tenant-db.test.ts");
+  });
+
+  it("still says a live/provisioned Postgres run is unverified and DB readiness is open", () => {
+    expect(docFlat).toContain("live/provisioned postgres run remains unverified");
+    expect(docFlat).toContain("production db readiness is still open");
   });
 });
 
