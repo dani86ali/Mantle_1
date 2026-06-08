@@ -117,3 +117,23 @@ Key properties of subset resolution:
   fields attached.
 - No pricing, configuration-expansion, parent/child, replacement, or substitution fields
   appear on any decision.
+
+## Prompt 111: SKU Review Evidence
+
+Prompt 111 proves that overlay suggestions still require explicit human review actions
+to become accepted decisions.
+
+Key facts:
+
+- After `buildSkuResolutionDraft` with the Honeywell overlay all four input SKUs are
+  `needs_review` with one same-SKU suggestion each. No SKU is auto-accepted.
+- Explicit human `accept` actions (keyed by `sourceFileId` + `sourceRowNumber`) must be
+  supplied to `applySkuResolutionReviewActions` to move decisions to `accepted`.
+- Accepted decisions are accepted same-SKU decisions from existing suggestions, not
+  silent auto-acceptance or substitution.
+- Accepting a SKU that is not present in the row's suggestions throws
+  `Accepted SKU must match an existing suggestion.`
+- This does not create pricing authority, configuration-expansion authority,
+  replacement authority, or substitution authority.
+- Optic `SFP-10G-LR-S=` remains a standalone accepted decision with no parent/child
+  fields attached after review.
