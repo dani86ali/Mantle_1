@@ -33,7 +33,14 @@ import {
 } from "@/lib/db/project-artifact-store";
 import { getProjectById } from "@/lib/db/project-store";
 import { buildConfigurationExpansionDraft } from "@/lib/projects/config-expansion";
-import type { ConfigurationExpansionDraftArtifactPayload } from "@/lib/projects/config-expansion-types";
+import type {
+  ConfigurationAuthorityTrace,
+  ConfigurationExpansionDraftArtifactPayload,
+} from "@/lib/projects/config-expansion-types";
+import {
+  getHoneywellDemoConfigAuthorityProfile,
+  getHoneywellDemoConfigAuthorityForSku,
+} from "@/lib/projects/honeywell-demo-config-authority";
 import { getHoneywellMvpConfigExpansionRulePack } from "@/lib/projects/honeywell-config-expansion-rule-pack";
 import type {
   CanonicalBoqLine,
@@ -104,6 +111,8 @@ export interface QuickBomConfigExpansionPayloadSummary {
   rulePackSourceScope: string;
   lineCount: number;
   summary: ConfigurationExpansionDraftArtifactPayload["summary"];
+  /** Lean configuration-authority trace; present when the service wired a config authority profile. */
+  configurationAuthority?: ConfigurationAuthorityTrace;
 }
 
 /** The `sku_resolution` payload fields this service requires to seed the draft. */
@@ -193,7 +202,7 @@ function toArtifactSummary(
 function toPayloadSummary(
   payload: ConfigurationExpansionDraftArtifactPayload
 ): QuickBomConfigExpansionPayloadSummary {
-  return {
+  const base: QuickBomConfigExpansionPayloadSummary = {
     payloadKind: payload.payloadKind,
     sourceNormalizedBoqArtifactId: payload.sourceNormalizedBoqArtifactId,
     sourceNormalizedBoqArtifactVersion: payload.sourceNormalizedBoqArtifactVersion,
@@ -207,6 +216,13 @@ function toPayloadSummary(
     lineCount: payload.lineCount,
     summary: { ...payload.summary },
   };
+  if (payload.configurationAuthority !== undefined) {
+    base.configurationAuthority = {
+      ...payload.configurationAuthority,
+      dispositionSummary: { ...payload.configurationAuthority.dispositionSummary },
+    };
+  }
+  return base;
 }
 
 /** Unique source file ids across both artifacts, in first-seen order (no input mutation). */
@@ -334,6 +350,48 @@ export async function createProjectQuickBomConfigurationExpansionDraft(
     rulePack,
   });
 
+  const authorityProfile = getHoneywellDemoConfigAuthorityProfile();
+
+  const dispositionSummary = {
+    expandByApprovedRulePackCount: 0,
+    preserveKnownRulePackChildCount: 0,
+    preserveStandaloneCustomerLineCount: 0,
+    deferUnknownRelationshipCount: 0,
+  };
+  for (const decision of parsedSku.decisions) {
+    if (typeof decision.acceptedSku !== "string") continue;
+    const skuResult = getHoneywellDemoConfigAuthorityForSku(decision.acceptedSku);
+    switch (skuResult.disposition) {
+      case "expand_by_approved_rule_pack":
+        dispositionSummary.expandByApprovedRulePackCount++;
+        break;
+      case "preserve_known_rule_pack_child":
+        dispositionSummary.preserveKnownRulePackChildCount++;
+        break;
+      case "preserve_standalone_customer_line":
+        dispositionSummary.preserveStandaloneCustomerLineCount++;
+        break;
+      case "defer_unknown_relationship":
+        dispositionSummary.deferUnknownRelationshipCount++;
+        break;
+    }
+  }
+
+  const configurationAuthority: ConfigurationAuthorityTrace = {
+    scope: "honeywell_mvp_demo_only",
+    approvalRecordId: authorityProfile.approvalRecordId,
+    rulePackId: authorityProfile.rulePackId,
+    rulePackVersion: authorityProfile.rulePackVersion,
+    rulePackStatus: "approved",
+    rulePackSourceScope: authorityProfile.rulePackSourceScope,
+    dispositionSummary,
+    runtimeAi: false,
+    replacementAuthority: false,
+    skuSubstitutionAuthority: false,
+    unknownRelationshipsDeferred: true,
+    attachesOpticsUnderSwitches: false,
+  };
+
   const sourceFileIds = unionSourceFileIds(
     normalizedArtifact.sourceFileIds,
     skuArtifact.sourceFileIds
@@ -352,6 +410,7 @@ export async function createProjectQuickBomConfigurationExpansionDraft(
     lineCount: draft.lines.length,
     lines: draft.lines,
     summary: draft.summary,
+    configurationAuthority,
   };
 
   const artifact = await createProjectArtifactVersion({

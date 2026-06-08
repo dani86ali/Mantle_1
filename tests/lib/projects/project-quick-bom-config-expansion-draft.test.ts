@@ -36,6 +36,9 @@ import {
   HONEYWELL_MVP_CONFIG_EXPANSION_RULE_PACK_VERSION,
   HONEYWELL_MVP_CONFIG_EXPANSION_SOURCE_SCOPE,
 } from "@/lib/projects/honeywell-config-expansion-rule-pack";
+import {
+  HONEYWELL_CONFIG_AUTHORITY_APPROVAL_RECORD_ID,
+} from "@/lib/projects/honeywell-demo-config-authority";
 
 const getProjectMock = vi.mocked(getProjectById);
 const getArtifactMock = vi.mocked(getProjectArtifactById);
@@ -68,7 +71,9 @@ const CREATED_CREATED = new Date("2026-05-21T09:00:00.000Z");
 const CREATED_UPDATED = new Date("2026-05-21T09:30:00.000Z");
 
 const PRICING_TOKENS = [
+  "pricing",
   "price",
+  "catalog",
   "cost",
   "discount",
   "margin",
@@ -539,6 +544,7 @@ describe("createProjectQuickBomConfigurationExpansionDraft - happy path", () => 
       rulePackSourceScope: HONEYWELL_MVP_CONFIG_EXPANSION_SOURCE_SCOPE,
       lineCount: persistedLines.length,
       summary: persisted.summary,
+      configurationAuthority: (persisted.configurationAuthority as unknown),
     });
     expect("lines" in result.payloadSummary).toBe(false);
     // Neither the customer SKU nor an expansion child SKU leaks into the response.
@@ -590,6 +596,164 @@ describe("createProjectQuickBomConfigurationExpansionDraft - immutability", () =
   });
 });
 
+describe("createProjectQuickBomConfigurationExpansionDraft - configuration authority trace", () => {
+  it("persists a configurationAuthority trace inside the draft payload", async () => {
+    await createProjectQuickBomConfigurationExpansionDraft(input());
+
+    const payload = createArtifactMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.configurationAuthority).toBeDefined();
+    const auth = payload.configurationAuthority as Record<string, unknown>;
+    expect(auth.scope).toBe("honeywell_mvp_demo_only");
+    expect(auth.approvalRecordId).toBe(HONEYWELL_CONFIG_AUTHORITY_APPROVAL_RECORD_ID);
+    expect(auth.rulePackId).toBe(HONEYWELL_MVP_CONFIG_EXPANSION_RULE_PACK_ID);
+    expect(auth.rulePackVersion).toBe(HONEYWELL_MVP_CONFIG_EXPANSION_RULE_PACK_VERSION);
+    expect(auth.rulePackStatus).toBe("approved");
+    expect(auth.rulePackSourceScope).toBe(HONEYWELL_MVP_CONFIG_EXPANSION_SOURCE_SCOPE);
+    expect(auth.runtimeAi).toBe(false);
+    expect(auth.replacementAuthority).toBe(false);
+    expect(auth.skuSubstitutionAuthority).toBe(false);
+    expect(auth.unknownRelationshipsDeferred).toBe(true);
+    expect(auth.attachesOpticsUnderSwitches).toBe(false);
+  });
+
+  it("returns the same configurationAuthority trace in payloadSummary", async () => {
+    const result = await createProjectQuickBomConfigurationExpansionDraft(input());
+
+    if (result.status !== "ok") throw new Error("unreachable");
+    const payload = createArtifactMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(result.payloadSummary.configurationAuthority).toBeDefined();
+    expect(result.payloadSummary.configurationAuthority).toEqual(
+      payload.configurationAuthority
+    );
+  });
+
+  it("increments expandByApprovedRulePackCount for a known expandable parent such as C9300X-48HX-A", async () => {
+    await createProjectQuickBomConfigurationExpansionDraft(input());
+
+    const payload = createArtifactMock.mock.calls[0][0].payload as Record<string, unknown>;
+    const auth = payload.configurationAuthority as Record<string, unknown>;
+    const ds = auth.dispositionSummary as Record<string, number>;
+    expect(ds.expandByApprovedRulePackCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("increments preserveStandaloneCustomerLineCount and produces no optic-under-switch attachment for SFP-10G-LR-S=", async () => {
+    const opticDecision: SkuResolutionDecision = {
+      sourceFileId: LINE_FILE,
+      sourceRowNumber: 2,
+      originalLineNumber: "2",
+      originalSku: "SFP-10G-LR-S=",
+      status: "accepted",
+      suggestions: [],
+      acceptedSku: "SFP-10G-LR-S=",
+    };
+    const opticLine: CanonicalBoqLine = {
+      sourceFormat: "format_2_number_part_qty",
+      sourceFileId: LINE_FILE,
+      sourceRowNumber: 2,
+      originalLineNumber: "2",
+      sku: "SFP-10G-LR-S=",
+      description: "SFP 10G LR",
+      quantity: 4,
+      originalCells: { "#": "2", "Part Number": "SFP-10G-LR-S=", Qty: "4" },
+    };
+    stubArtifacts(
+      makeSkuArtifact({
+        payload: makeSkuPayload({
+          decisions: [makeDecision(), opticDecision],
+        }),
+      }),
+      makeNormalizedArtifact({
+        payload: {
+          sourceFileId: LINE_FILE,
+          lineCount: 2,
+          lines: [makeCanonicalLine(), opticLine],
+        },
+      })
+    );
+
+    await createProjectQuickBomConfigurationExpansionDraft(input());
+
+    const payload = createArtifactMock.mock.calls[0][0].payload as Record<string, unknown>;
+    const auth = payload.configurationAuthority as Record<string, unknown>;
+    const ds = auth.dispositionSummary as Record<string, number>;
+    expect(ds.preserveStandaloneCustomerLineCount).toBeGreaterThanOrEqual(1);
+
+    // Optic must not appear as a child under any expansion line
+    const lines = payload.lines as Array<Record<string, unknown>>;
+    const opticExpansionLines = lines.filter(
+      (l) => l.origin === "expansion" && l.sku === "SFP-10G-LR-S="
+    );
+    expect(opticExpansionLines).toHaveLength(0);
+  });
+
+  it("increments deferUnknownRelationshipCount for an unknown accepted SKU without throwing or substituting", async () => {
+    const unknownSku = "UNKNOWN-SKU-XYZ-9999";
+    const unknownDecision: SkuResolutionDecision = {
+      sourceFileId: LINE_FILE,
+      sourceRowNumber: 3,
+      originalLineNumber: "3",
+      originalSku: unknownSku,
+      status: "accepted",
+      suggestions: [],
+      acceptedSku: unknownSku,
+    };
+    const unknownLine: CanonicalBoqLine = {
+      sourceFormat: "format_2_number_part_qty",
+      sourceFileId: LINE_FILE,
+      sourceRowNumber: 3,
+      originalLineNumber: "3",
+      sku: unknownSku,
+      description: "Unknown SKU",
+      quantity: 1,
+      originalCells: { "#": "3", "Part Number": unknownSku, Qty: "1" },
+    };
+    stubArtifacts(
+      makeSkuArtifact({
+        payload: makeSkuPayload({
+          decisions: [makeDecision(), unknownDecision],
+        }),
+      }),
+      makeNormalizedArtifact({
+        payload: {
+          sourceFileId: LINE_FILE,
+          lineCount: 2,
+          lines: [makeCanonicalLine(), unknownLine],
+        },
+      })
+    );
+
+    const result = await createProjectQuickBomConfigurationExpansionDraft(input());
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    const payload = createArtifactMock.mock.calls[0][0].payload as Record<string, unknown>;
+    const auth = payload.configurationAuthority as Record<string, unknown>;
+    const ds = auth.dispositionSummary as Record<string, number>;
+    expect(ds.deferUnknownRelationshipCount).toBeGreaterThanOrEqual(1);
+
+    // Unknown SKU preserved verbatim - not substituted
+    const lines = payload.lines as Array<Record<string, unknown>>;
+    const unknownCustomerLine = lines.find(
+      (l) => l.origin === "customer" && l.sku === unknownSku
+    );
+    expect(unknownCustomerLine).toBeDefined();
+  });
+
+  it("persisted draft payload has no pricing/catalog-looking keys anywhere including in configurationAuthority", async () => {
+    await createProjectQuickBomConfigurationExpansionDraft(input());
+
+    const payload = createArtifactMock.mock.calls[0][0].payload;
+    for (const key of collectKeys(payload)) {
+      for (const token of PRICING_TOKENS) {
+        expect(
+          key.toLowerCase().includes(token),
+          `configurationAuthority key "${key}" contains pricing token "${token}"`
+        ).toBe(false);
+      }
+    }
+  });
+});
+
 describe("module purity and surface (static source check)", () => {
   const SRC_PATH = join(
     process.cwd(),
@@ -601,7 +765,7 @@ describe("module purity and surface (static source check)", () => {
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports the stores, the pure builder, the approved Honeywell pack, and the project/draft types", () => {
+  it("imports the stores, the pure builder, the approved Honeywell pack, the config authority module, and the project/draft types", () => {
     expect(source).toContain('from "@/lib/db/project-store"');
     expect(source).toContain('from "@/lib/db/project-artifact-store"');
     // Prompt 90 writes the artifact directly, so this IS a legitimate import here.
@@ -609,6 +773,9 @@ describe("module purity and surface (static source check)", () => {
     expect(source).toContain('from "@/lib/projects/config-expansion"');
     expect(source).toContain('from "@/lib/projects/config-expansion-types"');
     expect(source).toContain('from "@/lib/projects/honeywell-config-expansion-rule-pack"');
+    expect(source).toContain('from "@/lib/projects/honeywell-demo-config-authority"');
+    expect(source).toContain("getHoneywellDemoConfigAuthorityProfile");
+    expect(source).toContain("getHoneywellDemoConfigAuthorityForSku");
     expect(source).toContain('from "@/types/project"');
   });
 

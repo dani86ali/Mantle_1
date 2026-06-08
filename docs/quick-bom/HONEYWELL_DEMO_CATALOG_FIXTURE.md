@@ -279,3 +279,35 @@ Key facts:
   `honeywell-config-expansion-rule-pack`. No pricing, DB, API/UI, engine, coordinator,
   adapter, AI/LLM, workbook/export, artifact store, route, or filesystem code is present.
   It is ASCII-only.
+
+## Prompt 117: Configuration Authority Trace in Drafts
+
+Prompt 117 wires the Prompt 116 approved Honeywell MVP configuration authority profile
+into the Project Quick BoM configuration-expansion DRAFT service as explicit trace
+metadata.
+
+Key facts:
+
+- Draft creation now records the Prompt 116 approved configuration authority trace as
+  a `configurationAuthority` field inside the `ConfigurationExpansionDraftArtifactPayload`
+  and in the returned `payloadSummary`.
+- The trace is configuration authority only. It carries no pricing, catalog-lookup,
+  sell-price, discount, margin, markup, VAT, currency, or amount fields. Pricing
+  authority remains strictly separate.
+- The trace records a lean `dispositionSummary` derived from the accepted SKUs in the
+  source `sku_resolution` decisions: counts for `expandByApprovedRulePackCount`,
+  `preserveKnownRulePackChildCount`, `preserveStandaloneCustomerLineCount`, and
+  `deferUnknownRelationshipCount`.
+- Unknown or out-of-scope SKUs increment `deferUnknownRelationshipCount` and never
+  throw. The original accepted SKU is preserved verbatim with no substitution.
+- Standalone optics such as `SFP-10G-LR-S=` increment
+  `preserveStandaloneCustomerLineCount`. They are not attached under switches
+  (`attachesOpticsUnderSwitches: false` in the trace).
+- Runtime expansion behavior is unchanged. The existing approved Honeywell MVP
+  Batch 1+2+3 rule pack and the deterministic builder (`buildConfigurationExpansionDraft`)
+  still produce every expansion line. The trace records what governed draft creation;
+  it does not alter the expansion output.
+- No runtime AI, no silent SKU substitution, no optics-under-switch attachment.
+- No new artifacts, approval records, stage updates, pricing, export, UI, or route
+  changes are made. Exactly one `needs_review` `configuration_expansion` artifact is
+  still created on success, as before.

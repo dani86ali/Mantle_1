@@ -441,6 +441,32 @@ export type ConfigurationExpansionArtifactPayload = {
 };
 
 /**
+ * Lean configuration-authority trace embedded in a DRAFT artifact payload.
+ * Records which approved configuration authority profile governed draft creation
+ * and a disposition summary for the accepted SKUs that seeded the draft.
+ * Configuration authority only - no pricing fields. (section 11A.1, Prompt 117)
+ */
+export interface ConfigurationAuthorityTrace {
+  scope: "honeywell_mvp_demo_only";
+  approvalRecordId: string;
+  rulePackId: string;
+  rulePackVersion: string;
+  rulePackStatus: "approved";
+  rulePackSourceScope: string;
+  dispositionSummary: {
+    expandByApprovedRulePackCount: number;
+    preserveKnownRulePackChildCount: number;
+    preserveStandaloneCustomerLineCount: number;
+    deferUnknownRelationshipCount: number;
+  };
+  runtimeAi: false;
+  replacementAuthority: false;
+  skuSubstitutionAuthority: false;
+  unknownRelationshipsDeferred: true;
+  attachesOpticsUnderSwitches: false;
+}
+
+/**
  * JSONB payload of a DRAFT `configuration_expansion` artifact: the deterministic
  * configuration-expansion draft built from one APPROVED `sku_resolution` artifact
  * (and its `normalized_boq` source) plus one APPROVED rule-pack version, BEFORE any
@@ -477,4 +503,11 @@ export type ConfigurationExpansionDraftArtifactPayload = {
   /** Full configuration-expansion draft, in customer-then-children order. */
   lines: ConfigurationExpansionDraftLine[];
   summary: ConfigurationExpansionDraftSummary;
+  /**
+   * Lean configuration-authority trace recording which approved profile governed
+   * draft creation. Present when the service wired a Honeywell MVP config authority
+   * profile at draft time. Configuration authority only; no pricing fields.
+   * (Prompt 117)
+   */
+  configurationAuthority?: ConfigurationAuthorityTrace;
 };
