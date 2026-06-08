@@ -137,3 +137,29 @@ Key facts:
   replacement authority, or substitution authority.
 - Optic `SFP-10G-LR-S=` remains a standalone accepted decision with no parent/child
   fields attached after review.
+
+## Prompt 112: Configuration Expansion Evidence
+
+Prompt 112 proves that accepted Honeywell overlay SKU decisions can feed the approved
+Honeywell MVP Batch 1+2+3 configuration-expansion rule pack and produce a
+review-required draft.
+
+Key facts:
+
+- Accepted overlay decisions (from `applySkuResolutionReviewActions`) are passed
+  directly to `buildConfigurationExpansionDraft` together with the original BoQ lines
+  and `getHoneywellMvpConfigExpansionRulePack()`. No additional steps are required.
+- Expansion is fully deterministic and rule-pack-only. No AI, catalog lookup, pricing,
+  or configuration inference is performed at expansion time.
+- Every expansion line has `approvalRequired: true` and `approved: false`. No expansion
+  line is auto-approved. Engineer review is required for every added line.
+- The composed rule pack has `status: "approved"` and `approvalRequired: false` before
+  it is passed to the expansion builder, confirming only the already-approved Batch 1,
+  Batch 2, and Batch 3 rules are in scope.
+- Optic `SFP-10G-LR-S=` remains a standalone customer line with no expansion children.
+  It is not auto-attached under the switch.
+- This does not create new configuration authority beyond the already-approved Honeywell
+  MVP Batch 1+2+3 rule pack.
+- This does not create pricing authority, replacement authority, substitution authority,
+  catalog authority, API/UI behavior, artifact records, approval records, export
+  behavior, runner behavior, or broad Cisco authority.
