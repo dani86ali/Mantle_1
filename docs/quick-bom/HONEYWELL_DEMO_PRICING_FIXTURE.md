@@ -121,3 +121,34 @@ integration** or a separately approved pricing source. When that lands, this dem
 fixture must be replaced: it is scope-bound to the Honeywell MVP demo, bound to one
 CCW estimate snapshot, and is not a general pricing source. No replacement and no
 silent SKU substitution are approved by this fixture.
+
+## Prompt 119: Honeywell demo pricing authority profile
+
+Added: `src/lib/projects/honeywell-demo-pricing-authority.ts`
+Tests: `tests/lib/projects/honeywell-demo-pricing-authority.test.ts`
+
+The Honeywell demo pricing authority profile (`getHoneywellDemoPricingAuthorityProfile`)
+now records the user-approved temporary demo pricing boundary as an explicit pure profile,
+analogous to the Prompt 116 config authority profile.
+
+Key terms of the approved boundary:
+
+- **Active runtime source**: the committed Honeywell demo pricing fixture
+  (`honeywell-mvp-demo-pricing-fixture`, derived from `Estimate_NB167337237YA.xlsx`).
+- **Current local `cisco_gpl_sar.csv`**: approved only as temporary Honeywell demo
+  evidence if later converted into an approved committed structured source. This profile
+  does **not** read it at runtime (`activeRuntimeSourceReadsExternalGplCsv: false`).
+- **Unknown SKUs**: missing-price/report-only (`status: "missing_price_report_only"`).
+  The per-SKU getter (`getHoneywellDemoPricingAuthorityForSku`) never throws for unknown
+  SKUs and never substitutes or normalizes the input SKU.
+- **No production Cisco pricing authority** (`productionCiscoPricingAuthority: false`).
+- **No broad Cisco-general pricing authority** (`broadCiscoGeneralPricingAuthority: false`).
+- **No runtime AI pricing** (`runtimeAiPricing: false`).
+- **No runtime catalog lookup** (`runtimeCatalogLookup: false`).
+- **No replacement or substitution authority** (`replacementAuthority: false`,
+  `skuSubstitutionAuthority: false`, `silentSkuSubstitution: false`).
+- **No configuration authority** (`configurationAuthority: false`).
+  Configuration authority stays strictly separate from pricing authority.
+
+This profile is read-only and does not change runtime pricing behavior. Runtime wiring
+is deferred to a subsequent prompt.
