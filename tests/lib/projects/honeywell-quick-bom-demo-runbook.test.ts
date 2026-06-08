@@ -4,9 +4,11 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Honeywell Quick BoM demo operator runbook
- * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 132.
+ * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 136.
  *
- * It asserts the runbook: records the Prompt 132 refresh; still defines the generated
+ * It asserts the runbook: records the Prompt 136 refresh (prior: Prompt 132); documents
+ * the Prompt 135 local Docker Postgres Project-state real-DB proof (script name, run
+ * command, proof facts, B10 closure, open follow-ups); still defines the generated
  * Honeywell Mantle workbook correctly (what it is, and the historical/CCW/customer-input
  * files it is NOT); keeps the Prompt 73 local operator command and its manual workbook
  * checklist with the key counts/totals; preserves the Batch 4 / optics / replacement /
@@ -41,7 +43,8 @@ describe("honeywell quick bom demo runbook - exists and is hygienic", () => {
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 132 refresh", () => {
+  it("records the Prompt 136 refresh and keeps the prior Prompt 132 record", () => {
+    expect(docTextLower).toContain("refreshed by prompt 136");
     expect(docTextLower).toContain("refreshed by prompt 132");
   });
 
@@ -236,6 +239,53 @@ describe("honeywell quick bom demo runbook - Prompt 131 full seven-line app proo
   it("states the proof runs under the test harness/in-memory store", () => {
     expect(docTextLower).toContain("test harness/in-memory store");
     expect(docTextLower).toContain("not live/provisioned db");
+  });
+});
+
+describe("honeywell quick bom demo runbook - Prompt 135 real-DB proof", () => {
+  it("names the prove-project-real-db script and the run command", () => {
+    expect(docText).toContain("scripts/prove-project-real-db.ts");
+    expect(docTextLower).toContain("npx.cmd tsx scripts/prove-project-real-db.ts");
+  });
+
+  it("documents the proof facts: tables, stage count, wrong-tenant, approval, staleness, cleanup", () => {
+    expect(docTextLower).toContain("result pass");
+    expect(docTextLower).toContain("tenants, projects, project_stages, project_artifacts, project_approvals");
+    expect(docTextLower).toContain("stage count 5");
+    expect(docTextLower).toContain("wrong-tenant read null");
+    expect(docTextLower).toContain("approval count 1");
+    expect(docTextLower).toContain("cleanup ok");
+  });
+
+  it("documents downstream staleness in the proof results", () => {
+    expect(docTextLower).toContain("sku_resolution");
+    expect(docTextLower).toContain("configuration_expansion");
+    expect(docTextLower).toContain("priced_boq");
+    expect(docTextLower).toContain("export_package");
+    expect(docTextLower).toContain("stale");
+  });
+
+  it("states this closes the Project-store local real-DB provisioning gap", () => {
+    expect(docTextLower).toContain("closes the project-store local real-db provisioning gap");
+  });
+
+  it("states that manual browser QA and full Next.js route chain against live/provisioned database remain open", () => {
+    expect(docTextLower).toContain("manual browser qa");
+    expect(docTextLower).toContain("full next.js api/ui/browser route chain against a live/provisioned database");
+    expect(docTextLower).toContain("remain open");
+  });
+
+  it("states full uploaded Honeywell BoQ through real SKU resolution remains open", () => {
+    expect(docTextLower).toContain("full uploaded honeywell boq through real sku resolution");
+  });
+
+  it("states production pricing authority remains future", () => {
+    expect(docTextLower).toContain("production pricing authority");
+  });
+
+  it("does not claim production deployment readiness", () => {
+    expect(docTextLower.includes("production deployment readiness is complete")).toBe(false);
+    expect(docTextLower.includes("production db is complete")).toBe(false);
   });
 });
 

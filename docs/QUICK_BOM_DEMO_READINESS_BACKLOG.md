@@ -2,9 +2,13 @@
 
 Execution tracker only. `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md`
 is the architecture source of truth; this backlog never overrides it and is not a
-planning document. Last refreshed by Prompt 134 after Prompt 133 applied automatic
-downstream artifact staleness propagation in `src/lib/db/project-artifact-store.ts`
-(B6 closed) and this Prompt 134 docs/test alignment. Prior: refreshed by Prompt 132
+planning document. Last refreshed by Prompt 136 after Prompt 135 added
+`scripts/prove-project-real-db.ts` and ran it against local Docker Postgres (B10
+closed for local/provisioned Project-store real-DB proof) and this Prompt 136
+docs/test alignment. Prior: refreshed by Prompt 134 after Prompt 133 applied
+automatic downstream artifact staleness propagation in
+`src/lib/db/project-artifact-store.ts` (B6 closed) and the Prompt 134 docs/test
+alignment. Prior: refreshed by Prompt 132
 after Prompts 104-131 (P104-P114
 Honeywell demo catalog supplement explicit opt-in and authority-safe UI wiring;
 P126-P131 line-level SKU/config/pricing review UI screens and full seven-line Honeywell
@@ -40,9 +44,11 @@ SKU/config/pricing review UI screens (`src/app/projects/[id]/quick-bom/page.tsx`
 tested by `tests/ui/project-quick-bom-page.test.tsx`) and proved the full seven-line
 Honeywell BoQ upload through the app UI/panels with committed fixture totals (Section 5F).
 Prompt 133 applied automatic downstream artifact staleness propagation in
-`src/lib/db/project-artifact-store.ts` (B6 closed). Prompt 134 is this docs/test
-alignment refresh. None of these proofs claim production readiness; honest remaining
-gaps are in Sections 6-7.
+`src/lib/db/project-artifact-store.ts` (B6 closed). Prompt 134 is the prior docs/test
+alignment refresh. Prompt 135 added `scripts/prove-project-real-db.ts` and ran it
+against local Docker Postgres (B10 closed for local/provisioned Project-store
+real-DB proof). Prompt 136 is this docs/test alignment refresh. None of these proofs
+claim production readiness; honest remaining gaps are in Sections 6-7.
 
 ## 2. Status
 
@@ -106,8 +112,10 @@ this spine end to end (Section 5B). A seeded Honeywell app-level surface wraps t
 spine for the full Honeywell demo Project (Section 5D), and the broader app
 route/action chain now exists for a non-seeded arbitrary quick_bom Project
 (Section 5E). Line-level SKU/config/pricing review UI now exists (P126-P131,
-Section 5F). Real DB provisioning, manual browser QA, and full uploaded Honeywell
-catalog coverage through real SKU resolution remain open (Sections 6-7).
+Section 5F). Project-store local real-DB proof exists (P135,
+`scripts/prove-project-real-db.ts`); full Next.js API/UI/browser route chain against
+live DB, manual browser QA, and full uploaded Honeywell catalog coverage through real
+SKU resolution remain open (Sections 6-7).
 
 Project/stage/artifact foundation (confirmed):
 
@@ -401,9 +409,9 @@ real UI page, a persisted demo Project fixture, and an app-level end-to-end proo
 
 Scope of this seeded app-level proof: it covers the seeded Honeywell demo Project path
 under the test harness/in-memory store. The broader arbitrary-Project app route/action
-chain is covered separately in Section 5E (P83-P97). Neither proof claims production DB
-provisioning/migrations, broad customer formats, or manual browser QA are complete.
-Those remain open (Section 6, Section 7).
+chain is covered separately in Section 5E (P83-P97). Neither proof claims full Next.js
+API/UI/browser route chain against a live DB, broad customer formats, or manual
+browser QA are complete. Those remain open (Section 6, Section 7).
 
 ## 5E. App-Level Arbitrary Quick BoM Flow (P83-P97)
 
@@ -519,9 +527,41 @@ The proof runs under the test harness/in-memory store, not live/provisioned DB o
 browser QA. Authority boundaries unchanged: Honeywell demo catalog supplement is
 explicit opt-in only and demo scoped; runtime AI performs no SKU/config/pricing
 decisions; configuration authority is approved Honeywell Batch 1+2+3 only; pricing
-authority is committed Honeywell demo fixture only. Live/provisioned production DB run
-remains unverified; manual browser QA remains not run. Batch 4 remains a decision
-record only; optics remain standalone customer BoQ lines; no silent SKU replacement.
+authority is committed Honeywell demo fixture only. Project-store local real-DB proof
+exists (P135, `scripts/prove-project-real-db.ts`); full Next.js API/UI/browser route
+chain against live DB remains unproven; manual browser QA remains not run. Batch 4
+remains a decision record only; optics remain standalone customer BoQ lines; no
+silent SKU replacement.
+
+## 5G. Local Docker Postgres Project-State Proof (P135)
+
+Prompt 135 added `scripts/prove-project-real-db.ts` and ran it successfully against
+local Docker Postgres. The proof reported:
+
+- result PASS;
+- required tables present: tenants, projects, project_stages, project_artifacts,
+  project_approvals;
+- stage count 5;
+- wrong-tenant read null;
+- approval count 1;
+- after normalized_boq v2: sku_resolution, configuration_expansion, priced_boq, and
+  export_package stale, while normalized_boq v2 remains generated;
+- cleanup ok, proof tenant rows removed.
+
+The script proves existing Project repository/service behavior against a real DB:
+`createQuickBomProject`, `getProjectById` tenant-scoped read,
+`createProjectArtifactVersion`/`listProjectArtifacts`,
+`createProjectApproval`/`listProjectApprovals`, and Prompt 133 downstream staleness
+propagation. It is an operator proof/evidence command only; it does not change product
+behavior and was run via `npx.cmd tsx scripts/prove-project-real-db.ts`.
+
+This closes B10 for local/provisioned Project-store real-DB proof. It does NOT prove:
+- production deployment readiness;
+- manual browser QA;
+- full Next.js API/UI/browser route chain against a live DB;
+- full uploaded Honeywell BoQ through real SKU resolution;
+- production Cisco pricing authority;
+- broad Cisco-general configuration authority.
 
 ## 6. Demo Blockers
 
@@ -532,18 +572,18 @@ see Sections 5B-5D for the proven path.
 
 | ID | Priority | Area | Issue | Evidence from repo | Demo impact | Status / next prompt |
 |----|----------|------|-------|--------------------|-------------|----------------------|
-| B1 | P0 | Orchestration | End-to-end Quick BoM wiring at the runner level and app route/action level. | The pure in-memory runner `src/lib/projects/quick-bom-runner.ts` composes the spine end to end and is proven by `honeywell-quick-bom-demo-e2e.test.ts` (Section 5B). A seeded app-level surface drives the Honeywell demo Project (Section 5D, P77-P81), and the P83-P97 app route/action chain proves a non-seeded arbitrary Project path on reduced catalog-resolvable input (Section 5E). | The demo path runs in-memory via the runner; the seeded demo runs through the app routes/UI; the arbitrary route/action chain is proven under the test harness/in-memory store. | Done at runner level (P67); seeded-demo app surface done (P77-P81); route/action chain done (P83-P97); production DB/browser hardening still open (B10/B12) |
+| B1 | P0 | Orchestration | End-to-end Quick BoM wiring at the runner level and app route/action level. | The pure in-memory runner `src/lib/projects/quick-bom-runner.ts` composes the spine end to end and is proven by `honeywell-quick-bom-demo-e2e.test.ts` (Section 5B). A seeded app-level surface drives the Honeywell demo Project (Section 5D, P77-P81), and the P83-P97 app route/action chain proves a non-seeded arbitrary Project path on reduced catalog-resolvable input (Section 5E). | The demo path runs in-memory via the runner; the seeded demo runs through the app routes/UI; the arbitrary route/action chain is proven under the test harness/in-memory store. | Done at runner level (P67); seeded-demo app surface done (P77-P81); route/action chain done (P83-P97); Project-store local real-DB proof exists (P135); full Next.js API/UI/browser route chain against live DB and production deployment remain open (B10/B12) |
 | B2 | P0 | Expansion pack selection | Active runtime selector/composer for the Batch 1+2+3 packs. | `getHoneywellMvpConfigExpansionRulePack` (`src/lib/projects/honeywell-config-expansion-rule-pack.ts`) reads the committed Batch 1+2+3 approved pack JSON and composes them via `composeApprovedConfigExpansionRulePacks` into the active pack that `buildConfigurationExpansionDraft` accepts. | Expansion now runs from disk-loaded approved packs; pricing and export are reachable. Composition only - no new approval, no pricing. | Done (P66) |
-| B3 | P0 | Demo fixture | A reproducible Honeywell demo run through the spine. | The committed fixture `data/quick-bom/honeywell-demo-pricing-fixture.json` plus the runner carry one Honeywell-shaped run `normalize-input -> expand -> review -> price -> Mantle model`, proven by the P71 e2e test. A persisted Honeywell demo Project fixture now seeds the same run through the Project stores (`honeywell-demo-project-fixture.ts`, P78), exercised against an in-memory store in the P81 app E2E. Real DB provisioning/migrations remain open (B10). | The in-memory demo and the seeded demo Project are reproducible and proven; a run against a provisioned real DB is still verification work. | In-memory demo proven (P68/P71); seeded demo Project present (P78); real DB provisioning still open (B10) |
+| B3 | P0 | Demo fixture | A reproducible Honeywell demo run through the spine. | The committed fixture `data/quick-bom/honeywell-demo-pricing-fixture.json` plus the runner carry one Honeywell-shaped run `normalize-input -> expand -> review -> price -> Mantle model`, proven by the P71 e2e test. A persisted Honeywell demo Project fixture now seeds the same run through the Project stores (`honeywell-demo-project-fixture.ts`, P78), exercised against an in-memory store in the P81 app E2E. Prompt 135 proves the Project-store layer against local Docker Postgres (B10). | The in-memory demo and the seeded demo Project are reproducible and proven; Project-store local real-DB proof exists (P135); full Next.js API/UI/browser route chain against a live DB and production deployment verification remain open. | In-memory demo proven (P68/P71); seeded demo Project present (P78); Project-store local real-DB proof exists (P135); full Next.js API/UI/browser route chain against live DB remains unproven (B10) |
 | B4 | P1 | Review surfaces | Product-facing review/approval surface for the approval-gated Quick BoM artifacts. | A review/approval service (`project-quick-bom-approval.ts`, P79) and POST route (`approvals/route.ts`) record an approve/reject decision against an EXACT artifact version for the four gated types, and the UI page (`page.tsx`, P80/P96) offers approve/reject plus the workflow action rail; proven by the P81 and P97 app E2Es. Per-line SKU/config review routes (`.../sku-resolution/review` P87, `.../configuration-expansion/review` P89) and the priced review route (`.../priced-boq/review` P91) exist. Line-level SKU/config/pricing review UI screens now exist (P126-P131, `tests/ui/project-quick-bom-page.test.tsx`). | Reviewers can approve/reject gated artifacts and record per-line SKU/config decisions; line-level review UI now exists (P126-P131). | Minimally present (P79/P80); per-line review routes present (P87/P89/P91); line-level review UI done (P126-P131) |
-| B5 | P1 | Orchestration | Driving the spine no longer needs hand-built artifacts. | The runner advances input -> expand -> review -> price -> Mantle model deterministically; `quick-bom-readiness.ts` remains a read-only report alongside it. The P77-P81 seeded-demo app surface renders readiness for the Honeywell demo Project, and the P83-P97 route/action chain drives upload -> normalize -> review -> price -> export -> download for a non-seeded arbitrary Project under test. | Operator no longer hand-assembles each step in-memory; seeded and reduced arbitrary app flows have driver/readiness surfaces. Production DB/browser hardening remains open; line-level review UI is done (P126-P131). | Done at runner level (P67); seeded-demo readiness surface done (P77-P81); arbitrary route/action chain done (P83-P97) |
+| B5 | P1 | Orchestration | Driving the spine no longer needs hand-built artifacts. | The runner advances input -> expand -> review -> price -> Mantle model deterministically; `quick-bom-readiness.ts` remains a read-only report alongside it. The P77-P81 seeded-demo app surface renders readiness for the Honeywell demo Project, and the P83-P97 route/action chain drives upload -> normalize -> review -> price -> export -> download for a non-seeded arbitrary Project under test. | Operator no longer hand-assembles each step in-memory; seeded and reduced arbitrary app flows have driver/readiness surfaces. Project-store local real-DB proof exists (P135); full Next.js API/UI/browser route chain against live DB remains unproven; line-level review UI is done (P126-P131). | Done at runner level (P67); seeded-demo readiness surface done (P77-P81); arbitrary route/action chain done (P83-P97) |
 | B6 | P1 | Staleness | Upstream changes automatically mark downstream artifacts stale at runtime. | Prompt 133 wired `planStaleArtifactUpdates` (`staleness.ts`) into `createProjectArtifactVersion` (`project-artifact-store.ts`): after inserting a new artifact version the store calls the planner inside the same tenant-scoped transaction and marks latest eligible downstream artifact versions stale. Immutable history preserved; only `status -> stale` and `updatedAt` on planned downstream artifacts; missing/stale/not_applicable latest downstream skipped. Verified by `tests/lib/db/project-artifact-store.test.ts` (normalized_boq, sku_resolution, configuration_expansion, and priced_boq regeneration stale correct downstream artifacts). | Regenerating an upstream artifact now marks downstream artifacts stale automatically; the canonical "auto-stale" rule is enforced. | Done (P133) |
 | B7 | P1 | Demo data | Committed SAR price source and Mantle category map for the Honeywell scope. | The committed demo fixture supplies a SAR `unitListPriceSarBySku` map and a SKU->Mantle-category map for exactly the 50 demo SKUs (loader `honeywell-demo-pricing-fixture.ts`); the P71 e2e test prices all 60 lines with correct category totals and no warnings. Fixture pricing is temporary demo-fixture evidence only, never production authority (Section 3). | Pricing and category totals are correct for the Honeywell demo scope. | Done (P68) |
 | B8 | P1 | Mantle export tests | Real-input Mantle export proof for the Honeywell shape. | `honeywell-quick-bom-demo-e2e.test.ts` writes the Honeywell Mantle model to a temporary workbook and re-opens it to assert rows, order, category footers, and totals against the committed template. Marafiq/EnergyTech real-input export tests are still not present. | Honeywell "customer-ready without manual reformatting" is now proven; other customer formats remain unproven. | Done for Honeywell (P71); other formats later |
 | B9 | P2 | Catalog coverage | SKU resolution resolves only against a committed local STC mock catalog; Prompt 102 verified which Honeywell-scope SKUs that mock resolves and misses. | `catalog-lookup.ts` reads `getCatalogMock()` (`LOCAL_CATALOG_SOURCE = local_stc_historical_mock`); exact + normalized only, no fuzzy/AI. The read-only Prompt 102 audit (`docs/quick-bom/HONEYWELL_CATALOG_COVERAGE_AUDIT.md`, `src/lib/projects/honeywell-catalog-coverage-audit.ts`, `tests/lib/projects/honeywell-catalog-coverage-audit.test.ts`) records customer rows 7 total, 4 matched, 3 not_found, 0 ambiguous (missing CW9178I-CFG, C9300X-48HX-A, C9300L-24P-4X-A) and broader demo SKUs 50 total, 30 matched, 20 not_found, 0 ambiguous, against local_stc_historical_mock only. Audit-only: no pricing, configuration, production catalog, or substitution authority. | A full uploaded Honeywell BoQ through real SKU resolution would still leave those missing rows unresolved unless explicit catalog-fixture/authority work is approved later; the demo runner sidesteps this by taking human-accepted SKU decisions (acceptedSku == originalSku). | Coverage verified (P102); missing-SKU gap still open |
-| B10 | P2 | DB provisioning (needs verification) | Project-table provisioning against a live/provisioned Postgres DB is unverified, though committed schema, migration SQL, and the tenant-context wrapper now exist and are unit-tested. | Committed migration SQL exists under `src/lib/db/migrations/` (the `drizzle.config.ts` `out` path), including `0004_project_state.sql`, which creates the six Project tables plus their RLS tenant-isolation policies. `withTenantDb` (`src/lib/db/index.ts`) sets PostgreSQL `app.tenant_id` transaction-locally and is covered by `tests/lib/db/tenant-db.test.ts` (P100). A live/provisioned Postgres run remains unverified: both the in-memory runner and the P97 arbitrary-flow E2E sidestep DB persistence (in-memory store). | Schema, migration SQL, and the tenant-scoped DB wrapper are committed and unit-tested, but a demo against a real provisioned DB still needs the migrations applied (e.g. `drizzle-kit` migrate/push) plus a live run; production DB readiness is still open. | Migration SQL + tenant wrapper present and unit-tested (P100); live/provisioned Postgres run still unverified |
+| B10 | P2 | DB provisioning | Project-table provisioning against a real Postgres DB is now proven for the local/provisioned Project-store layer by Prompt 135. | Committed migration SQL exists under `src/lib/db/migrations/` (the `drizzle.config.ts` `out` path), including `0004_project_state.sql`, which creates the six Project tables plus their RLS tenant-isolation policies. `withTenantDb` (`src/lib/db/index.ts`) sets PostgreSQL `app.tenant_id` transaction-locally and is covered by `tests/lib/db/tenant-db.test.ts` (P100). Prompt 135 added `scripts/prove-project-real-db.ts` and ran it against local Docker Postgres: required tables present (tenants, projects, project_stages, project_artifacts, project_approvals); stage count 5; wrong-tenant read null; approval count 1; downstream staleness propagation verified; cleanup ok (see Section 5G). | Local/provisioned Project-store real-DB proof run (P135, `scripts/prove-project-real-db.ts`); full Next.js API/UI/browser route chain against live DB and production deployment verification remain open. | Migration SQL + tenant wrapper present and unit-tested (P100); local/provisioned Project-store proof run (P135); full Next.js API/UI/browser route chain against live DB and production deployment remain open |
 | B11 | P0 | Operator command | Operator-facing command/script that writes the Honeywell Mantle demo workbook on demand. | `scripts/write-honeywell-quick-bom-demo.ts` (P73) invokes `runHoneywellQuickBomDemoMantleExportModel` + `writeMantlePriceEstimateWorkbook` to write a fresh `.xlsx` an operator can open (`--output <path>`; default under the OS temp dir), and prints an operator summary derived from the computed model. | An operator can regenerate the demo workbook live without the test harness. | Done (P73) |
-| B12 | P1 | App-level wiring | Broad canonical Project/API/UI/DB flow for the Quick BoM path beyond the seeded fixture. | The app route/action chain now exists beyond the seeded demo Project: create Project (`POST /api/projects/quick-bom`), upload (`.../quick-bom/files`), normalize, SKU draft/review, configuration draft/review, pricing, pricing review, export creation, and export download, wired into `src/app/projects/[id]/quick-bom/page.tsx` and proved for an arbitrary Project by `tests/app/project-quick-bom-arbitrary-flow-e2e.test.tsx` (P83-P97, Section 5E). Still unbuilt: production DB provisioning/migrations and full customer/general production readiness; the legacy estimate/pipeline UI remains the E2 path. Line-level SKU/config/pricing review UI now exists (P126-P131). | The arbitrary-Project chain runs through the app routes/UI on reduced catalog-resolvable input; production provisioning remains open; line-level review UI is done (P126-P131); broad app wiring must not shortcut through legacy E2. | Seeded-demo surface done (P77-P81); route/action chain done (P83-P97); line-level review UI done (P126-P131); production provisioning open |
+| B12 | P1 | App-level wiring | Broad canonical Project/API/UI/DB flow for the Quick BoM path beyond the seeded fixture. | The app route/action chain now exists beyond the seeded demo Project: create Project (`POST /api/projects/quick-bom`), upload (`.../quick-bom/files`), normalize, SKU draft/review, configuration draft/review, pricing, pricing review, export creation, and export download, wired into `src/app/projects/[id]/quick-bom/page.tsx` and proved for an arbitrary Project by `tests/app/project-quick-bom-arbitrary-flow-e2e.test.tsx` (P83-P97, Section 5E). Project-store local real-DB proof exists (P135); full Next.js API/UI/browser route chain against a live DB and production deployment remain open; full customer/general production readiness remains future; the legacy estimate/pipeline UI remains the E2 path. Line-level SKU/config/pricing review UI now exists (P126-P131). | The arbitrary-Project chain runs through the app routes/UI on reduced catalog-resolvable input; Project-store local real-DB proof exists (P135); full Next.js API/UI/browser route chain against live DB and production deployment remain open; line-level review UI is done (P126-P131); broad app wiring must not shortcut through legacy E2. | Seeded-demo surface done (P77-P81); route/action chain done (P83-P97); line-level review UI done (P126-P131); Project-store local real-DB proof exists (P135); full Next.js API/UI/browser route chain against live DB and production deployment remain open |
 
 ## 7. Missing Functions / Product Gaps
 
@@ -605,7 +645,9 @@ Demo data/fixtures:
   both run against an in-memory store. Committed schema/migration SQL
   (`src/lib/db/migrations/0004_project_state.sql`) and the `withTenantDb` tenant-context
   wrapper (proven by `tests/lib/db/tenant-db.test.ts`) exist and are unit-tested, but a
-  run against a live/provisioned Postgres DB remains unverified (B10).
+  local Docker Postgres Project-state proof now exists (P135,
+  `scripts/prove-project-real-db.ts`); full Next.js API/UI/browser route chain
+  against a live DB and production deployment verification remain open (B10).
 - Honeywell SKU coverage in the local mock catalog is now verified by the Prompt 102
   read-only audit (`docs/quick-bom/HONEYWELL_CATALOG_COVERAGE_AUDIT.md`,
   `src/lib/projects/honeywell-catalog-coverage-audit.ts`,
@@ -746,8 +788,8 @@ Completed (P83-P98) - the app-readiness closure slice, kept as the execution rec
 - P98 - App-readiness closure: this refresh (this doc and the runbook, plus their
   doc regression tests).
 
-Completed (P104-P134) - the UI/evidence hardening, staleness wiring, and docs/test
-alignment slice, kept as the execution record:
+Completed (P104-P136) - the UI/evidence hardening, staleness wiring, real-DB proof,
+and docs/test alignment slice, kept as the execution record:
 
 - P104-P114 - Honeywell demo catalog supplement explicit opt-in and authority-safe UI
   wiring - DONE.
@@ -762,14 +804,26 @@ alignment slice, kept as the execution record:
   `src/lib/db/project-artifact-store.ts`: `createProjectArtifactVersion` now calls
   `planStaleArtifactUpdates` inside the same tenant-scoped transaction, marking
   latest eligible downstream artifact versions stale. B6 closed. - DONE.
-- P134 - Docs/test alignment refresh (this refresh) - DONE.
+- P134 - Docs/test alignment refresh (prior refresh) - DONE.
+- P135 - Local Docker Postgres Project-state proof script - DONE
+  (`scripts/prove-project-real-db.ts`); proves `createQuickBomProject`,
+  `getProjectById` tenant-scoped read, `createProjectArtifactVersion`/
+  `listProjectArtifacts`, `createProjectApproval`/`listProjectApprovals`, and
+  downstream staleness propagation against a real DB (5 stages; wrong-tenant read
+  null; approval count 1; downstream staleness verified; cleanup ok). B10 closed
+  for local/provisioned Project-store real-DB proof.
+- P136 - Docs/test alignment refresh (this refresh) - DONE.
 
 Post-closure follow-ups (no prompt numbers assigned; ordering is a recommendation,
 not a commitment):
 
-- Real DB provisioning/RLS/migrations plus a demo/run against a provisioned database,
-  and production deployment verification (the route/action chain is proved only against
-  the in-memory store).
+- Local Docker Postgres Project-state proof exists (P135,
+  `scripts/prove-project-real-db.ts`): proves `createQuickBomProject`,
+  `getProjectById` tenant-scoped read, `createProjectArtifactVersion`/
+  `listProjectArtifacts`, `createProjectApproval`/`listProjectApprovals`, and
+  downstream staleness propagation against real required tables. Full Next.js
+  API/UI/browser route chain against a live DB (API routes, server actions, and
+  browser-driven UI) and production deployment verification remain open.
 - Full uploaded Honeywell BoQ through real SKU resolution: Prompt 102 verified the
   current local mock coverage and documented the gaps (customer rows 4/7 matched, 3
   not_found; broader 30/50 matched, 20 not_found), so this remains a gap because three
@@ -797,8 +851,9 @@ not a commitment):
   line-level SKU/config/pricing review UI (P126-P131, Section 5F) are all shipped.
   Production provisioning remains a follow-up (Section 9).
 - Q3: The seeded-demo app E2E (P81) and the arbitrary-flow app E2E (P97) both run
-  against an in-memory store; whether the first live demo uses real project DB
-  persistence (requires DB provisioning, B10) or the in-memory path remains open.
+  against an in-memory store. A local Docker Postgres Project-state proof now exists
+  (P135), but whether the first live demo uses real project DB persistence through
+  the full Next.js route chain against a live DB remains open.
 - Q4: Which files are allowed as regression references for the demo, and what is
   the committed/sanitized source for the Honeywell SAR price and category maps
   (B7)? Benchmark/priced workbooks are references only, never rule sources.

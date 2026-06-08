@@ -1,13 +1,14 @@
 # Honeywell Quick BoM Demo Runbook
 
 Status: operator runbook for the Honeywell MVP Quick BoM demo (demo scope only).
-Refreshed by Prompt 132.
+Refreshed by Prompt 136. Prior record: Refreshed by Prompt 132.
 
 Operator-facing runbook for the Honeywell Quick BoM demo. It defines what the
 generated Honeywell Mantle workbook is, the local operator command (Prompt 73), the
 authority boundaries, the manual workbook checklist, the app-level seeded demo proof
-(Prompt 81), the app-level arbitrary flow proof (Prompt 97), and the full seven-line
-Honeywell app proof (Prompt 131). It is a demo runbook, not an architecture source of
+(Prompt 81), the app-level arbitrary flow proof (Prompt 97), the full seven-line
+Honeywell app proof (Prompt 131), and the Prompt 135 local Docker Postgres
+Project-state real-DB proof. It is a demo runbook, not an architecture source of
 truth;
 `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md` remains the source
 of truth and `docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md` is the execution tracker.
@@ -203,8 +204,33 @@ The automated app-level demo paths above are proven for the seeded Honeywell dem
 Project (Prompt 81), for a non-seeded arbitrary quick_bom Project by the Prompt 97
 route/action chain E2E, and end-to-end through the UI panels by the Prompt 131
 seven-line app proof. Line-level SKU/config/pricing review UI now exists (P126-P131).
-Still follow-up work and not part of this demo slice: manual browser QA of the flow,
-production DB provisioning with migrations (a provisioned database), full uploaded
-Honeywell BoQ through real SKU resolution, and production pricing authority. Broad app
-wiring must build the canonical Project Quick BoM flow and must not shortcut through
-the legacy estimate/pipeline (E2) UI.
+A local Docker Postgres Project-state proof now exists (P135,
+`scripts/prove-project-real-db.ts`; see Section 9). Still follow-up work and not part
+of this demo slice: manual browser QA of the flow, full Next.js API/UI/browser route
+chain against a live/provisioned database (the Project-store proof exists but the full
+app route/action chain against a live/provisioned database remains unproven), full
+uploaded Honeywell BoQ through real SKU resolution, and production pricing authority. Broad app wiring must build the
+canonical Project Quick BoM flow and must not shortcut through the legacy
+estimate/pipeline (E2) UI.
+
+## 9. Prompt 135 real-DB proof
+
+Prompt 135 added `scripts/prove-project-real-db.ts` and ran it successfully against
+local Docker Postgres via `npx.cmd tsx scripts/prove-project-real-db.ts`. The proof
+reported result PASS; required tables present (tenants, projects, project_stages,
+project_artifacts, project_approvals); stage count 5; wrong-tenant read null; approval
+count 1; after normalized_boq v2: sku_resolution, configuration_expansion, priced_boq,
+and export_package stale, while normalized_boq v2 remains generated; cleanup ok, proof
+tenant rows removed.
+
+The script proves existing Project repository/service behavior against a real DB:
+`createQuickBomProject`, `getProjectById` tenant-scoped read,
+`createProjectArtifactVersion`/`listProjectArtifacts`,
+`createProjectApproval`/`listProjectApprovals`, and Prompt 133 downstream staleness
+propagation. It is an operator proof/evidence command only; it does not change product
+behavior.
+
+This closes the Project-store local real-DB provisioning gap (B10). It does NOT prove
+manual browser QA, full Next.js API/UI/browser route chain against a live/provisioned
+database, full uploaded Honeywell BoQ through real SKU resolution, or production
+deployment readiness. Those remain open follow-ups (Section 8).
