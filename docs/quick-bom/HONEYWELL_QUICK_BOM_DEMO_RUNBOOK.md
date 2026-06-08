@@ -1,14 +1,15 @@
 # Honeywell Quick BoM Demo Runbook
 
 Status: operator runbook for the Honeywell MVP Quick BoM demo (demo scope only).
-Refreshed by Prompt 136. Prior record: Refreshed by Prompt 132.
+Refreshed by Prompt 138. Prior record: Refreshed by Prompt 136. Prior: Refreshed by
+Prompt 132.
 
 Operator-facing runbook for the Honeywell Quick BoM demo. It defines what the
 generated Honeywell Mantle workbook is, the local operator command (Prompt 73), the
 authority boundaries, the manual workbook checklist, the app-level seeded demo proof
 (Prompt 81), the app-level arbitrary flow proof (Prompt 97), the full seven-line
-Honeywell app proof (Prompt 131), and the Prompt 135 local Docker Postgres
-Project-state real-DB proof. It is a demo runbook, not an architecture source of
+Honeywell app proof (Prompt 131), the Prompt 135 local Docker Postgres Project-state
+real-DB proof, and the Prompt 137 live-DB Quick BoM API route/action-chain proof. It is a demo runbook, not an architecture source of
 truth;
 `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md` remains the source
 of truth and `docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md` is the execution tracker.
@@ -234,3 +235,46 @@ This closes the Project-store local real-DB provisioning gap (B10). It does NOT 
 manual browser QA, full Next.js API/UI/browser route chain against a live/provisioned
 database, full uploaded Honeywell BoQ through real SKU resolution, or production
 deployment readiness. Those remain open follow-ups (Section 8).
+
+## 10. Prompt 137 live-DB Quick BoM API route/action chain proof
+
+Prompt 137 added `scripts/prove-project-quick-bom-route-real-db.ts` and ran it
+successfully against local Docker Postgres via
+`npx.cmd tsx scripts/prove-project-quick-bom-route-real-db.ts`. The proof reported:
+
+- result: PASS
+- required tables: present (tenants, projects, project_files, project_stages,
+  project_artifacts, project_approvals)
+- normalized line count: 7
+- SKU catalog source: honeywell_mvp_demo_catalog_supplement
+- SKU accepted count: 7
+- config accepted lines: 60
+- priced line count: 60
+- totalPriceSar: 2185708.76
+- totalIncVatSar: 2513565.07
+- export row count: 60
+- downloaded XLSX bytes: 14315
+- cleanup result: ok (proof tenant rows and temp files removed)
+
+The script proves existing Next.js Quick BoM API route/action handlers against a real
+local/provisioned Postgres DB for the full Honeywell seven-line route chain:
+create quick_bom Project -> upload customer BoQ -> normalize -> SKU resolution with
+explicit honeywell_mvp_demo catalog profile -> explicit SKU review -> SKU approval ->
+configuration expansion draft -> explicit configuration review -> configuration
+approval -> deterministic SAR pricing -> priced approval -> export package -> export
+approval -> approved workbook download. It is an operator proof/evidence command only;
+it does not change product behavior.
+
+Prompt 137 closes the live-DB Quick BoM API route/action-chain proof gap. It does NOT
+close:
+- manual browser QA;
+- browser-driven UI against a live/provisioned DB;
+- production deployment readiness;
+- full real-catalog Honeywell SKU resolution (uses explicit honeywell_mvp_demo catalog
+  profile/supplement and demo fixture authority, not full production Cisco catalog);
+- production Cisco pricing authority;
+- broad Cisco-general configuration authority.
+
+Manual browser QA, full Next.js API/UI/browser route chain against a live/provisioned
+database (including browser-driven UI), full uploaded Honeywell BoQ through real SKU
+resolution, and production pricing authority remain open follow-ups (Section 8).

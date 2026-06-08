@@ -4,22 +4,24 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Honeywell Quick BoM demo operator runbook
- * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 136.
+ * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 138.
  *
- * It asserts the runbook: records the Prompt 136 refresh (prior: Prompt 132); documents
- * the Prompt 135 local Docker Postgres Project-state real-DB proof (script name, run
- * command, proof facts, B10 closure, open follow-ups); still defines the generated
- * Honeywell Mantle workbook correctly (what it is, and the historical/CCW/customer-input
- * files it is NOT); keeps the Prompt 73 local operator command and its manual workbook
- * checklist with the key counts/totals; preserves the Batch 4 / optics / replacement /
- * pricing / runtime-AI boundaries; documents the Prompt 81 app-level E2E proof (the real
- * GET route, POST route/service, UI page, seeded fixture, on-disk workbook, export
- * approval to customer-deliverable ready, and no payload leak); documents the Prompt 97
- * arbitrary-flow proof and its limitations (line-level review UI now exists per P126-P131,
- * DB/browser QA still open); documents the Prompt 131 full seven-line Honeywell app
- * proof counts/totals; and no longer says app-level testing is "not ready yet" or
- * "comes later" as a blanket statement. The doc is read from disk only; no runtime
- * module is imported (a pure documentation regression test).
+ * It asserts the runbook: records the Prompt 138 refresh (prior: Prompt 136, Prompt 132);
+ * documents the Prompt 137 live-DB Quick BoM API route/action-chain proof (script name,
+ * run command, proof facts, open boundaries); documents the Prompt 135 local Docker
+ * Postgres Project-state real-DB proof (script name, run command, proof facts, B10
+ * closure, open follow-ups); still defines the generated Honeywell Mantle workbook
+ * correctly (what it is, and the historical/CCW/customer-input files it is NOT); keeps
+ * the Prompt 73 local operator command and its manual workbook checklist with the key
+ * counts/totals; preserves the Batch 4 / optics / replacement / pricing / runtime-AI
+ * boundaries; documents the Prompt 81 app-level E2E proof (the real GET route, POST
+ * route/service, UI page, seeded fixture, on-disk workbook, export approval to
+ * customer-deliverable ready, and no payload leak); documents the Prompt 97 arbitrary-flow
+ * proof and its limitations (line-level review UI now exists per P126-P131, DB/browser QA
+ * still open); documents the Prompt 131 full seven-line Honeywell app proof counts/totals;
+ * and no longer says app-level testing is "not ready yet" or "comes later" as a blanket
+ * statement. The doc is read from disk only; no runtime module is imported (a pure
+ * documentation regression test).
  */
 
 const DOC_PATH = join(
@@ -43,7 +45,8 @@ describe("honeywell quick bom demo runbook - exists and is hygienic", () => {
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 136 refresh and keeps the prior Prompt 132 record", () => {
+  it("records the Prompt 138 refresh and keeps the prior Prompt 136 and Prompt 132 records", () => {
+    expect(docTextLower).toContain("refreshed by prompt 138");
     expect(docTextLower).toContain("refreshed by prompt 136");
     expect(docTextLower).toContain("refreshed by prompt 132");
   });
@@ -284,6 +287,52 @@ describe("honeywell quick bom demo runbook - Prompt 135 real-DB proof", () => {
   });
 
   it("does not claim production deployment readiness", () => {
+    expect(docTextLower.includes("production deployment readiness is complete")).toBe(false);
+    expect(docTextLower.includes("production db is complete")).toBe(false);
+  });
+});
+
+describe("honeywell quick bom demo runbook - Prompt 137 live-DB Quick BoM API route proof", () => {
+  it("names the prove-project-quick-bom-route-real-db script and the run command", () => {
+    expect(docText).toContain("scripts/prove-project-quick-bom-route-real-db.ts");
+    expect(docTextLower).toContain("npx.cmd tsx scripts/prove-project-quick-bom-route-real-db.ts");
+  });
+
+  it("documents the P137 proof facts: tables, normalized lines, SKU count, config/priced/export rows, totals, XLSX bytes, cleanup", () => {
+    expect(docTextLower).toContain("result: pass");
+    expect(docTextLower).toContain(
+      "tenants, projects, project_files, project_stages, project_artifacts, project_approvals"
+    );
+    expect(docTextLower).toContain("normalized line count: 7");
+    expect(docTextLower).toContain("honeywell_mvp_demo_catalog_supplement");
+    expect(docTextLower).toContain("sku accepted count: 7");
+    expect(docTextLower).toContain("config accepted lines: 60");
+    expect(docTextLower).toContain("priced line count: 60");
+    expect(docTextLower).toContain("totalpricesar: 2185708.76");
+    expect(docTextLower).toContain("totalincvatsar: 2513565.07");
+    expect(docTextLower).toContain("export row count: 60");
+    expect(docTextLower).toContain("downloaded xlsx bytes: 14315");
+    expect(docTextLower).toContain("cleanup result: ok");
+  });
+
+  it("states P137 closes the live-DB Quick BoM API route/action-chain proof gap", () => {
+    expect(docTextLower).toContain("closes the live-db quick bom api route/action-chain proof gap");
+  });
+
+  it("keeps manual browser QA, browser-driven UI/live DB, production deployment, full real-catalog Honeywell SKU resolution, and production pricing authority open", () => {
+    expect(docTextLower).toContain("manual browser qa");
+    expect(docTextLower).toContain("browser-driven ui");
+    expect(docTextLower).toContain("production deployment");
+    expect(docTextLower).toContain("full real-catalog honeywell sku resolution");
+    expect(docTextLower).toContain("production cisco pricing authority");
+  });
+
+  it("states honeywell_mvp_demo catalog profile/supplement used (not full production catalog)", () => {
+    expect(docTextLower).toContain("honeywell_mvp_demo catalog profile");
+    expect(docTextLower).toContain("demo fixture authority");
+  });
+
+  it("does not claim production deployment readiness or full catalog authority is complete", () => {
     expect(docTextLower.includes("production deployment readiness is complete")).toBe(false);
     expect(docTextLower.includes("production db is complete")).toBe(false);
   });

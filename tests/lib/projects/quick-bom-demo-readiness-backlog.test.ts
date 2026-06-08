@@ -4,9 +4,13 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Quick BoM demo-readiness backlog
- * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 136 after Prompt 135
- * added scripts/prove-project-real-db.ts and ran it against local Docker Postgres (B10
- * closed for local/provisioned Project-store real-DB proof).
+ * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 138 (docs/test
+ * alignment cleanup, after Prompt 137 added
+ * scripts/prove-project-quick-bom-route-real-db.ts and ran it against local Docker
+ * Postgres (live-DB Quick BoM API route/action-chain proof, Section 5H). Prior:
+ * refreshed by Prompt 136 after Prompt 135 added scripts/prove-project-real-db.ts
+ * and ran it against local Docker Postgres (B10 closed for local/provisioned
+ * Project-store real-DB proof).
  *
  * Prior: refreshed by Prompt 134 after Prompt 133 applied automatic downstream artifact
  * staleness propagation in src/lib/db/project-artifact-store.ts (B6 closed). Prior:
@@ -17,18 +21,21 @@ import { join } from "path";
  * Prompt 101 aligned the DB-readiness evidence; Prompt 103 aligned the catalog-coverage
  * evidence.
  *
- * This test asserts the backlog: records Prompt 136 as the current refresh while
- * preserving Prompt 135, Prompt 134, and earlier closure records; asserts Prompt 135
- * real-DB proof facts (script name, run command, tables present, proof results); asserts
- * B10 is no longer framed as needs-verification or unverified; asserts B6 is no longer
- * framed as open/later/post-MVP; keeps the planning file as source of truth; preserves
- * the P65-P82 seeded Honeywell closure record, the P83-P98 app-readiness closure, and
- * the P104-P136 UI/evidence/staleness/real-DB/docs hardening closure; keeps manual
- * browser QA, full Next.js API/UI/browser route chain against live DB, full Honeywell
- * BoQ through real SKU resolution, and future suggestion steps as open; preserves the
- * demo-only pricing boundary, the pricing/configuration authority separation, the
- * no-runtime-AI rule, Batch 4 as a decision record only, standalone optics, and deferred
- * replacements with no silent substitution; and stays ASCII-only.
+ * This test asserts the backlog: records Prompt 138 as the current refresh while
+ * preserving Prompt 137, Prompt 136, Prompt 135, Prompt 134, and earlier
+ * closure records; asserts Prompt 137 live-DB Quick BoM API route/action-chain proof
+ * facts (script name, run command, tables, SKU count, config/priced/export rows, totals,
+ * cleanup); asserts Prompt 135 real-DB proof facts; asserts B10 is no longer framed as
+ * needs-verification or unverified; asserts B6 is no longer framed as open/later/post-MVP;
+ * keeps the planning file as source of truth; preserves the P65-P82 seeded Honeywell
+ * closure record, the P83-P98 app-readiness closure, and the P104-P138
+ * UI/evidence/staleness/real-DB/docs hardening closure; keeps manual browser QA,
+ * browser-driven UI/live DB, full Honeywell BoQ through real SKU resolution, production
+ * deployment, production pricing authority, broad Cisco-general configuration authority,
+ * and future suggestion steps as open; preserves the demo-only pricing boundary, the
+ * pricing/configuration authority separation, the no-runtime-AI rule, Batch 4 as a
+ * decision record only, standalone optics, and deferred replacements with no silent
+ * substitution; and stays ASCII-only.
  *
  * The doc is read from disk and never mutated; no runtime evaluator, composer, pricing,
  * or expansion code is imported or run.
@@ -144,6 +151,9 @@ const STALE_PHRASES = [
   "Real DB provisioning/migrations remain open",
   "a run against a provisioned real DB is still verification work",
   "Still unbuilt: production DB provisioning/migrations",
+  // Prompt 138: stale B3/B5 framing retired (Quick BoM API route/action chain against real DB now exists, P137). No new stale phrases retired this cleanup.
+  "full Next.js API/UI/browser route chain against live DB remains unproven (B10)",
+  "full Next.js API/UI/browser route chain against live DB remains unproven",
   // Prompt 134: stale staleness framing retired (B6 closed by Prompt 133).
   "planning only",
   "no caller in src",
@@ -160,7 +170,8 @@ describe("quick bom demo-readiness backlog - exists and stays an execution track
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 136 refresh and keeps earlier refresh records and planning file as source of truth", () => {
+  it("records the Prompt 138 refresh and keeps earlier refresh records and planning file as source of truth", () => {
+    expect(docFlat).toContain("refreshed by prompt 138");
     expect(docFlat).toContain("refreshed by prompt 136");
     expect(docFlat).toContain("refreshed by prompt 134");
     expect(docFlat).toContain("refreshed by prompt 132");
@@ -238,8 +249,8 @@ describe("quick bom demo-readiness backlog - P65-P132 slices complete", () => {
     }
   });
 
-  it("carries the closed P104-P136 UI/evidence/staleness/real-DB/docs hardening record", () => {
-    expect(docFlat).toContain("completed (p104-p136)");
+  it("carries the closed P104-P138 UI/evidence/staleness/real-DB/docs hardening record", () => {
+    expect(docFlat).toContain("completed (p104-p138)");
     expect(docFlat).toContain("p104-p114");
     expect(docFlat).toContain("p126-p131");
     expect(docFlat).toContain("p132");
@@ -247,6 +258,8 @@ describe("quick bom demo-readiness backlog - P65-P132 slices complete", () => {
     expect(docFlat).toContain("p134");
     expect(docFlat).toContain("p135");
     expect(docFlat).toContain("p136");
+    expect(docFlat).toContain("p137");
+    expect(docFlat).toContain("p138");
   });
 
   it("names the Prompt 73 command, P74-P76 CCW evidence, and P77-P81 app pieces", () => {
@@ -312,11 +325,12 @@ describe("quick bom demo-readiness backlog - app-level proof is scoped honestly"
     expect(docFlat).toContain("route/action chain proof");
   });
 
-  it("states Project-store local real-DB proof exists and remaining open gaps clearly", () => {
-    // P135 proves the Project-store layer; the full app/browser route chain and
-    // production deployment remain open.
+  it("states Project-store local real-DB proof exists, Quick BoM API route/action chain against real DB exists, and remaining open gaps clearly", () => {
+    // P135 proves the Project-store layer; P137 proves the Quick BoM API route chain;
+    // browser-driven UI and production deployment remain open.
     expect(docFlat).toContain("project-store local real-db proof exists");
-    expect(docFlat).toContain("full next.js api/ui/browser route chain against");
+    expect(docFlat).toContain("quick bom api route/action chain against real db exists");
+    expect(docFlat).toContain("browser-driven ui");
     expect(docFlat).toContain("production deployment");
     expect(docFlat).toContain("manual browser qa");
     expect(docFlat).toContain("full uploaded honeywell boq through real sku resolution");
@@ -354,9 +368,10 @@ describe("quick bom demo-readiness backlog - Prompt 135 real-DB proof (B10 close
     expect(b10Row).toContain("scripts/prove-project-real-db.ts");
   });
 
-  it("B10 states full Next.js route chain and production deployment remain open", () => {
-    expect(b10Row.toLowerCase()).toContain("full next.js api/ui/browser route chain");
+  it("B10 states browser-driven UI/live DB and production deployment remain open", () => {
+    expect(b10Row.toLowerCase()).toContain("browser-driven ui");
     expect(b10Row.toLowerCase()).toContain("production deployment");
+    expect(b10Row.toLowerCase()).toContain("quick bom api route/action chain against real db exists");
   });
 
   it("backlog documents the P135 proof script name and run", () => {
@@ -393,6 +408,49 @@ describe("quick bom demo-readiness backlog - Prompt 135 real-DB proof (B10 close
   it("backlog keeps production pricing authority as future/not claimed", () => {
     expect(docFlat).toContain("production pricing authority");
     expect(docFlat).toContain("no production pricing authority beyond the demo fixture");
+  });
+});
+
+describe("quick bom demo-readiness backlog - Prompt 137 live-DB Quick BoM API route proof (Section 5H)", () => {
+  it("names the prove-project-quick-bom-route-real-db script and run command", () => {
+    expect(doc).toContain("scripts/prove-project-quick-bom-route-real-db.ts");
+    expect(docFlat).toContain("npx.cmd tsx scripts/prove-project-quick-bom-route-real-db.ts");
+  });
+
+  it("documents the required tables including project_files", () => {
+    expect(docFlat).toContain(
+      "tenants, projects, project_files, project_stages, project_artifacts, project_approvals"
+    );
+  });
+
+  it("documents the P137 proof route chain facts", () => {
+    expect(docFlat).toContain("normalized line count: 7");
+    expect(docFlat).toContain("honeywell_mvp_demo_catalog_supplement");
+    expect(docFlat).toContain("sku accepted count: 7");
+    expect(docFlat).toContain("config accepted lines: 60");
+    expect(docFlat).toContain("priced line count: 60");
+    expect(docFlat).toContain("totalpricesar: 2185708.76");
+    expect(docFlat).toContain("totalincvatsar: 2513565.07");
+    expect(docFlat).toContain("export row count: 60");
+    expect(docFlat).toContain("downloaded xlsx bytes: 14315");
+    expect(docFlat).toContain("cleanup result: ok");
+  });
+
+  it("states P137 closes the live-DB Quick BoM API route/action-chain proof gap", () => {
+    expect(docFlat).toContain("closes the live-db quick bom api route/action-chain proof gap");
+  });
+
+  it("keeps browser-driven UI/live DB, manual browser QA, production deployment, full real-catalog Honeywell SKU resolution, and production pricing authority open", () => {
+    expect(docFlat).toContain("manual browser qa");
+    expect(docFlat).toContain("browser-driven ui");
+    expect(docFlat).toContain("production deployment");
+    expect(docFlat).toContain("full real-catalog honeywell sku resolution");
+    expect(docFlat).toContain("production cisco pricing authority");
+  });
+
+  it("states honeywell_mvp_demo catalog profile/supplement and demo fixture authority (not full catalog)", () => {
+    expect(docFlat).toContain("honeywell_mvp_demo catalog profile");
+    expect(docFlat).toContain("demo fixture authority");
   });
 });
 
