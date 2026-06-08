@@ -63,6 +63,55 @@ const STAGE_BY_TYPE: Partial<Record<ProjectArtifactType, ProjectStageId>> = {
   export_package: "export_approval",
 };
 
+const VALID_CONFIG_AUTHORITY = {
+  scope: "honeywell_mvp_demo_only",
+  approvalRecordId: "appr-cfg-1",
+  rulePackId: "rp-honeywell-v1",
+  rulePackVersion: "1.0.0",
+  rulePackStatus: "approved",
+  rulePackSourceScope: "honeywell_mvp_demo_only",
+  dispositionSummary: {
+    expandByApprovedRulePackCount: 12,
+    preserveKnownRulePackChildCount: 3,
+    preserveStandaloneCustomerLineCount: 5,
+    deferUnknownRelationshipCount: 0,
+  },
+  runtimeAi: false,
+  replacementAuthority: false,
+  skuSubstitutionAuthority: false,
+  unknownRelationshipsDeferred: true,
+  attachesOpticsUnderSwitches: false,
+};
+
+const VALID_PRICING_AUTHORITY = {
+  profileId: "honeywell-mvp-demo-pricing-authority-profile",
+  scope: "honeywell_mvp_demo_only",
+  approvalRecordId: "appr-pricing-1",
+  activeSource: "committed_honeywell_demo_pricing_fixture",
+  activeSourceFixtureId: "honeywell-mvp-demo-pricing-fixture",
+  activeSourceStatus: "approved_demo_fixture",
+  activeSourceWorkbookPath: "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+  activeSourceSheetName: "EstimateDetails_NB167337237YA",
+  currency: "SAR",
+  pricedSkuCount: 120,
+  missingPriceSkuCount: 3,
+  boundary: {
+    deterministicPricingAuthority: true,
+    demoFixtureAuthority: true,
+    currentLocalGplSarCsvTemporarilyApproved: true,
+    activeRuntimeSourceReadsExternalGplCsv: false,
+    productionCiscoPricingAuthority: false,
+    broadCiscoGeneralPricingAuthority: false,
+    runtimeAiPricing: false,
+    runtimeCatalogLookup: false,
+    configurationAuthority: false,
+    replacementAuthority: false,
+    skuSubstitutionAuthority: false,
+    silentSkuSubstitution: false,
+    missingPricesReported: true,
+  },
+};
+
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: PROJECT,
@@ -334,6 +383,251 @@ describe("loadProjectQuickBomWorkspace - ok workspace", () => {
     ws.project.pricingConfig!.ratePercent = 99;
 
     expect(source.pricingConfig!.ratePercent).toBe(PRICING.ratePercent);
+  });
+});
+
+describe("loadProjectQuickBomWorkspace - authorityProvenance", () => {
+  const STAGES = [makeStage("boq_pricing_review", 10)];
+
+  it("exposes a lean configurationAuthority summary when the artifact payload has a valid trace", async () => {
+    const artifact = makeArtifact("configuration_expansion", 1, "approved", {
+      payload: { secret: PAYLOAD_SENTINEL, configurationAuthority: VALID_CONFIG_AUTHORITY },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const summary = ws.artifacts.find((a) => a.type === "configuration_expansion")!;
+
+    expect(summary.authorityProvenance).toBeDefined();
+    expect(summary.authorityProvenance!.configurationAuthority).toEqual({
+      scope: "honeywell_mvp_demo_only",
+      approvalRecordId: "appr-cfg-1",
+      rulePackId: "rp-honeywell-v1",
+      rulePackVersion: "1.0.0",
+      rulePackStatus: "approved",
+      rulePackSourceScope: "honeywell_mvp_demo_only",
+      dispositionSummary: {
+        expandByApprovedRulePackCount: 12,
+        preserveKnownRulePackChildCount: 3,
+        preserveStandaloneCustomerLineCount: 5,
+        deferUnknownRelationshipCount: 0,
+      },
+      runtimeAi: false,
+      replacementAuthority: false,
+      skuSubstitutionAuthority: false,
+      unknownRelationshipsDeferred: true,
+      attachesOpticsUnderSwitches: false,
+    });
+  });
+
+  it("exposes a lean pricingAuthority summary when the artifact payload has a valid trace", async () => {
+    const artifact = makeArtifact("priced_boq", 1, "approved", {
+      payload: { secret: PAYLOAD_SENTINEL, pricingAuthority: VALID_PRICING_AUTHORITY },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const summary = ws.artifacts.find((a) => a.type === "priced_boq")!;
+
+    expect(summary.authorityProvenance).toBeDefined();
+    const pa = summary.authorityProvenance!.pricingAuthority!;
+    expect(pa.profileId).toBe("honeywell-mvp-demo-pricing-authority-profile");
+    expect(pa.scope).toBe("honeywell_mvp_demo_only");
+    expect(pa.approvalRecordId).toBe("appr-pricing-1");
+    expect(pa.activeSourceFixtureId).toBe("honeywell-mvp-demo-pricing-fixture");
+    expect(pa.pricedSkuCount).toBe(120);
+    expect(pa.missingPriceSkuCount).toBe(3);
+    expect(pa.boundary.deterministicPricingAuthority).toBe(true);
+    expect(pa.boundary.runtimeAiPricing).toBe(false);
+    expect(pa.boundary.missingPricesReported).toBe(true);
+  });
+
+  it("exposes both configurationAuthority and pricingAuthority when the priced_boq carries both", async () => {
+    const artifact = makeArtifact("priced_boq", 1, "approved", {
+      payload: {
+        secret: PAYLOAD_SENTINEL,
+        configurationAuthority: VALID_CONFIG_AUTHORITY,
+        pricingAuthority: VALID_PRICING_AUTHORITY,
+      },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const summary = ws.artifacts.find((a) => a.type === "priced_boq")!;
+
+    expect(summary.authorityProvenance!.configurationAuthority).toBeDefined();
+    expect(summary.authorityProvenance!.pricingAuthority).toBeDefined();
+  });
+
+  it("omits authorityProvenance entirely when neither authority trace is present", async () => {
+    const artifact = makeArtifact("sku_resolution", 1, "approved", {
+      payload: { secret: PAYLOAD_SENTINEL },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const summary = ws.artifacts.find((a) => a.type === "sku_resolution")!;
+
+    expect("authorityProvenance" in summary).toBe(false);
+  });
+
+  it("omits a malformed configurationAuthority trace without failing workspace loading", async () => {
+    const artifact = makeArtifact("configuration_expansion", 1, "approved", {
+      payload: {
+        secret: PAYLOAD_SENTINEL,
+        configurationAuthority: { scope: "honeywell_mvp_demo_only" },
+      },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const summary = ws.artifacts.find((a) => a.type === "configuration_expansion")!;
+
+    expect("authorityProvenance" in summary).toBe(false);
+  });
+
+  it("omits configurationAuthority when authority boundary flags are unsafe", async () => {
+    const artifact = makeArtifact("configuration_expansion", 1, "approved", {
+      payload: {
+        secret: PAYLOAD_SENTINEL,
+        configurationAuthority: { ...VALID_CONFIG_AUTHORITY, runtimeAi: true },
+      },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const summary = ws.artifacts.find((a) => a.type === "configuration_expansion")!;
+
+    expect("authorityProvenance" in summary).toBe(false);
+  });
+
+  it("omits a malformed pricingAuthority trace without failing workspace loading", async () => {
+    const artifact = makeArtifact("priced_boq", 1, "approved", {
+      payload: {
+        secret: PAYLOAD_SENTINEL,
+        pricingAuthority: { profileId: "honeywell-mvp-demo-pricing-authority-profile" },
+      },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const summary = ws.artifacts.find((a) => a.type === "priced_boq")!;
+
+    expect("authorityProvenance" in summary).toBe(false);
+  });
+
+  it("omits pricingAuthority when pricing boundary flags are unsafe", async () => {
+    const artifact = makeArtifact("priced_boq", 1, "approved", {
+      payload: {
+        secret: PAYLOAD_SENTINEL,
+        pricingAuthority: {
+          ...VALID_PRICING_AUTHORITY,
+          boundary: { ...VALID_PRICING_AUTHORITY.boundary, runtimeAiPricing: true },
+        },
+      },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const summary = ws.artifacts.find((a) => a.type === "priced_boq")!;
+
+    expect("authorityProvenance" in summary).toBe(false);
+  });
+
+  it("authorityProvenance nested objects are copies, not aliases to the artifact payload", async () => {
+    const payload: Record<string, unknown> = {
+      secret: PAYLOAD_SENTINEL,
+      configurationAuthority: { ...VALID_CONFIG_AUTHORITY, dispositionSummary: { ...VALID_CONFIG_AUTHORITY.dispositionSummary } },
+      pricingAuthority: { ...VALID_PRICING_AUTHORITY, boundary: { ...VALID_PRICING_AUTHORITY.boundary } },
+    };
+    const artifact = makeArtifact("priced_boq", 1, "approved", { payload });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const summary = ws.artifacts.find((a) => a.type === "priced_boq")!;
+    const prov = summary.authorityProvenance!;
+
+    expect(prov.configurationAuthority).not.toBe(payload["configurationAuthority"]);
+    expect(prov.configurationAuthority!.dispositionSummary).not.toBe(
+      (payload["configurationAuthority"] as Record<string, unknown>)["dispositionSummary"]
+    );
+    expect(prov.pricingAuthority).not.toBe(payload["pricingAuthority"]);
+    expect(prov.pricingAuthority!.boundary).not.toBe(
+      (payload["pricingAuthority"] as Record<string, unknown>)["boundary"]
+    );
+  });
+
+  it("does not leak forbidden payload fields into workspace JSON", async () => {
+    const artifact = makeArtifact("priced_boq", 1, "approved", {
+      payload: {
+        secret: PAYLOAD_SENTINEL,
+        lines: [{ sku: "LEAK" }],
+        acceptedLines: [{ sku: "LEAK" }],
+        rejectedLines: [{ sku: "LEAK" }],
+        evidence: [{ kind: "LEAK" }],
+        originalCells: { A1: "LEAK" },
+        amounts: { totalSar: 999 },
+        unitListPriceSarBySku: { "C9300-48P": { sarUnitListPrice: 1 } },
+        activeSourceWorkbookPath: "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+        activeSourceSheetName: "EstimateDetails_NB167337237YA",
+        pricingAuthority: VALID_PRICING_AUTHORITY,
+        configurationAuthority: VALID_CONFIG_AUTHORITY,
+      },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const json = JSON.stringify(ws);
+
+    expect(json).not.toContain(PAYLOAD_SENTINEL);
+    expect(json).not.toContain('"lines"');
+    expect(json).not.toContain('"acceptedLines"');
+    expect(json).not.toContain('"rejectedLines"');
+    expect(json).not.toContain('"evidence"');
+    expect(json).not.toContain('"originalCells"');
+    expect(json).not.toContain('"amounts"');
+    expect(json).not.toContain('"unitListPriceSarBySku"');
+    expect(json).not.toContain("Estimate_NB167337237YA.xlsx");
+    expect(json).not.toContain('"activeSourceWorkbookPath"');
+    expect(json).not.toContain('"activeSourceSheetName"');
+  });
+
+  it("spineArtifacts carry the same authorityProvenance summary as the corresponding artifact summary", async () => {
+    const artifact = makeArtifact("priced_boq", 1, "approved", {
+      payload: {
+        configurationAuthority: VALID_CONFIG_AUTHORITY,
+        pricingAuthority: VALID_PRICING_AUTHORITY,
+      },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const fromList = ws.artifacts.find((a) => a.type === "priced_boq")!;
+    const fromSpine = ws.spineArtifacts.priced_boq!;
+
+    expect(fromSpine.authorityProvenance).toEqual(fromList.authorityProvenance);
   });
 });
 

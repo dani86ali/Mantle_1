@@ -39,6 +39,57 @@ export interface ProjectStageSummary {
   updatedAt: string;
 }
 
+export interface ArtifactConfigAuthorityProvenance {
+  scope: string;
+  approvalRecordId: string;
+  rulePackId: string;
+  rulePackVersion: string;
+  rulePackStatus: string;
+  rulePackSourceScope: string;
+  dispositionSummary: {
+    expandByApprovedRulePackCount: number;
+    preserveKnownRulePackChildCount: number;
+    preserveStandaloneCustomerLineCount: number;
+    deferUnknownRelationshipCount: number;
+  };
+  runtimeAi: boolean;
+  replacementAuthority: boolean;
+  skuSubstitutionAuthority: boolean;
+  unknownRelationshipsDeferred: boolean;
+  attachesOpticsUnderSwitches: boolean;
+}
+
+export interface ArtifactPricingAuthorityProvenance {
+  profileId: string;
+  scope: string;
+  approvalRecordId: string;
+  activeSource: string;
+  activeSourceFixtureId: string;
+  activeSourceStatus: string;
+  currency: string;
+  pricedSkuCount: number;
+  missingPriceSkuCount: number;
+  boundary: {
+    deterministicPricingAuthority: boolean;
+    demoFixtureAuthority: boolean;
+    activeRuntimeSourceReadsExternalGplCsv: boolean;
+    productionCiscoPricingAuthority: boolean;
+    broadCiscoGeneralPricingAuthority: boolean;
+    runtimeAiPricing: boolean;
+    runtimeCatalogLookup: boolean;
+    configurationAuthority: boolean;
+    replacementAuthority: boolean;
+    skuSubstitutionAuthority: boolean;
+    silentSkuSubstitution: boolean;
+    missingPricesReported: boolean;
+  };
+}
+
+export interface ArtifactAuthorityProvenance {
+  configurationAuthority?: ArtifactConfigAuthorityProvenance;
+  pricingAuthority?: ArtifactPricingAuthorityProvenance;
+}
+
 export interface ProjectArtifactSummary {
   id: string;
   stageId: ProjectStageId;
@@ -50,6 +101,7 @@ export interface ProjectArtifactSummary {
   sourceArtifactIds: string[];
   createdAt: string;
   updatedAt: string;
+  authorityProvenance?: ArtifactAuthorityProvenance;
 }
 
 export interface ProjectApprovalSummary {
@@ -89,6 +141,124 @@ function iso(value: Date): string {
   return value.toISOString();
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function extractConfigAuthority(
+  payload: Record<string, unknown>
+): ArtifactConfigAuthorityProvenance | undefined {
+  const ca = payload["configurationAuthority"];
+  if (!isRecord(ca)) return undefined;
+  const ds = ca["dispositionSummary"];
+  if (!isRecord(ds)) return undefined;
+  if (
+    ca["scope"] !== "honeywell_mvp_demo_only" ||
+    typeof ca["approvalRecordId"] !== "string" ||
+    typeof ca["rulePackId"] !== "string" ||
+    typeof ca["rulePackVersion"] !== "string" ||
+    ca["rulePackStatus"] !== "approved" ||
+    typeof ca["rulePackSourceScope"] !== "string" ||
+    ca["runtimeAi"] !== false ||
+    ca["replacementAuthority"] !== false ||
+    ca["skuSubstitutionAuthority"] !== false ||
+    ca["unknownRelationshipsDeferred"] !== true ||
+    ca["attachesOpticsUnderSwitches"] !== false ||
+    !Number.isFinite(ds["expandByApprovedRulePackCount"]) ||
+    !Number.isFinite(ds["preserveKnownRulePackChildCount"]) ||
+    !Number.isFinite(ds["preserveStandaloneCustomerLineCount"]) ||
+    !Number.isFinite(ds["deferUnknownRelationshipCount"])
+  ) return undefined;
+  return {
+    scope: ca["scope"] as string,
+    approvalRecordId: ca["approvalRecordId"] as string,
+    rulePackId: ca["rulePackId"] as string,
+    rulePackVersion: ca["rulePackVersion"] as string,
+    rulePackStatus: ca["rulePackStatus"] as string,
+    rulePackSourceScope: ca["rulePackSourceScope"] as string,
+    dispositionSummary: {
+      expandByApprovedRulePackCount: ds["expandByApprovedRulePackCount"] as number,
+      preserveKnownRulePackChildCount: ds["preserveKnownRulePackChildCount"] as number,
+      preserveStandaloneCustomerLineCount: ds["preserveStandaloneCustomerLineCount"] as number,
+      deferUnknownRelationshipCount: ds["deferUnknownRelationshipCount"] as number,
+    },
+    runtimeAi: ca["runtimeAi"] as boolean,
+    replacementAuthority: ca["replacementAuthority"] as boolean,
+    skuSubstitutionAuthority: ca["skuSubstitutionAuthority"] as boolean,
+    unknownRelationshipsDeferred: ca["unknownRelationshipsDeferred"] as boolean,
+    attachesOpticsUnderSwitches: ca["attachesOpticsUnderSwitches"] as boolean,
+  };
+}
+
+function extractPricingAuthority(
+  payload: Record<string, unknown>
+): ArtifactPricingAuthorityProvenance | undefined {
+  const pa = payload["pricingAuthority"];
+  if (!isRecord(pa)) return undefined;
+  const b = pa["boundary"];
+  if (!isRecord(b)) return undefined;
+  if (
+    pa["profileId"] !== "honeywell-mvp-demo-pricing-authority-profile" ||
+    pa["scope"] !== "honeywell_mvp_demo_only" ||
+    typeof pa["approvalRecordId"] !== "string" ||
+    pa["activeSource"] !== "committed_honeywell_demo_pricing_fixture" ||
+    typeof pa["activeSourceFixtureId"] !== "string" ||
+    pa["activeSourceStatus"] !== "approved_demo_fixture" ||
+    pa["currency"] !== "SAR" ||
+    !Number.isFinite(pa["pricedSkuCount"]) ||
+    !Number.isFinite(pa["missingPriceSkuCount"]) ||
+    b["deterministicPricingAuthority"] !== true ||
+    b["demoFixtureAuthority"] !== true ||
+    b["activeRuntimeSourceReadsExternalGplCsv"] !== false ||
+    b["productionCiscoPricingAuthority"] !== false ||
+    b["broadCiscoGeneralPricingAuthority"] !== false ||
+    b["runtimeAiPricing"] !== false ||
+    b["runtimeCatalogLookup"] !== false ||
+    b["configurationAuthority"] !== false ||
+    b["replacementAuthority"] !== false ||
+    b["skuSubstitutionAuthority"] !== false ||
+    b["silentSkuSubstitution"] !== false ||
+    b["missingPricesReported"] !== true
+  ) return undefined;
+  return {
+    profileId: pa["profileId"] as string,
+    scope: pa["scope"] as string,
+    approvalRecordId: pa["approvalRecordId"] as string,
+    activeSource: pa["activeSource"] as string,
+    activeSourceFixtureId: pa["activeSourceFixtureId"] as string,
+    activeSourceStatus: pa["activeSourceStatus"] as string,
+    currency: pa["currency"] as string,
+    pricedSkuCount: pa["pricedSkuCount"] as number,
+    missingPriceSkuCount: pa["missingPriceSkuCount"] as number,
+    boundary: {
+      deterministicPricingAuthority: b["deterministicPricingAuthority"] as boolean,
+      demoFixtureAuthority: b["demoFixtureAuthority"] as boolean,
+      activeRuntimeSourceReadsExternalGplCsv: b["activeRuntimeSourceReadsExternalGplCsv"] as boolean,
+      productionCiscoPricingAuthority: b["productionCiscoPricingAuthority"] as boolean,
+      broadCiscoGeneralPricingAuthority: b["broadCiscoGeneralPricingAuthority"] as boolean,
+      runtimeAiPricing: b["runtimeAiPricing"] as boolean,
+      runtimeCatalogLookup: b["runtimeCatalogLookup"] as boolean,
+      configurationAuthority: b["configurationAuthority"] as boolean,
+      replacementAuthority: b["replacementAuthority"] as boolean,
+      skuSubstitutionAuthority: b["skuSubstitutionAuthority"] as boolean,
+      silentSkuSubstitution: b["silentSkuSubstitution"] as boolean,
+      missingPricesReported: b["missingPricesReported"] as boolean,
+    },
+  };
+}
+
+function extractAuthorityProvenance(
+  payload: Record<string, unknown>
+): ArtifactAuthorityProvenance | undefined {
+  const ca = extractConfigAuthority(payload);
+  const pa = extractPricingAuthority(payload);
+  if (ca === undefined && pa === undefined) return undefined;
+  return {
+    ...(ca !== undefined ? { configurationAuthority: ca } : {}),
+    ...(pa !== undefined ? { pricingAuthority: pa } : {}),
+  };
+}
+
 function toProjectSummary(project: Project): ProjectSummary {
   return {
     id: project.id,
@@ -118,6 +288,7 @@ function toStageSummary(stage: ProjectStage): ProjectStageSummary {
 }
 
 function toArtifactSummary(artifact: ProjectArtifact): ProjectArtifactSummary {
+  const provenance = extractAuthorityProvenance(artifact.payload);
   return {
     id: artifact.id,
     stageId: artifact.stageId,
@@ -129,6 +300,7 @@ function toArtifactSummary(artifact: ProjectArtifact): ProjectArtifactSummary {
     sourceArtifactIds: artifact.sourceArtifactIds.slice(),
     createdAt: iso(artifact.createdAt),
     updatedAt: iso(artifact.updatedAt),
+    ...(provenance !== undefined ? { authorityProvenance: provenance } : {}),
   };
 }
 
