@@ -187,3 +187,42 @@ Key facts:
   It does not create auto-acceptance (drafts stay `needs_review`), pricing authority,
   configuration authority, replacement/substitution authority, export behavior, or
   broad Cisco authority. It surfaces no artifact payloads or line decisions in the UI.
+
+## Prompt 114: Explicit Opt-In Full App Chain Evidence
+
+Prompt 114 proves app-level explicit opt-in full-chain evidence for a non-seeded
+uploaded Honeywell subset through the complete current workflow:
+
+```
+upload -> normalize -> sku_resolution draft -> explicit SKU review -> approval
+-> configuration_expansion draft -> explicit configuration review -> approval
+-> deterministic pricing -> pricing approval -> export package -> export approval
+-> download
+```
+
+Key facts:
+
+- The test creates an arbitrary Quick BoM Project (not the seeded Honeywell demo
+  fixture). The Honeywell catalog overlay is selected only by the explicit engineer
+  checkbox tick; nothing is inferred from project, customer, or file name.
+- The demo catalog overlay (`honeywell_mvp_demo`) is used only for SKU-resolution
+  suggestions. It does not carry forward to configuration expansion, pricing, or export.
+- Configuration expansion still comes only from the already-approved Honeywell
+  Batch 1+2+3 rule pack (`honeywell-mvp-composed-batch1-batch2-batch3`). Every
+  expansion line has `sourceRuleId` prefixed with that pack id.
+- Pricing still comes only from the existing deterministic demo/pricing path.
+- The test uses a four-line Format #2 CSV subset:
+  `C9300X-48HX-A` (qty 2), `CW9178I-CFG` (qty 10), `CP-7841-K9=` (qty 5),
+  `SFP-10G-LR-S=` (qty 4).
+- Expansion summary for that subset: `customerLineCount: 4`, `addedLineCount: 27`,
+  `totalLineCount: 31`, `requiresReviewCount: 27`, `includedItemCount: 10`.
+- Parent/child: switch gets 22 expansion children, AP gets 4, phone gets 1, optic
+  gets 0 (remains standalone; not auto-attached under a switch).
+- No silent substitution or replacement fields appear in SKU or config payloads.
+- No runtime AI authority, no production Cisco catalog/pricing authority, no
+  replacement/substitution authority, and no broad Cisco-general behavior is added.
+- The SKU-resolution draft starts `needs_review` and requires explicit engineer
+  line-level review before any downstream step is available.
+- The configuration_expansion draft starts `needs_review` and requires explicit
+  engineer line-level review before approval.
+- No artifact payloads or uploaded SKU details are exposed in the page UI.

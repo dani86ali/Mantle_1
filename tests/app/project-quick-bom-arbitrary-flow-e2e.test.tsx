@@ -860,6 +860,227 @@ describe("Honeywell demo catalog opt-in app-level E2E (Prompt 113)", () => {
   });
 });
 
+describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
+  const HW_CSV = [
+    "#,Description,Part Number,Qty",
+    "1,Switch,C9300X-48HX-A,2",
+    "2,AP,CW9178I-CFG,10",
+    "3,Phone,CP-7841-K9=,5",
+    "4,Optic,SFP-10G-LR-S=,4",
+  ].join("\n");
+
+  function assertNoPayloadLeakHoneywell(): void {
+    const dom = document.body.textContent ?? "";
+    expect(dom).not.toContain("C9300X-48HX-A");
+    expect(dom).not.toContain("CW9178I-CFG");
+    expect(dom).not.toContain("honeywell-upload.csv");
+  }
+
+  function hwSkuAcceptActions(artifact: ProjectArtifact) {
+    const decisions = (artifact.payload.decisions ?? []) as SkuResolutionDecision[];
+    expect(decisions).toHaveLength(4);
+    return decisions.map((decision) => {
+      expect(decision.status).toBe("needs_review");
+      expect(decision.suggestions.length).toBeGreaterThan(0);
+      return {
+        decision: "accept" as const,
+        sourceFileId: decision.sourceFileId,
+        sourceRowNumber: decision.sourceRowNumber,
+        acceptedSku: decision.suggestions[0].suggestedSku,
+      };
+    });
+  }
+
+  it("explicit Honeywell catalog opt-in completes the full app workflow for a non-seeded uploaded subset", async () => {
+    const project = await createArbitraryProject();
+    const calls = dispatchQuickBomFetch();
+    let view = render(<ProjectQuickBomPage />);
+
+    await screen.findByTestId("project-name");
+
+    const file = new File([HW_CSV], "honeywell-upload.csv", { type: "text/csv" });
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("workflow-upload-file"), {
+        target: { files: [file] },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("workflow-upload-normalize"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-normalized_boq")).toHaveTextContent("generated")
+    );
+    assertNoPayloadLeakHoneywell();
+
+    // Explicit engineer opt-in: tick the Honeywell demo catalog checkbox before
+    // creating the SKU resolution draft. Nothing about the project, customer, or
+    // file name selects this path automatically.
+    const checkbox = screen.getByTestId("workflow-honeywell-demo-catalog-profile");
+    expect(checkbox).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(checkbox);
+    });
+
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-sku_resolution"));
+    });
+    expect(await screen.findByTestId("line-review-required-sku_resolution")).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
+    expect(screen.queryByTestId("reject-sku_resolution")).toBeNull();
+
+    // Assert the recorded SKU-resolution POST body is exactly { catalogProfile: "honeywell_mvp_demo" }.
+    const skuCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
+    );
+    expect(skuCalls).toHaveLength(1);
+    expect(skuCalls[0].body).toEqual({ catalogProfile: "honeywell_mvp_demo" });
+
+    // Assert the SKU draft starts needs_review, not approved.
+    const skuDraft = hoisted.store.latestArtifact("sku_resolution");
+    expect(skuDraft.status).toBe("needs_review");
+
+    // Review: accept each suggested same-SKU for the 4 input lines.
+    const skuReviewRes = await skuResolutionReviewPOST(
+      jsonRequest({ actions: hwSkuAcceptActions(skuDraft) }),
+      { params: { id: project.id, artifactId: skuDraft.id } }
+    );
+    expect(skuReviewRes.status).toBe(200);
+    const skuReviewBody = await skuReviewRes.json();
+
+    // Assert no silent substitution or replacement fields on SKU decisions.
+    const reviewedSkuArtifact = hoisted.store.latestArtifact("sku_resolution");
+    const reviewedDecisions = (reviewedSkuArtifact.payload.decisions ?? []) as SkuResolutionDecision[];
+    for (const d of reviewedDecisions) {
+      expect(d).not.toHaveProperty("replacementFor");
+      expect(d).not.toHaveProperty("substitutedSku");
+    }
+
+    await approveArtifact(project.id, skuReviewBody.artifact.id);
+
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+    const createConfig = await screen.findByTestId("workflow-create-configuration_expansion");
+    await act(async () => {
+      fireEvent.click(createConfig);
+    });
+    expect(
+      await screen.findByTestId("line-review-required-configuration_expansion")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-configuration_expansion")).toBeNull();
+    expect(screen.queryByTestId("reject-configuration_expansion")).toBeNull();
+
+    const configDraft = hoisted.store.latestArtifact("configuration_expansion");
+    expect(configDraft.payload.payloadKind).toBe("configuration_expansion_draft");
+    // Config draft starts needs_review, not approved.
+    expect(configDraft.status).toBe("needs_review");
+
+    const configLines = (configDraft.payload.lines ?? []) as ConfigurationExpansionDraftLine[];
+    const draftExpansionLines = configLines.filter((l) => l.origin === "expansion");
+
+    // Config draft was produced by the approved Honeywell MVP composed Batch 1+2+3 rule pack.
+    expect(draftExpansionLines.length).toBeGreaterThan(0);
+    for (const line of draftExpansionLines) {
+      expect(line.sourceRuleId).toMatch(/^honeywell-mvp-composed-batch1-batch2-batch3::/);
+    }
+
+    // Assert expansion summary counts.
+    const configSummary = configDraft.payload.summary as {
+      customerLineCount: number;
+      addedLineCount: number;
+      totalLineCount: number;
+      requiresReviewCount: number;
+      includedItemCount: number;
+    };
+    expect(configSummary.customerLineCount).toBe(4);
+    expect(configSummary.addedLineCount).toBe(27);
+    expect(configSummary.totalLineCount).toBe(31);
+    expect(configSummary.requiresReviewCount).toBe(27);
+    expect(configSummary.includedItemCount).toBe(10);
+
+    // Assert parent/child expansion counts per input line.
+    const switchChildren = configLines.filter((l) => l.origin === "expansion" && l.parentLineId === "line-1");
+    expect(switchChildren).toHaveLength(22);
+    const apChildren = configLines.filter((l) => l.origin === "expansion" && l.parentLineId === "line-2");
+    expect(apChildren).toHaveLength(4);
+    const phoneChildren = configLines.filter((l) => l.origin === "expansion" && l.parentLineId === "line-3");
+    expect(phoneChildren).toHaveLength(1);
+    // Optic remains standalone: no expansion children.
+    const opticChildren = configLines.filter((l) => l.origin === "expansion" && l.parentLineId === "line-4");
+    expect(opticChildren).toHaveLength(0);
+
+    // Assert no silent substitution or replacement fields on expansion lines.
+    for (const line of draftExpansionLines) {
+      expect(line).not.toHaveProperty("replacementFor");
+      expect(line).not.toHaveProperty("substitutedSku");
+    }
+
+    // Review and approve the configuration expansion draft.
+    const configReviewRes = await configExpansionReviewPOST(
+      jsonRequest({ decisions: configAcceptDecisions(configDraft) }),
+      { params: { id: project.id, artifactId: configDraft.id } }
+    );
+    expect(configReviewRes.status).toBe(200);
+    const configReviewBody = await configReviewRes.json();
+    await approveArtifact(project.id, configReviewBody.artifact.id);
+
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+    const createPriced = await screen.findByTestId("workflow-create-priced_boq");
+    await act(async () => {
+      fireEvent.click(createPriced);
+    });
+    expect(await screen.findByTestId("approve-priced_boq")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-priced_boq"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-priced_boq")).toHaveTextContent("approved")
+    );
+
+    const createExport = await screen.findByTestId("workflow-create-export_package");
+    await act(async () => {
+      fireEvent.click(createExport);
+    });
+    expect(await screen.findByTestId("approve-export_package")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-export_package"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-export_package")).toHaveTextContent("approved")
+    );
+    const link = await screen.findByTestId("download-export_package");
+    const exportArtifact = hoisted.store.latestArtifact("export_package");
+    expect(link).toHaveAttribute(
+      "href",
+      `/api/projects/${project.id}/quick-bom/artifacts/${exportArtifact.id}/export-package/download`
+    );
+    assertNoPayloadLeakHoneywell();
+
+    // Assert workbook download succeeds with XLSX MIME and nonzero bytes.
+    const downloadRes = await exportDownloadGET(emptyRequest(), {
+      params: { id: project.id, artifactId: exportArtifact.id },
+    });
+    expect(downloadRes.status).toBe(200);
+    expect(downloadRes.headers.get("content-type")).toBe(XLSX_MIME);
+    const bytes = new Uint8Array(await downloadRes.arrayBuffer());
+    expect(bytes.byteLength).toBeGreaterThan(0);
+
+    // Assert configuration-expansion POST carries no catalogProfile body.
+    expect(
+      calls.some(
+        (c) =>
+          c.method === "POST" &&
+          /\/configuration-expansion$/.test(c.url) &&
+          JSON.stringify(c.body ?? "").includes("catalogProfile")
+      )
+    ).toBe(false);
+
+    view.unmount();
+  });
+});
+
 describe("arbitrary Project Quick BoM app E2E static purity", () => {
   const TEST_PATH = join(
     process.cwd(),
