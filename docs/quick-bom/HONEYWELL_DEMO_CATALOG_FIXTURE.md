@@ -163,3 +163,27 @@ Key facts:
 - This does not create pricing authority, replacement authority, substitution authority,
   catalog authority, API/UI behavior, artifact records, approval records, export
   behavior, runner behavior, or broad Cisco authority.
+
+## Prompt 113: Project Quick BoM UI Opt-In
+
+Prompt 113 wires an explicit Honeywell MVP demo catalog-profile checkbox into the
+Project Quick BoM workspace page (`src/app/projects/[id]/quick-bom/page.tsx`).
+
+Key facts:
+
+- The Workflow actions card now has a checkbox
+  (`data-testid="workflow-honeywell-demo-catalog-profile"`) that an engineer must
+  explicitly tick to use the Honeywell MVP demo catalog supplement for SKU resolution.
+- Default Project Quick BoM UI behavior is unchanged. When the checkbox is unchecked,
+  the SKU-resolution create action still POSTs with no body and no `Content-Type`
+  header, and the default catalog path is used. Honeywell is never inferred from the
+  project, customer, or file name.
+- When the checkbox is ticked, only the `sku_resolution` create action POSTs
+  `{ catalogProfile: "honeywell_mvp_demo" }` as `application/json`. No other create
+  action sends this body.
+- This is app wiring only. The SKU-resolution route and service already supported the
+  `catalogProfile`; Prompt 113 does not change them.
+- The checkbox only selects the demo catalog overlay for SKU-resolution suggestions.
+  It does not create auto-acceptance (drafts stay `needs_review`), pricing authority,
+  configuration authority, replacement/substitution authority, export behavior, or
+  broad Cisco authority. It surfaces no artifact payloads or line decisions in the UI.

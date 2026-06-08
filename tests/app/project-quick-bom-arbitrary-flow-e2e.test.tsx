@@ -486,6 +486,18 @@ function jsonRequest(body: unknown): NextRequest {
   } as unknown as NextRequest;
 }
 
+// Like jsonRequest, but also reports an application/json content-type header so a
+// route that gates body parsing on content-type (sku-resolution) reads the body.
+function jsonContentTypeRequest(body: unknown): NextRequest {
+  return {
+    headers: {
+      get: (h: string) =>
+        h.toLowerCase() === "content-type" ? "application/json" : null,
+    },
+    json: () => Promise.resolve(body),
+  } as unknown as NextRequest;
+}
+
 function formRequest(form: FormData): NextRequest {
   return {
     headers: { get: () => null },
@@ -527,9 +539,18 @@ function dispatchQuickBomFetch(): RecordedFetch[] {
       }
       const skuMatch = /^artifacts\/([^/]+)\/sku-resolution$/.exec(rest);
       if (skuMatch && method === "POST") {
-        return skuResolutionPOST(emptyRequest(), {
-          params: { id, artifactId: skuMatch[1] },
-        });
+        // Faithful to the route contract: the body is honored only when the page
+        // sends an application/json content-type, so derive the request from the
+        // recorded header (not from body presence). A header-less POST stays the
+        // default no-body path.
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const hasJson = (headers["Content-Type"] ?? headers["content-type"] ?? "")
+          .toLowerCase()
+          .includes("application/json");
+        return skuResolutionPOST(
+          hasJson ? jsonContentTypeRequest(parsedJsonBody(init)) : emptyRequest(),
+          { params: { id, artifactId: skuMatch[1] } }
+        );
       }
       const configMatch = /^artifacts\/([^/]+)\/configuration-expansion$/.exec(rest);
       if (configMatch && method === "POST") {
@@ -760,12 +781,82 @@ describe("arbitrary Project Quick BoM app-level E2E (Prompt 97)", () => {
 
     expect(calls.some((c) => c.method === "POST" && /\/quick-bom\/files$/.test(c.url))).toBe(true);
     expect(calls.some((c) => c.method === "POST" && /\/normalize$/.test(c.url))).toBe(true);
-    expect(calls.some((c) => c.method === "POST" && /\/sku-resolution$/.test(c.url))).toBe(true);
+    const defaultSkuCall = calls.find(
+      (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
+    );
+    expect(defaultSkuCall).toBeDefined();
+    // Default flow (checkbox never clicked): no JSON body and no catalogProfile.
+    expect(defaultSkuCall?.body).toBeNull();
+    expect(JSON.stringify(defaultSkuCall)).not.toContain("catalogProfile");
     expect(calls.some((c) => c.method === "POST" && /\/configuration-expansion$/.test(c.url))).toBe(true);
     expect(calls.some((c) => c.method === "POST" && /\/priced-boq$/.test(c.url))).toBe(true);
     expect(calls.some((c) => c.method === "POST" && /\/priced-boq\/review$/.test(c.url))).toBe(true);
     expect(calls.some((c) => c.method === "POST" && /\/export-package$/.test(c.url))).toBe(true);
     expect(calls.some((c) => c.method === "POST" && /\/quick-bom\/approvals$/.test(c.url))).toBe(true);
+  });
+});
+
+describe("Honeywell demo catalog opt-in app-level E2E (Prompt 113)", () => {
+  it("opting in posts the catalogProfile body and persists the Honeywell overlay source", async () => {
+    await createArbitraryProject();
+    const calls = dispatchQuickBomFetch();
+    render(<ProjectQuickBomPage />);
+
+    await screen.findByTestId("project-name");
+
+    const file = new File([CSV], "customer-upload.csv", { type: "text/csv" });
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("workflow-upload-file"), {
+        target: { files: [file] },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("workflow-upload-normalize"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-normalized_boq")).toHaveTextContent("generated")
+    );
+
+    // Explicit engineer opt-in: tick the Honeywell demo catalog checkbox before
+    // creating the SKU resolution draft. This checkbox is the only thing that
+    // selects the demo overlay - nothing is inferred from project/customer/file.
+    const checkbox = screen.getByTestId("workflow-honeywell-demo-catalog-profile");
+    expect(checkbox).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(checkbox);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-sku_resolution"));
+    });
+
+    // The draft still requires explicit line-level review; it is never auto-approved.
+    expect(
+      await screen.findByTestId("line-review-required-sku_resolution")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
+    expect(screen.queryByTestId("reject-sku_resolution")).toBeNull();
+
+    // The SKU-resolution fetch carried exactly the explicit Honeywell profile body.
+    const skuCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
+    );
+    expect(skuCalls).toHaveLength(1);
+    expect(skuCalls[0].body).toEqual({ catalogProfile: "honeywell_mvp_demo" });
+
+    // The persisted draft resolved through the explicit Honeywell overlay source.
+    const skuDraft = hoisted.store.latestArtifact("sku_resolution");
+    expect(skuDraft.status).toBe("needs_review");
+    const summary = (skuDraft.payload as { summary: { catalogSource: string } }).summary;
+    expect(summary.catalogSource).toBe("honeywell_mvp_demo_catalog_supplement");
+
+    // The opt-in exercises no downstream authority: no SKU approval, configuration
+    // expansion, pricing, export, approval record, or download.
+    expect(calls.some((c) => /\/configuration-expansion$/.test(c.url))).toBe(false);
+    expect(calls.some((c) => /\/priced-boq$/.test(c.url))).toBe(false);
+    expect(calls.some((c) => /\/export-package$/.test(c.url))).toBe(false);
+    expect(calls.some((c) => /\/quick-bom\/approvals$/.test(c.url))).toBe(false);
+    expect(screen.queryByTestId("download-export_package")).toBeNull();
+    assertNoPayloadLeak();
   });
 });
 
