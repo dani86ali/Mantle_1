@@ -22,8 +22,12 @@
  *     Honeywell is never inferred from project/customer/file names.
  *   - priced_boq review: POST { decision, note? } to .../priced-boq/review.
  *   - export_package review: POST { artifactId, decision, note? } to /approvals.
- *   - sku_resolution / configuration_expansion are NOT approved here - they require
- *     line-level review elsewhere, so the page only flags that.
+ *   - sku_resolution / configuration_expansion while `needs_review` are NOT approved
+ *     here - they require line-level review (the SKU panel and, Prompt 128, the
+ *     configuration-expansion panel that POSTs one complete accept/reject batch to
+ *     .../configuration-expansion/review). Once a line review mints a `generated`
+ *     sku/config version, it is approved/rejected through the same generic /approvals
+ *     route as export_package so the workflow can advance.
  *   - download: a plain anchor to the export-package/download route (no fetch).
  * Types come from the read-model module via `import type`, erased at compile time,
  * so no server/DB code reaches the client.
@@ -41,6 +45,10 @@ import type {
   QuickBomSkuResolutionReviewLine,
   QuickBomSkuResolutionReviewWorkspace,
 } from "@/lib/projects/project-quick-bom-sku-resolution-review-workspace";
+import type {
+  QuickBomConfigExpansionReviewLine,
+  QuickBomConfigExpansionReviewWorkspace,
+} from "@/lib/projects/project-quick-bom-config-expansion-review-workspace";
 
 type Decision = "approved" | "rejected";
 
@@ -69,6 +77,8 @@ const APPROVAL_ERROR = "Unable to record this approval decision.";
 const WORKFLOW_ERROR = "Unable to complete this workflow action.";
 const MISSING_FILE_ERROR = "Select a BoQ file to upload first.";
 const SKU_REVIEW_ERROR = "Unable to load or update the SKU line review.";
+const CONFIG_REVIEW_ERROR =
+  "Unable to load or submit the configuration expansion line review.";
 
 const STATUS_BADGE: Record<string, string> = {
   approved: "bg-success-muted text-success",
@@ -225,6 +235,17 @@ export default function ProjectQuickBomPage() {
   const [skuReview, setSkuReview] = useState<QuickBomSkuResolutionReviewWorkspace | null>(null);
   const [skuReviewError, setSkuReviewError] = useState<string | null>(null);
   const [skuReviewBusy, setSkuReviewBusy] = useState(false);
+  // Prompt 128: minimal configuration-expansion line-review panel. Loaded on demand
+  // from the read-only review route (the main workspace stays payload-free). The
+  // engineer marks every expansion line accept/reject; `configDecisions` tracks those
+  // local choices keyed by lineId and the complete batch is POSTed on submit. Both are
+  // cleared after a successful review POST.
+  const [configReview, setConfigReview] = useState<QuickBomConfigExpansionReviewWorkspace | null>(null);
+  const [configReviewError, setConfigReviewError] = useState<string | null>(null);
+  const [configReviewBusy, setConfigReviewBusy] = useState(false);
+  const [configDecisions, setConfigDecisions] = useState<
+    Record<string, { action: "accept" | "reject"; note?: string }>
+  >({});
 
   // Memoized so the load effect and post-action reload share one stable reference;
   // dropping the useCallback would re-fire the effect every render (GET loop).
@@ -462,6 +483,95 @@ export default function ProjectQuickBomPage() {
     [id, loadWorkspace]
   );
 
+  // GET the read-only configuration-expansion line-review projection for one draft
+  // artifact. Resets any in-progress local decisions so a fresh load starts clean.
+  // Controlled errors only, never a stack.
+  const loadConfigReview = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setConfigReviewError(null);
+      setConfigReviewBusy(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/quick-bom/artifacts/${artifactId}/configuration-expansion/review`
+        );
+        const body = await res.json().catch(() => null);
+        if (!res.ok) {
+          setConfigReview(null);
+          setConfigReviewError(bodyMessage(body) ?? CONFIG_REVIEW_ERROR);
+          return;
+        }
+        const review = (body as { review?: QuickBomConfigExpansionReviewWorkspace } | null)
+          ?.review;
+        if (!review) {
+          setConfigReview(null);
+          setConfigReviewError(CONFIG_REVIEW_ERROR);
+          return;
+        }
+        setConfigDecisions({});
+        setConfigReview(review);
+      } catch {
+        setConfigReview(null);
+        setConfigReviewError(CONFIG_REVIEW_ERROR);
+      } finally {
+        setConfigReviewBusy(false);
+      }
+    },
+    [id]
+  );
+
+  // POST one complete configuration-expansion review batch: exactly one explicit
+  // decision per expansion line, in draft order, and none for customer lines. The
+  // batch is built from the loaded lines (origin === "expansion") so a customer line
+  // can never receive a decision; the body carries only { decisions: [...] } with each
+  // decision sanitized to lineId/action/note. A successful POST mints a NEW reviewed
+  // (non-draft) artifact, so we clear the panel and refresh the main workspace; the
+  // artifact is never marked approved client-side. Nothing posts until every expansion
+  // line has an explicit decision.
+  const submitConfigReview = useCallback(
+    async (artifactId: string): Promise<void> => {
+      if (configReview === null) return;
+      const expansionLines = configReview.lines.filter(
+        (line) => line.origin === "expansion"
+      );
+      if (!expansionLines.every((line) => configDecisions[line.lineId] !== undefined)) {
+        return;
+      }
+      const decisions = expansionLines.map((line) => {
+        const decision = configDecisions[line.lineId];
+        return {
+          lineId: line.lineId,
+          action: decision.action,
+          ...(decision.note !== undefined ? { note: decision.note } : {}),
+        };
+      });
+      setConfigReviewError(null);
+      setConfigReviewBusy(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/quick-bom/artifacts/${artifactId}/configuration-expansion/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ decisions }),
+          }
+        );
+        const body = await res.json().catch(() => null);
+        if (!res.ok) {
+          setConfigReviewError(bodyMessage(body) ?? CONFIG_REVIEW_ERROR);
+          return;
+        }
+        setConfigReview(null);
+        setConfigDecisions({});
+        await loadWorkspace();
+      } catch {
+        setConfigReviewError(CONFIG_REVIEW_ERROR);
+      } finally {
+        setConfigReviewBusy(false);
+      }
+    },
+    [id, configReview, configDecisions, loadWorkspace]
+  );
+
   function promptNote(): string | undefined {
     const entered = window.prompt("Add an optional note for this rejection:");
     const trimmed = entered === null ? "" : entered.trim();
@@ -497,13 +607,29 @@ export default function ProjectQuickBomPage() {
     });
   }
 
+  // Record an explicit accept for one expansion line locally. No POST happens here -
+  // the complete batch is submitted only when every expansion line has been decided.
+  function onAcceptConfigLine(line: QuickBomConfigExpansionReviewLine): void {
+    setConfigDecisions((prev) => ({ ...prev, [line.lineId]: { action: "accept" } }));
+  }
+
+  // Record an explicit reject for one expansion line locally; optionally attach a note.
+  function onRejectConfigLine(line: QuickBomConfigExpansionReviewLine): void {
+    const note = promptNote();
+    setConfigDecisions((prev) => ({
+      ...prev,
+      [line.lineId]: { action: "reject", ...(note !== undefined ? { note } : {}) },
+    }));
+  }
+
   function decisionPayload(artifactId: string, decision: Decision, note?: string) {
-    // export_package uses the generic approvals route, which needs the artifactId
-    // in the body; priced_boq uses the per-artifact route (id is in the URL).
+    // The generic /approvals route needs the artifactId in the body; it serves
+    // export_package and the `generated` (reviewed) sku_resolution/configuration_expansion
+    // versions. priced_boq uses its per-artifact route (id is in the URL).
     return { artifactId, decision, ...(note !== undefined ? { note } : {}) };
   }
 
-  function onApproveExport(artifactId: string): void {
+  function onApproveGeneric(artifactId: string): void {
     void submitDecision(
       artifactId,
       `/api/projects/${id}/quick-bom/approvals`,
@@ -511,7 +637,7 @@ export default function ProjectQuickBomPage() {
     );
   }
 
-  function onRejectExport(artifactId: string): void {
+  function onRejectGeneric(artifactId: string): void {
     void submitDecision(
       artifactId,
       `/api/projects/${id}/quick-bom/approvals`,
@@ -536,14 +662,19 @@ export default function ProjectQuickBomPage() {
     );
   }
 
-  // Per-artifact review control for the spine list. sku_resolution and
-  // configuration_expansion are not approved from this page (line-level review);
-  // priced_boq and export_package each route their approve/reject to their own
-  // server route. normalized_boq is never reviewable.
+  // Per-artifact review control for the spine list. While a sku_resolution or
+  // configuration_expansion artifact is `needs_review` it is line-review-only (the
+  // panels below), so this only flags that. Once a line review mints a `generated`
+  // version, that reviewed artifact is approved/rejected through the generic /approvals
+  // route (same as export_package). priced_boq uses its own per-artifact review route.
+  // normalized_boq is never reviewable.
   function reviewControls(artifact: ProjectArtifactSummary) {
     if (!isReviewable(artifact)) return null;
     const t = artifact.type;
-    if (t === "sku_resolution" || t === "configuration_expansion") {
+    if (
+      (t === "sku_resolution" || t === "configuration_expansion") &&
+      artifact.status === "needs_review"
+    ) {
       return (
         <span
           data-testid={`line-review-required-${t}`}
@@ -560,7 +691,7 @@ export default function ProjectQuickBomPage() {
           type="button"
           data-testid={`approve-${t}`}
           disabled={busyArtifactId === artifact.id}
-          onClick={() => (usePriced ? onApprovePriced(artifact.id) : onApproveExport(artifact.id))}
+          onClick={() => (usePriced ? onApprovePriced(artifact.id) : onApproveGeneric(artifact.id))}
           className={APPROVE_BTN}
         >
           Approve
@@ -569,7 +700,7 @@ export default function ProjectQuickBomPage() {
           type="button"
           data-testid={`reject-${t}`}
           disabled={busyArtifactId === artifact.id}
-          onClick={() => (usePriced ? onRejectPriced(artifact.id) : onRejectExport(artifact.id))}
+          onClick={() => (usePriced ? onRejectPriced(artifact.id) : onRejectGeneric(artifact.id))}
           className={REJECT_BTN}
         >
           Reject
@@ -606,6 +737,7 @@ export default function ProjectQuickBomPage() {
   const { project, readiness, stages, spineArtifacts, approvals } = workspace;
   const exportPkg = spineArtifacts.export_package;
   const skuResolution = spineArtifacts.sku_resolution;
+  const configExpansion = spineArtifacts.configuration_expansion;
   const canCreate: Record<keyof QuickBomSpineArtifacts, boolean> = {
     normalized_boq: false,
     sku_resolution: readiness.canCreateSkuResolution,
@@ -613,6 +745,14 @@ export default function ProjectQuickBomPage() {
     priced_boq: readiness.canCreatePricedBoq,
     export_package: readiness.canCreateExportPackage,
   };
+  // Submit is blocked until every expansion line has an explicit accept/reject; an
+  // empty array (vacuously true) is enabled only when the draft has no expansion lines.
+  const configExpansionLines = configReview
+    ? configReview.lines.filter((line) => line.origin === "expansion")
+    : [];
+  const allConfigExpansionDecided = configExpansionLines.every(
+    (line) => configDecisions[line.lineId] !== undefined
+  );
 
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-6">
@@ -843,6 +983,113 @@ export default function ProjectQuickBomPage() {
                   </li>
                 ))}
               </ol>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {configExpansion && configExpansion.status === "needs_review" && (
+        <Card title="Configuration expansion line review">
+          <p className="mt-2 text-xs text-text-secondary">
+            Accept or reject every expansion line. Customer lines are read-only. All
+            expansion lines must be decided before the batch can be submitted.
+          </p>
+          <button
+            type="button"
+            data-testid="config-review-load"
+            disabled={configReviewBusy}
+            onClick={() => void loadConfigReview(configExpansion.id)}
+            className={`mt-3 ${APPROVE_BTN}`}
+          >
+            Load configuration expansion review lines
+          </button>
+          {configReviewError && (
+            <div
+              data-testid="config-review-error"
+              className="mt-3 rounded-card border border-destructive/30 bg-destructive-muted p-3 text-sm text-destructive"
+            >
+              {configReviewError}
+            </div>
+          )}
+          {configReview && (
+            <div className="mt-3 space-y-3">
+              <p
+                data-testid="config-review-summary"
+                className="text-xs text-text-secondary"
+              >
+                {configReview.reviewSummary.totalLineCount} lines:{" "}
+                {configReview.reviewSummary.customerLineCount} customer,{" "}
+                {configReview.reviewSummary.expansionLineCount} expansion,{" "}
+                {configReview.reviewSummary.requiresDecisionCount} require decision,{" "}
+                {configReview.reviewSummary.includedItemCount} included items
+              </p>
+              <ol className="space-y-2">
+                {configReview.lines.map((line) => {
+                  const decision = configDecisions[line.lineId];
+                  return (
+                    <li
+                      key={line.lineId}
+                      data-testid="config-review-line"
+                      className="rounded-button border border-[var(--border)] p-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-text-primary">
+                          {line.sku}
+                        </span>
+                        <span className="text-xs text-text-tertiary capitalize">
+                          {line.origin}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-text-secondary">{line.description}</p>
+                      <p className="mt-0.5 text-xs text-text-tertiary">
+                        Qty: {line.quantity}
+                        {line.relationshipType ? ` | ${humanize(line.relationshipType)}` : ""}
+                        {line.sourceRuleId ? ` | rule: ${line.sourceRuleId}` : ""}
+                        {line.evidenceCount > 0
+                          ? ` | evidence: ${line.evidenceCount} (${line.evidenceSourceTypes.join(", ")})`
+                          : ""}
+                      </p>
+                      {line.origin === "expansion" && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            data-testid="config-review-accept"
+                            disabled={configReviewBusy}
+                            onClick={() => onAcceptConfigLine(line)}
+                            className={`${APPROVE_BTN}${decision?.action === "accept" ? " ring-2 ring-accent" : ""}`}
+                          >
+                            Accept
+                          </button>
+                          <button
+                            type="button"
+                            data-testid="config-review-reject"
+                            disabled={configReviewBusy}
+                            onClick={() => onRejectConfigLine(line)}
+                            className={`${REJECT_BTN}${decision?.action === "reject" ? " ring-2 ring-destructive/50" : ""}`}
+                          >
+                            Reject
+                          </button>
+                          {decision && (
+                            <span className="text-xs text-text-secondary">
+                              {decision.action}
+                              {decision.note ? `: ${decision.note}` : ""}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+              <button
+                type="button"
+                data-testid="config-review-submit"
+                disabled={configReviewBusy || !allConfigExpansionDecided}
+                onClick={() => void submitConfigReview(configExpansion.id)}
+                className={`${APPROVE_BTN}`}
+              >
+                Submit configuration expansion review
+              </button>
             </div>
           )}
         </Card>

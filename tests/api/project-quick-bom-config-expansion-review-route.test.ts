@@ -5,17 +5,21 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // Mock auth and the Quick BoM configuration-expansion review wrapper service so the
 // route's auth-gate, body validation, tenant/user/param authority, body-ignoring,
 // and result-mapping are tested independent of the DB and the lower-level services.
-const { mockRequireAuth, mockReview } = vi.hoisted(() => ({
+const { mockRequireAuth, mockReview, mockLoadWorkspace } = vi.hoisted(() => ({
   mockRequireAuth: vi.fn(),
   mockReview: vi.fn(),
+  mockLoadWorkspace: vi.fn(),
 }));
 
 vi.mock("@/lib/middleware/auth", () => ({ requireAuth: mockRequireAuth }));
 vi.mock("@/lib/projects/project-quick-bom-config-expansion-review", () => ({
   reviewProjectQuickBomConfigurationExpansionDraft: mockReview,
 }));
+vi.mock("@/lib/projects/project-quick-bom-config-expansion-review-workspace", () => ({
+  loadQuickBomConfigurationExpansionReviewWorkspace: mockLoadWorkspace,
+}));
 
-import { POST } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/configuration-expansion/review/route";
+import { POST, GET } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/configuration-expansion/review/route";
 import * as routeModule from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/configuration-expansion/review/route";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -113,6 +117,14 @@ function reqWithBadJson(): NextRequest {
   } as unknown as NextRequest;
 }
 
+const OK_REVIEW = {
+  project: { id: PROJECT, tenantId: SESSION.tenantId, name: "Test", mode: "quick_bom", createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-01T10:00:00.000Z" },
+  artifact: { id: ARTIFACT_ID, projectId: PROJECT, stageId: "configuration_expansion_review", type: "configuration_expansion", status: "needs_review", version: 2, sourceFileIds: [], sourceArtifactIds: [], createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-01T10:00:00.000Z" },
+  payloadSummary: { sourceNormalizedBoqArtifactId: "art-nb-7", sourceNormalizedBoqArtifactVersion: 1, sourceSkuResolutionArtifactId: "art-skur-3", sourceSkuResolutionArtifactVersion: 2, sourceFileIds: [], rulePackId: "rules-1", rulePackVersion: "1.0.0", rulePackStatus: "approved", rulePackSourceScope: "demo", lineCount: 2, summary: {} },
+  reviewSummary: { totalLineCount: 2, customerLineCount: 1, expansionLineCount: 1, requiresDecisionCount: 1, includedItemCount: 0 },
+  lines: [],
+};
+
 beforeEach(() => {
   mockRequireAuth.mockReset().mockReturnValue(SESSION);
   mockReview.mockReset().mockResolvedValue({
@@ -121,6 +133,7 @@ beforeEach(() => {
     payloadSummary: PAYLOAD_SUMMARY,
     reviewSummary: REVIEW_SUMMARY,
   });
+  mockLoadWorkspace.mockReset().mockResolvedValue({ status: "ok", review: OK_REVIEW });
 });
 
 describe("POST .../configuration-expansion/review - auth", () => {
@@ -320,10 +333,88 @@ describe("POST .../configuration-expansion/review - service failure", () => {
   });
 });
 
+function getReq(): NextRequest {
+  return {
+    headers: { get: () => null },
+    json: vi.fn(() => Promise.reject(new Error("should not parse body on GET"))),
+    formData: vi.fn(() => Promise.resolve(new FormData())),
+  } as unknown as NextRequest;
+}
+
+describe("GET .../configuration-expansion/review - auth", () => {
+  it("returns the requireAuth response and skips the loader when unauthenticated", async () => {
+    const unauth = NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    mockRequireAuth.mockReturnValue(unauth);
+
+    const res = await GET(getReq(), PARAMS);
+
+    expect(res).toBe(unauth);
+    expect(res.status).toBe(401);
+    expect(mockLoadWorkspace).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET .../configuration-expansion/review - authority", () => {
+  it("passes session tenantId and route params to the loader, ignores query string", async () => {
+    await GET(getReq(), PARAMS);
+
+    expect(mockLoadWorkspace).toHaveBeenCalledTimes(1);
+    const [tenantId, projectId, artifactId] = mockLoadWorkspace.mock.calls[0] as [string, string, string];
+    expect(tenantId).toBe(SESSION.tenantId);
+    expect(projectId).toBe(PROJECT);
+    expect(artifactId).toBe(ARTIFACT_ID);
+  });
+});
+
+describe("GET .../configuration-expansion/review - result mapping", () => {
+  const SIMPLE_GET: Array<[Record<string, unknown>, number, string]> = [
+    [{ status: "not_found" }, 404, "project_not_found"],
+    [{ status: "wrong_mode" }, 409, "wrong_project_mode"],
+    [{ status: "configuration_expansion_draft_not_found" }, 404, "configuration_expansion_draft_not_found"],
+    [{ status: "artifact_not_configuration_expansion" }, 409, "artifact_not_configuration_expansion"],
+    [{ status: "configuration_expansion_not_draft" }, 409, "configuration_expansion_not_draft"],
+    [{ status: "configuration_expansion_draft_not_reviewable" }, 409, "configuration_expansion_draft_not_reviewable"],
+    [{ status: "invalid_configuration_expansion_draft_payload" }, 409, "invalid_configuration_expansion_draft_payload"],
+  ];
+
+  it.each(SIMPLE_GET)("maps %o to the right HTTP status and code", async (result, httpStatus, code) => {
+    mockLoadWorkspace.mockResolvedValue(result);
+
+    const res = await GET(getReq(), PARAMS);
+
+    expect(res.status).toBe(httpStatus);
+    expect((await res.json()).code).toBe(code);
+  });
+
+  it("maps ok to 200 with { review } and no status discriminator", async () => {
+    const res = await GET(getReq(), PARAMS);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ review: OK_REVIEW });
+    expect("status" in body).toBe(false);
+  });
+});
+
+describe("GET .../configuration-expansion/review - loader failure", () => {
+  it("maps an unexpected loader error to a controlled 500 without exposing the thrown error", async () => {
+    const secret = "boom-loader-internal-stack";
+    mockLoadWorkspace.mockRejectedValue(new Error(secret));
+
+    const res = await GET(getReq(), PARAMS);
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe("quick_bom_configuration_expansion_review_load_failed");
+    expect(JSON.stringify(body)).not.toContain(secret);
+  });
+});
+
 describe("POST .../configuration-expansion/review - route surface", () => {
-  it("exports POST only", () => {
+  it("exports GET and POST only", () => {
+    expect(typeof routeModule.GET).toBe("function");
     expect(typeof routeModule.POST).toBe("function");
-    for (const method of ["GET", "PATCH", "PUT", "DELETE"]) {
+    for (const method of ["PATCH", "PUT", "DELETE"]) {
       expect((routeModule as Record<string, unknown>)[method]).toBeUndefined();
     }
   });
@@ -340,12 +431,13 @@ describe("route module purity (static source check)", () => {
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports only Next.js server primitives, requireAuth, and the wrapper service", () => {
+  it("imports only Next.js server primitives, requireAuth, the wrapper service, and the review workspace loader", () => {
     const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
     expect(froms).toEqual([
       "next/server",
       "@/lib/middleware/auth",
       "@/lib/projects/project-quick-bom-config-expansion-review",
+      "@/lib/projects/project-quick-bom-config-expansion-review-workspace",
     ]);
   });
 

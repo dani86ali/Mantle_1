@@ -1,10 +1,21 @@
 /**
- * POST /api/projects/[id]/quick-bom/artifacts/[artifactId]/configuration-expansion/review
- * - apply explicit per-line human accept/reject decisions to one persisted
- * configuration_expansion DRAFT artifact, persisting the reviewed/accepted
+ * GET + POST /api/projects/[id]/quick-bom/artifacts/[artifactId]/configuration-expansion/review
+ *
+ * GET (Prompt 128) returns a read-only line-review projection of ONE
+ * configuration_expansion DRAFT artifact via the read model loader, tenant-scoped on
+ * session.tenantId with the route params as the only project/artifact authority.
+ * Loader statuses map to HTTP: not_found -> 404 project_not_found, wrong_mode -> 409
+ * wrong_project_mode, configuration_expansion_draft_not_found -> 404,
+ * artifact_not_configuration_expansion -> 409, configuration_expansion_not_draft -> 409,
+ * configuration_expansion_draft_not_reviewable -> 409,
+ * invalid_configuration_expansion_draft_payload -> 409, ok -> 200 { review }. An
+ * unexpected loader error maps to a controlled 500 that never exposes the thrown error.
+ *
+ * POST (Prompt 91) applies explicit per-line human accept/reject decisions to one
+ * persisted configuration_expansion DRAFT artifact, persisting the reviewed/accepted
  * (non-draft) configuration_expansion artifact.
  *
- * POST only. Authenticated via requireAuth; session.tenantId is the only tenant
+ * Authenticated via requireAuth; session.tenantId is the only tenant
  * authority, session.userId is the only reviewedBy authority, and the route params
  * id/artifactId are the only project / source-draft-artifact authority. The request
  * body supplies ONLY the `decisions` array (an empty array is allowed because a
@@ -25,8 +36,10 @@
  * invalid_decision_action -> 400, accepted_line_not_traceable -> 409, ok -> 200 with
  * { artifact, payloadSummary, reviewSummary }. An unexpected service error maps to a
  * controlled 500 that never exposes the thrown error. Imports only Next.js server
- * primitives, requireAuth, and the Quick BoM configuration-expansion review wrapper
- * service.
+ * primitives, requireAuth, the Quick BoM configuration-expansion review wrapper
+ * service, and the read-only configuration-expansion review workspace loader (no DB,
+ * stores, lower-level config-expansion helpers, pricing, export, runner, AI, catalog,
+ * engine, coordinator, or adapter).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/middleware/auth";
@@ -34,6 +47,7 @@ import {
   reviewProjectQuickBomConfigurationExpansionDraft,
   type ConfigurationExpansionReviewDecision,
 } from "@/lib/projects/project-quick-bom-config-expansion-review";
+import { loadQuickBomConfigurationExpansionReviewWorkspace } from "@/lib/projects/project-quick-bom-config-expansion-review-workspace";
 
 const INVALID_REQUEST_CODE = "invalid_configuration_expansion_review_request";
 const INVALID_REQUEST_ERROR = "A decisions array is required.";
@@ -310,6 +324,90 @@ export async function POST(
       {
         code: "quick_bom_configuration_expansion_review_failed",
         error: "Unable to review Quick BoM configuration expansion draft.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string; artifactId: string } }
+) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
+  try {
+    const result = await loadQuickBomConfigurationExpansionReviewWorkspace(
+      session.tenantId,
+      params.id,
+      params.artifactId
+    );
+
+    if (result.status === "not_found") {
+      return NextResponse.json(
+        { code: "project_not_found", error: "Project not found." },
+        { status: 404 }
+      );
+    }
+    if (result.status === "wrong_mode") {
+      return NextResponse.json(
+        { code: "wrong_project_mode", error: "Project is not a Quick BoM project." },
+        { status: 409 }
+      );
+    }
+    if (result.status === "configuration_expansion_draft_not_found") {
+      return NextResponse.json(
+        {
+          code: "configuration_expansion_draft_not_found",
+          error: "Configuration expansion draft artifact not found.",
+        },
+        { status: 404 }
+      );
+    }
+    if (result.status === "artifact_not_configuration_expansion") {
+      return NextResponse.json(
+        {
+          code: "artifact_not_configuration_expansion",
+          error: "Artifact is not a configuration_expansion artifact.",
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "configuration_expansion_not_draft") {
+      return NextResponse.json(
+        {
+          code: "configuration_expansion_not_draft",
+          error: "Configuration expansion artifact is not a draft.",
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "configuration_expansion_draft_not_reviewable") {
+      return NextResponse.json(
+        {
+          code: "configuration_expansion_draft_not_reviewable",
+          error: "Configuration expansion draft is not reviewable.",
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "invalid_configuration_expansion_draft_payload") {
+      return NextResponse.json(
+        {
+          code: "invalid_configuration_expansion_draft_payload",
+          error: "Configuration expansion draft payload is invalid.",
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json({ review: result.review }, { status: 200 });
+  } catch {
+    return NextResponse.json(
+      {
+        code: "quick_bom_configuration_expansion_review_load_failed",
+        error: "Unable to load Quick BoM configuration expansion review.",
       },
       { status: 500 }
     );

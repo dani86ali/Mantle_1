@@ -365,7 +365,22 @@ describe("ProjectQuickBomPage - review gating", () => {
     expect(screen.queryByTestId("reject-sku_resolution")).toBeNull();
   });
 
-  it("shows a line-level review notice and no generic buttons for configuration_expansion", async () => {
+  it("shows generic approve/reject for a generated configuration_expansion (not a line-review notice)", async () => {
+    // baseWorkspace has configuration_expansion.status = "generated": approved/rejected via generic route
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+    expect(screen.getByTestId("approve-configuration_expansion")).toBeInTheDocument();
+    expect(screen.getByTestId("reject-configuration_expansion")).toBeInTheDocument();
+    expect(screen.queryByTestId("line-review-required-configuration_expansion")).toBeNull();
+  });
+
+  it("shows a line-level review notice and no generic buttons for a needs_review configuration_expansion", async () => {
+    stubFetch((url) => {
+      const ws = baseWorkspace();
+      (spineOf(ws).configuration_expansion as Record<string, unknown>).status = "needs_review";
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: ws });
+      return jsonResponse({}, 404);
+    });
     render(<ProjectQuickBomPage />);
     await screen.findByTestId("project-name");
     expect(screen.getByTestId("line-review-required-configuration_expansion")).toBeInTheDocument();
@@ -1329,6 +1344,454 @@ describe("ProjectQuickBomPage - SKU line review panel", () => {
     expect(body).not.toContain(SKU_REVIEW_CANARY);
     // PAYLOAD_CANARY from the base workspace payload should also not appear
     expect(body).not.toContain(PAYLOAD_CANARY);
+  });
+});
+
+// -- Configuration expansion line-review fixtures --
+const CFG_ARTIFACT_ID = "art-cfg-draft";
+const CFG_REVIEW_ROUTE_RE =
+  /\/api\/projects\/proj-1\/quick-bom\/artifacts\/art-cfg-draft\/configuration-expansion\/review$/;
+const CFG_REVIEW_CANARY = "CFG-REVIEW-EVIDENCE-PATH-CANARY";
+
+function workspaceWithCfgNeedsReview(): Record<string, unknown> {
+  const ws = baseWorkspace();
+  const sa = spineOf(ws);
+  sa.configuration_expansion = {
+    id: CFG_ARTIFACT_ID,
+    stageId: "configuration_expansion_review",
+    type: "configuration_expansion",
+    status: "needs_review",
+    version: 2,
+    sourceFileIds: [],
+    sourceArtifactIds: [],
+    createdAt: "2026-06-01T10:00:00.000Z",
+    updatedAt: "2026-06-01T10:05:00.000Z",
+  };
+  return ws;
+}
+
+function cfgReviewOkResponse(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    review: {
+      project: {
+        id: PROJECT_ID, tenantId: TENANT, name: "Honeywell Quick BoM", mode: "quick_bom",
+        createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-02T11:30:00.000Z",
+      },
+      artifact: {
+        id: CFG_ARTIFACT_ID, projectId: PROJECT_ID,
+        stageId: "configuration_expansion_review",
+        type: "configuration_expansion", status: "needs_review", version: 2,
+        sourceFileIds: [], sourceArtifactIds: [],
+        createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-01T10:00:00.000Z",
+      },
+      payloadSummary: {
+        sourceNormalizedBoqArtifactId: "art-nb-1",
+        sourceNormalizedBoqArtifactVersion: 1,
+        sourceSkuResolutionArtifactId: "art-sku-2",
+        sourceSkuResolutionArtifactVersion: 2,
+        sourceFileIds: [],
+        rulePackId: "honeywell-scope-rules",
+        rulePackVersion: "1.0.0",
+        rulePackStatus: "approved",
+        rulePackSourceScope: "honeywell_mvp_demo_only",
+        lineCount: 3,
+        summary: { customerLineCount: 1, addedLineCount: 2 },
+      },
+      reviewSummary: {
+        totalLineCount: 3,
+        customerLineCount: 1,
+        expansionLineCount: 2,
+        requiresDecisionCount: 2,
+        includedItemCount: 1,
+      },
+      lines: [
+        {
+          lineId: "line-cust-1",
+          origin: "customer",
+          sku: "C9300-48P-A",
+          description: "Customer switch",
+          quantity: 2,
+          evidenceCount: 0,
+          evidenceSourceTypes: [],
+        },
+        {
+          lineId: "line-exp-1",
+          origin: "expansion",
+          sku: "C9300-NM-4G",
+          description: "Network module",
+          quantity: 2,
+          relationshipType: "default_selected",
+          sourceRuleId: "rule-nm-4g",
+          evidenceCount: 1,
+          evidenceSourceTypes: ["ccw_estimate"],
+          // planted canary: should never reach DOM
+          sourcePath: CFG_REVIEW_CANARY,
+        },
+        {
+          lineId: "line-exp-2",
+          origin: "expansion",
+          sku: "PWR-C1-715WAC",
+          description: "Power supply",
+          quantity: 2,
+          evidenceCount: 0,
+          evidenceSourceTypes: [],
+          includedItem: true,
+        },
+      ],
+      ...overrides,
+    },
+  };
+}
+
+function cfgReviewPostOkResponse(): Record<string, unknown> {
+  return {
+    artifact: { id: "art-cfg-reviewed", status: "generated" },
+    payloadSummary: { lineCount: 3, summary: {} },
+    reviewSummary: {
+      customerLineCount: 1,
+      acceptedExpansionLineCount: 1,
+      rejectedExpansionLineCount: 1,
+      totalAcceptedLineCount: 2,
+      reviewedExpansionLineCount: 2,
+    },
+  };
+}
+
+describe("ProjectQuickBomPage - configuration expansion line review panel", () => {
+  it("renders the config-review-load button when configuration_expansion is needs_review", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectQuickBomPage />);
+    expect(await screen.findByTestId("config-review-load")).toBeInTheDocument();
+  });
+
+  it("does not render the config-review-load button when configuration_expansion is generated", async () => {
+    stubDefault();
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+    // baseWorkspace has configuration_expansion.status = "generated"
+    expect(screen.queryByTestId("config-review-load")).toBeNull();
+  });
+
+  it("GETs the exact review route and renders summary + line rows", async () => {
+    const calls = stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-load"));
+    });
+
+    const summary = await screen.findByTestId("config-review-summary");
+    expect(summary).toHaveTextContent("3 lines");
+    expect(summary).toHaveTextContent("1 customer");
+    expect(summary).toHaveTextContent("2 expansion");
+    expect(summary).toHaveTextContent("2 require decision");
+
+    const lines = screen.getAllByTestId("config-review-line");
+    expect(lines).toHaveLength(3);
+
+    const getCall = calls.find((c) => CFG_REVIEW_ROUTE_RE.test(c.url) && c.method === "GET");
+    expect(getCall).toBeTruthy();
+  });
+
+  it("customer lines have no accept/reject buttons; expansion lines do", async () => {
+    stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-load"));
+    });
+    await screen.findByTestId("config-review-summary");
+
+    // 2 expansion lines -> 2 accept + 2 reject buttons; customer line has none
+    expect(screen.getAllByTestId("config-review-accept")).toHaveLength(2);
+    expect(screen.getAllByTestId("config-review-reject")).toHaveLength(2);
+  });
+
+  it("submit is disabled until all expansion lines have decisions, then enabled", async () => {
+    stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-load"));
+    });
+    await screen.findByTestId("config-review-summary");
+
+    const submit = screen.getByTestId("config-review-submit");
+    expect(submit).toBeDisabled();
+
+    // Accept line-exp-1
+    const accepts = screen.getAllByTestId("config-review-accept");
+    await act(async () => {
+      fireEvent.click(accepts[0]);
+    });
+    expect(submit).toBeDisabled(); // still one undecided
+
+    // Reject line-exp-2
+    vi.spyOn(window, "prompt").mockReturnValue(null);
+    const rejects = screen.getAllByTestId("config-review-reject");
+    await act(async () => {
+      fireEvent.click(rejects[1]);
+    });
+    expect(submit).not.toBeDisabled(); // all expansion lines decided
+  });
+
+  it("POSTs a sanitized decisions array with only lineId/action/note, no authority fields", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue(null);
+    const calls = stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgReviewOkResponse());
+      }
+      if (CFG_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(cfgReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
+    await screen.findByTestId("config-review-summary");
+
+    const accepts = screen.getAllByTestId("config-review-accept");
+    const rejects = screen.getAllByTestId("config-review-reject");
+    await act(async () => { fireEvent.click(accepts[0]); });
+    await act(async () => { fireEvent.click(rejects[1]); });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-submit"));
+    });
+
+    await waitFor(() =>
+      expect(calls.some((c) => CFG_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")).toBe(true)
+    );
+
+    const post = calls.find((c) => CFG_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST");
+    const body = post!.body as { decisions: Record<string, unknown>[] };
+    expect(body.decisions).toHaveLength(2);
+
+    // Only expansion lines in the batch
+    for (const d of body.decisions) {
+      expect(typeof d.lineId).toBe("string");
+      expect(d.action === "accept" || d.action === "reject").toBe(true);
+      // Authority fields must not be sent
+      expect("tenantId" in d).toBe(false);
+      expect("projectId" in d).toBe(false);
+      expect("artifactId" in d).toBe(false);
+      expect("reviewedBy" in d).toBe(false);
+      expect("reviewedAt" in d).toBe(false);
+      expect("pricing" in d).toBe(false);
+    }
+    // customer line must not appear
+    expect(body.decisions.some((d) => d.lineId === "line-cust-1")).toBe(false);
+  });
+
+  it("clears the config review panel and re-GETs the workspace after a successful POST", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue(null);
+    const refreshed = workspaceWithCfgNeedsReview();
+    (refreshed.project as Record<string, unknown>).name = "CFG REVIEW REFRESHED";
+    let reviewLoaded = false;
+
+    stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        reviewLoaded = true;
+        return jsonResponse(cfgReviewOkResponse());
+      }
+      if (CFG_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(cfgReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) {
+        return jsonResponse({ workspace: reviewLoaded ? refreshed : workspaceWithCfgNeedsReview() });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
+    await screen.findByTestId("config-review-summary");
+
+    const accepts = screen.getAllByTestId("config-review-accept");
+    const rejects = screen.getAllByTestId("config-review-reject");
+    await act(async () => { fireEvent.click(accepts[0]); });
+    await act(async () => { fireEvent.click(rejects[1]); });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-submit"));
+    });
+
+    expect(await screen.findByText("CFG REVIEW REFRESHED")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId("config-review-summary")).toBeNull());
+  });
+
+  it("does not approve the artifact client-side after a successful review POST", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue(null);
+    stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgReviewOkResponse());
+      }
+      if (CFG_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(cfgReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
+    await screen.findByTestId("config-review-summary");
+
+    const accepts = screen.getAllByTestId("config-review-accept");
+    const rejects = screen.getAllByTestId("config-review-reject");
+    await act(async () => { fireEvent.click(accepts[0]); });
+    await act(async () => { fireEvent.click(rejects[1]); });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-submit"));
+    });
+
+    await waitFor(() => screen.queryByTestId("project-name"));
+    // No approve button for configuration_expansion must ever appear in the client
+    expect(screen.queryByTestId("approve-configuration_expansion")).toBeNull();
+  });
+
+  it("shows a controlled error and no stack when the GET review throws", async () => {
+    const secret = "cfg-review-get-boom-internal";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+          return Promise.reject(new Error(secret));
+        }
+        return Promise.resolve(jsonResponse({ workspace: workspaceWithCfgNeedsReview() }));
+      })
+    );
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-load"));
+    });
+
+    const err = await screen.findByTestId("config-review-error");
+    expect(err).toHaveTextContent("Unable to load or submit the configuration expansion line review.");
+    expect(document.body.textContent ?? "").not.toContain(secret);
+    expect(screen.queryByTestId("config-review-summary")).toBeNull();
+  });
+
+  it("shows a controlled error when the GET review returns a non-ok status", async () => {
+    stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse({ code: "configuration_expansion_draft_not_reviewable", error: "Draft is not reviewable." }, 409);
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-load"));
+    });
+
+    const err = await screen.findByTestId("config-review-error");
+    expect(err).toHaveTextContent("Draft is not reviewable.");
+  });
+
+  it("shows a controlled error and no stack when the review POST throws", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue(null);
+    const secret = "cfg-review-post-boom-internal";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (CFG_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+          return Promise.reject(new Error(secret));
+        }
+        if (CFG_REVIEW_ROUTE_RE.test(url)) {
+          return Promise.resolve(jsonResponse(cfgReviewOkResponse()));
+        }
+        return Promise.resolve(jsonResponse({ workspace: workspaceWithCfgNeedsReview() }));
+      })
+    );
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
+    await screen.findByTestId("config-review-summary");
+
+    const accepts = screen.getAllByTestId("config-review-accept");
+    const rejects = screen.getAllByTestId("config-review-reject");
+    await act(async () => { fireEvent.click(accepts[0]); });
+    await act(async () => { fireEvent.click(rejects[1]); });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-submit"));
+    });
+
+    const err = await screen.findByTestId("config-review-error");
+    expect(err).toHaveTextContent("Unable to load or submit the configuration expansion line review.");
+    expect(document.body.textContent ?? "").not.toContain(secret);
+  });
+
+  it("does not render review payload canary fields (evidence paths etc.) in the DOM", async () => {
+    stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-load"));
+    });
+    await screen.findByTestId("config-review-summary");
+
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(CFG_REVIEW_CANARY);
+    expect(body).not.toContain(PAYLOAD_CANARY);
+    // Structural key names must not be visible in the DOM
+    expect(body).not.toContain("originalCells");
+    expect(body).not.toContain("evidenceNote");
   });
 });
 
