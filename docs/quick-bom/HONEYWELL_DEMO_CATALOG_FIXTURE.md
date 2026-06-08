@@ -252,3 +252,30 @@ Key facts:
 - The module imports only the three approved demo sources and contains no DB, API/UI,
   engine, coordinator, adapter, AI/LLM, workbook/export, artifact store, route,
   or filesystem code. It is ASCII-only.
+
+## Prompt 116: Approved Configuration Authority Profile
+
+Prompt 116 adds `src/lib/projects/honeywell-demo-config-authority.ts`, which records
+the user-approved Honeywell MVP configuration authority boundary as an explicit pure
+profile.
+
+Key facts:
+
+- The authority is limited to approved structured catalog/rule artifacts and Honeywell
+  MVP scope only. It does not create pricing authority or production Cisco/broad Cisco
+  authority.
+- It uses no runtime AI and authorizes no silent SKU replacement or substitution.
+- Unknown SKU relationships are deferred; they return `"defer_unknown_relationship"` and
+  the original requested SKU is preserved exactly.
+- The two standalone optics (`SFP-10G-LR-S=` and `SFP-10/25G-LR-S=`) remain standalone
+  customer-requested BoQ lines with disposition `"preserve_standalone_customer_line"`.
+  They are not attached under switches (`attachesOpticsUnderSwitches: false`).
+- The module validates that the Honeywell composed rule pack has `status: "approved"`
+  before returning any profile or disposition. A non-approved pack throws immediately to
+  prevent accidental authority drift.
+- Runtime service wiring is intentionally deferred to the next prompt so this prompt
+  remains auditable on its own.
+- The module imports only `honeywell-demo-sku-capability` and
+  `honeywell-config-expansion-rule-pack`. No pricing, DB, API/UI, engine, coordinator,
+  adapter, AI/LLM, workbook/export, artifact store, route, or filesystem code is present.
+  It is ASCII-only.
