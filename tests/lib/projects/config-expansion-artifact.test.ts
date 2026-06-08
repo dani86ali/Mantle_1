@@ -25,6 +25,7 @@ import {
 } from "@/lib/projects/config-expansion-review";
 import type {
   ConfigExpansionEvidenceCitation,
+  ConfigurationAuthorityTrace,
   ConfigurationExpansionDraftLine,
 } from "@/lib/projects/config-expansion-types";
 import type { ProjectArtifact } from "@/types/project";
@@ -494,7 +495,7 @@ describe("createConfigurationExpansionArtifact - payload shape", () => {
       }
     };
     collectKeys(payload);
-    const forbidden = ["price", "cost", "discount", "margin", "markup", "vat", "currency", "sell", "amount", "catalog"];
+    const forbidden = ["pricing", "price", "cost", "discount", "margin", "markup", "vat", "currency", "sell", "amount", "catalog"];
     for (const key of keys) {
       const lower = key.toLowerCase();
       for (const token of forbidden) {
@@ -555,6 +556,138 @@ describe("createConfigurationExpansionArtifact - source draft provenance", () =>
       SKU_ID,
       DRAFT_ID,
     ]);
+  });
+});
+
+// --- Configuration authority trace (Prompt 118) ----------------------------
+
+function authorityTrace(): ConfigurationAuthorityTrace {
+  return {
+    scope: "honeywell_mvp_demo_only",
+    approvalRecordId: "approval-record-1",
+    rulePackId: "honeywell-scope-rules",
+    rulePackVersion: "1.0.0",
+    rulePackStatus: "approved",
+    rulePackSourceScope: "honeywell-first-scope",
+    dispositionSummary: {
+      expandByApprovedRulePackCount: 2,
+      preserveKnownRulePackChildCount: 1,
+      preserveStandaloneCustomerLineCount: 1,
+      deferUnknownRelationshipCount: 0,
+    },
+    runtimeAi: false,
+    replacementAuthority: false,
+    skuSubstitutionAuthority: false,
+    unknownRelationshipsDeferred: true,
+    attachesOpticsUnderSwitches: false,
+  };
+}
+
+describe("createConfigurationExpansionArtifact - configuration authority trace", () => {
+  beforeEach(() => {
+    mockArtifacts(normalizedArtifact(), skuArtifact());
+  });
+
+  it("persists the trace into the payload when supplied", async () => {
+    const trace = authorityTrace();
+    const { payload } = await createConfigurationExpansionArtifact(
+      input({ configurationAuthority: trace })
+    );
+    expect(payload.configurationAuthority).toBeDefined();
+    expect(payload.configurationAuthority?.scope).toBe("honeywell_mvp_demo_only");
+    expect(payload.configurationAuthority?.rulePackId).toBe("honeywell-scope-rules");
+    expect(payload.configurationAuthority?.runtimeAi).toBe(false);
+  });
+
+  it("omits configurationAuthority from the payload when not supplied", async () => {
+    const { payload } = await createConfigurationExpansionArtifact(input());
+    expect(payload).not.toHaveProperty("configurationAuthority");
+  });
+
+  it("deep-copies the trace so the caller cannot mutate the persisted payload through an alias", async () => {
+    const trace = authorityTrace();
+    const { payload } = await createConfigurationExpansionArtifact(
+      input({ configurationAuthority: trace })
+    );
+    // Mutate the original trace after creation
+    trace.dispositionSummary.expandByApprovedRulePackCount = 999;
+    expect(payload.configurationAuthority?.dispositionSummary.expandByApprovedRulePackCount).toBe(2);
+  });
+});
+
+describe("buildConfigurationExpansionArtifactPayload - configuration authority trace", () => {
+  it("copies a supplied configurationAuthority trace into the payload", () => {
+    const trace = authorityTrace();
+    const reviewResult = applyConfigurationExpansionReview({
+      lines: [customer(), expansion()],
+      decisions: [accept("line-1-x1")],
+    });
+    const payload = buildConfigurationExpansionArtifactPayload({
+      normalizedBoqArtifact: normalizedArtifact(),
+      skuResolutionArtifact: skuArtifact(),
+      rulePackId: RULE_PACK_ID,
+      rulePackVersion: RULE_PACK_VERSION,
+      rulePackStatus: "approved",
+      reviewResult,
+      configurationAuthority: trace,
+    });
+    expect(payload.configurationAuthority).toBeDefined();
+    expect(payload.configurationAuthority?.approvalRecordId).toBe("approval-record-1");
+    expect(payload.configurationAuthority?.runtimeAi).toBe(false);
+    expect(payload.configurationAuthority?.replacementAuthority).toBe(false);
+  });
+
+  it("deep-copies dispositionSummary so the caller cannot alias the persisted payload", () => {
+    const trace = authorityTrace();
+    const reviewResult = applyConfigurationExpansionReview({
+      lines: [customer()],
+      decisions: [],
+    });
+    const payload = buildConfigurationExpansionArtifactPayload({
+      normalizedBoqArtifact: normalizedArtifact(),
+      skuResolutionArtifact: skuArtifact(),
+      rulePackId: RULE_PACK_ID,
+      rulePackVersion: RULE_PACK_VERSION,
+      rulePackStatus: "approved",
+      reviewResult,
+      configurationAuthority: trace,
+    });
+    trace.dispositionSummary.deferUnknownRelationshipCount = 999;
+    expect(payload.configurationAuthority?.dispositionSummary.deferUnknownRelationshipCount).toBe(0);
+  });
+
+  it("omits configurationAuthority when not supplied", () => {
+    const reviewResult = applyConfigurationExpansionReview({
+      lines: [customer()],
+      decisions: [],
+    });
+    const payload = buildConfigurationExpansionArtifactPayload({
+      normalizedBoqArtifact: normalizedArtifact(),
+      skuResolutionArtifact: skuArtifact(),
+      rulePackId: RULE_PACK_ID,
+      rulePackVersion: RULE_PACK_VERSION,
+      rulePackStatus: "approved",
+      reviewResult,
+    });
+    expect(payload).not.toHaveProperty("configurationAuthority");
+  });
+
+  it("reviewed payload never carries payloadKind even when configurationAuthority is present", () => {
+    const trace = authorityTrace();
+    const reviewResult = applyConfigurationExpansionReview({
+      lines: [customer()],
+      decisions: [],
+    });
+    const payload = buildConfigurationExpansionArtifactPayload({
+      normalizedBoqArtifact: normalizedArtifact(),
+      skuResolutionArtifact: skuArtifact(),
+      rulePackId: RULE_PACK_ID,
+      rulePackVersion: RULE_PACK_VERSION,
+      rulePackStatus: "approved",
+      reviewResult,
+      configurationAuthority: trace,
+    });
+    expect(payload).not.toHaveProperty("payloadKind");
   });
 });
 

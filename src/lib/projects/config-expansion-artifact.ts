@@ -33,6 +33,7 @@ import {
 } from "@/lib/projects/config-expansion-review";
 import type {
   ConfigExpansionRulePackStatus,
+  ConfigurationAuthorityTrace,
   ConfigurationExpansionArtifactPayload,
   ConfigurationExpansionDraftLine,
 } from "@/lib/projects/config-expansion-types";
@@ -75,6 +76,12 @@ export interface CreateConfigurationExpansionArtifactInput {
    */
   sourceConfigurationExpansionDraftArtifactId?: string;
   sourceConfigurationExpansionDraftArtifactVersion?: number;
+  /**
+   * Optional configuration-authority trace inherited from the source DRAFT artifact.
+   * When supplied it is deep-copied (including `dispositionSummary`) into the
+   * reviewed payload. Configuration authority only; no pricing fields. (Prompt 118)
+   */
+  configurationAuthority?: ConfigurationAuthorityTrace;
 }
 
 /** The created artifact, both source artifacts, the exact payload, and the review result. */
@@ -97,6 +104,12 @@ export interface BuildConfigurationExpansionArtifactPayloadInput {
   /** Optional source-draft provenance; echoed onto the payload only when both are supplied. */
   sourceConfigurationExpansionDraftArtifactId?: string;
   sourceConfigurationExpansionDraftArtifactVersion?: number;
+  /**
+   * Optional configuration-authority trace to copy into the reviewed payload.
+   * Deep-copied so callers cannot mutate the persisted payload through an alias.
+   * Configuration authority only; no pricing fields. (Prompt 118)
+   */
+  configurationAuthority?: ConfigurationAuthorityTrace;
 }
 
 /** The `sku_resolution` provenance fields this service requires to verify the chain. */
@@ -154,6 +167,7 @@ export function buildConfigurationExpansionArtifactPayload(
     reviewResult,
     sourceConfigurationExpansionDraftArtifactId,
     sourceConfigurationExpansionDraftArtifactVersion,
+    configurationAuthority,
   } = input;
   if (rulePackStatus !== "approved") throw new Error(RULE_PACK_NOT_APPROVED_MESSAGE);
   const acceptedLines = reviewResult.acceptedLines.map(copyLine);
@@ -184,6 +198,16 @@ export function buildConfigurationExpansionArtifactPayload(
     summary: { ...reviewResult.summary },
     ...(reviewResult.reviewedBy !== undefined ? { reviewedBy: reviewResult.reviewedBy } : {}),
     ...(reviewResult.reviewedAt !== undefined ? { reviewedAt: reviewResult.reviewedAt } : {}),
+    // Deep-copy the trace so callers cannot mutate the persisted payload through
+    // an alias. dispositionSummary is a plain object, so a shallow spread suffices.
+    ...(configurationAuthority !== undefined
+      ? {
+          configurationAuthority: {
+            ...configurationAuthority,
+            dispositionSummary: { ...configurationAuthority.dispositionSummary },
+          },
+        }
+      : {}),
   };
 }
 
@@ -198,7 +222,7 @@ export function buildConfigurationExpansionArtifactPayload(
 export async function createConfigurationExpansionArtifact(
   input: CreateConfigurationExpansionArtifactInput
 ): Promise<CreateConfigurationExpansionArtifactResult> {
-  const { tenantId, projectId, rulePackId, rulePackVersion, rulePackStatus, lines, decisions, reviewedBy, reviewedAt } = input;
+  const { tenantId, projectId, rulePackId, rulePackVersion, rulePackStatus, lines, decisions, reviewedBy, reviewedAt, configurationAuthority } = input;
 
   const normalizedBoqArtifact = await getProjectArtifactById(tenantId, projectId, input.normalizedBoqArtifactId);
   if (!normalizedBoqArtifact) throw new Error(MISSING_NORMALIZED_MESSAGE);
@@ -231,6 +255,7 @@ export async function createConfigurationExpansionArtifact(
     reviewResult,
     sourceConfigurationExpansionDraftArtifactId: input.sourceConfigurationExpansionDraftArtifactId,
     sourceConfigurationExpansionDraftArtifactVersion: input.sourceConfigurationExpansionDraftArtifactVersion,
+    configurationAuthority,
   });
 
   // Source artifacts in [normalized, sku] order; when this reviewed artifact was

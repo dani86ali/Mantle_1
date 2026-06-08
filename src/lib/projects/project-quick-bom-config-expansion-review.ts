@@ -39,6 +39,7 @@ import {
 } from "@/lib/projects/config-expansion-artifact";
 import type {
   ConfigExpansionRulePackStatus,
+  ConfigurationAuthorityTrace,
   ConfigurationExpansionArtifactPayload,
   ConfigurationExpansionDraftLine,
 } from "@/lib/projects/config-expansion-types";
@@ -131,6 +132,8 @@ export interface QuickBomConfigExpansionReviewPayloadSummary {
   rulePackStatus: "approved";
   lineCount: number;
   summary: ConfigurationExpansionArtifactPayload["summary"];
+  /** Inherited configuration-authority trace; present when the reviewed payload carries one. (Prompt 118) */
+  configurationAuthority?: ConfigurationAuthorityTrace;
 }
 
 /** Deterministic review roll-up counts surfaced to the caller. */
@@ -183,6 +186,8 @@ interface ParsedDraftPayload {
   rulePackVersion: string;
   rulePackStatus: ConfigExpansionRulePackStatus;
   lines: ConfigurationExpansionDraftLine[];
+  /** Present when the draft payload carried a valid configuration-authority trace. */
+  configurationAuthority?: ConfigurationAuthorityTrace;
 }
 
 function isBlank(value: string): boolean {
@@ -243,7 +248,7 @@ function toPayloadSummary(
   payload: ConfigurationExpansionArtifactPayload,
   draftArtifact: ProjectArtifact
 ): QuickBomConfigExpansionReviewPayloadSummary {
-  return {
+  const base: QuickBomConfigExpansionReviewPayloadSummary = {
     sourceNormalizedBoqArtifactId: payload.sourceNormalizedBoqArtifactId,
     sourceNormalizedBoqArtifactVersion: payload.sourceNormalizedBoqArtifactVersion,
     sourceSkuResolutionArtifactId: payload.sourceSkuResolutionArtifactId,
@@ -257,6 +262,15 @@ function toPayloadSummary(
     lineCount: payload.lineCount,
     summary: { ...payload.summary },
   };
+  // Include a deep copy of the trace so mutating the returned summary cannot
+  // corrupt the reviewed payload's configurationAuthority.
+  if (payload.configurationAuthority !== undefined) {
+    base.configurationAuthority = {
+      ...payload.configurationAuthority,
+      dispositionSummary: { ...payload.configurationAuthority.dispositionSummary },
+    };
+  }
+  return base;
 }
 
 /**
@@ -282,6 +296,7 @@ function parseDraftPayload(
     rulePackSourceScope,
     lines,
     summary,
+    configurationAuthority,
   } = payload;
   if (
     payloadKind !== DRAFT_PAYLOAD_KIND ||
@@ -299,6 +314,21 @@ function parseDraftPayload(
   ) {
     return null;
   }
+  // If present, the trace must be fully valid; a malformed present trace is not
+  // backward-compatible - return null to trigger invalid_configuration_expansion_draft_payload.
+  if (configurationAuthority !== undefined) {
+    const parsedTrace = parseConfigurationAuthorityTrace(configurationAuthority);
+    if (parsedTrace === null) return null;
+    return {
+      sourceNormalizedBoqArtifactId,
+      sourceSkuResolutionArtifactId,
+      rulePackId,
+      rulePackVersion,
+      rulePackStatus,
+      lines: lines as ConfigurationExpansionDraftLine[],
+      configurationAuthority: parsedTrace,
+    };
+  }
   return {
     sourceNormalizedBoqArtifactId,
     sourceSkuResolutionArtifactId,
@@ -306,6 +336,76 @@ function parseDraftPayload(
     rulePackVersion,
     rulePackStatus,
     lines: lines as ConfigurationExpansionDraftLine[],
+  };
+}
+
+/**
+ * Validate a present `configurationAuthority` value from a draft payload. Returns
+ * the validated trace (as a `ConfigurationAuthorityTrace`) when the object matches
+ * all required shapes, or null when any field is missing or wrong. Called only when
+ * the value is not undefined; absence is backward-compatible (returns undefined from
+ * `parseDraftPayload`, not null).
+ */
+function parseConfigurationAuthorityTrace(
+  raw: unknown
+): ConfigurationAuthorityTrace | null {
+  if (!isPlainObject(raw)) return null;
+  const {
+    scope,
+    approvalRecordId,
+    rulePackId,
+    rulePackVersion,
+    rulePackStatus,
+    rulePackSourceScope,
+    dispositionSummary,
+    runtimeAi,
+    replacementAuthority,
+    skuSubstitutionAuthority,
+    unknownRelationshipsDeferred,
+    attachesOpticsUnderSwitches,
+  } = raw;
+  if (
+    scope !== "honeywell_mvp_demo_only" ||
+    typeof approvalRecordId !== "string" ||
+    typeof rulePackId !== "string" ||
+    typeof rulePackVersion !== "string" ||
+    rulePackStatus !== "approved" ||
+    typeof rulePackSourceScope !== "string" ||
+    !isPlainObject(dispositionSummary) ||
+    typeof dispositionSummary.expandByApprovedRulePackCount !== "number" ||
+    typeof dispositionSummary.preserveKnownRulePackChildCount !== "number" ||
+    typeof dispositionSummary.preserveStandaloneCustomerLineCount !== "number" ||
+    typeof dispositionSummary.deferUnknownRelationshipCount !== "number" ||
+    runtimeAi !== false ||
+    replacementAuthority !== false ||
+    skuSubstitutionAuthority !== false ||
+    unknownRelationshipsDeferred !== true ||
+    attachesOpticsUnderSwitches !== false
+  ) {
+    return null;
+  }
+  return {
+    scope,
+    approvalRecordId,
+    rulePackId,
+    rulePackVersion,
+    rulePackStatus,
+    rulePackSourceScope,
+    dispositionSummary: {
+      expandByApprovedRulePackCount:
+        dispositionSummary.expandByApprovedRulePackCount,
+      preserveKnownRulePackChildCount:
+        dispositionSummary.preserveKnownRulePackChildCount,
+      preserveStandaloneCustomerLineCount:
+        dispositionSummary.preserveStandaloneCustomerLineCount,
+      deferUnknownRelationshipCount:
+        dispositionSummary.deferUnknownRelationshipCount,
+    },
+    runtimeAi,
+    replacementAuthority,
+    skuSubstitutionAuthority,
+    unknownRelationshipsDeferred,
+    attachesOpticsUnderSwitches,
   };
 }
 
@@ -410,6 +510,9 @@ export async function reviewProjectQuickBomConfigurationExpansionDraft(
       reviewedBy,
       sourceConfigurationExpansionDraftArtifactId: draftArtifact.id,
       sourceConfigurationExpansionDraftArtifactVersion: draftArtifact.version,
+      ...(parsedDraft.configurationAuthority !== undefined
+        ? { configurationAuthority: parsedDraft.configurationAuthority }
+        : {}),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";

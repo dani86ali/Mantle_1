@@ -311,3 +311,30 @@ Key facts:
 - No new artifacts, approval records, stage updates, pricing, export, UI, or route
   changes are made. Exactly one `needs_review` `configuration_expansion` artifact is
   still created on success, as before.
+
+## Prompt 118: Configuration Authority Trace Carried Into Reviewed Artifacts
+
+Reviewed configuration-expansion artifacts now preserve the draft's configuration
+authority trace.
+
+Key facts:
+
+- When a `configuration_expansion` DRAFT artifact payload carries a
+  `configurationAuthority` trace (written by Prompt 117), the
+  `project-quick-bom-config-expansion-review` service validates and copies that trace
+  into the reviewed/accepted `configuration_expansion` artifact payload and into the
+  lean `payloadSummary` returned to the caller.
+- This is provenance only. The trace records which approved configuration authority
+  profile governed draft creation. It does not create pricing authority, catalog
+  authority, production Cisco authority, or any replacement or substitution authority.
+- Review behavior and expansion behavior are unchanged. The same gates apply: the
+  draft must be a valid `needs_review` artifact, `reviewedBy` must be nonblank, the
+  source `sku_resolution` must be approved, and the rule pack must be approved.
+- Drafts without a trace remain backward-compatible: the reviewed artifact and its
+  payload summary simply omit `configurationAuthority`.
+- A draft carrying a malformed present trace (wrong types, wrong literals, missing
+  fields) returns `invalid_configuration_expansion_draft_payload` before delegating.
+- Unknown relationships remain deferred in the trace (`unknownRelationshipsDeferred:
+  true`). No runtime AI, no SKU replacement or substitution, no optic attachment.
+- No new artifacts, approval records, stage updates, pricing, export, UI, or route
+  changes are made.

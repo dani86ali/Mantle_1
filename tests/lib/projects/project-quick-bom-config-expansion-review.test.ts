@@ -6,6 +6,7 @@ import type {
   ProjectArtifact,
   ProjectArtifactStatus,
 } from "@/types/project";
+import type { ConfigurationAuthorityTrace } from "@/lib/projects/config-expansion-types";
 
 // Mock the three composed boundaries: the project store (verify the Project), the
 // artifact read store (load + gate the source draft), and the existing deterministic
@@ -621,6 +622,142 @@ describe("reviewProjectQuickBomConfigurationExpansionDraft - ok summaries", () =
 
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.reviewSummary).toEqual(REVIEW_SUMMARY);
+  });
+});
+
+// --- Configuration authority trace (Prompt 118) ----------------------------
+
+function makeAuthorityTrace(): ConfigurationAuthorityTrace {
+  return {
+    scope: "honeywell_mvp_demo_only",
+    approvalRecordId: "approval-record-1",
+    rulePackId: RULE_PACK_ID,
+    rulePackVersion: RULE_PACK_VERSION,
+    rulePackStatus: "approved",
+    rulePackSourceScope: RULE_PACK_SCOPE,
+    dispositionSummary: {
+      expandByApprovedRulePackCount: 2,
+      preserveKnownRulePackChildCount: 1,
+      preserveStandaloneCustomerLineCount: 1,
+      deferUnknownRelationshipCount: 0,
+    },
+    runtimeAi: false,
+    replacementAuthority: false,
+    skuSubstitutionAuthority: false,
+    unknownRelationshipsDeferred: true,
+    attachesOpticsUnderSwitches: false,
+  };
+}
+
+describe("reviewProjectQuickBomConfigurationExpansionDraft - configuration authority trace", () => {
+  it("passes the trace from the draft payload to createConfigurationExpansionArtifact when present", async () => {
+    const trace = makeAuthorityTrace();
+    getArtifactMock.mockResolvedValue(
+      makeDraftArtifact({ payload: makeDraftPayload({ configurationAuthority: trace }) })
+    );
+
+    await reviewProjectQuickBomConfigurationExpansionDraft(input());
+
+    const arg = createMock.mock.calls[0][0];
+    expect(arg.configurationAuthority).toBeDefined();
+    expect(arg.configurationAuthority).not.toBe(trace);
+    expect(arg.configurationAuthority?.dispositionSummary).not.toBe(
+      trace.dispositionSummary
+    );
+    expect(arg.configurationAuthority?.scope).toBe("honeywell_mvp_demo_only");
+    expect(arg.configurationAuthority?.runtimeAi).toBe(false);
+  });
+
+  it("includes the trace in the ok payloadSummary when the reviewed payload carries it", async () => {
+    const trace = makeAuthorityTrace();
+    const reviewedPayload = { ...makeReviewedPayload(), configurationAuthority: trace };
+    createMock.mockResolvedValue(makeServiceResult({ payload: reviewedPayload }));
+
+    const result = await reviewProjectQuickBomConfigurationExpansionDraft(input());
+
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.payloadSummary.configurationAuthority).toBeDefined();
+    expect(result.payloadSummary.configurationAuthority?.approvalRecordId).toBe("approval-record-1");
+    expect(result.payloadSummary.configurationAuthority?.replacementAuthority).toBe(false);
+  });
+
+  it("mutating payloadSummary.configurationAuthority.dispositionSummary cannot mutate the delegate result", async () => {
+    const trace = makeAuthorityTrace();
+    const reviewedPayload = { ...makeReviewedPayload(), configurationAuthority: trace };
+    const serviceResult = makeServiceResult({ payload: reviewedPayload });
+    createMock.mockResolvedValue(serviceResult);
+
+    const result = await reviewProjectQuickBomConfigurationExpansionDraft(input());
+
+    if (result.status !== "ok") throw new Error("unreachable");
+    result.payloadSummary.configurationAuthority!.dispositionSummary.expandByApprovedRulePackCount = 999;
+    expect(serviceResult.payload.configurationAuthority?.dispositionSummary.expandByApprovedRulePackCount).toBe(2);
+  });
+
+  it("backward-compatible: omits configurationAuthority from payloadSummary when the draft and reviewed payload have none", async () => {
+    const result = await reviewProjectQuickBomConfigurationExpansionDraft(input());
+
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect("configurationAuthority" in result.payloadSummary).toBe(false);
+  });
+
+  it("does not pass configurationAuthority to the delegate when the draft payload has none", async () => {
+    await reviewProjectQuickBomConfigurationExpansionDraft(input());
+
+    const arg = createMock.mock.calls[0][0];
+    expect("configurationAuthority" in arg).toBe(false);
+  });
+
+  it("returns invalid_configuration_expansion_draft_payload for a malformed present trace and does not delegate", async () => {
+    const badTraces: unknown[] = [
+      { scope: "wrong_scope" },
+      { scope: "honeywell_mvp_demo_only" },
+      {
+        scope: "honeywell_mvp_demo_only",
+        approvalRecordId: "x",
+        rulePackId: "y",
+        rulePackVersion: "1.0.0",
+        rulePackStatus: "approved",
+        rulePackSourceScope: "s",
+        dispositionSummary: {
+          expandByApprovedRulePackCount: 1,
+          preserveKnownRulePackChildCount: 1,
+          preserveStandaloneCustomerLineCount: 1,
+          deferUnknownRelationshipCount: 0,
+        },
+        runtimeAi: true, // wrong: must be false
+        replacementAuthority: false,
+        skuSubstitutionAuthority: false,
+        unknownRelationshipsDeferred: true,
+        attachesOpticsUnderSwitches: false,
+      },
+      {
+        scope: "honeywell_mvp_demo_only",
+        approvalRecordId: "x",
+        rulePackId: "y",
+        rulePackVersion: "1.0.0",
+        rulePackStatus: "approved",
+        rulePackSourceScope: "s",
+        dispositionSummary: { expandByApprovedRulePackCount: "not-a-number" }, // wrong type
+        runtimeAi: false,
+        replacementAuthority: false,
+        skuSubstitutionAuthority: false,
+        unknownRelationshipsDeferred: true,
+        attachesOpticsUnderSwitches: false,
+      },
+    ];
+
+    for (const badTrace of badTraces) {
+      createMock.mockClear();
+      getArtifactMock.mockResolvedValue(
+        makeDraftArtifact({ payload: makeDraftPayload({ configurationAuthority: badTrace }) })
+      );
+
+      const result = await reviewProjectQuickBomConfigurationExpansionDraft(input());
+
+      expect(result).toEqual({ status: "invalid_configuration_expansion_draft_payload" });
+      expect(createMock).not.toHaveBeenCalled();
+    }
   });
 });
 

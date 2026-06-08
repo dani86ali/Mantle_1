@@ -438,6 +438,15 @@ export type ConfigurationExpansionArtifactPayload = {
   reviewedBy?: string;
   /** Review timestamp, present only when supplied. */
   reviewedAt?: string;
+  /**
+   * Lean configuration-authority trace inherited from the source DRAFT artifact.
+   * Present only when the reviewed artifact was produced from a DRAFT that carried
+   * the trace (Prompt 117/118). Configuration authority only: no pricing, catalog,
+   * sell, discount, margin, markup, VAT, currency, or amount fields. Does not
+   * authorize pricing, production Cisco authority, replacement, substitution, or
+   * runtime AI. (Prompt 118)
+   */
+  configurationAuthority?: ConfigurationAuthorityTrace;
 };
 
 /**
