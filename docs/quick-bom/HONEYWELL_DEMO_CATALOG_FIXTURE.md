@@ -69,3 +69,21 @@ routes, or runner behavior.
 
 Later prompts may explicitly wire this supplement into Honeywell demo SKU resolution,
 but only under the same demo boundary and with deterministic behavior.
+
+## Prompt 105: Explicit Lookup Overlay
+
+Prompt 105 adds `src/lib/projects/honeywell-demo-catalog-lookup.ts`, a small helper
+that converts the supplement into a `CatalogLookupIndex` for deterministic lookup.
+
+Key facts about the overlay:
+
+- It is explicit opt-in only. Callers must call `getHoneywellDemoCatalogLookupIndex()`
+  or `lookupHoneywellDemoCatalogSku()` to use it.
+- It does not change default runtime catalog lookup. The default `lookupCatalogSku()`
+  behavior and the local STC/mock catalog are unchanged.
+- It does not price artifacts or create production pricing authority. The `listPrice`
+  field on lookup items is carried only because `CatalogLookupItem` requires it.
+- It does not create configuration authority or parent/child relationships. Items are
+  flat lookup entries only; relationship structure stays in the approved rule packs.
+- Optics (`SFP-10G-LR-S=` and `SFP-10/25G-LR-S=`) remain standalone flat lookup
+  items. The overlay does not attach them under switches.
