@@ -2,7 +2,10 @@
 
 Execution tracker only. `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md`
 is the architecture source of truth; this backlog never overrides it and is not a
-planning document. Last refreshed by Prompt 132 after Prompts 104-131 (P104-P114
+planning document. Last refreshed by Prompt 134 after Prompt 133 applied automatic
+downstream artifact staleness propagation in `src/lib/db/project-artifact-store.ts`
+(B6 closed) and this Prompt 134 docs/test alignment. Prior: refreshed by Prompt 132
+after Prompts 104-131 (P104-P114
 Honeywell demo catalog supplement explicit opt-in and authority-safe UI wiring;
 P126-P131 line-level SKU/config/pricing review UI screens and full seven-line Honeywell
 app proof). Prior closure: refreshed by Prompt 98 to reflect the committed repo state
@@ -36,8 +39,10 @@ supplement opt-in and authority-safe UI wiring. Prompts 126-131 added line-level
 SKU/config/pricing review UI screens (`src/app/projects/[id]/quick-bom/page.tsx`,
 tested by `tests/ui/project-quick-bom-page.test.tsx`) and proved the full seven-line
 Honeywell BoQ upload through the app UI/panels with committed fixture totals (Section 5F).
-Prompt 132 is this docs/test alignment refresh. None of these proofs claim production
-readiness; honest remaining gaps are in Sections 6-7.
+Prompt 133 applied automatic downstream artifact staleness propagation in
+`src/lib/db/project-artifact-store.ts` (B6 closed). Prompt 134 is this docs/test
+alignment refresh. None of these proofs claim production readiness; honest remaining
+gaps are in Sections 6-7.
 
 ## 2. Status
 
@@ -184,7 +189,16 @@ Readiness/reporting (confirmed):
   blocking step from artifact type/version/status, with transitive create gates
   and customer-deliverable readiness (`quick-bom-readiness.ts`).
 - Pure staleness planner that walks the artifact dependency graph and returns
-  planned `stale` transitions (`staleness.ts`) - planning only.
+  planned `stale` transitions (`staleness.ts`). Prompt 133 wires the planner into
+  the artifact repository: `createProjectArtifactVersion`
+  (`project-artifact-store.ts`) now calls `planStaleArtifactUpdates` inside the
+  same tenant-scoped transaction after inserting a new artifact version, marking
+  latest eligible downstream artifact versions stale. Immutable history preserved;
+  only `status -> stale` and `updatedAt` on planned downstream artifacts;
+  missing/stale/not_applicable latest downstream skipped. Verified by
+  `tests/lib/db/project-artifact-store.test.ts` (normalized_boq, sku_resolution,
+  configuration_expansion, and priced_boq regeneration stale the correct downstream
+  Quick BoM artifacts).
 
 Tests (confirmed): a broad suite under `tests/lib/projects/` covers the modules
 above, including readiness, the artifact services, the Mantle writer, the
@@ -523,7 +537,7 @@ see Sections 5B-5D for the proven path.
 | B3 | P0 | Demo fixture | A reproducible Honeywell demo run through the spine. | The committed fixture `data/quick-bom/honeywell-demo-pricing-fixture.json` plus the runner carry one Honeywell-shaped run `normalize-input -> expand -> review -> price -> Mantle model`, proven by the P71 e2e test. A persisted Honeywell demo Project fixture now seeds the same run through the Project stores (`honeywell-demo-project-fixture.ts`, P78), exercised against an in-memory store in the P81 app E2E. Real DB provisioning/migrations remain open (B10). | The in-memory demo and the seeded demo Project are reproducible and proven; a run against a provisioned real DB is still verification work. | In-memory demo proven (P68/P71); seeded demo Project present (P78); real DB provisioning still open (B10) |
 | B4 | P1 | Review surfaces | Product-facing review/approval surface for the approval-gated Quick BoM artifacts. | A review/approval service (`project-quick-bom-approval.ts`, P79) and POST route (`approvals/route.ts`) record an approve/reject decision against an EXACT artifact version for the four gated types, and the UI page (`page.tsx`, P80/P96) offers approve/reject plus the workflow action rail; proven by the P81 and P97 app E2Es. Per-line SKU/config review routes (`.../sku-resolution/review` P87, `.../configuration-expansion/review` P89) and the priced review route (`.../priced-boq/review` P91) exist. Line-level SKU/config/pricing review UI screens now exist (P126-P131, `tests/ui/project-quick-bom-page.test.tsx`). | Reviewers can approve/reject gated artifacts and record per-line SKU/config decisions; line-level review UI now exists (P126-P131). | Minimally present (P79/P80); per-line review routes present (P87/P89/P91); line-level review UI done (P126-P131) |
 | B5 | P1 | Orchestration | Driving the spine no longer needs hand-built artifacts. | The runner advances input -> expand -> review -> price -> Mantle model deterministically; `quick-bom-readiness.ts` remains a read-only report alongside it. The P77-P81 seeded-demo app surface renders readiness for the Honeywell demo Project, and the P83-P97 route/action chain drives upload -> normalize -> review -> price -> export -> download for a non-seeded arbitrary Project under test. | Operator no longer hand-assembles each step in-memory; seeded and reduced arbitrary app flows have driver/readiness surfaces. Production DB/browser hardening remains open; line-level review UI is done (P126-P131). | Done at runner level (P67); seeded-demo readiness surface done (P77-P81); arbitrary route/action chain done (P83-P97) |
-| B6 | P1 | Staleness | Upstream changes do not automatically mark downstream artifacts stale at runtime. | `staleness.ts planStaleArtifactUpdates` is pure planning with no caller in `src` (grep); `project-approval-store.ts` and `project-artifact-store.ts` explicitly do not propagate staleness. | Regenerating an upstream artifact mid-demo leaves stale downstream artifacts looking valid; the canonical "auto-stale" rule is not enforced. | later/post-MVP |
+| B6 | P1 | Staleness | Upstream changes automatically mark downstream artifacts stale at runtime. | Prompt 133 wired `planStaleArtifactUpdates` (`staleness.ts`) into `createProjectArtifactVersion` (`project-artifact-store.ts`): after inserting a new artifact version the store calls the planner inside the same tenant-scoped transaction and marks latest eligible downstream artifact versions stale. Immutable history preserved; only `status -> stale` and `updatedAt` on planned downstream artifacts; missing/stale/not_applicable latest downstream skipped. Verified by `tests/lib/db/project-artifact-store.test.ts` (normalized_boq, sku_resolution, configuration_expansion, and priced_boq regeneration stale correct downstream artifacts). | Regenerating an upstream artifact now marks downstream artifacts stale automatically; the canonical "auto-stale" rule is enforced. | Done (P133) |
 | B7 | P1 | Demo data | Committed SAR price source and Mantle category map for the Honeywell scope. | The committed demo fixture supplies a SAR `unitListPriceSarBySku` map and a SKU->Mantle-category map for exactly the 50 demo SKUs (loader `honeywell-demo-pricing-fixture.ts`); the P71 e2e test prices all 60 lines with correct category totals and no warnings. Fixture pricing is temporary demo-fixture evidence only, never production authority (Section 3). | Pricing and category totals are correct for the Honeywell demo scope. | Done (P68) |
 | B8 | P1 | Mantle export tests | Real-input Mantle export proof for the Honeywell shape. | `honeywell-quick-bom-demo-e2e.test.ts` writes the Honeywell Mantle model to a temporary workbook and re-opens it to assert rows, order, category footers, and totals against the committed template. Marafiq/EnergyTech real-input export tests are still not present. | Honeywell "customer-ready without manual reformatting" is now proven; other customer formats remain unproven. | Done for Honeywell (P71); other formats later |
 | B9 | P2 | Catalog coverage | SKU resolution resolves only against a committed local STC mock catalog; Prompt 102 verified which Honeywell-scope SKUs that mock resolves and misses. | `catalog-lookup.ts` reads `getCatalogMock()` (`LOCAL_CATALOG_SOURCE = local_stc_historical_mock`); exact + normalized only, no fuzzy/AI. The read-only Prompt 102 audit (`docs/quick-bom/HONEYWELL_CATALOG_COVERAGE_AUDIT.md`, `src/lib/projects/honeywell-catalog-coverage-audit.ts`, `tests/lib/projects/honeywell-catalog-coverage-audit.test.ts`) records customer rows 7 total, 4 matched, 3 not_found, 0 ambiguous (missing CW9178I-CFG, C9300X-48HX-A, C9300L-24P-4X-A) and broader demo SKUs 50 total, 30 matched, 20 not_found, 0 ambiguous, against local_stc_historical_mock only. Audit-only: no pricing, configuration, production catalog, or substitution authority. | A full uploaded Honeywell BoQ through real SKU resolution would still leave those missing rows unresolved unless explicit catalog-fixture/authority work is approved later; the demo runner sidesteps this by taking human-accepted SKU decisions (acceptedSku == originalSku). | Coverage verified (P102); missing-SKU gap still open |
@@ -607,8 +621,9 @@ Demo data/fixtures:
 Error handling/readiness/status display:
 - The readiness report's next-step/blocking-step is rendered by the Project Quick BoM
   UI (P80) and its workflow action rail (P96); no broader status surface exists.
-- Staleness is planned but never applied at runtime; no automatic staleness
-  propagation caller exists (B6).
+- Prompt 133 wired automatic staleness propagation into the artifact repository
+  (B6 closed); upstream artifact regeneration now marks downstream artifacts stale
+  inside the same transaction.
 
 Out of scope for this slice:
 - RFP remains out of current scope (Section 9).
@@ -731,8 +746,8 @@ Completed (P83-P98) - the app-readiness closure slice, kept as the execution rec
 - P98 - App-readiness closure: this refresh (this doc and the runbook, plus their
   doc regression tests).
 
-Completed (P104-P132) - the UI/evidence hardening and docs/test alignment slice, kept
-as the execution record:
+Completed (P104-P134) - the UI/evidence hardening, staleness wiring, and docs/test
+alignment slice, kept as the execution record:
 
 - P104-P114 - Honeywell demo catalog supplement explicit opt-in and authority-safe UI
   wiring - DONE.
@@ -742,7 +757,12 @@ as the execution record:
   `tests/ui/project-quick-bom-page.test.tsx`; Prompt 131 proved 7 customer rows,
   7 SKU decisions, 60 config/priced/export rows, totalPriceSar 2185708.76,
   totalIncVatSar 2513565.07).
-- P132 - Docs/test alignment refresh (this refresh) - DONE.
+- P132 - Docs/test alignment refresh (prior refresh) - DONE.
+- P133 - Automatic downstream artifact staleness propagation in
+  `src/lib/db/project-artifact-store.ts`: `createProjectArtifactVersion` now calls
+  `planStaleArtifactUpdates` inside the same tenant-scoped transaction, marking
+  latest eligible downstream artifact versions stale. B6 closed. - DONE.
+- P134 - Docs/test alignment refresh (this refresh) - DONE.
 
 Post-closure follow-ups (no prompt numbers assigned; ordering is a recommendation,
 not a commitment):
@@ -762,7 +782,6 @@ not a commitment):
   1+2+3 packs.
 - Deterministic fuzzy SKU suggestion (step 3), then human-approved AI-assisted
   suggestion (step 4) - suggestions only, never a runtime AI decision.
-- Automatic staleness propagation caller so upstream changes mark downstream stale.
 - Marafiq and EnergyTech real-input/app-level paths.
 - Manual browser QA of the arbitrary-Project app flow.
 - RFP workflow (out of current scope).

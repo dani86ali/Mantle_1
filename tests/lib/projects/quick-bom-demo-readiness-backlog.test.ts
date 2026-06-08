@@ -4,26 +4,26 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Quick BoM demo-readiness backlog
- * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 132 after Prompts
- * 104-131 (P104-P114 Honeywell demo catalog supplement UI wiring; P126-P131 line-level
- * review UI and full seven-line Honeywell app proof).
+ * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 134 after Prompt 133
+ * applied automatic downstream artifact staleness propagation in
+ * src/lib/db/project-artifact-store.ts (B6 closed).
  *
- * Prior closure: Prompt 98 reflected the committed repo state after Prompts 83-97 (the
- * broader Quick BoM app route/action chain), closing the Prompt 83-98 app-readiness
- * sequence. Prompt 101 aligned the DB-readiness evidence; Prompt 103 aligned the
- * catalog-coverage evidence.
+ * Prior: refreshed by Prompt 132 after Prompts 104-131 (P104-P114 Honeywell demo
+ * catalog supplement UI wiring; P126-P131 line-level review UI and full seven-line
+ * Honeywell app proof). Prompt 98 reflected the committed repo state after Prompts
+ * 83-97 (the broader Quick BoM app route/action chain), closing the Prompt 83-98
+ * app-readiness sequence. Prompt 101 aligned the DB-readiness evidence; Prompt 103
+ * aligned the catalog-coverage evidence.
  *
- * This test asserts the backlog: records Prompt 132 as the current refresh; keeps the
- * planning file as source of truth; preserves the P65-P82 seeded Honeywell closure
- * record, the P83-P98 app-readiness closure, and adds the P104-P132 UI/evidence
- * hardening closure; no longer lists line-level SKU/config/pricing review UI as a
- * missing gap (it now exists in src/app/projects/[id]/quick-bom/page.tsx, tested by
- * tests/ui/project-quick-bom-page.test.tsx); documents the Prompt 131 full seven-line
- * Honeywell app proof counts/totals; keeps DB/browser QA/staleness/future suggestion
- * steps as open; preserves the demo-only pricing boundary, the
- * pricing/configuration authority separation, the no-runtime-AI rule, Batch 4 as a
- * decision record only, standalone optics, and deferred replacements with no silent
- * substitution; and stays ASCII-only.
+ * This test asserts the backlog: records Prompt 134 as the current refresh while
+ * preserving the Prompt 132/P104-P131 record; asserts Prompt 133 staleness
+ * implementation facts; asserts B6 is no longer framed as open/later/post-MVP; keeps
+ * the planning file as source of truth; preserves the P65-P82 seeded Honeywell closure
+ * record, the P83-P98 app-readiness closure, and the P104-P134 UI/evidence/staleness
+ * hardening closure; keeps DB/browser QA and future suggestion steps as open; preserves
+ * the demo-only pricing boundary, the pricing/configuration authority separation, the
+ * no-runtime-AI rule, Batch 4 as a decision record only, standalone optics, and deferred
+ * replacements with no silent substitution; and stays ASCII-only.
  *
  * The doc is read from disk and never mutated; no runtime evaluator, composer, pricing,
  * or expansion code is imported or run.
@@ -93,7 +93,7 @@ const P83_TO_P97_PIECES = [
   "tests/app/project-quick-bom-arbitrary-flow-e2e.test.tsx",
 ];
 
-// Stale framing that must NOT survive the Prompt 132 refresh. Matched
+// Stale framing that must NOT survive the Prompt 134 refresh. Matched
 // case-sensitively and exactly. (B10's old "no committed migration directory" /
 // "(glob empty)" DB claim is corrected by Prompt 101; its absence is checked by the
 // DB-readiness alignment block below, not here.)
@@ -129,6 +129,14 @@ const STALE_PHRASES = [
   "Production provisioning and line-level review UI remain follow-ups",
   "Still unbuilt: production DB provisioning/migrations, full customer/general production readiness, and line-level SKU/config/pricing review UI",
   "Production provisioning and line-level review UI remain follow-ups",
+  // Prompt 134: stale staleness framing retired (B6 closed by Prompt 133).
+  "planning only",
+  "no caller in src",
+  "project-approval-store.ts and project-artifact-store.ts explicitly do not propagate staleness",
+  "Staleness is planned but never applied at runtime",
+  "no automatic staleness propagation caller exists",
+  "Automatic staleness propagation caller so upstream changes mark downstream stale",
+  "| B6 | P1 | Staleness | Upstream changes do not automatically mark downstream artifacts stale at runtime.",
 ];
 
 describe("quick bom demo-readiness backlog - exists and stays an execution tracker", () => {
@@ -137,7 +145,8 @@ describe("quick bom demo-readiness backlog - exists and stays an execution track
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 132 refresh and keeps the planning file as source of truth", () => {
+  it("records the Prompt 134 refresh and keeps the planning file as source of truth", () => {
+    expect(docFlat).toContain("refreshed by prompt 134");
     expect(docFlat).toContain("refreshed by prompt 132");
     expect(docFlat).toContain("prompts 104-131");
     expect(docFlat).toContain("refreshed by prompt 98");
@@ -213,11 +222,13 @@ describe("quick bom demo-readiness backlog - P65-P132 slices complete", () => {
     }
   });
 
-  it("carries the closed P104-P132 UI/evidence hardening record", () => {
-    expect(docFlat).toContain("completed (p104-p132)");
+  it("carries the closed P104-P134 UI/evidence/staleness hardening record", () => {
+    expect(docFlat).toContain("completed (p104-p134)");
     expect(docFlat).toContain("p104-p114");
     expect(docFlat).toContain("p126-p131");
     expect(docFlat).toContain("p132");
+    expect(docFlat).toContain("p133");
+    expect(docFlat).toContain("p134");
   });
 
   it("names the Prompt 73 command, P74-P76 CCW evidence, and P77-P81 app pieces", () => {
@@ -297,9 +308,40 @@ describe("quick bom demo-readiness backlog - app-level proof is scoped honestly"
     expect(docFlat).toContain("line-level sku/config/pricing review ui");
     expect(docFlat).toContain("deterministic fuzzy");
     expect(docFlat).toContain("ai-assisted");
-    expect(docFlat).toContain("automatic staleness propagation caller");
     expect(docFlat).toContain("marafiq");
     expect(docFlat).toContain("energytech");
+  });
+});
+
+describe("quick bom demo-readiness backlog - Prompt 133 staleness wiring (B6 closed)", () => {
+  const b6Row = doc.split("\n").find((line) => line.startsWith("| B6 |")) ?? "";
+
+  it("finds the B6 staleness row", () => {
+    expect(b6Row.length).toBeGreaterThan(0);
+    expect(b6Row).toContain("Staleness");
+  });
+
+  it("B6 is no longer framed as open/later/post-MVP", () => {
+    expect(b6Row).not.toContain("later/post-MVP");
+    expect(b6Row).not.toContain("open");
+  });
+
+  it("B6 is marked done with Prompt 133", () => {
+    expect(b6Row).toContain("Done (P133)");
+  });
+
+  it("backlog contains Prompt 133 staleness implementation facts", () => {
+    expect(docFlat).toContain("planstaleartifactupdates");
+    expect(docFlat).toContain("createprojectartifactversion");
+    expect(docFlat).toContain("project-artifact-store.ts");
+    expect(docFlat).toContain("tenant-scoped transaction");
+    expect(docFlat).toContain("immutable history preserved");
+    expect(docFlat).toContain("tests/lib/db/project-artifact-store.test.ts");
+  });
+
+  it("backlog states the pure planner remains in staleness.ts and is wired by Prompt 133", () => {
+    expect(docFlat).toContain("staleness.ts");
+    expect(docFlat).toContain("prompt 133 wires");
   });
 });
 
