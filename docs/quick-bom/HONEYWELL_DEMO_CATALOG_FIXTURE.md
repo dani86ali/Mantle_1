@@ -87,3 +87,12 @@ Key facts about the overlay:
   flat lookup entries only; relationship structure stays in the approved rule packs.
 - Optics (`SFP-10G-LR-S=` and `SFP-10/25G-LR-S=`) remain standalone flat lookup
   items. The overlay does not attach them under switches.
+
+## Prompt 106: Lookup Provenance Fix
+
+Prompt 106 adds `CatalogLookupSource` to `CatalogLookupIndex` and threads it through
+to `CatalogLookupMatch.catalogSource`. The Honeywell overlay index carries the explicit
+source constant `HONEYWELL_DEMO_CATALOG_LOOKUP_SOURCE =
+"honeywell_mvp_demo_catalog_supplement"`, so matches resolved via the Honeywell overlay
+now report that source instead of `local_stc_historical_mock`. Default local mock
+lookup behavior is unchanged.

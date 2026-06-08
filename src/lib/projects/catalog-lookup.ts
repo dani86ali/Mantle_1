@@ -13,6 +13,9 @@ import { getCatalogMock } from "@/lib/adapters/_catalog-mock-data";
 /** The local catalog is STC historical/mock data, not live Cisco GPL. */
 export const LOCAL_CATALOG_SOURCE = "local_stc_historical_mock" as const;
 
+/** Identifies which catalog a lookup index or match result came from. */
+export type CatalogLookupSource = string;
+
 /** Minimal catalog row the lookup needs; a projection of the mock catalog item. */
 export interface CatalogLookupItem {
   sku: string;
@@ -32,6 +35,7 @@ export interface CatalogLookupItem {
 export interface CatalogLookupIndex {
   exact: Map<string, CatalogLookupItem>;
   normalized: Map<string, CatalogLookupItem[]>;
+  catalogSource: CatalogLookupSource;
 }
 
 /** A resolved catalog match. `source` records HOW it matched, not pricing. */
@@ -45,7 +49,7 @@ export interface CatalogLookupMatch {
   currency: string;
   priceListId?: string;
   source: "exact" | "normalized";
-  catalogSource: typeof LOCAL_CATALOG_SOURCE;
+  catalogSource: CatalogLookupSource;
   /** A zero/negative-price entry is still a match, but this is false. */
   hasPositiveListPrice: boolean;
 }
@@ -69,7 +73,8 @@ export function normalizeSkuForLookup(sku: string): string {
 function toCatalogMatch(
   requestedSku: string,
   item: CatalogLookupItem,
-  source: "exact" | "normalized"
+  source: "exact" | "normalized",
+  catalogSource: CatalogLookupSource
 ): CatalogLookupMatch {
   return {
     requestedSku,
@@ -81,7 +86,7 @@ function toCatalogMatch(
     currency: item.currency,
     ...(item.priceListId !== undefined ? { priceListId: item.priceListId } : {}),
     source,
-    catalogSource: LOCAL_CATALOG_SOURCE,
+    catalogSource,
     hasPositiveListPrice: item.listPrice > 0,
   };
 }
@@ -89,10 +94,12 @@ function toCatalogMatch(
 /**
  * Index a catalog for exact and normalized lookup. Does not mutate the input
  * (item references stored as-is). Blank trimmed/normalized keys are skipped; the
- * first item wins on an exact-key collision.
+ * first item wins on an exact-key collision. `source` defaults to
+ * `LOCAL_CATALOG_SOURCE`; pass an explicit string to tag the index provenance.
  */
 export function buildCatalogLookupIndex(
-  items: Record<string, CatalogLookupItem>
+  items: Record<string, CatalogLookupItem>,
+  source: CatalogLookupSource = LOCAL_CATALOG_SOURCE
 ): CatalogLookupIndex {
   const exact = new Map<string, CatalogLookupItem>();
   const normalized = new Map<string, CatalogLookupItem[]>();
@@ -107,7 +114,7 @@ export function buildCatalogLookupIndex(
     if (bucket) bucket.push(item);
     else normalized.set(normKey, [item]);
   }
-  return { exact, normalized };
+  return { exact, normalized, catalogSource: source };
 }
 
 let cachedLocalIndex: CatalogLookupIndex | undefined;
@@ -158,7 +165,7 @@ export function lookupCatalogSku(
         status: "matched",
         requestedSku,
         normalizedSku,
-        match: toCatalogMatch(requestedSku, exactItem, "exact"),
+        match: toCatalogMatch(requestedSku, exactItem, "exact", index.catalogSource),
       };
     }
   }
@@ -174,7 +181,7 @@ export function lookupCatalogSku(
         status: "matched",
         requestedSku,
         normalizedSku,
-        match: toCatalogMatch(requestedSku, chosen, "normalized"),
+        match: toCatalogMatch(requestedSku, chosen, "normalized", index.catalogSource),
       };
     }
     if (distinctSkus.length > 1) {

@@ -14,10 +14,11 @@
  */
 import {
   lookupCatalogSku,
-  LOCAL_CATALOG_SOURCE,
+  getLocalMockCatalogLookupIndex,
   type CatalogLookupIndex,
   type CatalogLookupMatch,
   type CatalogLookupResult,
+  type CatalogLookupSource,
 } from "@/lib/projects/catalog-lookup";
 import type {
   CanonicalBoqLine,
@@ -46,7 +47,7 @@ export interface SkuResolutionDraftSummary {
   ambiguousCount: number;
   /** Matched lines whose catalog entry has a zero/negative list price. */
   zeroPriceSuggestionCount: number;
-  catalogSource: typeof LOCAL_CATALOG_SOURCE;
+  catalogSource: CatalogLookupSource;
 }
 
 /** The draft outcome: one decision per input line plus deterministic counts. */
@@ -139,8 +140,11 @@ export function buildSkuResolutionDraft(
   let ambiguousCount = 0;
   let zeroPriceSuggestionCount = 0;
 
+  const index: CatalogLookupIndex =
+    input.catalogIndex ?? getLocalMockCatalogLookupIndex();
+
   for (const line of input.lines) {
-    const result = lookupCatalogSku(line.sku, input.catalogIndex);
+    const result = lookupCatalogSku(line.sku, index);
     const decision = buildSkuResolutionDecisionForLine(line, result);
     decisions.push(decision);
 
@@ -168,7 +172,7 @@ export function buildSkuResolutionDraft(
     normalizedSuggestionCount,
     ambiguousCount,
     zeroPriceSuggestionCount,
-    catalogSource: LOCAL_CATALOG_SOURCE,
+    catalogSource: index.catalogSource,
   };
 
   return { decisions, summary };

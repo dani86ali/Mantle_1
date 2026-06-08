@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import * as lookupModule from "@/lib/projects/honeywell-demo-catalog-lookup";
 import {
   HONEYWELL_DEMO_CATALOG_LOOKUP_BOUNDARY,
+  HONEYWELL_DEMO_CATALOG_LOOKUP_SOURCE,
   getHoneywellDemoCatalogLookupItems,
   getHoneywellDemoCatalogLookupIndex,
   lookupHoneywellDemoCatalogSku,
@@ -154,11 +155,12 @@ describe("lookupHoneywellDemoCatalogSku", () => {
     }
   });
 
-  it("matched result has correct catalogSource", () => {
+  it("matched result reports honeywell_mvp_demo_catalog_supplement as catalogSource", () => {
     const result = lookupHoneywellDemoCatalogSku("CW9178I-CFG");
     expect(result.status).toBe("matched");
     if (result.status === "matched") {
-      expect(result.match.catalogSource).toBe("local_stc_historical_mock");
+      expect(result.match.catalogSource).toBe(HONEYWELL_DEMO_CATALOG_LOOKUP_SOURCE);
+      expect(result.match.catalogSource).toBe("honeywell_mvp_demo_catalog_supplement");
     }
   });
 
@@ -237,6 +239,7 @@ describe("module export surface", () => {
     const keys = Object.keys(lookupModule).sort();
     expect(keys).toEqual([
       "HONEYWELL_DEMO_CATALOG_LOOKUP_BOUNDARY",
+      "HONEYWELL_DEMO_CATALOG_LOOKUP_SOURCE",
       "getHoneywellDemoCatalogLookupIndex",
       "getHoneywellDemoCatalogLookupItems",
       "lookupHoneywellDemoCatalogSku",

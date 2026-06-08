@@ -9,6 +9,7 @@ import {
 } from "@/lib/projects/sku-resolution";
 import {
   buildCatalogLookupIndex,
+  LOCAL_CATALOG_SOURCE,
   type CatalogLookupItem,
   type CatalogLookupMatch,
   type CatalogLookupResult,
@@ -261,6 +262,25 @@ describe("buildSkuResolutionDraft", () => {
     const snapshot = structuredClone(lines);
     buildSkuResolutionDraft({ lines, catalogIndex: index });
     expect(lines).toEqual(snapshot);
+  });
+
+  it("summary reports the explicit index catalogSource when one is provided", () => {
+    const explicitIndex = buildCatalogLookupIndex(
+      catalogOf(catItem({ sku: "C9300-48P-E" })),
+      "explicit_test_source"
+    );
+    const { summary } = buildSkuResolutionDraft({
+      lines: [makeLine({ sku: "C9300-48P-E" })],
+      catalogIndex: explicitIndex,
+    });
+    expect(summary.catalogSource).toBe("explicit_test_source");
+  });
+
+  it("summary reports LOCAL_CATALOG_SOURCE when no catalogIndex is provided", () => {
+    const { summary } = buildSkuResolutionDraft({
+      lines: [makeLine({ sku: "C9300-48P-E" })],
+    });
+    expect(summary.catalogSource).toBe(LOCAL_CATALOG_SOURCE);
   });
 });
 

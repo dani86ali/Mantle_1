@@ -22,6 +22,10 @@ import {
 } from "@/lib/projects/catalog-lookup";
 import { getHoneywellDemoCatalogItems } from "@/lib/projects/honeywell-demo-catalog-fixture";
 
+/** Source tag for matches resolved via the Honeywell MVP demo catalog supplement. */
+export const HONEYWELL_DEMO_CATALOG_LOOKUP_SOURCE =
+  "honeywell_mvp_demo_catalog_supplement" as const;
+
 /**
  * Authority boundary: explicit opt-in overlay for Honeywell MVP demo scope only.
  * Grants no production catalog, broad Cisco, configuration, replacement/substitution,
@@ -73,9 +77,13 @@ export function getHoneywellDemoCatalogLookupItems(): Record<string, CatalogLook
 /**
  * Build a fresh CatalogLookupIndex over the Honeywell demo catalog supplement.
  * Each call returns a new index; callers cannot mutate shared state.
+ * Index carries HONEYWELL_DEMO_CATALOG_LOOKUP_SOURCE so matches report it.
  */
 export function getHoneywellDemoCatalogLookupIndex(): CatalogLookupIndex {
-  return buildCatalogLookupIndex(getHoneywellDemoCatalogLookupItems());
+  return buildCatalogLookupIndex(
+    getHoneywellDemoCatalogLookupItems(),
+    HONEYWELL_DEMO_CATALOG_LOOKUP_SOURCE
+  );
 }
 
 /**
