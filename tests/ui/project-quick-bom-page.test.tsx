@@ -983,6 +983,355 @@ describe("ProjectQuickBomPage - authority provenance rendering", () => {
 
 });
 
+// -- SKU line-review fixtures --
+const SKU_REVIEW_CANARY = "SKU-REVIEW-PAYLOAD-CANARY";
+const SKU_ARTIFACT_ID = "art-sku"; // matches baseWorkspace spineArtifacts.sku_resolution.id
+const SKU_REVIEW_ROUTE_RE =
+  /\/api\/projects\/proj-1\/quick-bom\/artifacts\/art-sku\/sku-resolution\/review$/;
+
+function skuReviewOkResponse(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    review: {
+      project: {
+        id: PROJECT_ID, tenantId: TENANT, name: "Honeywell Quick BoM", mode: "quick_bom",
+        createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-02T11:30:00.000Z",
+      },
+      artifact: {
+        id: SKU_ARTIFACT_ID, projectId: PROJECT_ID, stageId: "sku_resolution",
+        type: "sku_resolution", status: "needs_review", version: 2,
+        sourceFileIds: [], sourceArtifactIds: [],
+        createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-01T10:00:00.000Z",
+      },
+      payloadSummary: {
+        sourceNormalizedBoqArtifactId: "art-nb-1", sourceNormalizedBoqArtifactVersion: 1,
+        sourceFileIds: [], lineCount: 2, summary: {},
+      },
+      reviewSummary: { totalLineCount: 2, needsReviewCount: 1, acceptedCount: 1, rejectedCount: 0, unresolvedCount: 0 },
+      lines: [
+        {
+          sourceFileId: "file-1", sourceRowNumber: 2, originalLineNumber: "L-002",
+          originalSku: "WS-C3650-48FD-E", status: "needs_review",
+          suggestions: [{ suggestedSku: "C9300-48P-A", source: "exact" }],
+        },
+        {
+          sourceFileId: "file-1", sourceRowNumber: 3, originalLineNumber: "L-003",
+          originalSku: "OLD-SKU", status: "accepted", acceptedSku: "C9300-24P-A",
+          decidedBy: SKU_REVIEW_CANARY,
+          suggestions: [],
+        },
+      ],
+      ...overrides,
+    },
+  };
+}
+
+function skuReviewPostOkResponse(): Record<string, unknown> {
+  return {
+    artifact: { id: "art-sku-v3", status: "needs_review" },
+    payloadSummary: { lineCount: 2, summary: {} },
+    reviewSummary: { totalLineCount: 2, needsReviewCount: 0, acceptedCount: 2, rejectedCount: 0, unresolvedCount: 0 },
+  };
+}
+
+describe("ProjectQuickBomPage - SKU line review panel", () => {
+  it("renders the sku-review-load button when sku_resolution is needs_review", async () => {
+    stubDefault();
+    render(<ProjectQuickBomPage />);
+    expect(await screen.findByTestId("sku-review-load")).toBeInTheDocument();
+  });
+
+  it("does not render the sku-review-load button when sku_resolution is approved", async () => {
+    stubFetch((url) => {
+      const ws = baseWorkspace();
+      (spineOf(ws).sku_resolution as Record<string, unknown>).status = "approved";
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: ws });
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+    expect(screen.queryByTestId("sku-review-load")).toBeNull();
+  });
+
+  it("GETs the exact review route on load button click and renders summary + line rows", async () => {
+    const calls = stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(skuReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+
+    const summary = await screen.findByTestId("sku-review-summary");
+    expect(summary).toHaveTextContent("2 lines");
+    expect(summary).toHaveTextContent("1 need review");
+    expect(summary).toHaveTextContent("1 accepted");
+
+    const lines = screen.getAllByTestId("sku-review-line");
+    expect(lines).toHaveLength(2);
+
+    const getCall = calls.find((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "GET");
+    expect(getCall).toBeTruthy();
+  });
+
+  it("POSTs exactly one sanitized accept action with no authority fields when Accept is clicked", async () => {
+    const calls = stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(skuReviewOkResponse());
+      }
+      if (SKU_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(skuReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByTestId("sku-review-accept")[0]);
+    });
+
+    await waitFor(() =>
+      expect(calls.some((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")).toBe(true)
+    );
+
+    const post = calls.find((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST");
+    expect(post!.body).toMatchObject({ actions: [expect.objectContaining({ decision: "accept", acceptedSku: "C9300-48P-A" })] });
+    expect(post!.body).toHaveProperty("actions");
+    const actions = (post!.body as { actions: unknown[] }).actions;
+    expect(actions).toHaveLength(1);
+    const action = actions[0] as Record<string, unknown>;
+    expect(action.decision).toBe("accept");
+    expect(action.acceptedSku).toBe("C9300-48P-A");
+    expect(action.sourceFileId).toBe("file-1");
+    expect(action.sourceRowNumber).toBe(2);
+    expect("tenantId" in action).toBe(false);
+    expect("projectId" in action).toBe(false);
+    expect("artifactId" in action).toBe(false);
+    expect("decidedBy" in action).toBe(false);
+    expect("decidedAt" in action).toBe(false);
+  });
+
+  it("POSTs exactly one sanitized reject action with no acceptedSku when Reject is clicked", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Wrong SKU family");
+    const calls = stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(skuReviewOkResponse());
+      }
+      if (SKU_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(skuReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-reject"));
+    });
+
+    await waitFor(() =>
+      expect(calls.some((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")).toBe(true)
+    );
+
+    const post = calls.find((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST");
+    const actions = (post!.body as { actions: unknown[] }).actions;
+    expect(actions).toHaveLength(1);
+    const action = actions[0] as Record<string, unknown>;
+    expect(action.decision).toBe("reject");
+    expect(action.note).toBe("Wrong SKU family");
+    expect("acceptedSku" in action).toBe(false);
+  });
+
+  it("clears the SKU review panel and re-GETs the workspace after a successful review POST", async () => {
+    const refreshed = baseWorkspace();
+    (refreshed.project as Record<string, unknown>).name = "SKU REVIEW REFRESHED";
+    let reviewLoaded = false;
+
+    stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        reviewLoaded = true;
+        return jsonResponse(skuReviewOkResponse());
+      }
+      if (SKU_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(skuReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) {
+        return jsonResponse({ workspace: reviewLoaded ? refreshed : baseWorkspace() });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByTestId("sku-review-accept")[0]);
+    });
+
+    expect(await screen.findByText("SKU REVIEW REFRESHED")).toBeInTheDocument();
+    // Panel is cleared after the POST; the summary should not be visible
+    await waitFor(() => expect(screen.queryByTestId("sku-review-summary")).toBeNull());
+  });
+
+  it("does not approve the artifact client-side after a successful review POST", async () => {
+    stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(skuReviewOkResponse());
+      }
+      if (SKU_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(skuReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByTestId("sku-review-accept")[0]);
+    });
+
+    // No approve-sku_resolution button should ever appear
+    await waitFor(() => screen.queryByTestId("project-name"));
+    expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
+  });
+
+  it("shows a controlled error and no stack when the GET review request fails", async () => {
+    const secret = "sku-review-get-boom-internal";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (SKU_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+          return Promise.reject(new Error(secret));
+        }
+        return Promise.resolve(jsonResponse({ workspace: baseWorkspace() }));
+      })
+    );
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+
+    const err = await screen.findByTestId("sku-review-error");
+    expect(err).toHaveTextContent("Unable to load or update the SKU line review.");
+    expect(document.body.textContent ?? "").not.toContain(secret);
+    expect(screen.queryByTestId("sku-review-summary")).toBeNull();
+  });
+
+  it("shows a controlled error and no stack when the review GET returns a non-ok status", async () => {
+    stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse({ code: "invalid_sku_resolution_payload", error: "Payload is invalid." }, 409);
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+
+    const err = await screen.findByTestId("sku-review-error");
+    expect(err).toHaveTextContent("Payload is invalid.");
+  });
+
+  it("shows a controlled error when a review POST fails without exposing the stack", async () => {
+    const secret = "sku-review-post-boom-internal";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (SKU_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+          return Promise.reject(new Error(secret));
+        }
+        if (SKU_REVIEW_ROUTE_RE.test(url)) {
+          return Promise.resolve(jsonResponse(skuReviewOkResponse()));
+        }
+        return Promise.resolve(jsonResponse({ workspace: baseWorkspace() }));
+      })
+    );
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByTestId("sku-review-accept")[0]);
+    });
+
+    const err = await screen.findByTestId("sku-review-error");
+    expect(err).toHaveTextContent("Unable to load or update the SKU line review.");
+    expect(document.body.textContent ?? "").not.toContain(secret);
+  });
+
+  it("does not render review payload canary fields in the DOM", async () => {
+    stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(skuReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    const body = document.body.textContent ?? "";
+    // SKU_REVIEW_CANARY is planted as decidedBy on the accepted line - not rendered
+    expect(body).not.toContain(SKU_REVIEW_CANARY);
+    // PAYLOAD_CANARY from the base workspace payload should also not appear
+    expect(body).not.toContain(PAYLOAD_CANARY);
+  });
+});
+
 describe("ProjectQuickBomPage - static source purity", () => {
   const SRC_PATH = join(process.cwd(), "src/app/projects/[id]/quick-bom/page.tsx");
   const TEST_PATH = join(process.cwd(), "tests/ui/project-quick-bom-page.test.tsx");

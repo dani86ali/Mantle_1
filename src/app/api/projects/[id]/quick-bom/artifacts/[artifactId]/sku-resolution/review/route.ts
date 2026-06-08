@@ -1,9 +1,16 @@
 /**
- * POST /api/projects/[id]/quick-bom/artifacts/[artifactId]/sku-resolution/review -
- * apply explicit per-line human accept/reject decisions to one `needs_review`
- * sku_resolution artifact.
+ * GET + POST /api/projects/[id]/quick-bom/artifacts/[artifactId]/sku-resolution/review.
  *
- * POST only. Authenticated via requireAuth; session.tenantId is the only tenant
+ * GET (Prompt 127) returns a read-only line-review projection of ONE sku_resolution
+ * artifact via the read model loader, tenant-scoped on session.tenantId with the
+ * route params as the only project/artifact authority. Loader statuses map to HTTP:
+ * not_found -> 404 project_not_found, wrong_mode -> 409 wrong_project_mode,
+ * sku_resolution_not_found -> 404, artifact_not_sku_resolution -> 409,
+ * invalid_sku_resolution_payload -> 409, ok -> 200 { review }. An unexpected loader
+ * error maps to a controlled 500 that never exposes the thrown error.
+ *
+ * POST (Prompt 89) applies explicit per-line human accept/reject decisions to one
+ * `needs_review` sku_resolution artifact. session.tenantId is the only tenant
  * authority, session.userId is the only decidedBy authority, and the route params
  * id/artifactId are the only project/artifact authority. The request body supplies
  * ONLY the `actions` array; any tenantId/projectId/artifactId/skuResolutionArtifactId
@@ -16,10 +23,10 @@
  * accepted_sku_not_suggested -> 409, duplicate_action -> 400,
  * action_target_not_found -> 404, ok -> 200 with { artifact, payloadSummary,
  * reviewSummary }. An unexpected service error maps to a controlled 500 that never
- * exposes the thrown error. Imports only Next.js server primitives, requireAuth,
- * and the Quick BoM SKU review wrapper service (no DB, stores, lower-level SKU/
- * catalog helpers, pricing, config expansion, export, runner, AI, catalog, engine,
- * coordinator, or adapter).
+ * exposes the thrown error. Imports only Next.js server primitives, requireAuth, the
+ * Quick BoM SKU review wrapper service, and the read-only review workspace loader (no
+ * DB, stores, lower-level SKU/catalog helpers, pricing, config expansion, export,
+ * runner, AI, catalog, engine, coordinator, or adapter).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/middleware/auth";
@@ -27,6 +34,7 @@ import {
   reviewProjectQuickBomSkuResolutionLines,
   type QuickBomSkuResolutionReviewActionInput,
 } from "@/lib/projects/project-quick-bom-sku-resolution-review";
+import { loadQuickBomSkuResolutionReviewWorkspace } from "@/lib/projects/project-quick-bom-sku-resolution-review-workspace";
 
 const INVALID_REQUEST_CODE = "invalid_sku_resolution_review_request";
 const INVALID_REQUEST_ERROR = "A non-empty actions array is required.";
@@ -230,6 +238,72 @@ export async function POST(
       {
         code: "quick_bom_sku_resolution_review_failed",
         error: "Unable to review Quick BoM SKU resolution lines.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string; artifactId: string } }
+) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
+  try {
+    const result = await loadQuickBomSkuResolutionReviewWorkspace(
+      session.tenantId,
+      params.id,
+      params.artifactId
+    );
+
+    if (result.status === "not_found") {
+      return NextResponse.json(
+        { code: "project_not_found", error: "Project not found." },
+        { status: 404 }
+      );
+    }
+    if (result.status === "wrong_mode") {
+      return NextResponse.json(
+        { code: "wrong_project_mode", error: "Project is not a Quick BoM project." },
+        { status: 409 }
+      );
+    }
+    if (result.status === "sku_resolution_not_found") {
+      return NextResponse.json(
+        {
+          code: "sku_resolution_artifact_not_found",
+          error: "SKU resolution artifact not found.",
+        },
+        { status: 404 }
+      );
+    }
+    if (result.status === "artifact_not_sku_resolution") {
+      return NextResponse.json(
+        {
+          code: "artifact_not_sku_resolution",
+          error: "Artifact is not a sku_resolution artifact.",
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "invalid_sku_resolution_payload") {
+      return NextResponse.json(
+        {
+          code: "invalid_sku_resolution_payload",
+          error: "SKU resolution artifact payload is invalid.",
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json({ review: result.review }, { status: 200 });
+  } catch {
+    return NextResponse.json(
+      {
+        code: "quick_bom_sku_resolution_review_load_failed",
+        error: "Unable to load Quick BoM SKU resolution review.",
       },
       { status: 500 }
     );

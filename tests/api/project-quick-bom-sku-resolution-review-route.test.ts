@@ -5,17 +5,21 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // Mock auth and the Quick BoM SKU review wrapper service so the route's auth-gate,
 // body validation, tenant/user/param authority, body-ignoring, and result-mapping
 // are tested independent of the DB and the lower-level review services.
-const { mockRequireAuth, mockReview } = vi.hoisted(() => ({
+const { mockRequireAuth, mockReview, mockLoader } = vi.hoisted(() => ({
   mockRequireAuth: vi.fn(),
   mockReview: vi.fn(),
+  mockLoader: vi.fn(),
 }));
 
 vi.mock("@/lib/middleware/auth", () => ({ requireAuth: mockRequireAuth }));
 vi.mock("@/lib/projects/project-quick-bom-sku-resolution-review", () => ({
   reviewProjectQuickBomSkuResolutionLines: mockReview,
 }));
+vi.mock("@/lib/projects/project-quick-bom-sku-resolution-review-workspace", () => ({
+  loadQuickBomSkuResolutionReviewWorkspace: mockLoader,
+}));
 
-import { POST } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/sku-resolution/review/route";
+import { POST, GET } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/sku-resolution/review/route";
 import * as routeModule from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/sku-resolution/review/route";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -117,6 +121,53 @@ function reqWithBadJson(): NextRequest {
   } as unknown as NextRequest;
 }
 
+const REVIEW_WORKSPACE = {
+  project: {
+    id: PROJECT,
+    tenantId: SESSION.tenantId,
+    name: "Honeywell Quick BoM",
+    mode: "quick_bom",
+    createdAt: "2026-06-01T10:00:00.000Z",
+    updatedAt: "2026-06-02T11:30:00.000Z",
+  },
+  artifact: {
+    id: ARTIFACT_ID,
+    projectId: PROJECT,
+    stageId: "sku_resolution",
+    type: "sku_resolution",
+    status: "needs_review",
+    version: 2,
+    sourceFileIds: ["file-1"],
+    sourceArtifactIds: [],
+    createdAt: "2026-05-21T08:00:00.000Z",
+    updatedAt: "2026-05-21T08:30:00.000Z",
+  },
+  payloadSummary: {
+    sourceNormalizedBoqArtifactId: "art-nb-7",
+    sourceNormalizedBoqArtifactVersion: 5,
+    sourceFileIds: ["file-1"],
+    lineCount: 1,
+    summary: {},
+  },
+  reviewSummary: {
+    totalLineCount: 1,
+    needsReviewCount: 1,
+    acceptedCount: 0,
+    rejectedCount: 0,
+    unresolvedCount: 0,
+  },
+  lines: [
+    {
+      sourceFileId: "file-1",
+      sourceRowNumber: 2,
+      originalLineNumber: "L-002",
+      originalSku: "WS-C3650-48FD-E",
+      status: "needs_review",
+      suggestions: [{ suggestedSku: "C9300-48P-A", source: "exact" }],
+    },
+  ],
+};
+
 beforeEach(() => {
   mockRequireAuth.mockReset().mockReturnValue(SESSION);
   mockReview.mockReset().mockResolvedValue({
@@ -125,6 +176,7 @@ beforeEach(() => {
     payloadSummary: PAYLOAD_SUMMARY,
     reviewSummary: REVIEW_SUMMARY,
   });
+  mockLoader.mockReset().mockResolvedValue({ status: "ok", review: REVIEW_WORKSPACE });
 });
 
 describe("POST .../sku-resolution/review - auth", () => {
@@ -402,10 +454,104 @@ describe("POST .../sku-resolution/review - service failure", () => {
   });
 });
 
+function getReq(): NextRequest {
+  return {
+    headers: { get: () => null },
+    json: vi.fn(() => Promise.resolve({})),
+    formData: vi.fn(() => Promise.resolve(new FormData())),
+  } as unknown as NextRequest;
+}
+
+describe("GET .../sku-resolution/review - auth", () => {
+  it("returns the requireAuth response and skips the loader when unauthenticated", async () => {
+    const unauth = NextResponse.json(
+      { error: "Authentication required" },
+      { status: 401 }
+    );
+    mockRequireAuth.mockReturnValue(unauth);
+
+    const res = await GET(getReq(), PARAMS);
+
+    expect(res).toBe(unauth);
+    expect(res.status).toBe(401);
+    expect(mockLoader).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET .../sku-resolution/review - authority", () => {
+  it("calls the loader with session tenantId plus route params id and artifactId", async () => {
+    await GET(getReq(), PARAMS);
+
+    expect(mockLoader).toHaveBeenCalledTimes(1);
+    expect(mockLoader).toHaveBeenCalledWith(SESSION.tenantId, PROJECT, ARTIFACT_ID);
+  });
+});
+
+describe("GET .../sku-resolution/review - result mapping", () => {
+  it("maps not_found to 404 project_not_found", async () => {
+    mockLoader.mockResolvedValue({ status: "not_found" });
+    const res = await GET(getReq(), PARAMS);
+    expect(res.status).toBe(404);
+    expect((await res.json()).code).toBe("project_not_found");
+  });
+
+  it("maps wrong_mode to 409 wrong_project_mode", async () => {
+    mockLoader.mockResolvedValue({ status: "wrong_mode" });
+    const res = await GET(getReq(), PARAMS);
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("wrong_project_mode");
+  });
+
+  it("maps sku_resolution_not_found to 404 sku_resolution_artifact_not_found", async () => {
+    mockLoader.mockResolvedValue({ status: "sku_resolution_not_found" });
+    const res = await GET(getReq(), PARAMS);
+    expect(res.status).toBe(404);
+    expect((await res.json()).code).toBe("sku_resolution_artifact_not_found");
+  });
+
+  it("maps artifact_not_sku_resolution to 409", async () => {
+    mockLoader.mockResolvedValue({ status: "artifact_not_sku_resolution" });
+    const res = await GET(getReq(), PARAMS);
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("artifact_not_sku_resolution");
+  });
+
+  it("maps invalid_sku_resolution_payload to 409", async () => {
+    mockLoader.mockResolvedValue({ status: "invalid_sku_resolution_payload" });
+    const res = await GET(getReq(), PARAMS);
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("invalid_sku_resolution_payload");
+  });
+
+  it("maps ok to 200 with { review } and no status discriminator", async () => {
+    const res = await GET(getReq(), PARAMS);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ review: REVIEW_WORKSPACE });
+    expect("status" in body).toBe(false);
+  });
+});
+
+describe("GET .../sku-resolution/review - loader failure", () => {
+  it("maps an unexpected loader error to a controlled 500 without exposing the thrown detail", async () => {
+    const secret = "get-loader-boom-internal-detail";
+    mockLoader.mockRejectedValue(new Error(secret));
+
+    const res = await GET(getReq(), PARAMS);
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe("quick_bom_sku_resolution_review_load_failed");
+    expect(body.error).toBe("Unable to load Quick BoM SKU resolution review.");
+    expect(JSON.stringify(body)).not.toContain(secret);
+  });
+});
+
 describe("POST .../sku-resolution/review - route surface", () => {
-  it("exports POST only", () => {
+  it("exports GET and POST only", () => {
+    expect(typeof routeModule.GET).toBe("function");
     expect(typeof routeModule.POST).toBe("function");
-    for (const method of ["GET", "PATCH", "PUT", "DELETE"]) {
+    for (const method of ["PATCH", "PUT", "DELETE"]) {
       expect((routeModule as Record<string, unknown>)[method]).toBeUndefined();
     }
   });
@@ -422,12 +568,13 @@ describe("route module purity (static source check)", () => {
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports only Next.js server primitives, requireAuth, and the wrapper service", () => {
+  it("imports only Next.js server primitives, requireAuth, the wrapper service, and the review workspace loader", () => {
     const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
     expect(froms).toEqual([
       "next/server",
       "@/lib/middleware/auth",
       "@/lib/projects/project-quick-bom-sku-resolution-review",
+      "@/lib/projects/project-quick-bom-sku-resolution-review-workspace",
     ]);
   });
 

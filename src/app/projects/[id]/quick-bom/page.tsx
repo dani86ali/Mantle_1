@@ -37,6 +37,10 @@ import type {
   ProjectQuickBomWorkspace,
   QuickBomSpineArtifacts,
 } from "@/lib/projects/project-quick-bom-workspace";
+import type {
+  QuickBomSkuResolutionReviewLine,
+  QuickBomSkuResolutionReviewWorkspace,
+} from "@/lib/projects/project-quick-bom-sku-resolution-review-workspace";
 
 type Decision = "approved" | "rejected";
 
@@ -64,6 +68,7 @@ const LOAD_ERROR = "Unable to load this Quick BoM workspace.";
 const APPROVAL_ERROR = "Unable to record this approval decision.";
 const WORKFLOW_ERROR = "Unable to complete this workflow action.";
 const MISSING_FILE_ERROR = "Select a BoQ file to upload first.";
+const SKU_REVIEW_ERROR = "Unable to load or update the SKU line review.";
 
 const STATUS_BADGE: Record<string, string> = {
   approved: "bg-success-muted text-success",
@@ -214,6 +219,12 @@ export default function ProjectQuickBomPage() {
   // Prompt 113: explicit engineer opt-in to the Honeywell MVP demo catalog overlay.
   // Only the sku_resolution create action reads this; default behavior is unchanged.
   const [useHoneywellDemoCatalog, setUseHoneywellDemoCatalog] = useState(false);
+  // Prompt 127: minimal SKU line-review panel. Loaded on demand from the read-only
+  // review route; null until the engineer clicks load (the main workspace stays
+  // payload-free). Cleared after every successful review POST.
+  const [skuReview, setSkuReview] = useState<QuickBomSkuResolutionReviewWorkspace | null>(null);
+  const [skuReviewError, setSkuReviewError] = useState<string | null>(null);
+  const [skuReviewBusy, setSkuReviewBusy] = useState(false);
 
   // Memoized so the load effect and post-action reload share one stable reference;
   // dropping the useCallback would re-fire the effect every render (GET loop).
@@ -381,10 +392,109 @@ export default function ProjectQuickBomPage() {
     }
   }, [id, selectedFile, loadWorkspace]);
 
+  // GET the read-only SKU line-review projection for one sku_resolution artifact.
+  // This is the only place the page fetches review lines; the main workspace read
+  // model never carries them. Controlled errors only, never a stack.
+  const loadSkuReview = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setSkuReviewError(null);
+      setSkuReviewBusy(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/quick-bom/artifacts/${artifactId}/sku-resolution/review`
+        );
+        const body = await res.json().catch(() => null);
+        if (!res.ok) {
+          setSkuReview(null);
+          setSkuReviewError(bodyMessage(body) ?? SKU_REVIEW_ERROR);
+          return;
+        }
+        const review = (body as { review?: QuickBomSkuResolutionReviewWorkspace } | null)
+          ?.review;
+        if (!review) {
+          setSkuReview(null);
+          setSkuReviewError(SKU_REVIEW_ERROR);
+          return;
+        }
+        setSkuReview(review);
+      } catch {
+        setSkuReview(null);
+        setSkuReviewError(SKU_REVIEW_ERROR);
+      } finally {
+        setSkuReviewBusy(false);
+      }
+    },
+    [id]
+  );
+
+  // POST exactly one explicit accept/reject action to the existing review route.
+  // A successful POST mints a NEW sku_resolution version (new artifact id), so we
+  // clear the panel and refresh the main workspace; the engineer re-loads to review
+  // the fresh version. This is line review, not stage approval - nothing is approved
+  // here. The body carries only { actions: [oneSanitizedAction] }; no tenant/project/
+  // artifact/decidedBy/decidedAt/pricing/authority field is ever sent.
+  const submitSkuReviewAction = useCallback(
+    async (artifactId: string, action: Record<string, unknown>): Promise<void> => {
+      setSkuReviewError(null);
+      setSkuReviewBusy(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/quick-bom/artifacts/${artifactId}/sku-resolution/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ actions: [action] }),
+          }
+        );
+        const body = await res.json().catch(() => null);
+        if (!res.ok) {
+          setSkuReviewError(bodyMessage(body) ?? SKU_REVIEW_ERROR);
+          return;
+        }
+        setSkuReview(null);
+        await loadWorkspace();
+      } catch {
+        setSkuReviewError(SKU_REVIEW_ERROR);
+      } finally {
+        setSkuReviewBusy(false);
+      }
+    },
+    [id, loadWorkspace]
+  );
+
   function promptNote(): string | undefined {
     const entered = window.prompt("Add an optional note for this rejection:");
     const trimmed = entered === null ? "" : entered.trim();
     return trimmed === "" ? undefined : trimmed;
+  }
+
+  // Accept one line by choosing exactly one of its existing suggestions. No SKU is
+  // invented here - acceptedSku is always one the server already suggested.
+  function onAcceptSkuLine(
+    artifactId: string,
+    line: QuickBomSkuResolutionReviewLine,
+    acceptedSku: string
+  ): void {
+    void submitSkuReviewAction(artifactId, {
+      decision: "accept",
+      sourceFileId: line.sourceFileId,
+      sourceRowNumber: line.sourceRowNumber,
+      acceptedSku,
+    });
+  }
+
+  // Reject one line; optionally attach a note. Never carries an acceptedSku.
+  function onRejectSkuLine(
+    artifactId: string,
+    line: QuickBomSkuResolutionReviewLine
+  ): void {
+    const note = promptNote();
+    void submitSkuReviewAction(artifactId, {
+      decision: "reject",
+      sourceFileId: line.sourceFileId,
+      sourceRowNumber: line.sourceRowNumber,
+      ...(note !== undefined ? { note } : {}),
+    });
   }
 
   function decisionPayload(artifactId: string, decision: Decision, note?: string) {
@@ -495,6 +605,7 @@ export default function ProjectQuickBomPage() {
 
   const { project, readiness, stages, spineArtifacts, approvals } = workspace;
   const exportPkg = spineArtifacts.export_package;
+  const skuResolution = spineArtifacts.sku_resolution;
   const canCreate: Record<keyof QuickBomSpineArtifacts, boolean> = {
     normalized_boq: false,
     sku_resolution: readiness.canCreateSkuResolution,
@@ -640,6 +751,102 @@ export default function ProjectQuickBomPage() {
           })}
         </ol>
       </Card>
+
+      {skuResolution && skuResolution.status === "needs_review" && (
+        <Card title="SKU line review">
+          <p className="mt-2 text-xs text-text-secondary">
+            Accept one suggested SKU per line or reject the line. Every decision is an
+            explicit, server-recorded action - nothing is auto-accepted or auto-rejected.
+          </p>
+          <button
+            type="button"
+            data-testid="sku-review-load"
+            disabled={skuReviewBusy}
+            onClick={() => void loadSkuReview(skuResolution.id)}
+            className={`mt-3 ${APPROVE_BTN}`}
+          >
+            Load SKU review lines
+          </button>
+          {skuReviewError && (
+            <div
+              data-testid="sku-review-error"
+              className="mt-3 rounded-card border border-destructive/30 bg-destructive-muted p-3 text-sm text-destructive"
+            >
+              {skuReviewError}
+            </div>
+          )}
+          {skuReview && (
+            <div className="mt-3 space-y-3">
+              <p
+                data-testid="sku-review-summary"
+                className="text-xs text-text-secondary"
+              >
+                {skuReview.reviewSummary.totalLineCount} lines:{" "}
+                {skuReview.reviewSummary.needsReviewCount} need review,{" "}
+                {skuReview.reviewSummary.acceptedCount} accepted,{" "}
+                {skuReview.reviewSummary.rejectedCount} rejected,{" "}
+                {skuReview.reviewSummary.unresolvedCount} unresolved
+              </p>
+              <ol className="space-y-2">
+                {skuReview.lines.map((line) => (
+                  <li
+                    key={`${line.sourceFileId}::${line.sourceRowNumber}`}
+                    data-testid="sku-review-line"
+                    className="rounded-button border border-[var(--border)] p-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-text-primary">
+                        {line.originalSku}
+                      </span>
+                      <StatusBadge status={line.status} />
+                    </div>
+                    <p className="mt-0.5 text-xs text-text-tertiary">
+                      Source row {line.sourceRowNumber}
+                    </p>
+                    <p className="mt-0.5 text-xs text-text-secondary">
+                      Suggestions:{" "}
+                      {line.suggestions.length === 0
+                        ? "none"
+                        : line.suggestions.map((s) => s.suggestedSku).join(", ")}
+                    </p>
+                    {line.status === "needs_review" && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {line.suggestions.map((suggestion) => (
+                          <button
+                            key={suggestion.suggestedSku}
+                            type="button"
+                            data-testid="sku-review-accept"
+                            disabled={skuReviewBusy}
+                            onClick={() =>
+                              onAcceptSkuLine(
+                                skuResolution.id,
+                                line,
+                                suggestion.suggestedSku
+                              )
+                            }
+                            className={APPROVE_BTN}
+                          >
+                            Accept {suggestion.suggestedSku}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          data-testid="sku-review-reject"
+                          disabled={skuReviewBusy}
+                          onClick={() => onRejectSkuLine(skuResolution.id, line)}
+                          className={REJECT_BTN}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </Card>
+      )}
 
       <Card title="Workflow actions">
         {workflowError && (
