@@ -152,3 +152,23 @@ Key terms of the approved boundary:
 
 This profile is read-only and does not change runtime pricing behavior. Runtime wiring
 is deferred to a subsequent prompt.
+
+## Prompt 120 - Pricing authority trace persisted on priced_boq artifacts
+
+`priced_boq` artifacts now carry a copied `pricingAuthority` trace built from the
+Prompt 119 Honeywell demo pricing authority profile (see above).
+
+- The trace is **provenance only**: it does not change pricing math, unit-price
+  lookup behavior, or the price source.
+- Active runtime source remains the committed Honeywell demo pricing fixture
+  (`data/quick-bom/honeywell-demo-pricing-fixture.json`).
+- `activeRuntimeSourceReadsExternalGplCsv: false` - no external GPL CSV is read
+  at runtime.
+- `productionCiscoPricingAuthority: false` - no production Cisco pricing claim.
+- `runtimeAiPricing: false` - no runtime AI pricing.
+- `runtimeCatalogLookup: false` - no catalog lookup.
+- `replacementAuthority: false`, `skuSubstitutionAuthority: false`,
+  `silentSkuSubstitution: false` - no replacement, substitution, or fuzzy matching.
+- `configurationAuthority: false` - configuration authority stays strictly separate.
+- Missing prices remain reported (`missingPricesReported: true`) and are never
+  invented or substituted.

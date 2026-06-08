@@ -14,6 +14,9 @@ vi.mock("@/lib/projects/priced-boq-artifact", () => ({
 vi.mock("@/lib/projects/honeywell-demo-pricing-fixture", () => ({
   getHoneywellDemoUnitListPriceSarBySku: vi.fn(),
 }));
+vi.mock("@/lib/projects/honeywell-demo-pricing-authority", () => ({
+  getHoneywellDemoPricingAuthorityProfile: vi.fn(),
+}));
 
 import * as serviceModule from "@/lib/projects/project-quick-bom-pricing";
 import {
@@ -27,10 +30,13 @@ import {
   type CreatePricedBoqArtifactResult,
 } from "@/lib/projects/priced-boq-artifact";
 import { getHoneywellDemoUnitListPriceSarBySku } from "@/lib/projects/honeywell-demo-pricing-fixture";
+import { getHoneywellDemoPricingAuthorityProfile } from "@/lib/projects/honeywell-demo-pricing-authority";
+import type { PricingAuthorityTrace } from "@/lib/projects/priced-boq-artifact";
 
 const getProjectMock = vi.mocked(getProjectById);
 const createMock = vi.mocked(createPricedBoqArtifact);
 const getPriceMapMock = vi.mocked(getHoneywellDemoUnitListPriceSarBySku);
+const getProfileMock = vi.mocked(getHoneywellDemoPricingAuthorityProfile);
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const PROJECT = "proj-1";
@@ -69,6 +75,41 @@ const PRICED_SUMMARY = {
     vatAmountSar: 36,
     totalIncVatSar: 276,
   },
+};
+
+const PRICING_AUTHORITY_TRACE: PricingAuthorityTrace = {
+  profileId: "honeywell-mvp-demo-pricing-authority-profile",
+  scope: "honeywell_mvp_demo_only",
+  approvalRecordId: "prompt-119-user-approved-honeywell-demo-pricing-authority",
+  activeSource: "committed_honeywell_demo_pricing_fixture",
+  activeSourceFixtureId: "honeywell-mvp-demo-pricing-fixture",
+  activeSourceStatus: "approved_demo_fixture",
+  activeSourceWorkbookPath: "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+  activeSourceSheetName: "EstimateDetails_NB167337237YA",
+  currency: "SAR",
+  pricedSkuCount: 50,
+  missingPriceSkuCount: 0,
+  boundary: {
+    deterministicPricingAuthority: true,
+    demoFixtureAuthority: true,
+    currentLocalGplSarCsvTemporarilyApproved: true,
+    activeRuntimeSourceReadsExternalGplCsv: false,
+    productionCiscoPricingAuthority: false,
+    broadCiscoGeneralPricingAuthority: false,
+    runtimeAiPricing: false,
+    runtimeCatalogLookup: false,
+    configurationAuthority: false,
+    replacementAuthority: false,
+    skuSubstitutionAuthority: false,
+    silentSkuSubstitution: false,
+    missingPricesReported: true,
+  },
+};
+
+// Full profile shape (with skuStatusMap) returned by the mock
+const PROFILE_FIXTURE = {
+  ...PRICING_AUTHORITY_TRACE,
+  skuStatusMap: {},
 };
 
 const PRICING_SOURCE_SUMMARY = {
@@ -168,6 +209,7 @@ function makePricedPayload(): CreatePricedBoqArtifactResult["payload"] {
     sourceSkuResolutionArtifactVersion: SKU_VERSION,
     sourceFileIds: [FILE_ID],
     pricingConfig: pricingConfig(),
+    pricingAuthority: { ...PRICING_AUTHORITY_TRACE, boundary: { ...PRICING_AUTHORITY_TRACE.boundary } },
     unitListPriceSarBySku: {
       [SECRET_PRICE_SKU]: { currency: "SAR", unitListPriceSar: 987654 },
     },
@@ -233,6 +275,7 @@ beforeEach(() => {
   priceMap = makePriceMap();
   getProjectMock.mockResolvedValue(makeProject());
   getPriceMapMock.mockReturnValue(priceMap);
+  getProfileMock.mockReturnValue(PROFILE_FIXTURE as ReturnType<typeof getHoneywellDemoPricingAuthorityProfile>);
   createMock.mockResolvedValue(makeServiceResult());
 });
 
@@ -342,6 +385,70 @@ describe("createProjectQuickBomPricedBoq - pricing authority + delegation", () =
   });
 });
 
+describe("createProjectQuickBomPricedBoq - pricing authority trace", () => {
+  it("imports and calls getHoneywellDemoPricingAuthorityProfile", async () => {
+    await createProjectQuickBomPricedBoq(input());
+    expect(getProfileMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes a copied pricingAuthority trace (not the profile object) to the delegate", async () => {
+    await createProjectQuickBomPricedBoq(input());
+    const arg = createMock.mock.calls[0][0];
+    expect(arg.pricingAuthority).toBeDefined();
+    expect(arg.pricingAuthority).not.toBe(PROFILE_FIXTURE);
+    expect(arg.pricingAuthority!.profileId).toBe("honeywell-mvp-demo-pricing-authority-profile");
+    expect(arg.pricingAuthority!.scope).toBe("honeywell_mvp_demo_only");
+  });
+
+  it("trace boundary is demo-only: no production, no AI, no catalog, no config or replacement authority", async () => {
+    await createProjectQuickBomPricedBoq(input());
+    const b = createMock.mock.calls[0][0].pricingAuthority!.boundary;
+    expect(b.deterministicPricingAuthority).toBe(true);
+    expect(b.demoFixtureAuthority).toBe(true);
+    expect(b.activeRuntimeSourceReadsExternalGplCsv).toBe(false);
+    expect(b.productionCiscoPricingAuthority).toBe(false);
+    expect(b.broadCiscoGeneralPricingAuthority).toBe(false);
+    expect(b.runtimeAiPricing).toBe(false);
+    expect(b.runtimeCatalogLookup).toBe(false);
+    expect(b.configurationAuthority).toBe(false);
+    expect(b.replacementAuthority).toBe(false);
+    expect(b.skuSubstitutionAuthority).toBe(false);
+    expect(b.silentSkuSubstitution).toBe(false);
+    expect(b.missingPricesReported).toBe(true);
+  });
+
+  it("payloadSummary includes a copied pricingAuthority and pricingSource", async () => {
+    const result = await createProjectQuickBomPricedBoq(input());
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.payloadSummary.pricingAuthority).toEqual(PRICING_AUTHORITY_TRACE);
+    expect(result.payloadSummary.pricingSource).toEqual(PRICING_SOURCE_SUMMARY);
+  });
+
+  it("mutating payloadSummary.pricingAuthority.boundary does not corrupt the delegate result", async () => {
+    const serviceResult = makeServiceResult();
+    createMock.mockResolvedValue(serviceResult);
+    const result = await createProjectQuickBomPricedBoq(input());
+    if (result.status !== "ok") throw new Error("unreachable");
+    // Mutate the boundary on the returned summary
+    (result.payloadSummary.pricingAuthority!.boundary as Record<string, unknown>).runtimeAiPricing = true;
+    // The delegate payload's boundary should be unchanged
+    expect(serviceResult.payload.pricingAuthority!.boundary.runtimeAiPricing).toBe(false);
+  });
+
+  it("caller-supplied stray pricingAuthority in input does not affect the delegate", async () => {
+    const sneaky = {
+      ...input(),
+      pricingAuthority: { profileId: "attacker", boundary: { runtimeAiPricing: true } },
+    } as unknown as CreateProjectQuickBomPricedBoqInput;
+
+    await createProjectQuickBomPricedBoq(sneaky);
+
+    const arg = createMock.mock.calls[0][0];
+    expect(arg.pricingAuthority!.profileId).toBe("honeywell-mvp-demo-pricing-authority-profile");
+    expect(arg.pricingAuthority!.boundary.runtimeAiPricing).toBe(false);
+  });
+});
+
 describe("createProjectQuickBomPricedBoq - known delegate error translation", () => {
   const CASES: Array<[string, CreateProjectQuickBomPricedBoqResult]> = [
     ["Configuration expansion artifact not found.", { status: "configuration_expansion_not_found" }],
@@ -422,6 +529,7 @@ describe("createProjectQuickBomPricedBoq - ok summaries", () => {
       sourceFileIds: [FILE_ID],
       pricingConfig: pricingConfig(),
       pricingSource: PRICING_SOURCE_SUMMARY,
+      pricingAuthority: PRICING_AUTHORITY_TRACE,
       lineCount: 2,
       summary: PRICED_SUMMARY,
     });
@@ -507,6 +615,8 @@ describe("createProjectQuickBomPricedBoq - immutability and copies", () => {
     expect(result.payloadSummary.sourceFileIds).not.toBe(serviceResult.payload.sourceFileIds);
     expect(result.payloadSummary.summary).not.toBe(serviceResult.payload.summary);
     expect(result.payloadSummary.pricingConfig).not.toBe(serviceResult.payload.pricingConfig);
+    expect(result.payloadSummary.pricingAuthority).not.toBe(serviceResult.payload.pricingAuthority);
+    expect(result.payloadSummary.pricingAuthority!.boundary).not.toBe(serviceResult.payload.pricingAuthority!.boundary);
 
     result.payloadSummary.sourceFileIds.push("injected");
     result.payloadSummary.summary.totals.totalIncVatSar = 999;
@@ -523,10 +633,11 @@ describe("module purity and surface (static source check)", () => {
   const TEST_PATH = join(process.cwd(), "tests/lib/projects/project-quick-bom-pricing.test.ts");
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports the project store, the priced-boq artifact service, the demo pricing fixture, and project types", () => {
+  it("imports the project store, the priced-boq artifact service, the demo pricing fixture, pricing authority, and project types", () => {
     expect(source).toContain('from "@/lib/db/project-store"');
     expect(source).toContain('from "@/lib/projects/priced-boq-artifact"');
     expect(source).toContain('from "@/lib/projects/honeywell-demo-pricing-fixture"');
+    expect(source).toContain('from "@/lib/projects/honeywell-demo-pricing-authority"');
     expect(source).toContain('from "@/types/project"');
   });
 

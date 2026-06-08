@@ -14,6 +14,7 @@ import {
   createPricedBoqArtifact,
   buildPricedBoqArtifactPayload,
   type CreatePricedBoqArtifactInput,
+  type PricingAuthorityTrace,
 } from "@/lib/projects/priced-boq-artifact";
 import {
   getProjectArtifactById,
@@ -38,6 +39,38 @@ const FILE_ID = "file-1";
 
 function sar(unitListPriceSar: number): ExplicitSarUnitPrice {
   return { currency: "SAR", unitListPriceSar };
+}
+
+function trace(overrides: Partial<PricingAuthorityTrace> = {}): PricingAuthorityTrace {
+  return {
+    profileId: "honeywell-mvp-demo-pricing-authority-profile",
+    scope: "honeywell_mvp_demo_only",
+    approvalRecordId: "prompt-119-user-approved-honeywell-demo-pricing-authority",
+    activeSource: "committed_honeywell_demo_pricing_fixture",
+    activeSourceFixtureId: "honeywell-mvp-demo-pricing-fixture",
+    activeSourceStatus: "approved_demo_fixture",
+    activeSourceWorkbookPath: "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+    activeSourceSheetName: "EstimateDetails_NB167337237YA",
+    currency: "SAR",
+    pricedSkuCount: 50,
+    missingPriceSkuCount: 0,
+    boundary: {
+      deterministicPricingAuthority: true,
+      demoFixtureAuthority: true,
+      currentLocalGplSarCsvTemporarilyApproved: true,
+      activeRuntimeSourceReadsExternalGplCsv: false,
+      productionCiscoPricingAuthority: false,
+      broadCiscoGeneralPricingAuthority: false,
+      runtimeAiPricing: false,
+      runtimeCatalogLookup: false,
+      configurationAuthority: false,
+      replacementAuthority: false,
+      skuSubstitutionAuthority: false,
+      silentSkuSubstitution: false,
+      missingPricesReported: true,
+    },
+    ...overrides,
+  };
 }
 
 function config(overrides: Partial<ProjectPricingConfig> = {}): ProjectPricingConfig {
@@ -468,6 +501,7 @@ describe("createPricedBoqArtifact - no field leakage", () => {
     "lineCount",
     "lines",
     "summary",
+    "pricingAuthority",
   ];
   const ALLOWED_LINE_KEYS = [
     "sourceFormat",
@@ -606,6 +640,88 @@ describe("buildPricedBoqArtifactPayload", () => {
     expect(payload.lines[0].amounts).not.toBe(draft.lines[0].amounts);
     expect(payload.summary.totals).not.toBe(draft.summary.totals);
     expect(payload.unitListPriceSarBySku["PARENT-A"]).toEqual(sar(100));
+  });
+});
+
+describe("pricingAuthority trace - buildPricedBoqArtifactPayload", () => {
+  const expansionArt = expansionArtifact({ sourceFileIds: ["f1"] });
+  const minimalDraft = {
+    lines: [],
+    summary: {
+      inputLineCount: 0,
+      pricedLineCount: 0,
+      unpricedLineCount: 0,
+      missingDecisionCount: 0,
+      notAcceptedCount: 0,
+      missingPriceCount: 0,
+      totals: {
+        currency: "SAR" as const,
+        lineCount: 0,
+        subtotalListPriceSar: 0,
+        subtotalSellPriceSar: 0,
+        vatAmountSar: 0,
+        totalIncVatSar: 0,
+      },
+    },
+  };
+
+  function baseInput() {
+    return {
+      configurationExpansionArtifact: expansionArt,
+      sourceNormalizedBoqArtifactId: NORMALIZED_ID,
+      sourceNormalizedBoqArtifactVersion: NORMALIZED_VERSION,
+      sourceSkuResolutionArtifactId: SKU_ID,
+      sourceSkuResolutionArtifactVersion: SKU_VERSION,
+      pricingConfig: config(),
+      unitListPriceSarBySku: {},
+      draft: minimalDraft,
+    };
+  }
+
+  it("omits pricingAuthority from the payload when not supplied", () => {
+    const payload = buildPricedBoqArtifactPayload(baseInput());
+    expect("pricingAuthority" in payload).toBe(false);
+  });
+
+  it("copies a supplied pricingAuthority trace into the payload", () => {
+    const t = trace();
+    const payload = buildPricedBoqArtifactPayload({ ...baseInput(), pricingAuthority: t });
+    expect(payload.pricingAuthority).toEqual(t);
+  });
+
+  it("does not alias the supplied trace or its boundary", () => {
+    const t = trace();
+    const payload = buildPricedBoqArtifactPayload({ ...baseInput(), pricingAuthority: t });
+    expect(payload.pricingAuthority).not.toBe(t);
+    expect(payload.pricingAuthority!.boundary).not.toBe(t.boundary);
+  });
+
+  it("mutating the input trace after the call does not corrupt the payload", () => {
+    const t = trace();
+    const payload = buildPricedBoqArtifactPayload({ ...baseInput(), pricingAuthority: t });
+    (t as { approvalRecordId: string }).approvalRecordId = "mutated";
+    expect(payload.pricingAuthority!.approvalRecordId).toBe(
+      "prompt-119-user-approved-honeywell-demo-pricing-authority"
+    );
+  });
+});
+
+describe("pricingAuthority trace - createPricedBoqArtifact", () => {
+  beforeEach(() => {
+    mockArtifact(expansionArtifact());
+  });
+
+  it("persists the pricingAuthority trace in the payload when supplied", async () => {
+    const t = trace();
+    const { payload } = await createPricedBoqArtifact(input({ pricingAuthority: t }));
+    expect(payload.pricingAuthority).toEqual(t);
+    expect(payload.pricingAuthority).not.toBe(t);
+    expect(payload.pricingAuthority!.boundary).not.toBe(t.boundary);
+  });
+
+  it("omits pricingAuthority from the payload when not supplied", async () => {
+    const { payload } = await createPricedBoqArtifact(input());
+    expect("pricingAuthority" in payload).toBe(false);
   });
 });
 

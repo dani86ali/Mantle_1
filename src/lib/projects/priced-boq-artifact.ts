@@ -40,6 +40,40 @@ const EXPANSION_NOT_APPROVED_MESSAGE = "Configuration expansion artifact must be
 const RULE_PACK_NOT_APPROVED_MESSAGE = "Configuration expansion artifact requires an approved rule pack.";
 
 /**
+ * Lean pricing authority trace embedded in `PricedBoqArtifactPayload` as provenance.
+ * Built by the caller (project-quick-bom-pricing) from the approved Honeywell demo
+ * pricing authority profile and passed in; this module never imports that profile.
+ */
+export interface PricingAuthorityTrace {
+  profileId: "honeywell-mvp-demo-pricing-authority-profile";
+  scope: "honeywell_mvp_demo_only";
+  approvalRecordId: string;
+  activeSource: "committed_honeywell_demo_pricing_fixture";
+  activeSourceFixtureId: string;
+  activeSourceStatus: "approved_demo_fixture";
+  activeSourceWorkbookPath: string;
+  activeSourceSheetName: string;
+  currency: "SAR";
+  pricedSkuCount: number;
+  missingPriceSkuCount: number;
+  boundary: {
+    deterministicPricingAuthority: true;
+    demoFixtureAuthority: true;
+    currentLocalGplSarCsvTemporarilyApproved: true;
+    activeRuntimeSourceReadsExternalGplCsv: false;
+    productionCiscoPricingAuthority: false;
+    broadCiscoGeneralPricingAuthority: false;
+    runtimeAiPricing: false;
+    runtimeCatalogLookup: false;
+    configurationAuthority: false;
+    replacementAuthority: false;
+    skuSubstitutionAuthority: false;
+    silentSkuSubstitution: false;
+    missingPricesReported: true;
+  };
+}
+
+/**
  * JSONB payload stored on the `priced_boq` artifact. A type alias (not an interface)
  * so it carries an implicit index signature assignable to the repository payload.
  */
@@ -62,6 +96,8 @@ export type PricedBoqArtifactPayload = {
   lineCount: number;
   lines: PricedBoqDraftLine[];
   summary: PricedBoqDraftSummary;
+  /** Copied pricing authority trace from the caller; present only when supplied. */
+  pricingAuthority?: PricingAuthorityTrace;
 };
 
 /** Input for {@link createPricedBoqArtifact}. */
@@ -72,6 +108,8 @@ export interface CreatePricedBoqArtifactInput {
   pricingConfig: ProjectPricingConfig;
   /** Explicit SAR unit price per orderable SKU. NOT catalog listPrice. */
   unitListPriceSarBySku: Readonly<Record<string, ExplicitSarUnitPrice>>;
+  /** Optional pricing authority trace to persist as provenance. */
+  pricingAuthority?: PricingAuthorityTrace;
 }
 
 /** The created artifact, the source configuration_expansion artifact, the payload, and the draft. */
@@ -93,6 +131,8 @@ export interface BuildPricedBoqArtifactPayloadInput {
   pricingConfig: ProjectPricingConfig;
   unitListPriceSarBySku: Readonly<Record<string, ExplicitSarUnitPrice>>;
   draft: PricedBoqDraft;
+  /** Optional pricing authority trace to persist as provenance. */
+  pricingAuthority?: PricingAuthorityTrace;
 }
 
 /** A fresh copy of only the SAR price entries applied to priced lines. */
@@ -143,6 +183,14 @@ export function buildPricedBoqArtifactPayload(
     lineCount: draft.lines.length,
     lines: draft.lines.map(copyDraftLine),
     summary: { ...draft.summary, totals: { ...draft.summary.totals } },
+    ...(input.pricingAuthority !== undefined
+      ? {
+          pricingAuthority: {
+            ...input.pricingAuthority,
+            boundary: { ...input.pricingAuthority.boundary },
+          },
+        }
+      : {}),
   };
 }
 
@@ -234,6 +282,7 @@ export async function createPricedBoqArtifact(
     pricingConfig,
     unitListPriceSarBySku,
     draft,
+    pricingAuthority: input.pricingAuthority,
   });
   const artifact = await createProjectArtifactVersion({
     projectId,

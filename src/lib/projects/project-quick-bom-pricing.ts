@@ -42,8 +42,10 @@ import {
   createPricedBoqArtifact,
   type CreatePricedBoqArtifactResult,
   type PricedBoqArtifactPayload,
+  type PricingAuthorityTrace,
 } from "@/lib/projects/priced-boq-artifact";
 import { getHoneywellDemoUnitListPriceSarBySku } from "@/lib/projects/honeywell-demo-pricing-fixture";
+import { getHoneywellDemoPricingAuthorityProfile } from "@/lib/projects/honeywell-demo-pricing-authority";
 import type {
   Project,
   ProjectArtifact,
@@ -153,6 +155,8 @@ export interface QuickBomPricingPayloadSummary {
   sourceFileIds: string[];
   pricingConfig: ProjectPricingConfig;
   pricingSource: QuickBomPricingSourceSummary;
+  /** Copied pricing authority trace from the artifact payload; present only when the artifact carries one. */
+  pricingAuthority?: PricingAuthorityTrace;
   lineCount: number;
   summary: QuickBomPricingSummary;
 }
@@ -228,6 +232,9 @@ function toPayloadSummary(payload: PricedBoqArtifactPayload): QuickBomPricingPay
     sourceFileIds: [...payload.sourceFileIds],
     pricingConfig: { ...payload.pricingConfig },
     pricingSource: { ...PRICING_SOURCE },
+    ...(payload.pricingAuthority !== undefined
+      ? { pricingAuthority: { ...payload.pricingAuthority, boundary: { ...payload.pricingAuthority.boundary } } }
+      : {}),
     lineCount: payload.lineCount,
     summary: copyPricingSummary(payload.summary),
   };
@@ -283,6 +290,24 @@ export async function createProjectQuickBomPricedBoq(
   const pricingConfig: ProjectPricingConfig = { ...project.pricingConfig };
   const unitListPriceSarBySku = getHoneywellDemoUnitListPriceSarBySku();
 
+  // Build a lean pricing authority trace from the approved Honeywell demo profile.
+  // This is provenance only and does not change pricing math or the price source.
+  const profile = getHoneywellDemoPricingAuthorityProfile();
+  const pricingAuthority: PricingAuthorityTrace = {
+    profileId: profile.profileId,
+    scope: profile.scope,
+    approvalRecordId: profile.approvalRecordId,
+    activeSource: profile.activeSource,
+    activeSourceFixtureId: profile.activeSourceFixtureId,
+    activeSourceStatus: profile.activeSourceStatus,
+    activeSourceWorkbookPath: profile.activeSourceWorkbookPath,
+    activeSourceSheetName: profile.activeSourceSheetName,
+    currency: profile.currency,
+    pricedSkuCount: profile.pricedSkuCount,
+    missingPriceSkuCount: profile.missingPriceSkuCount,
+    boundary: { ...profile.boundary },
+  };
+
   let result: CreatePricedBoqArtifactResult;
   try {
     result = await createPricedBoqArtifact({
@@ -291,6 +316,7 @@ export async function createProjectQuickBomPricedBoq(
       configurationExpansionArtifactId,
       pricingConfig,
       unitListPriceSarBySku,
+      pricingAuthority,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
