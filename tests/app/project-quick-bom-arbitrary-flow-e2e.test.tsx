@@ -1186,6 +1186,364 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     view.unmount();
   });
 
+  it("full seven-line Honeywell BoQ upload proves complete UI panel chain with committed fixture totals", async () => {
+    const FULL_HW_CSV = [
+      "#,Description,Part Number,Qty",
+      "1,Wireless AP,CW9178I-CFG,12",
+      "2,Network subscription,CISCO-NETWORK-SUB,1",
+      "3,Access switch,C9300X-48HX-A,7",
+      "4,Access switch,C9300L-24P-4X-A,6",
+      "5,Standalone optic,SFP-10G-LR-S=,12",
+      "6,Standalone optic,SFP-10/25G-LR-S=,14",
+      "7,Desk phone,CP-7841-K9=,59",
+    ].join("\n");
+    const FULL_HW_OPTICS = ["SFP-10G-LR-S=", "SFP-10/25G-LR-S="];
+
+    const project = await createArbitraryProject();
+    const calls = dispatchQuickBomFetch();
+    let view = render(<ProjectQuickBomPage />);
+
+    await screen.findByTestId("project-name");
+
+    // Upload the full 7-line Honeywell BoQ through the UI file input.
+    const file = new File([FULL_HW_CSV], "honeywell-full-upload.csv", { type: "text/csv" });
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("workflow-upload-file"), {
+        target: { files: [file] },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("workflow-upload-normalize"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-normalized_boq")).toHaveTextContent("generated")
+    );
+
+    // Assert normalized_boq has exactly 7 lines and no payload/workbook/price-map leakage.
+    const normalizedArtifact = hoisted.store.latestArtifact("normalized_boq");
+    expect((normalizedArtifact.payload.lines as unknown[]) ?? []).toHaveLength(7);
+    {
+      const dom = document.body.textContent ?? "";
+      expect(dom).not.toContain("honeywell-full-upload.csv");
+      expect(dom).not.toContain("activeSourceWorkbookPath");
+      expect(dom).not.toContain("unitListPriceSarBySku");
+    }
+
+    // Explicit Honeywell opt-in before creating sku_resolution.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("workflow-honeywell-demo-catalog-profile"));
+    });
+
+    // Create sku_resolution draft.
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-sku_resolution"));
+    });
+    expect(await screen.findByTestId("line-review-required-sku_resolution")).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
+
+    // Assert Honeywell catalog profile body appears only on sku-resolution creation.
+    const skuCreateCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
+    );
+    expect(skuCreateCalls).toHaveLength(1);
+    expect(skuCreateCalls[0].body).toEqual({ catalogProfile: "honeywell_mvp_demo" });
+
+    // Load SKU review panel via the UI button; assert the GET review route was called.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    expect(await screen.findByTestId("sku-review-summary")).toBeInTheDocument();
+    expect(screen.getAllByTestId("sku-review-line")).toHaveLength(7);
+    expect(
+      calls.filter((c) => c.method === "GET" && /\/sku-resolution\/review$/.test(c.url))
+    ).toHaveLength(1);
+
+    // Accept all 7 SKU lines one at a time through the UI accept buttons.
+    for (let i = 0; i < 7; i++) {
+      if (i > 0) {
+        await waitFor(() =>
+          expect(screen.queryByTestId("sku-review-load")).not.toBeDisabled(),
+          { timeout: 3000 }
+        );
+        await act(async () => {
+          fireEvent.click(screen.getByTestId("sku-review-load"));
+        });
+        await screen.findByTestId("sku-review-summary");
+      }
+      const acceptBtns = screen.getAllByTestId("sku-review-accept");
+      expect(acceptBtns.length).toBeGreaterThan(0);
+      await act(async () => {
+        fireEvent.click(acceptBtns[0]);
+      });
+    }
+
+    // After 7 accepts, panel disappears and approve button appears.
+    expect(await screen.findByTestId("approve-sku_resolution")).toBeInTheDocument();
+
+    // Assert exactly 7 SKU review POST calls, each sanitized.
+    const skuReviewPostCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution\/review$/.test(c.url)
+    );
+    expect(skuReviewPostCalls).toHaveLength(7);
+    for (const call of skuReviewPostCalls) {
+      const body = call.body as { actions: Record<string, unknown>[] };
+      expect(body.actions).toHaveLength(1);
+      const action = body.actions[0];
+      expect(action).not.toHaveProperty("tenantId");
+      expect(action).not.toHaveProperty("projectId");
+      expect(action).not.toHaveProperty("artifactId");
+      expect(action).not.toHaveProperty("decidedBy");
+      expect(action).not.toHaveProperty("decidedAt");
+      expect(action).not.toHaveProperty("pricing");
+      expect(action).not.toHaveProperty("catalogProfile");
+      expect(action).not.toHaveProperty("replacement");
+      expect(action).not.toHaveProperty("substitution");
+      expect(action).not.toHaveProperty("authority");
+    }
+
+    // Assert reviewed sku_resolution has 7 decisions, none with replacement/substitution.
+    const reviewedSkuArtifact = hoisted.store.latestArtifact("sku_resolution");
+    const reviewedDecisions = (reviewedSkuArtifact.payload.decisions ?? []) as SkuResolutionDecision[];
+    expect(reviewedDecisions).toHaveLength(7);
+    for (const d of reviewedDecisions) {
+      expect(d).not.toHaveProperty("replacementFor");
+      expect(d).not.toHaveProperty("substitutedSku");
+    }
+
+    // Approve sku_resolution through the UI generic approve button.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-sku_resolution"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-sku_resolution")).toHaveTextContent("approved")
+    );
+
+    // Remount for configuration expansion.
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    // Create configuration_expansion draft.
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-configuration_expansion"));
+    });
+    expect(
+      await screen.findByTestId("line-review-required-configuration_expansion")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-configuration_expansion")).toBeNull();
+
+    // Assert configuration-expansion POST carries no catalogProfile body.
+    expect(
+      calls.some(
+        (c) =>
+          c.method === "POST" &&
+          /\/configuration-expansion$/.test(c.url) &&
+          JSON.stringify(c.body ?? "").includes("catalogProfile")
+      )
+    ).toBe(false);
+
+    // Assert optics remain standalone: no expansion children for either optic SKU.
+    const configDraft = hoisted.store.latestArtifact("configuration_expansion");
+    expect(configDraft.payload.payloadKind).toBe("configuration_expansion_draft");
+    const draftLines = (configDraft.payload.lines ?? []) as ConfigurationExpansionDraftLine[];
+    for (const optic of FULL_HW_OPTICS) {
+      expect(
+        draftLines.some((l) => l.origin === "expansion" && l.sku === optic)
+      ).toBe(false);
+    }
+
+    // Load config review panel via the UI button; assert the GET review route was called.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-load"));
+    });
+    expect(await screen.findByTestId("config-review-summary")).toBeInTheDocument();
+    const configReviewLines = screen.getAllByTestId("config-review-line");
+    expect(configReviewLines.length).toBeGreaterThan(0);
+    expect(
+      calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))
+    ).toHaveLength(1);
+
+    // Accept all expansion lines via UI buttons (local state only, no POST yet).
+    const configAcceptBtns = screen.getAllByTestId("config-review-accept");
+    await act(async () => {
+      for (const btn of configAcceptBtns) {
+        fireEvent.click(btn);
+      }
+    });
+
+    // Submit the complete decisions batch via the UI submit button.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-submit"));
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("config-review-summary")).toBeNull(),
+      { timeout: 3000 }
+    );
+
+    // Assert exactly one config review POST, only expansion-line decisions, sanitized.
+    const configReviewPostCalls = calls.filter(
+      (c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url)
+    );
+    expect(configReviewPostCalls).toHaveLength(1);
+    const configBatchBody = configReviewPostCalls[0].body as {
+      decisions: Record<string, unknown>[];
+    };
+    expect(Array.isArray(configBatchBody.decisions)).toBe(true);
+    expect(configBatchBody.decisions.length).toBe(configAcceptBtns.length);
+    for (const d of configBatchBody.decisions) {
+      expect(d).not.toHaveProperty("tenantId");
+      expect(d).not.toHaveProperty("projectId");
+      expect(d).not.toHaveProperty("artifactId");
+      expect(d).not.toHaveProperty("decidedBy");
+      expect(d).not.toHaveProperty("decidedAt");
+      expect(d).not.toHaveProperty("pricing");
+      expect(d).not.toHaveProperty("catalogProfile");
+      expect(d).not.toHaveProperty("replacement");
+      expect(d).not.toHaveProperty("substitution");
+      expect(d).not.toHaveProperty("authority");
+      expect(d).not.toHaveProperty("evidence");
+    }
+
+    // Assert accepted configuration_expansion line count is 60.
+    const acceptedConfig = hoisted.store.latestArtifact("configuration_expansion");
+    const acceptedLines = (acceptedConfig.payload.acceptedLines ?? []) as Array<{
+      origin: string;
+      sku: string;
+    }>;
+    expect(acceptedLines).toHaveLength(60);
+    // Optics remain standalone customer lines; neither appears as expansion child.
+    for (const optic of FULL_HW_OPTICS) {
+      const optLines = acceptedLines.filter((l) => l.sku === optic);
+      expect(optLines.length).toBeGreaterThan(0);
+      expect(optLines.every((l) => l.origin === "customer")).toBe(true);
+      expect(
+        acceptedLines.some((l) => l.origin === "expansion" && l.sku === optic)
+      ).toBe(false);
+    }
+
+    // Remount and approve configuration_expansion through the UI generic approve button.
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    expect(await screen.findByTestId("approve-configuration_expansion")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-configuration_expansion"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-configuration_expansion")).toHaveTextContent("approved")
+    );
+
+    // Create priced_boq through the UI.
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-priced_boq"));
+    });
+    expect(await screen.findByTestId("approve-priced_boq")).toBeInTheDocument();
+
+    // Load priced review panel via the UI button; assert the GET review route was called.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("priced-review-load"));
+    });
+    expect(await screen.findByTestId("priced-review-summary")).toBeInTheDocument();
+    expect(screen.getAllByTestId("priced-review-line").length).toBeGreaterThan(0);
+    expect(
+      calls.filter((c) => c.method === "GET" && /\/priced-boq\/review$/.test(c.url))
+    ).toHaveLength(1);
+    // Priced review panel must NOT POST.
+    expect(
+      calls.filter((c) => c.method === "POST" && /\/priced-boq\/review$/.test(c.url))
+    ).toHaveLength(0);
+
+    // Assert priced_boq line count, zero unpriced/missing-price, and committed fixture totals.
+    const pricedArtifact = hoisted.store.latestArtifact("priced_boq");
+    expect((pricedArtifact.payload.lines as unknown[]) ?? []).toHaveLength(60);
+    const pricedSummary = pricedArtifact.payload.summary as {
+      unpricedLineCount: number;
+      missingPriceCount: number;
+      totals: { totalIncVatSar: number };
+    };
+    expect(pricedSummary.unpricedLineCount).toBe(0);
+    expect(pricedSummary.missingPriceCount).toBe(0);
+    expect(pricedSummary.totals.totalIncVatSar).toBeCloseTo(2513565.07, 1);
+
+    // Approve priced_boq through the UI approve button.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-priced_boq"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-priced_boq")).toHaveTextContent("approved")
+    );
+
+    // Create and approve export_package through the UI.
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-export_package"));
+    });
+    await waitFor(
+      () => expect(screen.getByTestId("approve-export_package")).toBeInTheDocument(),
+      { timeout: 5000 }
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-export_package"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-export_package")).toHaveTextContent("approved")
+    );
+
+    // Assert approved export download link and XLSX download with nonzero bytes.
+    const link = await screen.findByTestId("download-export_package");
+    const exportArtifact = hoisted.store.latestArtifact("export_package");
+    expect(link).toHaveAttribute(
+      "href",
+      `/api/projects/${project.id}/quick-bom/artifacts/${exportArtifact.id}/export-package/download`
+    );
+
+    // Assert export_package payload shape: rowCount 60, no warnings, committed fixture totals.
+    const exportPayload = exportArtifact.payload as {
+      rowCount: number;
+      warnings: string[];
+      totals: {
+        totalIncVatSar: number;
+        productTotalSar: number;
+        serviceTotalSar: number;
+        subscriptionTotalSar: number;
+      };
+    };
+    expect(exportPayload.rowCount).toBe(60);
+    expect(exportPayload.warnings).toEqual([]);
+    expect(exportPayload.totals.totalIncVatSar).toBeCloseTo(2513565.07, 1);
+    expect(exportPayload.totals.productTotalSar).toBeCloseTo(1669647.61, 1);
+    expect(exportPayload.totals.serviceTotalSar).toBeCloseTo(304972.06, 1);
+    expect(exportPayload.totals.subscriptionTotalSar).toBeCloseTo(211089.09, 1);
+
+    const downloadRes = await exportDownloadGET(emptyRequest(), {
+      params: { id: project.id, artifactId: exportArtifact.id },
+    });
+    expect(downloadRes.status).toBe(200);
+    expect(downloadRes.headers.get("content-type")).toBe(XLSX_MIME);
+    const bytes = new Uint8Array(await downloadRes.arrayBuffer());
+    expect(bytes.byteLength).toBeGreaterThan(0);
+
+    // Final DOM leak check.
+    {
+      const dom = document.body.textContent ?? "";
+      expect(dom).not.toContain("honeywell-full-upload.csv");
+      expect(dom).not.toContain("activeSourceWorkbookPath");
+      expect(dom).not.toContain("unitListPriceSarBySku");
+      expect(dom).not.toContain("acceptedLines");
+      expect(dom).not.toContain("sourceEvidence");
+    }
+
+    // No replacement/substitution fields on final reviewed SKU decisions.
+    const finalSkuArtifact = hoisted.store.latestArtifact("sku_resolution");
+    const finalDecisions = (finalSkuArtifact.payload.decisions ?? []) as SkuResolutionDecision[];
+    for (const d of finalDecisions) {
+      expect(d).not.toHaveProperty("replacementFor");
+      expect(d).not.toHaveProperty("substitutedSku");
+    }
+
+    view.unmount();
+  });
+
   it("UI review panels drive the full Honeywell opt-in app chain", async () => {
     const project = await createArbitraryProject();
     const calls = dispatchQuickBomFetch();
