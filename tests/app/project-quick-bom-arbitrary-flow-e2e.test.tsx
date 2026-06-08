@@ -673,6 +673,44 @@ function assertNoPayloadLeak(): void {
   expect(dom).not.toContain("customer-upload.csv");
 }
 
+const FORBIDDEN_PAYLOAD_KEYS = new Set([
+  "replacement",
+  "replacementFor",
+  "replacementSku",
+  "replacementCandidate",
+  "replacementCandidates",
+  "substitution",
+  "substitutedSku",
+  "silentSubstitution",
+  "currentSku",
+]);
+
+const AUTHORITY_FLAG_KEYS = new Set([
+  "replacementAuthority",
+  "skuSubstitutionAuthority",
+  "silentSkuSubstitution",
+]);
+
+function assertNoActiveReplacementSubstitutionFields(obj: unknown, path = ""): void {
+  if (obj === null || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    obj.forEach((item, i) =>
+      assertNoActiveReplacementSubstitutionFields(item, `${path}[${i}]`)
+    );
+    return;
+  }
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    const keyPath = path ? `${path}.${key}` : key;
+    if (FORBIDDEN_PAYLOAD_KEYS.has(key)) {
+      expect(value, `forbidden key "${keyPath}" found in payload`).toBeUndefined();
+    } else if (AUTHORITY_FLAG_KEYS.has(key)) {
+      expect(value, `authority flag "${keyPath}" must be false`).toBe(false);
+    } else {
+      assertNoActiveReplacementSubstitutionFields(value, keyPath);
+    }
+  }
+}
+
 function importSpecifiers(source: string): string[] {
   const specs: string[] = [];
   const re = /import\s+(?:type\s+)?[\s\S]*?\bfrom\s+["']([^"']+)["']/g;
@@ -1404,6 +1442,21 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
       expect(d).not.toHaveProperty("evidence");
     }
 
+    // Assert posted decisions target only expansion-origin lines, not customer-origin lines.
+    const expansionLineIds = new Set(
+      draftLines.filter((l) => l.origin === "expansion").map((l) => l.lineId)
+    );
+    const customerLineIds = new Set(
+      draftLines.filter((l) => l.origin === "customer").map((l) => l.lineId)
+    );
+    const postedLineIds = configBatchBody.decisions.map(
+      (d) => (d as { lineId: string }).lineId
+    );
+    expect(new Set(postedLineIds)).toEqual(expansionLineIds);
+    for (const id of postedLineIds) {
+      expect(customerLineIds.has(id)).toBe(false);
+    }
+
     // Assert accepted configuration_expansion line count is 60.
     const acceptedConfig = hoisted.store.latestArtifact("configuration_expansion");
     const acceptedLines = (acceptedConfig.payload.acceptedLines ?? []) as Array<{
@@ -1539,6 +1592,19 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     for (const d of finalDecisions) {
       expect(d).not.toHaveProperty("replacementFor");
       expect(d).not.toHaveProperty("substitutedSku");
+    }
+
+    // Recursive final-payload assertion: no active replacement/substitution fields in
+    // any persisted SKU, config, priced, or export payload.
+    for (const artifactType of [
+      "sku_resolution",
+      "configuration_expansion",
+      "priced_boq",
+      "export_package",
+    ] as const) {
+      assertNoActiveReplacementSubstitutionFields(
+        hoisted.store.latestArtifact(artifactType).payload
+      );
     }
 
     view.unmount();
