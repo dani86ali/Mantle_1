@@ -190,6 +190,39 @@ describe("createSkuResolutionArtifact - composition", () => {
     expect(draftMock.mock.calls[0][0].lines).toBe(source.payload.lines);
   });
 
+  it("omits catalogIndex from buildSkuResolutionDraft call when not supplied", async () => {
+    const source = makeSourceArtifact();
+    getArtifactMock.mockResolvedValue(source);
+    await createSkuResolutionArtifact(input());
+    expect(draftMock.mock.calls[0][0].catalogIndex).toBeUndefined();
+  });
+
+  it("passes the exact catalogIndex reference to buildSkuResolutionDraft when supplied", async () => {
+    const source = makeSourceArtifact();
+    getArtifactMock.mockResolvedValue(source);
+    const fakeCatalogIndex = {
+      exact: new Map(),
+      normalized: new Map(),
+      catalogSource: "explicit_test_source",
+    };
+    await createSkuResolutionArtifact({ ...input(), catalogIndex: fakeCatalogIndex });
+    expect(draftMock.mock.calls[0][0].catalogIndex).toBe(fakeCatalogIndex);
+  });
+
+  it("does not persist catalogIndex into the artifact payload or create call", async () => {
+    const source = makeSourceArtifact();
+    getArtifactMock.mockResolvedValue(source);
+    const fakeCatalogIndex = {
+      exact: new Map(),
+      normalized: new Map(),
+      catalogSource: "explicit_test_source",
+    };
+    const { payload } = await createSkuResolutionArtifact({ ...input(), catalogIndex: fakeCatalogIndex });
+    expect(payload).not.toHaveProperty("catalogIndex");
+    const createArg = createMock.mock.calls[0][0];
+    expect((createArg.payload as Record<string, unknown>)).not.toHaveProperty("catalogIndex");
+  });
+
   it("creates exactly one artifact with the expected stage/type/status", async () => {
     await createSkuResolutionArtifact(input());
     expect(createMock).toHaveBeenCalledTimes(1);

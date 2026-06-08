@@ -20,6 +20,7 @@ import {
 } from "@/lib/db/project-artifact-store";
 import {
   buildSkuResolutionDraft,
+  type BuildSkuResolutionDraftInput,
   type SkuResolutionDraft,
   type SkuResolutionDraftSummary,
 } from "@/lib/projects/sku-resolution";
@@ -60,6 +61,8 @@ export interface CreateSkuResolutionArtifactInput {
   tenantId: string;
   projectId: string;
   normalizedBoqArtifactId: string;
+  /** Optional explicit catalog index. When omitted, the default local mock index is used. */
+  catalogIndex?: BuildSkuResolutionDraftInput["catalogIndex"];
 }
 
 /** The created artifact, the source artifact, and the exact payload created with. */
@@ -101,7 +104,7 @@ export function buildSkuResolutionArtifactPayload(
 export async function createSkuResolutionArtifact(
   input: CreateSkuResolutionArtifactInput
 ): Promise<CreateSkuResolutionArtifactResult> {
-  const { tenantId, projectId, normalizedBoqArtifactId } = input;
+  const { tenantId, projectId, normalizedBoqArtifactId, catalogIndex } = input;
 
   const sourceArtifact = await getProjectArtifactById(
     tenantId,
@@ -116,7 +119,7 @@ export async function createSkuResolutionArtifact(
   const lines = sourceArtifact.payload.lines;
   if (!Array.isArray(lines)) throw new Error(INVALID_PAYLOAD_MESSAGE);
 
-  const draft = buildSkuResolutionDraft({ lines: lines as CanonicalBoqLine[] });
+  const draft = buildSkuResolutionDraft({ lines: lines as CanonicalBoqLine[], catalogIndex });
   const payload = buildSkuResolutionArtifactPayload(sourceArtifact, draft);
 
   const artifact = await createProjectArtifactVersion({
