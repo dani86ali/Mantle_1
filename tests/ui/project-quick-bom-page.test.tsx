@@ -374,7 +374,7 @@ describe("ProjectQuickBomPage - review gating", () => {
     expect(screen.queryByTestId("line-review-required-configuration_expansion")).toBeNull();
   });
 
-  it("shows a line-level review notice and no generic buttons for a needs_review configuration_expansion", async () => {
+  it("shows a line-level review notice and no generic buttons for a needs_review configuration_expansion draft", async () => {
     stubFetch((url) => {
       const ws = baseWorkspace();
       (spineOf(ws).configuration_expansion as Record<string, unknown>).status = "needs_review";
@@ -386,6 +386,22 @@ describe("ProjectQuickBomPage - review gating", () => {
     expect(screen.getByTestId("line-review-required-configuration_expansion")).toBeInTheDocument();
     expect(screen.queryByTestId("approve-configuration_expansion")).toBeNull();
     expect(screen.queryByTestId("reject-configuration_expansion")).toBeNull();
+  });
+
+  it("shows generic approve/reject for a reviewed needs_review configuration_expansion", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) {
+        return jsonResponse({ workspace: workspaceWithReviewedCfgNeedsApproval() });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    expect(screen.getByTestId("approve-configuration_expansion")).toBeInTheDocument();
+    expect(screen.getByTestId("reject-configuration_expansion")).toBeInTheDocument();
+    expect(screen.queryByTestId("line-review-required-configuration_expansion")).toBeNull();
   });
 });
 
@@ -1369,6 +1385,15 @@ function workspaceWithCfgNeedsReview(): Record<string, unknown> {
   return ws;
 }
 
+function workspaceWithReviewedCfgNeedsApproval(): Record<string, unknown> {
+  const ws = workspaceWithCfgNeedsReview();
+  const cfg = spineOf(ws).configuration_expansion as Record<string, unknown>;
+  cfg.id = "art-cfg-reviewed";
+  cfg.version = 3;
+  cfg.sourceArtifactIds = ["art-norm", "art-sku", CFG_ARTIFACT_ID];
+  return ws;
+}
+
 function cfgReviewOkResponse(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     review: {
@@ -1457,7 +1482,7 @@ function cfgReviewPostOkResponse(): Record<string, unknown> {
 }
 
 describe("ProjectQuickBomPage - configuration expansion line review panel", () => {
-  it("renders the config-review-load button when configuration_expansion is needs_review", async () => {
+  it("renders the config-review-load button when configuration_expansion is a needs_review draft", async () => {
     stubFetch((url) => {
       if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
       return jsonResponse({}, 404);
@@ -1472,6 +1497,64 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     await screen.findByTestId("project-name");
     // baseWorkspace has configuration_expansion.status = "generated"
     expect(screen.queryByTestId("config-review-load")).toBeNull();
+  });
+
+  it("does not render the config-review-load button for a reviewed needs_review artifact", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) {
+        return jsonResponse({ workspace: workspaceWithReviewedCfgNeedsApproval() });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    expect(screen.queryByTestId("config-review-load")).toBeNull();
+    expect(screen.queryByTestId("line-review-required-configuration_expansion")).toBeNull();
+    expect(screen.getByTestId("approve-configuration_expansion")).toBeInTheDocument();
+  });
+
+  it("shows explicit generic approval after a successful config review reloads a reviewed artifact", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue(null);
+    let workspaceLoads = 0;
+    stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgReviewOkResponse());
+      }
+      if (CFG_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(cfgReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) {
+        workspaceLoads += 1;
+        return jsonResponse({
+          workspace:
+            workspaceLoads === 1
+              ? workspaceWithCfgNeedsReview()
+              : workspaceWithReviewedCfgNeedsApproval(),
+        });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
+    await screen.findByTestId("config-review-summary");
+
+    for (const btn of screen.getAllByTestId("config-review-accept")) {
+      await act(async () => { fireEvent.click(btn); });
+    }
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-submit"));
+    });
+
+    expect(await screen.findByTestId("approve-configuration_expansion")).toBeInTheDocument();
+    expect(screen.queryByTestId("line-review-required-configuration_expansion")).toBeNull();
+    expect(screen.queryByTestId("config-review-load")).toBeNull();
+    expect(screen.getByTestId("spine-configuration_expansion")).toHaveTextContent("needs review");
   });
 
   it("GETs the exact review route and renders summary + line rows", async () => {
@@ -1654,6 +1737,7 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
 
   it("does not approve the artifact client-side after a successful review POST", async () => {
     vi.spyOn(window, "prompt").mockReturnValue(null);
+    let workspaceLoads = 0;
     stubFetch((url, init) => {
       if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
         return jsonResponse(cfgReviewOkResponse());
@@ -1661,7 +1745,15 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
       if (CFG_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
         return jsonResponse(cfgReviewPostOkResponse());
       }
-      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      if (url.endsWith("/quick-bom")) {
+        workspaceLoads += 1;
+        return jsonResponse({
+          workspace:
+            workspaceLoads === 1
+              ? workspaceWithCfgNeedsReview()
+              : workspaceWithReviewedCfgNeedsApproval(),
+        });
+      }
       return jsonResponse({}, 404);
     });
 
@@ -1681,8 +1773,9 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     });
 
     await waitFor(() => screen.queryByTestId("project-name"));
-    // No approve button for configuration_expansion must ever appear in the client
-    expect(screen.queryByTestId("approve-configuration_expansion")).toBeNull();
+    expect(screen.getByTestId("spine-configuration_expansion")).toHaveTextContent("needs review");
+    expect(screen.getByTestId("approve-configuration_expansion")).toBeInTheDocument();
+    expect(screen.queryByTestId("line-review-required-configuration_expansion")).toBeNull();
   });
 
   it("shows a controlled error and no stack when the GET review throws", async () => {

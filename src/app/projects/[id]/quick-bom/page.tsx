@@ -99,6 +99,14 @@ function isReviewable(artifact: ProjectArtifactSummary): boolean {
   );
 }
 
+function isConfigurationExpansionDraft(artifact: ProjectArtifactSummary): boolean {
+  return (
+    artifact.type === "configuration_expansion" &&
+    artifact.status === "needs_review" &&
+    artifact.sourceArtifactIds[2] === undefined
+  );
+}
+
 /** Controlled error/code string from a parsed API body, else null. No stacks. */
 function bodyMessage(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
@@ -706,19 +714,24 @@ export default function ProjectQuickBomPage() {
     );
   }
 
-  // Per-artifact review control for the spine list. While a sku_resolution or
-  // configuration_expansion artifact is `needs_review` it is line-review-only (the
-  // panels below), so this only flags that. Once a line review mints a `generated`
-  // version, that reviewed artifact is approved/rejected through the generic /approvals
-  // route (same as export_package). priced_boq uses its own per-artifact review route.
-  // normalized_boq is never reviewable.
+  // Per-artifact review control for the spine list. A `needs_review`
+  // configuration_expansion draft is line-review-only. After the line review mints
+  // a reviewed non-draft artifact, the reviewed artifact still awaits explicit
+  // stage approval through the generic /approvals route.
   function reviewControls(artifact: ProjectArtifactSummary) {
     if (!isReviewable(artifact)) return null;
     const t = artifact.type;
-    if (
-      (t === "sku_resolution" || t === "configuration_expansion") &&
-      artifact.status === "needs_review"
-    ) {
+    if (t === "sku_resolution" && artifact.status === "needs_review") {
+      return (
+        <span
+          data-testid={`line-review-required-${t}`}
+          className="text-xs text-text-secondary"
+        >
+          Line-level review required before approval.
+        </span>
+      );
+    }
+    if (isConfigurationExpansionDraft(artifact)) {
       return (
         <span
           data-testid={`line-review-required-${t}`}
@@ -1033,7 +1046,7 @@ export default function ProjectQuickBomPage() {
         </Card>
       )}
 
-      {configExpansion && configExpansion.status === "needs_review" && (
+      {configExpansion && isConfigurationExpansionDraft(configExpansion) && (
         <Card title="Configuration expansion line review">
           <p className="mt-2 text-xs text-text-secondary">
             Accept or reject every expansion line. Customer lines are read-only. All

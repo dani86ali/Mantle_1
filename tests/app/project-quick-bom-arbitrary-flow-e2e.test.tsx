@@ -30,11 +30,20 @@ import { POST as approvalPOST } from "@/app/api/projects/[id]/quick-bom/approval
 import { POST as uploadPOST } from "@/app/api/projects/[id]/quick-bom/files/route";
 import { POST as normalizePOST } from "@/app/api/projects/[id]/quick-bom/files/[fileId]/normalize/route";
 import { POST as skuResolutionPOST } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/sku-resolution/route";
-import { POST as skuResolutionReviewPOST } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/sku-resolution/review/route";
+import {
+  POST as skuResolutionReviewPOST,
+  GET as skuResolutionReviewGET,
+} from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/sku-resolution/review/route";
 import { POST as configExpansionPOST } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/configuration-expansion/route";
-import { POST as configExpansionReviewPOST } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/configuration-expansion/review/route";
+import {
+  POST as configExpansionReviewPOST,
+  GET as configExpansionReviewGET,
+} from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/configuration-expansion/review/route";
 import { POST as pricedBoqPOST } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/priced-boq/route";
-import { POST as pricedBoqReviewPOST } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/priced-boq/review/route";
+import {
+  POST as pricedBoqReviewPOST,
+  GET as pricedBoqReviewGET,
+} from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/priced-boq/review/route";
 import { POST as exportPackagePOST } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/export-package/route";
 import { GET as exportDownloadGET } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/export-package/download/route";
 
@@ -537,6 +546,28 @@ function dispatchQuickBomFetch(): RecordedFetch[] {
           params: { id, fileId: normalizeMatch[1] },
         });
       }
+      const skuResolutionReviewMatch = /^artifacts\/([^/]+)\/sku-resolution\/review$/.exec(rest);
+      if (skuResolutionReviewMatch && method === "GET") {
+        return skuResolutionReviewGET(emptyRequest(), {
+          params: { id, artifactId: skuResolutionReviewMatch[1] },
+        });
+      }
+      if (skuResolutionReviewMatch && method === "POST") {
+        return skuResolutionReviewPOST(jsonRequest(parsedJsonBody(init)), {
+          params: { id, artifactId: skuResolutionReviewMatch[1] },
+        });
+      }
+      const configExpansionReviewMatch = /^artifacts\/([^/]+)\/configuration-expansion\/review$/.exec(rest);
+      if (configExpansionReviewMatch && method === "GET") {
+        return configExpansionReviewGET(emptyRequest(), {
+          params: { id, artifactId: configExpansionReviewMatch[1] },
+        });
+      }
+      if (configExpansionReviewMatch && method === "POST") {
+        return configExpansionReviewPOST(jsonRequest(parsedJsonBody(init)), {
+          params: { id, artifactId: configExpansionReviewMatch[1] },
+        });
+      }
       const skuMatch = /^artifacts\/([^/]+)\/sku-resolution$/.exec(rest);
       if (skuMatch && method === "POST") {
         // Faithful to the route contract: the body is honored only when the page
@@ -565,6 +596,11 @@ function dispatchQuickBomFetch(): RecordedFetch[] {
         });
       }
       const pricedReviewMatch = /^artifacts\/([^/]+)\/priced-boq\/review$/.exec(rest);
+      if (pricedReviewMatch && method === "GET") {
+        return pricedBoqReviewGET(emptyRequest(), {
+          params: { id, artifactId: pricedReviewMatch[1] },
+        });
+      }
       if (pricedReviewMatch && method === "POST") {
         return pricedBoqReviewPOST(jsonRequest(parsedJsonBody(init)), {
           params: { id, artifactId: pricedReviewMatch[1] },
@@ -1145,6 +1181,271 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
           /\/configuration-expansion$/.test(c.url) &&
           JSON.stringify(c.body ?? "").includes("catalogProfile")
       )
+    ).toBe(false);
+
+    view.unmount();
+  });
+
+  it("UI review panels drive the full Honeywell opt-in app chain", async () => {
+    const project = await createArbitraryProject();
+    const calls = dispatchQuickBomFetch();
+    let view = render(<ProjectQuickBomPage />);
+
+    await screen.findByTestId("project-name");
+
+    const file = new File([HW_CSV], "honeywell-upload.csv", { type: "text/csv" });
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("workflow-upload-file"), {
+        target: { files: [file] },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("workflow-upload-normalize"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-normalized_boq")).toHaveTextContent("generated")
+    );
+    assertNoPayloadLeakHoneywell();
+
+    // Explicit Honeywell opt-in: nothing about project/customer/file selects this path.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("workflow-honeywell-demo-catalog-profile"));
+    });
+
+    // Create sku_resolution draft.
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-sku_resolution"));
+    });
+    expect(await screen.findByTestId("line-review-required-sku_resolution")).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
+
+    // Assert Honeywell catalog profile body was sent.
+    const skuCreateCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
+    );
+    expect(skuCreateCalls).toHaveLength(1);
+    expect(skuCreateCalls[0].body).toEqual({ catalogProfile: "honeywell_mvp_demo" });
+
+    // Load SKU review panel via the UI button; assert the GET review route was called.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    expect(await screen.findByTestId("sku-review-summary")).toBeInTheDocument();
+    expect(screen.getAllByTestId("sku-review-line")).toHaveLength(4);
+    expect(
+      calls.filter((c) => c.method === "GET" && /\/sku-resolution\/review$/.test(c.url))
+    ).toHaveLength(1);
+
+    // Accept all 4 SKU lines one at a time through the UI accept buttons.
+    // Each accept POSTs one action and mints a new artifact version. Between accepts
+    // the panel reloads (workspace refresh) so each iteration re-queries the buttons.
+    // The last accept mints a generated artifact and the panel disappears.
+    for (let i = 0; i < 4; i++) {
+      if (i > 0) {
+        // Wait for panel busy to clear (previous accept + workspace reload completed)
+        // then reload for the next line.
+        await waitFor(() =>
+          expect(screen.queryByTestId("sku-review-load")).not.toBeDisabled(),
+          { timeout: 3000 }
+        );
+        await act(async () => {
+          fireEvent.click(screen.getByTestId("sku-review-load"));
+        });
+        await screen.findByTestId("sku-review-summary");
+      }
+      const acceptBtns = screen.getAllByTestId("sku-review-accept");
+      expect(acceptBtns.length).toBeGreaterThan(0);
+      await act(async () => {
+        fireEvent.click(acceptBtns[0]);
+      });
+    }
+
+    // After 4 accepts the panel disappears (generated artifact) and approve appears.
+    expect(await screen.findByTestId("approve-sku_resolution")).toBeInTheDocument();
+
+    // Assert SKU review POSTs: sanitized actions only, no authority fields.
+    const skuReviewPostCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution\/review$/.test(c.url)
+    );
+    expect(skuReviewPostCalls).toHaveLength(4);
+    for (const call of skuReviewPostCalls) {
+      const body = call.body as { actions: Record<string, unknown>[] };
+      expect(body.actions).toHaveLength(1);
+      const action = body.actions[0];
+      expect(action).not.toHaveProperty("tenantId");
+      expect(action).not.toHaveProperty("projectId");
+      expect(action).not.toHaveProperty("artifactId");
+      expect(action).not.toHaveProperty("decidedBy");
+      expect(action).not.toHaveProperty("decidedAt");
+      expect(action).not.toHaveProperty("replacement");
+      expect(action).not.toHaveProperty("substitution");
+    }
+
+    // Approve sku_resolution through the UI generic approve button.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-sku_resolution"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-sku_resolution")).toHaveTextContent("approved")
+    );
+
+    // Remount for a clean workspace view before configuration expansion.
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    // Create configuration_expansion draft.
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-configuration_expansion"));
+    });
+    expect(
+      await screen.findByTestId("line-review-required-configuration_expansion")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-configuration_expansion")).toBeNull();
+
+    // Load config review panel via the UI button; assert the GET review route was called.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-load"));
+    });
+    expect(await screen.findByTestId("config-review-summary")).toBeInTheDocument();
+    const configReviewLines = screen.getAllByTestId("config-review-line");
+    expect(configReviewLines.length).toBeGreaterThan(0);
+    expect(
+      calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))
+    ).toHaveLength(1);
+
+    // Accept all expansion lines via UI buttons (local state only, no POST yet).
+    const configAcceptBtns = screen.getAllByTestId("config-review-accept");
+    await act(async () => {
+      for (const btn of configAcceptBtns) {
+        fireEvent.click(btn);
+      }
+    });
+
+    // Submit the complete decisions batch via the UI submit button; then remount.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-submit"));
+    });
+    // Wait for the async submit + workspace reload to complete.
+    await waitFor(() =>
+      expect(screen.queryByTestId("config-review-summary")).toBeNull(),
+      { timeout: 3000 }
+    );
+
+    // Assert one complete POST: only expansion lines, no authority fields.
+    const configReviewPostCalls = calls.filter(
+      (c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url)
+    );
+    expect(configReviewPostCalls).toHaveLength(1);
+    const configBatchBody = configReviewPostCalls[0].body as {
+      decisions: Record<string, unknown>[];
+    };
+    expect(Array.isArray(configBatchBody.decisions)).toBe(true);
+    expect(configBatchBody.decisions.length).toBe(configAcceptBtns.length);
+    for (const d of configBatchBody.decisions) {
+      expect(d).not.toHaveProperty("tenantId");
+      expect(d).not.toHaveProperty("projectId");
+      expect(d).not.toHaveProperty("artifactId");
+      expect(d).not.toHaveProperty("decidedBy");
+      expect(d).not.toHaveProperty("decidedAt");
+      expect(d).not.toHaveProperty("pricing");
+      expect(d).not.toHaveProperty("replacement");
+      expect(d).not.toHaveProperty("substitution");
+    }
+
+    // Remount to get fresh workspace with the reviewed generated artifact.
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    // Approve configuration_expansion through the UI generic approve button.
+    expect(await screen.findByTestId("approve-configuration_expansion")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-configuration_expansion"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-configuration_expansion")).toHaveTextContent("approved")
+    );
+
+    // Create priced_boq (status needs_review; both approve button and review panel appear).
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-priced_boq"));
+    });
+    expect(await screen.findByTestId("approve-priced_boq")).toBeInTheDocument();
+
+    // Load priced review panel via the UI button; assert the GET review route was called.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("priced-review-load"));
+    });
+    expect(await screen.findByTestId("priced-review-summary")).toBeInTheDocument();
+    expect(screen.getAllByTestId("priced-review-line").length).toBeGreaterThan(0);
+    expect(
+      calls.filter((c) => c.method === "GET" && /\/priced-boq\/review$/.test(c.url))
+    ).toHaveLength(1);
+
+    // Assert the priced review panel did NOT POST (panel is read-only; approval is separate).
+    expect(
+      calls.filter((c) => c.method === "POST" && /\/priced-boq\/review$/.test(c.url))
+    ).toHaveLength(0);
+
+    // Approve priced_boq through the UI approve button.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-priced_boq"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-priced_boq")).toHaveTextContent("approved")
+    );
+
+    // Create and approve export_package through the UI.
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-export_package"));
+    });
+    await waitFor(
+      () => expect(screen.getByTestId("approve-export_package")).toBeInTheDocument(),
+      { timeout: 5000 }
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-export_package"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-export_package")).toHaveTextContent("approved")
+    );
+
+    // Assert approved export download link and real download route.
+    const link = await screen.findByTestId("download-export_package");
+    const exportArtifact = hoisted.store.latestArtifact("export_package");
+    expect(link).toHaveAttribute(
+      "href",
+      `/api/projects/${project.id}/quick-bom/artifacts/${exportArtifact.id}/export-package/download`
+    );
+    assertNoPayloadLeakHoneywell();
+
+    const downloadRes = await exportDownloadGET(emptyRequest(), {
+      params: { id: project.id, artifactId: exportArtifact.id },
+    });
+    expect(downloadRes.status).toBe(200);
+    expect(downloadRes.headers.get("content-type")).toBe(XLSX_MIME);
+    const bytes = new Uint8Array(await downloadRes.arrayBuffer());
+    expect(bytes.byteLength).toBeGreaterThan(0);
+
+    // Assert configuration-expansion POST carries no catalogProfile body.
+    expect(
+      calls.some(
+        (c) =>
+          c.method === "POST" &&
+          /\/configuration-expansion$/.test(c.url) &&
+          JSON.stringify(c.body ?? "").includes("catalogProfile")
+      )
+    ).toBe(false);
+
+    // Assert optics remain standalone customer lines (no expansion children for SFP-10G-LR-S=).
+    const configReviewed = hoisted.store.latestArtifact("configuration_expansion");
+    const acceptedLines = (configReviewed.payload.acceptedLines ?? []) as Array<{
+      origin: string;
+      sku: string;
+    }>;
+    expect(
+      acceptedLines.some((l) => l.origin === "expansion" && l.sku === "SFP-10G-LR-S=")
     ).toBe(false);
 
     view.unmount();
