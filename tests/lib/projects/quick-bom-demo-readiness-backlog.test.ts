@@ -31,6 +31,18 @@ import { join } from "path";
  * "glob empty" claim, and still says a live/provisioned Postgres run is unverified
  * (production DB readiness still open).
  *
+ * Prompt 103 additionally aligns the catalog-coverage evidence after the Prompt 102
+ * read-only Honeywell catalog coverage audit: the backlog drops the stale B9
+ * "needs verification" / "catalog coverage is still unverified" framing, names the audit
+ * doc/module/test (HONEYWELL_CATALOG_COVERAGE_AUDIT.md,
+ * honeywell-catalog-coverage-audit.ts, honeywell-catalog-coverage-audit.test.ts), records
+ * the verified counts (customer rows 7 total, 4 matched, 3 not_found, 0 ambiguous; broader
+ * demo SKUs 50 total, 30 matched, 20 not_found, 0 ambiguous) and the missing customer
+ * parent SKUs, keeps the local_stc_historical_mock source and the audit-only boundary
+ * (no pricing/configuration/production-catalog/substitution authority), and still carries
+ * full uploaded Honeywell BoQ through real SKU resolution as a remaining gap. B10's DB
+ * "(needs verification)" / "unverified" wording legitimately stays.
+ *
  * The doc is read from disk and never mutated; no runtime evaluator, composer, pricing,
  * or expansion code is imported or run.
  */
@@ -116,6 +128,12 @@ const STALE_PHRASES = [
   "Still missing: a product surface to download/serve",
   "arbitrary project creation, a general BoQ upload endpoint",
   "next implementation step",
+  // Prompt 103: stale catalog-coverage framing the Prompt 102 audit retires. Scoped to
+  // B9's old wording; B10's DB "(needs verification)" / "unverified" wording stays.
+  "Catalog coverage (needs verification)",
+  "catalog coverage is still unverified",
+  "whether the Honeywell-scope SKUs are present is unverified",
+  "Honeywell SKU coverage in the local mock catalog is unverified",
 ];
 
 describe("quick bom demo-readiness backlog - exists and stays an execution tracker", () => {
@@ -302,6 +320,68 @@ describe("quick bom demo-readiness backlog - DB readiness evidence aligned (P100
   it("still says a live/provisioned Postgres run is unverified and DB readiness is open", () => {
     expect(docFlat).toContain("live/provisioned postgres run remains unverified");
     expect(docFlat).toContain("production db readiness is still open");
+  });
+});
+
+describe("quick bom demo-readiness backlog - catalog coverage evidence aligned (P102/P103)", () => {
+  // The B9 blocker row is a single Markdown table line; isolate it so the "no longer
+  // unverified" check stays scoped to B9 and never trips on B10's legitimate DB wording.
+  const b9Row = doc.split("\n").find((line) => line.startsWith("| B9 |")) ?? "";
+
+  it("finds the B9 catalog-coverage row carrying the verified framing", () => {
+    expect(b9Row.length).toBeGreaterThan(0);
+    expect(b9Row).toContain("Catalog coverage");
+    expect(b9Row).toContain("P102");
+  });
+
+  it("B9 no longer says needs verification or unverified", () => {
+    expect(b9Row).not.toContain("needs verification");
+    expect(b9Row).not.toContain("unverified");
+  });
+
+  it("names the Prompt 102 audit doc, module, and test", () => {
+    expect(doc).toContain("docs/quick-bom/HONEYWELL_CATALOG_COVERAGE_AUDIT.md");
+    expect(doc).toContain("honeywell-catalog-coverage-audit.ts");
+    expect(doc).toContain("honeywell-catalog-coverage-audit.test.ts");
+  });
+
+  it("includes the verified customer-row and broader-universe coverage counts", () => {
+    expect(docFlat).toContain(
+      "customer rows 7 total, 4 matched, 3 not_found, 0 ambiguous"
+    );
+    expect(docFlat).toContain(
+      "broader demo skus 50 total, 30 matched, 20 not_found, 0 ambiguous"
+    );
+  });
+
+  it("names the missing Honeywell customer parent SKUs", () => {
+    for (const sku of ["CW9178I-CFG", "C9300X-48HX-A", "C9300L-24P-4X-A"]) {
+      expect(doc, sku).toContain(sku);
+    }
+  });
+
+  it("preserves the local_stc_historical_mock catalog source", () => {
+    expect(doc).toContain("local_stc_historical_mock");
+  });
+
+  it("keeps the audit-only boundary with no production catalog/pricing/config/substitution authority", () => {
+    expect(docFlat).toContain("audit-only");
+    expect(docFlat).toContain(
+      "no pricing, configuration, production catalog, or substitution authority"
+    );
+  });
+
+  it("retains full uploaded Honeywell BoQ through real SKU resolution as a remaining gap", () => {
+    expect(docFlat).toContain(
+      "full uploaded honeywell boq through real sku resolution"
+    );
+  });
+
+  it("no longer frames catalog coverage as still unverified anywhere", () => {
+    expect(doc.toLowerCase().includes("catalog coverage is still unverified")).toBe(false);
+    expect(
+      doc.toLowerCase().includes("sku coverage in the local mock catalog is unverified")
+    ).toBe(false);
   });
 });
 

@@ -19,7 +19,11 @@ end-to-end proof (Section 5D). On top of that seeded slice, Prompts 83-97 added 
 proved the broader Quick BoM app route/action chain beyond the seeded fixture -
 create Project, upload BoQ, normalize, SKU draft/review, configuration draft/review,
 pricing, pricing review, export creation, export approval, and download (Section 5E).
-The Batch 4 record stays a decision record only.
+The Batch 4 record stays a decision record only. Prompts 100/101 then aligned the
+DB-readiness evidence to the committed migration SQL and the withTenantDb
+tenant-context wrapper, and Prompts 102/103 align the catalog-coverage evidence to the
+read-only Prompt 102 Honeywell catalog coverage audit (verified local mock coverage
+with material missing-SKU gaps).
 
 This backlog remains an execution tracker, not the architecture source of truth. The
 Prompt 97 app-level arbitrary-Project proof runs the current app/routes/services for a
@@ -446,6 +450,20 @@ This app-level arbitrary-Project proof does NOT prove:
 - broad Cisco-general configuration authority;
 - line-level SKU/config/pricing review UI.
 
+Prompt 102 added a read-only Honeywell catalog coverage audit
+(`docs/quick-bom/HONEYWELL_CATALOG_COVERAGE_AUDIT.md`,
+`src/lib/projects/honeywell-catalog-coverage-audit.ts`,
+`tests/lib/projects/honeywell-catalog-coverage-audit.test.ts`) so the catalog coverage
+above is now verified with material gaps rather than an open question. Against the
+local_stc_historical_mock source the seven Honeywell customer rows resolve 4 matched, 3
+not_found, 0 ambiguous (missing CW9178I-CFG, C9300X-48HX-A, C9300L-24P-4X-A) and the
+broader 50-SKU demo universe resolves 30 matched, 20 not_found, 0 ambiguous. The audit
+is evidence only and grants no pricing, configuration, production catalog, or
+substitution authority. Full uploaded Honeywell BoQ through real SKU resolution stays a
+remaining gap because those missing local mock catalog SKUs (the three customer parent
+SKUs and the twenty broader demo SKUs) are absent, not because coverage is unproven;
+closing it needs explicit catalog-fixture/authority work.
+
 The product is still not production-ready for arbitrary customers; full customer and
 general production readiness remains future. The authority boundaries are unchanged:
 no runtime AI/catalog/pricing/configuration decisions; demo-only pricing fixture;
@@ -470,7 +488,7 @@ see Sections 5B-5D for the proven path.
 | B6 | P1 | Staleness | Upstream changes do not automatically mark downstream artifacts stale at runtime. | `staleness.ts planStaleArtifactUpdates` is pure planning with no caller in `src` (grep); `project-approval-store.ts` and `project-artifact-store.ts` explicitly do not propagate staleness. | Regenerating an upstream artifact mid-demo leaves stale downstream artifacts looking valid; the canonical "auto-stale" rule is not enforced. | later/post-MVP |
 | B7 | P1 | Demo data | Committed SAR price source and Mantle category map for the Honeywell scope. | The committed demo fixture supplies a SAR `unitListPriceSarBySku` map and a SKU->Mantle-category map for exactly the 50 demo SKUs (loader `honeywell-demo-pricing-fixture.ts`); the P71 e2e test prices all 60 lines with correct category totals and no warnings. Fixture pricing is temporary demo-fixture evidence only, never production authority (Section 3). | Pricing and category totals are correct for the Honeywell demo scope. | Done (P68) |
 | B8 | P1 | Mantle export tests | Real-input Mantle export proof for the Honeywell shape. | `honeywell-quick-bom-demo-e2e.test.ts` writes the Honeywell Mantle model to a temporary workbook and re-opens it to assert rows, order, category footers, and totals against the committed template. Marafiq/EnergyTech real-input export tests are still not present. | Honeywell "customer-ready without manual reformatting" is now proven; other customer formats remain unproven. | Done for Honeywell (P71); other formats later |
-| B9 | P2 | Catalog coverage (needs verification) | SKU resolution resolves only against a committed local STC mock catalog; whether the Honeywell-scope SKUs are present is unverified. | `catalog-lookup.ts` reads `getCatalogMock()` (`LOCAL_CATALOG_SOURCE = local_stc_historical_mock`); exact + normalized only, no fuzzy/AI. The demo runner sidesteps this by taking human-accepted SKU decisions as inputs (acceptedSku == originalSku), so catalog coverage is still unverified. | If Honeywell SKUs are absent from the mock, a real resolution step (not the demo's inline accept) would leave lines unresolved. Needs verification, then a fixture decision. | open / needs verification |
+| B9 | P2 | Catalog coverage | SKU resolution resolves only against a committed local STC mock catalog; Prompt 102 verified which Honeywell-scope SKUs that mock resolves and misses. | `catalog-lookup.ts` reads `getCatalogMock()` (`LOCAL_CATALOG_SOURCE = local_stc_historical_mock`); exact + normalized only, no fuzzy/AI. The read-only Prompt 102 audit (`docs/quick-bom/HONEYWELL_CATALOG_COVERAGE_AUDIT.md`, `src/lib/projects/honeywell-catalog-coverage-audit.ts`, `tests/lib/projects/honeywell-catalog-coverage-audit.test.ts`) records customer rows 7 total, 4 matched, 3 not_found, 0 ambiguous (missing CW9178I-CFG, C9300X-48HX-A, C9300L-24P-4X-A) and broader demo SKUs 50 total, 30 matched, 20 not_found, 0 ambiguous, against local_stc_historical_mock only. Audit-only: no pricing, configuration, production catalog, or substitution authority. | A full uploaded Honeywell BoQ through real SKU resolution would still leave those missing rows unresolved unless explicit catalog-fixture/authority work is approved later; the demo runner sidesteps this by taking human-accepted SKU decisions (acceptedSku == originalSku). | Coverage verified (P102); missing-SKU gap still open |
 | B10 | P2 | DB provisioning (needs verification) | Project-table provisioning against a live/provisioned Postgres DB is unverified, though committed schema, migration SQL, and the tenant-context wrapper now exist and are unit-tested. | Committed migration SQL exists under `src/lib/db/migrations/` (the `drizzle.config.ts` `out` path), including `0004_project_state.sql`, which creates the six Project tables plus their RLS tenant-isolation policies. `withTenantDb` (`src/lib/db/index.ts`) sets PostgreSQL `app.tenant_id` transaction-locally and is covered by `tests/lib/db/tenant-db.test.ts` (P100). A live/provisioned Postgres run remains unverified: both the in-memory runner and the P97 arbitrary-flow E2E sidestep DB persistence (in-memory store). | Schema, migration SQL, and the tenant-scoped DB wrapper are committed and unit-tested, but a demo against a real provisioned DB still needs the migrations applied (e.g. `drizzle-kit` migrate/push) plus a live run; production DB readiness is still open. | Migration SQL + tenant wrapper present and unit-tested (P100); live/provisioned Postgres run still unverified |
 | B11 | P0 | Operator command | Operator-facing command/script that writes the Honeywell Mantle demo workbook on demand. | `scripts/write-honeywell-quick-bom-demo.ts` (P73) invokes `runHoneywellQuickBomDemoMantleExportModel` + `writeMantlePriceEstimateWorkbook` to write a fresh `.xlsx` an operator can open (`--output <path>`; default under the OS temp dir), and prints an operator summary derived from the computed model. | An operator can regenerate the demo workbook live without the test harness. | Done (P73) |
 | B12 | P1 | App-level wiring | Broad canonical Project/API/UI/DB flow for the Quick BoM path beyond the seeded fixture. | The app route/action chain now exists beyond the seeded demo Project: create Project (`POST /api/projects/quick-bom`), upload (`.../quick-bom/files`), normalize, SKU draft/review, configuration draft/review, pricing, pricing review, export creation, and export download, wired into `src/app/projects/[id]/quick-bom/page.tsx` and proved for an arbitrary Project by `tests/app/project-quick-bom-arbitrary-flow-e2e.test.tsx` (P83-P97, Section 5E). Still unbuilt: production DB provisioning/migrations, full customer/general production readiness, and line-level SKU/config/pricing review UI; the legacy estimate/pipeline UI remains the E2 path. | The arbitrary-Project chain runs through the app routes/UI on reduced catalog-resolvable input; production provisioning and per-line review UI remain future, and broad app wiring must not shortcut through legacy E2. | Seeded-demo surface done (P77-P81); route/action chain done (P83-P97); production provisioning + per-line review UI later |
@@ -535,9 +553,16 @@ Demo data/fixtures:
   (`src/lib/db/migrations/0004_project_state.sql`) and the `withTenantDb` tenant-context
   wrapper (proven by `tests/lib/db/tenant-db.test.ts`) exist and are unit-tested, but a
   run against a live/provisioned Postgres DB remains unverified (B10).
-- Honeywell SKU coverage in the local mock catalog is unverified; the demo path uses
-  human-accepted SKU decisions, and P97 uses a reduced catalog-resolvable CSV subset
-  (B9).
+- Honeywell SKU coverage in the local mock catalog is now verified by the Prompt 102
+  read-only audit (`docs/quick-bom/HONEYWELL_CATALOG_COVERAGE_AUDIT.md`,
+  `src/lib/projects/honeywell-catalog-coverage-audit.ts`,
+  `tests/lib/projects/honeywell-catalog-coverage-audit.test.ts`), which documented the
+  gaps against local_stc_historical_mock: the seven customer rows resolve 4 matched, 3
+  not_found and the broader 50-SKU demo universe 30 matched, 20 not_found. A full
+  uploaded Honeywell BoQ through real SKU resolution still stays a gap because three
+  customer rows (CW9178I-CFG, C9300X-48HX-A, C9300L-24P-4X-A) and twenty broader demo
+  SKUs are absent from the local mock catalog; the demo path uses human-accepted SKU
+  decisions, and P97 uses a reduced catalog-resolvable CSV subset (B9).
 - Marafiq and EnergyTech app-level/real-input paths remain unproven (B8).
 
 Error handling/readiness/status display:
@@ -673,8 +698,12 @@ not a commitment):
 - Real DB provisioning/RLS/migrations plus a demo/run against a provisioned database,
   and production deployment verification (the route/action chain is proved only against
   the in-memory store).
-- Full uploaded Honeywell BoQ through real SKU resolution and full local catalog
-  coverage for Honeywell parent SKUs (P97 uses a reduced catalog-resolvable subset).
+- Full uploaded Honeywell BoQ through real SKU resolution: Prompt 102 verified the
+  current local mock coverage and documented the gaps (customer rows 4/7 matched, 3
+  not_found; broader 30/50 matched, 20 not_found), so this remains a gap because three
+  customer rows (CW9178I-CFG, C9300X-48HX-A, C9300L-24P-4X-A) and twenty broader demo
+  SKUs are not found in the local mock catalog; closing it needs explicit
+  catalog-fixture/authority work beyond the reduced catalog-resolvable subset P97 used.
 - Production pricing authority (catalog->SAR sourcing/conversion) beyond the demo
   fixture.
 - Broad Cisco-general configuration authority beyond the approved Honeywell Batch
