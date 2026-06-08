@@ -49,6 +49,7 @@ import type {
   QuickBomConfigExpansionReviewLine,
   QuickBomConfigExpansionReviewWorkspace,
 } from "@/lib/projects/project-quick-bom-config-expansion-review-workspace";
+import type { QuickBomPricedBoqReviewWorkspace } from "@/lib/projects/project-quick-bom-pricing-review-workspace";
 
 type Decision = "approved" | "rejected";
 
@@ -79,6 +80,7 @@ const MISSING_FILE_ERROR = "Select a BoQ file to upload first.";
 const SKU_REVIEW_ERROR = "Unable to load or update the SKU line review.";
 const CONFIG_REVIEW_ERROR =
   "Unable to load or submit the configuration expansion line review.";
+const PRICED_REVIEW_ERROR = "Unable to load the priced BoQ review.";
 
 const STATUS_BADGE: Record<string, string> = {
   approved: "bg-success-muted text-success",
@@ -246,6 +248,13 @@ export default function ProjectQuickBomPage() {
   const [configDecisions, setConfigDecisions] = useState<
     Record<string, { action: "accept" | "reject"; note?: string }>
   >({});
+  // Prompt 129: minimal read-only priced BoQ review panel. Loaded on demand from the
+  // read-only review route (the main workspace stays payload-free). This panel never
+  // POSTs - approval still happens only through the existing priced-BoQ approve/reject
+  // buttons on the spine artifact.
+  const [pricedReview, setPricedReview] = useState<QuickBomPricedBoqReviewWorkspace | null>(null);
+  const [pricedReviewError, setPricedReviewError] = useState<string | null>(null);
+  const [pricedReviewBusy, setPricedReviewBusy] = useState(false);
 
   // Memoized so the load effect and post-action reload share one stable reference;
   // dropping the useCallback would re-fire the effect every render (GET loop).
@@ -572,6 +581,41 @@ export default function ProjectQuickBomPage() {
     [id, configReview, configDecisions, loadWorkspace]
   );
 
+  // GET the read-only priced BoQ review projection for one priced_boq artifact. This
+  // panel is read-only: it never POSTs. Priced-BoQ approval stays on the existing
+  // approve/reject buttons (the per-artifact priced-boq review route). Controlled
+  // errors only, never a stack.
+  const loadPricedReview = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setPricedReviewError(null);
+      setPricedReviewBusy(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/quick-bom/artifacts/${artifactId}/priced-boq/review`
+        );
+        const body = await res.json().catch(() => null);
+        if (!res.ok) {
+          setPricedReview(null);
+          setPricedReviewError(bodyMessage(body) ?? PRICED_REVIEW_ERROR);
+          return;
+        }
+        const review = (body as { review?: QuickBomPricedBoqReviewWorkspace } | null)?.review;
+        if (!review) {
+          setPricedReview(null);
+          setPricedReviewError(PRICED_REVIEW_ERROR);
+          return;
+        }
+        setPricedReview(review);
+      } catch {
+        setPricedReview(null);
+        setPricedReviewError(PRICED_REVIEW_ERROR);
+      } finally {
+        setPricedReviewBusy(false);
+      }
+    },
+    [id]
+  );
+
   function promptNote(): string | undefined {
     const entered = window.prompt("Add an optional note for this rejection:");
     const trimmed = entered === null ? "" : entered.trim();
@@ -738,6 +782,7 @@ export default function ProjectQuickBomPage() {
   const exportPkg = spineArtifacts.export_package;
   const skuResolution = spineArtifacts.sku_resolution;
   const configExpansion = spineArtifacts.configuration_expansion;
+  const pricedBoq = spineArtifacts.priced_boq;
   const canCreate: Record<keyof QuickBomSpineArtifacts, boolean> = {
     normalized_boq: false,
     sku_resolution: readiness.canCreateSkuResolution,
@@ -1090,6 +1135,84 @@ export default function ProjectQuickBomPage() {
               >
                 Submit configuration expansion review
               </button>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {pricedBoq && pricedBoq.status === "needs_review" && (
+        <Card title="Priced BoQ review">
+          <p className="mt-2 text-xs text-text-secondary">
+            Inspect priced BoQ lines, SAR totals, and pricing warnings before approval.
+            This is a read-only view - use the Approve / Reject controls above to record
+            the decision.
+          </p>
+          <button
+            type="button"
+            data-testid="priced-review-load"
+            disabled={pricedReviewBusy}
+            onClick={() => void loadPricedReview(pricedBoq.id)}
+            className={`mt-3 ${APPROVE_BTN}`}
+          >
+            Load priced BoQ review
+          </button>
+          {pricedReviewError && (
+            <div
+              data-testid="priced-review-error"
+              className="mt-3 rounded-card border border-destructive/30 bg-destructive-muted p-3 text-sm text-destructive"
+            >
+              {pricedReviewError}
+            </div>
+          )}
+          {pricedReview && (
+            <div className="mt-3 space-y-3">
+              <p
+                data-testid="priced-review-summary"
+                className="text-xs text-text-secondary"
+              >
+                {pricedReview.reviewSummary.totalLineCount} lines:{" "}
+                {pricedReview.reviewSummary.pricedLineCount} priced,{" "}
+                {pricedReview.reviewSummary.unpricedLineCount} unpriced,{" "}
+                {pricedReview.reviewSummary.missingPriceCount} missing price,{" "}
+                {pricedReview.reviewSummary.warningCount} warnings | Totals:{" "}
+                {pricedReview.payloadSummary.pricingSummary.totals.currency}{" "}
+                {pricedReview.payloadSummary.pricingSummary.totals.subtotalSellPriceSar} sell +{" "}
+                {pricedReview.payloadSummary.pricingSummary.totals.vatAmountSar} VAT ={" "}
+                {pricedReview.payloadSummary.pricingSummary.totals.totalIncVatSar} inc VAT
+              </p>
+              <ol className="space-y-2">
+                {pricedReview.lines.map((line, index) => (
+                  <li
+                    key={`${line.sourceFileId}::${line.sourceRowNumber}::${index}`}
+                    data-testid="priced-review-line"
+                    className="rounded-button border border-[var(--border)] p-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-text-primary">
+                        {line.acceptedSku ?? line.originalSku}
+                      </span>
+                      <StatusBadge status={line.status} />
+                    </div>
+                    <p className="mt-0.5 text-xs text-text-secondary">{line.description}</p>
+                    <p className="mt-0.5 text-xs text-text-tertiary">
+                      SKU: {line.originalSku}
+                      {line.acceptedSku ? ` -> ${line.acceptedSku}` : ""} | Qty:{" "}
+                      {line.quantity}
+                    </p>
+                    {line.amounts && (
+                      <p className="mt-0.5 text-xs text-text-secondary">
+                        {line.amounts.currency} {line.amounts.unitSellPriceSar} unit sell x{" "}
+                        {line.amounts.quantity} = {line.amounts.extendedSellPriceSar} +{" "}
+                        {line.amounts.vatAmountSar} VAT = {line.amounts.totalIncVatSar} inc
+                        VAT
+                      </p>
+                    )}
+                    {line.warning && (
+                      <p className="mt-0.5 text-xs text-warning">{line.warning}</p>
+                    )}
+                  </li>
+                ))}
+              </ol>
             </div>
           )}
         </Card>

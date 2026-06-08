@@ -5,17 +5,21 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // Mock auth and the shared exact-artifact approval service so the route's
 // auth-gate, body validation, tenant/user/param authority, body-ignoring, the
 // forced priced_boq allowlist, and result-mapping are tested independent of the DB.
-const { mockRequireAuth, mockReview } = vi.hoisted(() => ({
+const { mockRequireAuth, mockReview, mockLoadReview } = vi.hoisted(() => ({
   mockRequireAuth: vi.fn(),
   mockReview: vi.fn(),
+  mockLoadReview: vi.fn(),
 }));
 
 vi.mock("@/lib/middleware/auth", () => ({ requireAuth: mockRequireAuth }));
 vi.mock("@/lib/projects/project-quick-bom-approval", () => ({
   reviewProjectQuickBomArtifact: mockReview,
 }));
+vi.mock("@/lib/projects/project-quick-bom-pricing-review-workspace", () => ({
+  loadQuickBomPricedBoqReviewWorkspace: mockLoadReview,
+}));
 
-import { POST } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/priced-boq/review/route";
+import { POST, GET } from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/priced-boq/review/route";
 import * as routeModule from "@/app/api/projects/[id]/quick-bom/artifacts/[artifactId]/priced-boq/review/route";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -79,9 +83,42 @@ function req(
   } as unknown as NextRequest;
 }
 
+const REVIEW_WORKSPACE = {
+  project: { id: PROJECT, tenantId: SESSION.tenantId, name: "Honeywell", mode: "quick_bom", createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-01T10:00:00.000Z" },
+  artifact: { ...ARTIFACT_SUMMARY },
+  payloadSummary: {
+    sourceConfigurationExpansionArtifactId: "art-ce-7",
+    sourceConfigurationExpansionArtifactVersion: 3,
+    sourceNormalizedBoqArtifactId: "art-nb-2",
+    sourceNormalizedBoqArtifactVersion: 1,
+    sourceSkuResolutionArtifactId: "art-skur-5",
+    sourceSkuResolutionArtifactVersion: 2,
+    sourceFileIds: ["file-1"],
+    pricingConfig: { currency: "SAR", mode: "margin", ratePercent: 30, vatRatePercent: 15, roundingDecimals: 2 },
+    lineCount: 1,
+    pricingSummary: {
+      inputLineCount: 1, pricedLineCount: 1, unpricedLineCount: 0,
+      missingDecisionCount: 0, notAcceptedCount: 0, missingPriceCount: 0,
+      totals: { currency: "SAR", lineCount: 1, subtotalListPriceSar: 2000, subtotalSellPriceSar: 1400, vatAmountSar: 210, totalIncVatSar: 1610 },
+    },
+  },
+  reviewSummary: { totalLineCount: 1, pricedLineCount: 1, unpricedLineCount: 0, missingPriceCount: 0, warningCount: 0 },
+  lines: [],
+};
+
+const OK_LOAD_RESULT = { status: "ok" as const, review: REVIEW_WORKSPACE };
+
+function getReq(): NextRequest {
+  return {
+    headers: { get: () => null },
+    json: vi.fn(() => Promise.reject(new Error("no body on GET"))),
+  } as unknown as NextRequest;
+}
+
 beforeEach(() => {
   mockRequireAuth.mockReset().mockReturnValue(SESSION);
   mockReview.mockReset().mockResolvedValue(OK_RESULT);
+  mockLoadReview.mockReset().mockResolvedValue(OK_LOAD_RESULT);
 });
 
 describe("POST .../priced-boq/review - auth", () => {
@@ -293,11 +330,89 @@ describe("POST .../priced-boq/review - service failure", () => {
 });
 
 describe("POST .../priced-boq/review - route surface", () => {
-  it("exports POST only", () => {
+  it("exports GET and POST; PATCH, PUT, DELETE are undefined", () => {
+    expect(typeof routeModule.GET).toBe("function");
     expect(typeof routeModule.POST).toBe("function");
-    for (const method of ["GET", "PATCH", "PUT", "DELETE"]) {
+    for (const method of ["PATCH", "PUT", "DELETE"]) {
       expect((routeModule as Record<string, unknown>)[method]).toBeUndefined();
     }
+  });
+});
+
+describe("GET .../priced-boq/review - auth", () => {
+  it("returns the requireAuth response and skips the loader when unauthenticated", async () => {
+    const unauth = NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    mockRequireAuth.mockReturnValue(unauth);
+
+    const res = await GET(getReq(), PARAMS);
+
+    expect(res).toBe(unauth);
+    expect(res.status).toBe(401);
+    expect(mockLoadReview).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET .../priced-boq/review - authority", () => {
+  it("calls loader with session tenantId and route params only", async () => {
+    await GET(getReq(), PARAMS);
+
+    expect(mockLoadReview).toHaveBeenCalledTimes(1);
+    expect(mockLoadReview).toHaveBeenCalledWith(SESSION.tenantId, PROJECT, ARTIFACT_ID);
+  });
+});
+
+describe("GET .../priced-boq/review - result mapping", () => {
+  const LOADER_CASES: Array<[{ status: string }, number, string]> = [
+    [{ status: "not_found" }, 404, "project_not_found"],
+    [{ status: "wrong_mode" }, 409, "wrong_project_mode"],
+    [{ status: "priced_boq_not_found" }, 404, "priced_boq_artifact_not_found"],
+    [{ status: "artifact_not_priced_boq" }, 409, "artifact_not_priced_boq"],
+    [{ status: "priced_boq_not_reviewable" }, 409, "priced_boq_artifact_not_reviewable"],
+    [{ status: "invalid_priced_boq_payload" }, 409, "invalid_priced_boq_payload"],
+  ];
+
+  it.each(LOADER_CASES)("maps loader %o to HTTP %i / code %s", async (loaderResult, httpStatus, code) => {
+    mockLoadReview.mockResolvedValue(loaderResult);
+    const res = await GET(getReq(), PARAMS);
+    expect(res.status).toBe(httpStatus);
+    expect((await res.json()).code).toBe(code);
+  });
+
+  it("maps ok to 200 with { review } and no status discriminator", async () => {
+    const res = await GET(getReq(), PARAMS);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ review: REVIEW_WORKSPACE });
+    expect("status" in body).toBe(false);
+  });
+});
+
+describe("GET .../priced-boq/review - loader failure", () => {
+  it("maps an unexpected loader error to a safe 500 with code priced_boq_review_load_failed without exposing the thrown error", async () => {
+    const secret = "get-loader-internal-boom";
+    mockLoadReview.mockRejectedValue(new Error(secret));
+
+    const res = await GET(getReq(), PARAMS);
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe("priced_boq_review_load_failed");
+    expect(body.error).toBe("Unable to load priced BoQ review.");
+    expect(JSON.stringify(body)).not.toContain(secret);
+  });
+
+  it("GET 500 code is distinct from POST 500 code", async () => {
+    mockReview.mockRejectedValue(new Error("post-boom"));
+    mockLoadReview.mockRejectedValue(new Error("get-boom"));
+
+    const postRes = await POST(req(), PARAMS);
+    const getRes = await GET(getReq(), PARAMS);
+
+    const postBody = await postRes.json();
+    const getBody = await getRes.json();
+    expect(postBody.code).toBe("priced_boq_review_failed");
+    expect(getBody.code).toBe("priced_boq_review_load_failed");
   });
 });
 
@@ -312,12 +427,13 @@ describe("route module purity (static source check)", () => {
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports only Next.js server primitives, requireAuth, and the approval service", () => {
+  it("imports only Next.js server primitives, requireAuth, the approval service, and the read-only review loader", () => {
     const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
     expect(froms).toEqual([
       "next/server",
       "@/lib/middleware/auth",
       "@/lib/projects/project-quick-bom-approval",
+      "@/lib/projects/project-quick-bom-pricing-review-workspace",
     ]);
   });
 

@@ -984,7 +984,6 @@ describe("ProjectQuickBomPage - authority provenance rendering", () => {
       "activeSourceWorkbookPath",
       "activeSourceSheetName",
       "Estimate_NB167337237YA.xlsx",
-      "lines",
       "acceptedLines",
       "rejectedLines",
       "evidence",
@@ -1792,6 +1791,276 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     // Structural key names must not be visible in the DOM
     expect(body).not.toContain("originalCells");
     expect(body).not.toContain("evidenceNote");
+  });
+});
+
+// -- Priced BoQ line-review fixtures --
+const PRICED_ARTIFACT_ID = "art-priced";
+const PRICED_REVIEW_ROUTE_RE =
+  /\/api\/projects\/proj-1\/quick-bom\/artifacts\/art-priced\/priced-boq\/review$/;
+const PRICED_REVIEW_CANARY = "PRICED-REVIEW-UNIT-LIST-PRICE-CANARY";
+
+function pricedReviewOkResponse(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    review: {
+      project: {
+        id: PROJECT_ID, tenantId: TENANT, name: "Honeywell Quick BoM", mode: "quick_bom",
+        createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-02T11:30:00.000Z",
+      },
+      artifact: {
+        id: PRICED_ARTIFACT_ID, projectId: PROJECT_ID, stageId: "boq_pricing_review",
+        type: "priced_boq", status: "needs_review", version: 1,
+        sourceFileIds: [], sourceArtifactIds: [],
+        createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-01T10:00:00.000Z",
+      },
+      payloadSummary: {
+        sourceConfigurationExpansionArtifactId: "art-ce-7",
+        sourceConfigurationExpansionArtifactVersion: 3,
+        sourceNormalizedBoqArtifactId: "art-nb-2",
+        sourceNormalizedBoqArtifactVersion: 1,
+        sourceSkuResolutionArtifactId: "art-skur-5",
+        sourceSkuResolutionArtifactVersion: 2,
+        sourceFileIds: [],
+        pricingConfig: { currency: "SAR", mode: "margin", ratePercent: 30, vatRatePercent: 15, roundingDecimals: 2 },
+        lineCount: 2,
+        pricingSummary: {
+          inputLineCount: 2, pricedLineCount: 1, unpricedLineCount: 1,
+          missingDecisionCount: 0, notAcceptedCount: 0, missingPriceCount: 1,
+          totals: {
+            currency: "SAR", lineCount: 1, subtotalListPriceSar: 2000,
+            subtotalSellPriceSar: 1400, vatAmountSar: 210, totalIncVatSar: 1610,
+          },
+        },
+        // Canary: must never reach DOM
+        unitListPriceSarBySku: { "C9300-48P-A": PRICED_REVIEW_CANARY },
+      },
+      reviewSummary: {
+        totalLineCount: 2, pricedLineCount: 1, unpricedLineCount: 1,
+        missingPriceCount: 1, warningCount: 1,
+      },
+      lines: [
+        {
+          sourceFileId: "file-1", sourceRowNumber: 3, originalLineNumber: "L-003",
+          originalSku: "WS-OLD", acceptedSku: "C9300-48P-A",
+          description: "Catalyst switch", quantity: 2,
+          status: "priced",
+          amounts: {
+            currency: "SAR", quantity: 2,
+            unitListPriceSar: 1000, extendedListPriceSar: 2000,
+            unitSellPriceSar: 700, extendedSellPriceSar: 1400,
+            pricingMode: "margin", ratePercent: 30, vatRatePercent: 15,
+            vatAmountSar: 210, totalIncVatSar: 1610,
+          },
+          // Canary: must never reach DOM
+          originalCells: { A1: "ORIGINALCELLS-CANARY" },
+        },
+        {
+          sourceFileId: "file-1", sourceRowNumber: 4, originalLineNumber: "L-004",
+          originalSku: "UNKNOWN-SKU",
+          description: "Unknown SKU line", quantity: 1,
+          status: "missing_price",
+          warning: "No price found for SKU UNKNOWN-SKU",
+        },
+      ],
+      ...overrides,
+    },
+  };
+}
+
+describe("ProjectQuickBomPage - priced BoQ review panel", () => {
+  it("renders the priced-review-load button when priced_boq is needs_review", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: reviewablePriced() });
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectQuickBomPage />);
+    expect(await screen.findByTestId("priced-review-load")).toBeInTheDocument();
+  });
+
+  it("does not render the priced-review-load button when priced_boq is approved", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: fullWorkspace() });
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+    expect(screen.queryByTestId("priced-review-load")).toBeNull();
+  });
+
+  it("does not render the priced-review-load button when priced_boq is absent", async () => {
+    stubDefault();
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+    expect(screen.queryByTestId("priced-review-load")).toBeNull();
+  });
+
+  it("GETs the exact priced-boq review route and renders summary + line rows", async () => {
+    const calls = stubFetch((url, init) => {
+      if (PRICED_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(pricedReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: reviewablePriced() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("priced-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("priced-review-load"));
+    });
+
+    const summary = await screen.findByTestId("priced-review-summary");
+    expect(summary).toHaveTextContent("2 lines");
+    expect(summary).toHaveTextContent("1 priced");
+    expect(summary).toHaveTextContent("1 unpriced");
+    expect(summary).toHaveTextContent("1 missing price");
+    expect(summary).toHaveTextContent("1 warnings");
+    expect(summary).toHaveTextContent("SAR");
+    expect(summary).toHaveTextContent("1610");
+
+    const lines = screen.getAllByTestId("priced-review-line");
+    expect(lines).toHaveLength(2);
+
+    const getCall = calls.find((c) => PRICED_REVIEW_ROUTE_RE.test(c.url) && c.method === "GET");
+    expect(getCall).toBeTruthy();
+  });
+
+  it("renders amounts on priced lines", async () => {
+    stubFetch((url, init) => {
+      if (PRICED_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(pricedReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: reviewablePriced() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("priced-review-load");
+    await act(async () => { fireEvent.click(screen.getByTestId("priced-review-load")); });
+    await screen.findByTestId("priced-review-summary");
+
+    const lines = screen.getAllByTestId("priced-review-line");
+    const pricedLine = lines[0];
+    expect(pricedLine).toHaveTextContent("700");
+    expect(pricedLine).toHaveTextContent("1610");
+    expect(pricedLine).toHaveTextContent("C9300-48P-A");
+  });
+
+  it("renders warning on missing-price lines", async () => {
+    stubFetch((url, init) => {
+      if (PRICED_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(pricedReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: reviewablePriced() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("priced-review-load");
+    await act(async () => { fireEvent.click(screen.getByTestId("priced-review-load")); });
+    await screen.findByTestId("priced-review-summary");
+
+    const lines = screen.getAllByTestId("priced-review-line");
+    const missingLine = lines[1];
+    expect(missingLine).toHaveTextContent("No price found for SKU UNKNOWN-SKU");
+  });
+
+  it("priced review panel does not POST; no POST call is issued on load", async () => {
+    const calls = stubFetch((url, init) => {
+      if (PRICED_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(pricedReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: reviewablePriced() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("priced-review-load");
+    await act(async () => { fireEvent.click(screen.getByTestId("priced-review-load")); });
+    await screen.findByTestId("priced-review-summary");
+
+    const posts = calls.filter((c) => PRICED_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST");
+    expect(posts).toHaveLength(0);
+  });
+
+  it("approval buttons (approve-priced_boq/reject-priced_boq) still exist alongside the review panel", async () => {
+    stubFetch((url, init) => {
+      if (PRICED_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(pricedReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: reviewablePriced() });
+      if (url.endsWith("/priced-boq/review") && init?.method === "POST") {
+        return jsonResponse(okApproval({ status: "ok", workspace: reviewablePriced() }));
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    expect(await screen.findByTestId("approve-priced_boq")).toBeInTheDocument();
+    expect(screen.getByTestId("reject-priced_boq")).toBeInTheDocument();
+  });
+
+  it("shows a controlled error and no stack when the GET review throws", async () => {
+    const secret = "priced-review-get-boom-internal";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (PRICED_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+          return Promise.reject(new Error(secret));
+        }
+        return Promise.resolve(jsonResponse({ workspace: reviewablePriced() }));
+      })
+    );
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("priced-review-load");
+    await act(async () => { fireEvent.click(screen.getByTestId("priced-review-load")); });
+
+    const err = await screen.findByTestId("priced-review-error");
+    expect(err).toHaveTextContent("Unable to load the priced BoQ review.");
+    expect(document.body.textContent ?? "").not.toContain(secret);
+    expect(screen.queryByTestId("priced-review-summary")).toBeNull();
+  });
+
+  it("shows a controlled error when GET returns a non-ok status", async () => {
+    stubFetch((url, init) => {
+      if (PRICED_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse({ code: "invalid_priced_boq_payload", error: "Payload is invalid." }, 409);
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: reviewablePriced() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("priced-review-load");
+    await act(async () => { fireEvent.click(screen.getByTestId("priced-review-load")); });
+
+    const err = await screen.findByTestId("priced-review-error");
+    expect(err).toHaveTextContent("Payload is invalid.");
+  });
+
+  it("does not render review payload canary fields (unitListPriceSarBySku, originalCells) in the DOM", async () => {
+    stubFetch((url, init) => {
+      if (PRICED_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(pricedReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: reviewablePriced() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("priced-review-load");
+    await act(async () => { fireEvent.click(screen.getByTestId("priced-review-load")); });
+    await screen.findByTestId("priced-review-summary");
+
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(PRICED_REVIEW_CANARY);
+    expect(body).not.toContain(PAYLOAD_CANARY);
+    expect(body).not.toContain("unitListPriceSarBySku");
+    expect(body).not.toContain("originalCells");
+    expect(body).not.toContain("ORIGINALCELLS-CANARY");
   });
 });
 
