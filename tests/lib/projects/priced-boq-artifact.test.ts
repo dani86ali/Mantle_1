@@ -15,6 +15,7 @@ import {
   buildPricedBoqArtifactPayload,
   type CreatePricedBoqArtifactInput,
   type PricingAuthorityTrace,
+  type ConfigurationAuthorityTrace,
 } from "@/lib/projects/priced-boq-artifact";
 import {
   getProjectArtifactById,
@@ -502,6 +503,7 @@ describe("createPricedBoqArtifact - no field leakage", () => {
     "lines",
     "summary",
     "pricingAuthority",
+    "configurationAuthority",
   ];
   const ALLOWED_LINE_KEYS = [
     "sourceFormat",
@@ -722,6 +724,196 @@ describe("pricingAuthority trace - createPricedBoqArtifact", () => {
   it("omits pricingAuthority from the payload when not supplied", async () => {
     const { payload } = await createPricedBoqArtifact(input());
     expect("pricingAuthority" in payload).toBe(false);
+  });
+});
+
+function configTrace(
+  overrides: Partial<ConfigurationAuthorityTrace> = {}
+): ConfigurationAuthorityTrace {
+  return {
+    scope: "honeywell_mvp_demo_only",
+    approvalRecordId: "prompt-116-user-approved-honeywell-config-authority",
+    rulePackId: "honeywell-scope-rules",
+    rulePackVersion: "1.0.0",
+    rulePackStatus: "approved",
+    rulePackSourceScope: "honeywell_mvp_demo_only",
+    dispositionSummary: {
+      expandByApprovedRulePackCount: 5,
+      preserveKnownRulePackChildCount: 2,
+      preserveStandaloneCustomerLineCount: 1,
+      deferUnknownRelationshipCount: 0,
+    },
+    runtimeAi: false,
+    replacementAuthority: false,
+    skuSubstitutionAuthority: false,
+    unknownRelationshipsDeferred: true,
+    attachesOpticsUnderSwitches: false,
+    ...overrides,
+  };
+}
+
+describe("configurationAuthority trace - buildPricedBoqArtifactPayload", () => {
+  const expansionArt = expansionArtifact({ sourceFileIds: ["f1"] });
+  const minimalDraft = {
+    lines: [],
+    summary: {
+      inputLineCount: 0,
+      pricedLineCount: 0,
+      unpricedLineCount: 0,
+      missingDecisionCount: 0,
+      notAcceptedCount: 0,
+      missingPriceCount: 0,
+      totals: {
+        currency: "SAR" as const,
+        lineCount: 0,
+        subtotalListPriceSar: 0,
+        subtotalSellPriceSar: 0,
+        vatAmountSar: 0,
+        totalIncVatSar: 0,
+      },
+    },
+  };
+
+  function baseInput() {
+    return {
+      configurationExpansionArtifact: expansionArt,
+      sourceNormalizedBoqArtifactId: NORMALIZED_ID,
+      sourceNormalizedBoqArtifactVersion: NORMALIZED_VERSION,
+      sourceSkuResolutionArtifactId: SKU_ID,
+      sourceSkuResolutionArtifactVersion: SKU_VERSION,
+      pricingConfig: config(),
+      unitListPriceSarBySku: {},
+      draft: minimalDraft,
+    };
+  }
+
+  it("omits configurationAuthority from the payload when not supplied", () => {
+    const payload = buildPricedBoqArtifactPayload(baseInput());
+    expect("configurationAuthority" in payload).toBe(false);
+  });
+
+  it("copies a supplied configurationAuthority trace into the payload", () => {
+    const ct = configTrace();
+    const payload = buildPricedBoqArtifactPayload({ ...baseInput(), configurationAuthority: ct });
+    expect(payload.configurationAuthority).toEqual(ct);
+  });
+
+  it("does not alias the supplied trace or its dispositionSummary", () => {
+    const ct = configTrace();
+    const payload = buildPricedBoqArtifactPayload({ ...baseInput(), configurationAuthority: ct });
+    expect(payload.configurationAuthority).not.toBe(ct);
+    expect(payload.configurationAuthority!.dispositionSummary).not.toBe(ct.dispositionSummary);
+  });
+
+  it("mutating the input trace after the call does not corrupt the payload", () => {
+    const ct = configTrace();
+    const payload = buildPricedBoqArtifactPayload({ ...baseInput(), configurationAuthority: ct });
+    (ct as { approvalRecordId: string }).approvalRecordId = "mutated";
+    expect(payload.configurationAuthority!.approvalRecordId).toBe(
+      "prompt-116-user-approved-honeywell-config-authority"
+    );
+  });
+
+  it("configurationAuthority and pricingAuthority can both be present and remain distinct", () => {
+    const ct = configTrace();
+    const pt = trace();
+    const payload = buildPricedBoqArtifactPayload({
+      ...baseInput(),
+      configurationAuthority: ct,
+      pricingAuthority: pt,
+    });
+    expect(payload.configurationAuthority).toEqual(ct);
+    expect(payload.pricingAuthority).toEqual(pt);
+    expect((payload.configurationAuthority as unknown as Record<string, unknown>)["boundary"]).toBeUndefined();
+    expect((payload.pricingAuthority as unknown as Record<string, unknown>)["dispositionSummary"]).toBeUndefined();
+  });
+
+  it("does not copy stray fields from a supplied configurationAuthority trace", () => {
+    const ct = {
+      ...configTrace(),
+      pricingAuthority: true,
+      currency: "SAR",
+      boundary: { runtimeAiPricing: true },
+    } as unknown as ConfigurationAuthorityTrace;
+    const payload = buildPricedBoqArtifactPayload({ ...baseInput(), configurationAuthority: ct });
+    const copied = payload.configurationAuthority as unknown as Record<string, unknown>;
+    expect(copied.pricingAuthority).toBeUndefined();
+    expect(copied.currency).toBeUndefined();
+    expect(copied.boundary).toBeUndefined();
+  });
+});
+
+describe("configurationAuthority trace - createPricedBoqArtifact", () => {
+  it("omits configurationAuthority from the payload when the source does not carry one", async () => {
+    mockArtifact(expansionArtifact());
+    const { payload } = await createPricedBoqArtifact(input());
+    expect("configurationAuthority" in payload).toBe(false);
+  });
+
+  it("copies a valid source configurationAuthority trace into the priced_boq payload", async () => {
+    const ct = configTrace();
+    mockArtifact(expansionArtifact({ payload: expansionPayload({ configurationAuthority: ct }) }));
+    const { payload } = await createPricedBoqArtifact(input());
+    expect(payload.configurationAuthority).toEqual(ct);
+    expect(payload.configurationAuthority).not.toBe(ct);
+    expect(payload.configurationAuthority!.dispositionSummary).not.toBe(ct.dispositionSummary);
+  });
+
+  it("throws the invalid-payload error and creates no artifact when configurationAuthority is malformed", async () => {
+    const badCases: unknown[] = [
+      "bad-string",
+      42,
+      [],
+      { scope: "wrong_scope", approvalRecordId: "x", rulePackId: "r", rulePackVersion: "1", rulePackStatus: "approved", rulePackSourceScope: "s", dispositionSummary: {} },
+      { scope: "honeywell_mvp_demo_only", approvalRecordId: 99, rulePackId: "r", rulePackVersion: "1", rulePackStatus: "approved", rulePackSourceScope: "s", dispositionSummary: {} },
+      { scope: "honeywell_mvp_demo_only", approvalRecordId: "x", rulePackId: "r", rulePackVersion: "1", rulePackStatus: "candidate", rulePackSourceScope: "s", dispositionSummary: {} },
+      { scope: "honeywell_mvp_demo_only", approvalRecordId: "x", rulePackId: "r", rulePackVersion: "1", rulePackStatus: "approved", rulePackSourceScope: "s", dispositionSummary: null },
+      { ...configTrace(), runtimeAi: true },
+      { ...configTrace(), replacementAuthority: true },
+      { ...configTrace(), skuSubstitutionAuthority: true },
+      { ...configTrace(), unknownRelationshipsDeferred: false },
+      { ...configTrace(), attachesOpticsUnderSwitches: true },
+      {
+        ...configTrace(),
+        dispositionSummary: {
+          ...configTrace().dispositionSummary,
+          expandByApprovedRulePackCount: "not-a-number",
+        },
+      },
+    ];
+    for (const bad of badCases) {
+      mockArtifact(expansionArtifact({ payload: expansionPayload({ configurationAuthority: bad }) }));
+      await expect(createPricedBoqArtifact(input())).rejects.toThrow(
+        "Configuration expansion artifact payload is invalid."
+      );
+    }
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("configurationAuthority and pricingAuthority can both be present, remain distinct, and keep their nested objects separate", async () => {
+    const ct = configTrace();
+    mockArtifact(expansionArtifact({ payload: expansionPayload({ configurationAuthority: ct }) }));
+    const pt = trace();
+    const { payload } = await createPricedBoqArtifact(input({ pricingAuthority: pt }));
+    expect(payload.configurationAuthority).toEqual(ct);
+    expect(payload.pricingAuthority).toEqual(pt);
+    expect(payload.configurationAuthority!.dispositionSummary).not.toBe(ct.dispositionSummary);
+    expect(payload.pricingAuthority!.boundary).not.toBe(pt.boundary);
+  });
+
+  it("does not carry stray pricing-like fields from the source configurationAuthority", async () => {
+    const ct = {
+      ...configTrace(),
+      pricingAuthority: true,
+      currency: "SAR",
+      boundary: { runtimeAiPricing: true },
+    };
+    mockArtifact(expansionArtifact({ payload: expansionPayload({ configurationAuthority: ct }) }));
+    const { payload } = await createPricedBoqArtifact(input());
+    const copied = payload.configurationAuthority as unknown as Record<string, unknown>;
+    expect(copied.pricingAuthority).toBeUndefined();
+    expect(copied.currency).toBeUndefined();
+    expect(copied.boundary).toBeUndefined();
   });
 });
 

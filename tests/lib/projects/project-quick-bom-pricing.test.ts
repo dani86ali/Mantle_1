@@ -31,7 +31,7 @@ import {
 } from "@/lib/projects/priced-boq-artifact";
 import { getHoneywellDemoUnitListPriceSarBySku } from "@/lib/projects/honeywell-demo-pricing-fixture";
 import { getHoneywellDemoPricingAuthorityProfile } from "@/lib/projects/honeywell-demo-pricing-authority";
-import type { PricingAuthorityTrace } from "@/lib/projects/priced-boq-artifact";
+import type { PricingAuthorityTrace, ConfigurationAuthorityTrace } from "@/lib/projects/priced-boq-artifact";
 
 const getProjectMock = vi.mocked(getProjectById);
 const createMock = vi.mocked(createPricedBoqArtifact);
@@ -625,6 +625,110 @@ describe("createProjectQuickBomPricedBoq - immutability and copies", () => {
     expect(serviceResult.payload.sourceFileIds).toEqual([FILE_ID]);
     expect(serviceResult.payload.summary.totals.totalIncVatSar).toBe(276);
     expect(serviceResult.payload.summary.pricedLineCount).toBe(1);
+  });
+});
+
+const CONFIG_AUTHORITY_TRACE: ConfigurationAuthorityTrace = {
+  scope: "honeywell_mvp_demo_only",
+  approvalRecordId: "prompt-116-user-approved-honeywell-config-authority",
+  rulePackId: "honeywell-scope-rules",
+  rulePackVersion: "1.0.0",
+  rulePackStatus: "approved",
+  rulePackSourceScope: "honeywell_mvp_demo_only",
+  dispositionSummary: {
+    expandByApprovedRulePackCount: 5,
+    preserveKnownRulePackChildCount: 2,
+    preserveStandaloneCustomerLineCount: 1,
+    deferUnknownRelationshipCount: 0,
+  },
+  runtimeAi: false,
+  replacementAuthority: false,
+  skuSubstitutionAuthority: false,
+  unknownRelationshipsDeferred: true,
+  attachesOpticsUnderSwitches: false,
+};
+
+describe("createProjectQuickBomPricedBoq - configurationAuthority trace", () => {
+  it("payloadSummary includes a copied configurationAuthority when the delegate payload has one", async () => {
+    const payloadWithConfig = {
+      ...makePricedPayload(),
+      configurationAuthority: { ...CONFIG_AUTHORITY_TRACE, dispositionSummary: { ...CONFIG_AUTHORITY_TRACE.dispositionSummary } },
+    };
+    createMock.mockResolvedValue(makeServiceResult({ payload: payloadWithConfig }));
+
+    const result = await createProjectQuickBomPricedBoq(input());
+
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.payloadSummary.configurationAuthority).toEqual(CONFIG_AUTHORITY_TRACE);
+  });
+
+  it("omits configurationAuthority from payloadSummary when the delegate payload has none", async () => {
+    const result = await createProjectQuickBomPricedBoq(input());
+
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect("configurationAuthority" in result.payloadSummary).toBe(false);
+  });
+
+  it("mutating returned payloadSummary.configurationAuthority.dispositionSummary does not corrupt the delegate payload", async () => {
+    const payloadWithConfig = {
+      ...makePricedPayload(),
+      configurationAuthority: { ...CONFIG_AUTHORITY_TRACE, dispositionSummary: { ...CONFIG_AUTHORITY_TRACE.dispositionSummary } },
+    };
+    const serviceResult = makeServiceResult({ payload: payloadWithConfig });
+    createMock.mockResolvedValue(serviceResult);
+
+    const result = await createProjectQuickBomPricedBoq(input());
+    if (result.status !== "ok") throw new Error("unreachable");
+    (result.payloadSummary.configurationAuthority!.dispositionSummary as Record<string, unknown>).expandByApprovedRulePackCount = 999;
+    expect(serviceResult.payload.configurationAuthority!.dispositionSummary.expandByApprovedRulePackCount).toBe(5);
+  });
+
+  it("caller-supplied stray configurationAuthority in input cannot influence the delegate", async () => {
+    const sneaky = {
+      ...input(),
+      configurationAuthority: { scope: "attacker", approvalRecordId: "evil" },
+    } as unknown as CreateProjectQuickBomPricedBoqInput;
+
+    await createProjectQuickBomPricedBoq(sneaky);
+
+    const arg = createMock.mock.calls[0][0];
+    expect("configurationAuthority" in arg).toBe(false);
+  });
+
+  it("configurationAuthority and pricingAuthority are both present and remain separate", async () => {
+    const payloadWithBoth = {
+      ...makePricedPayload(),
+      configurationAuthority: { ...CONFIG_AUTHORITY_TRACE, dispositionSummary: { ...CONFIG_AUTHORITY_TRACE.dispositionSummary } },
+    };
+    createMock.mockResolvedValue(makeServiceResult({ payload: payloadWithBoth }));
+
+    const result = await createProjectQuickBomPricedBoq(input());
+    if (result.status !== "ok") throw new Error("unreachable");
+
+    expect(result.payloadSummary.configurationAuthority).toEqual(CONFIG_AUTHORITY_TRACE);
+    expect(result.payloadSummary.pricingAuthority).toEqual(PRICING_AUTHORITY_TRACE);
+    expect(result.payloadSummary.configurationAuthority).not.toBe(result.payloadSummary.pricingAuthority);
+    expect((result.payloadSummary.configurationAuthority as unknown as Record<string, unknown>)["boundary"]).toBeUndefined();
+    expect((result.payloadSummary.pricingAuthority as unknown as Record<string, unknown>)["dispositionSummary"]).toBeUndefined();
+  });
+
+  it("no lines/evidence/acceptedLines/originalCells/amounts/unitListPriceSarBySku leak even when configurationAuthority is present", async () => {
+    const payloadWithConfig = {
+      ...makePricedPayload(),
+      configurationAuthority: { ...CONFIG_AUTHORITY_TRACE, dispositionSummary: { ...CONFIG_AUTHORITY_TRACE.dispositionSummary } },
+    };
+    createMock.mockResolvedValue(makeServiceResult({ payload: payloadWithConfig }));
+
+    const result = await createProjectQuickBomPricedBoq(input());
+    const json = JSON.stringify(result);
+    expect(json).not.toContain(SECRET_PRICE_SKU);
+    expect(json).not.toContain(SECRET_LINE_SKU);
+    expect(json).not.toContain(SECRET_CELL);
+    for (const key of ["lines", "amounts", "unitListPriceSarBySku", "acceptedLines", "rejectedLines", "originalCells", "evidence"]) {
+      if (result.status === "ok") {
+        expect(key in result.payloadSummary).toBe(false);
+      }
+    }
   });
 });
 

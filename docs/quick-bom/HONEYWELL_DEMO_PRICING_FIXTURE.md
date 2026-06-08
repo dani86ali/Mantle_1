@@ -172,3 +172,23 @@ Prompt 119 Honeywell demo pricing authority profile (see above).
 - `configurationAuthority: false` - configuration authority stays strictly separate.
 - Missing prices remain reported (`missingPricesReported: true`) and are never
   invented or substituted.
+
+## Prompt 121 - Configuration authority provenance carried into priced_boq artifacts
+
+`priced_boq` artifacts now carry both a `pricingAuthority` trace and, when the
+approved `configuration_expansion` source artifact carried one, a `configurationAuthority`
+trace.
+
+- **`configurationAuthority`** comes from the approved `configuration_expansion` artifact
+  payload. It records which Honeywell MVP demo rule pack governed expansion (who decided
+  which lines belong together). It is copied verbatim from the source artifact and
+  deep-copied so the `priced_boq` payload cannot alias the source.
+- **`pricingAuthority`** comes from the approved Honeywell demo pricing authority profile
+  (Prompt 119/120). It records that unit prices came from the committed demo fixture.
+- The two authorities remain **strictly separate**: `configurationAuthority` carries no
+  pricing fields; `pricingAuthority` carries no configuration or rule-pack fields.
+- No pricing math, catalog lookup, SKU replacement, runtime AI, or export behavior changes.
+- If the approved `configuration_expansion` artifact has no `configurationAuthority` field,
+  the `priced_boq` payload omits it silently and continues normally.
+- A malformed `configurationAuthority` on the source artifact fails with the existing
+  `"Configuration expansion artifact payload is invalid."` error and no artifact is created.

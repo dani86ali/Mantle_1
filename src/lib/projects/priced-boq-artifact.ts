@@ -40,6 +40,33 @@ const EXPANSION_NOT_APPROVED_MESSAGE = "Configuration expansion artifact must be
 const RULE_PACK_NOT_APPROVED_MESSAGE = "Configuration expansion artifact requires an approved rule pack.";
 
 /**
+ * Lean configuration authority trace copied from an approved `configuration_expansion`
+ * artifact payload into `PricedBoqArtifactPayload` as provenance. Structurally
+ * compatible with `ConfigurationAuthorityTrace` in config-expansion-types. This
+ * module defines it independently so priced_boq provenance does not couple to the
+ * config-expansion module family. Configuration authority only - no pricing fields.
+ */
+export interface ConfigurationAuthorityTrace {
+  scope: "honeywell_mvp_demo_only";
+  approvalRecordId: string;
+  rulePackId: string;
+  rulePackVersion: string;
+  rulePackStatus: "approved";
+  rulePackSourceScope: string;
+  dispositionSummary: {
+    expandByApprovedRulePackCount: number;
+    preserveKnownRulePackChildCount: number;
+    preserveStandaloneCustomerLineCount: number;
+    deferUnknownRelationshipCount: number;
+  };
+  runtimeAi: false;
+  replacementAuthority: false;
+  skuSubstitutionAuthority: false;
+  unknownRelationshipsDeferred: true;
+  attachesOpticsUnderSwitches: false;
+}
+
+/**
  * Lean pricing authority trace embedded in `PricedBoqArtifactPayload` as provenance.
  * Built by the caller (project-quick-bom-pricing) from the approved Honeywell demo
  * pricing authority profile and passed in; this module never imports that profile.
@@ -98,6 +125,12 @@ export type PricedBoqArtifactPayload = {
   summary: PricedBoqDraftSummary;
   /** Copied pricing authority trace from the caller; present only when supplied. */
   pricingAuthority?: PricingAuthorityTrace;
+  /**
+   * Copied configuration authority trace from the approved source
+   * `configuration_expansion` artifact payload; present only when the source carried
+   * one. Configuration authority only - no pricing fields.
+   */
+  configurationAuthority?: ConfigurationAuthorityTrace;
 };
 
 /** Input for {@link createPricedBoqArtifact}. */
@@ -133,6 +166,11 @@ export interface BuildPricedBoqArtifactPayloadInput {
   draft: PricedBoqDraft;
   /** Optional pricing authority trace to persist as provenance. */
   pricingAuthority?: PricingAuthorityTrace;
+  /**
+   * Optional configuration authority trace copied from the approved
+   * configuration_expansion source artifact payload; never built here.
+   */
+  configurationAuthority?: ConfigurationAuthorityTrace;
 }
 
 /** A fresh copy of only the SAR price entries applied to priced lines. */
@@ -191,6 +229,11 @@ export function buildPricedBoqArtifactPayload(
           },
         }
       : {}),
+    ...(input.configurationAuthority !== undefined
+      ? {
+          configurationAuthority: copyConfigurationAuthorityTrace(input.configurationAuthority),
+        }
+      : {}),
   };
 }
 
@@ -202,6 +245,59 @@ interface ParsedConfigurationExpansionPayload {
   sourceSkuResolutionArtifactId: string;
   sourceSkuResolutionArtifactVersion: number;
   rulePackStatus: string;
+  configurationAuthority?: ConfigurationAuthorityTrace;
+}
+
+/** Guard: true iff v is a valid ConfigurationAuthorityTrace object. */
+function isConfigurationAuthorityTrace(v: unknown): v is ConfigurationAuthorityTrace {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const t = v as Record<string, unknown>;
+  const dispositionSummary = t.dispositionSummary as Record<string, unknown> | undefined;
+  return (
+    t.scope === "honeywell_mvp_demo_only" &&
+    typeof t.approvalRecordId === "string" &&
+    typeof t.rulePackId === "string" &&
+    typeof t.rulePackVersion === "string" &&
+    t.rulePackStatus === "approved" &&
+    typeof t.rulePackSourceScope === "string" &&
+    typeof dispositionSummary === "object" &&
+    dispositionSummary !== null &&
+    !Array.isArray(dispositionSummary) &&
+    typeof dispositionSummary.expandByApprovedRulePackCount === "number" &&
+    typeof dispositionSummary.preserveKnownRulePackChildCount === "number" &&
+    typeof dispositionSummary.preserveStandaloneCustomerLineCount === "number" &&
+    typeof dispositionSummary.deferUnknownRelationshipCount === "number" &&
+    t.runtimeAi === false &&
+    t.replacementAuthority === false &&
+    t.skuSubstitutionAuthority === false &&
+    t.unknownRelationshipsDeferred === true &&
+    t.attachesOpticsUnderSwitches === false
+  );
+}
+
+/** Copy only the approved configuration-authority trace fields; never spread extras. */
+function copyConfigurationAuthorityTrace(
+  trace: ConfigurationAuthorityTrace
+): ConfigurationAuthorityTrace {
+  return {
+    scope: trace.scope,
+    approvalRecordId: trace.approvalRecordId,
+    rulePackId: trace.rulePackId,
+    rulePackVersion: trace.rulePackVersion,
+    rulePackStatus: trace.rulePackStatus,
+    rulePackSourceScope: trace.rulePackSourceScope,
+    dispositionSummary: {
+      expandByApprovedRulePackCount: trace.dispositionSummary.expandByApprovedRulePackCount,
+      preserveKnownRulePackChildCount: trace.dispositionSummary.preserveKnownRulePackChildCount,
+      preserveStandaloneCustomerLineCount: trace.dispositionSummary.preserveStandaloneCustomerLineCount,
+      deferUnknownRelationshipCount: trace.dispositionSummary.deferUnknownRelationshipCount,
+    },
+    runtimeAi: trace.runtimeAi,
+    replacementAuthority: trace.replacementAuthority,
+    skuSubstitutionAuthority: trace.skuSubstitutionAuthority,
+    unknownRelationshipsDeferred: trace.unknownRelationshipsDeferred,
+    attachesOpticsUnderSwitches: trace.attachesOpticsUnderSwitches,
+  };
 }
 
 /** Validate and narrow a `configuration_expansion` payload, throwing the exact message otherwise. */
@@ -215,6 +311,7 @@ function parseConfigurationExpansionPayload(
     sourceSkuResolutionArtifactId,
     sourceSkuResolutionArtifactVersion,
     rulePackStatus,
+    configurationAuthority,
   } = payload;
   if (
     !Array.isArray(acceptedLines) ||
@@ -226,6 +323,9 @@ function parseConfigurationExpansionPayload(
   ) {
     throw new Error(INVALID_EXPANSION_PAYLOAD_MESSAGE);
   }
+  if (configurationAuthority !== undefined && !isConfigurationAuthorityTrace(configurationAuthority)) {
+    throw new Error(INVALID_EXPANSION_PAYLOAD_MESSAGE);
+  }
   return {
     acceptedLines: acceptedLines as ConfigurationExpansionDraftLine[],
     sourceNormalizedBoqArtifactId,
@@ -233,6 +333,9 @@ function parseConfigurationExpansionPayload(
     sourceSkuResolutionArtifactId,
     sourceSkuResolutionArtifactVersion,
     rulePackStatus,
+    ...(configurationAuthority !== undefined
+      ? { configurationAuthority: copyConfigurationAuthorityTrace(configurationAuthority) }
+      : {}),
   };
 }
 
@@ -283,6 +386,7 @@ export async function createPricedBoqArtifact(
     unitListPriceSarBySku,
     draft,
     pricingAuthority: input.pricingAuthority,
+    configurationAuthority: parsed.configurationAuthority,
   });
   const artifact = await createProjectArtifactVersion({
     projectId,

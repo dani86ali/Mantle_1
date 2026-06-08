@@ -43,6 +43,7 @@ import {
   type CreatePricedBoqArtifactResult,
   type PricedBoqArtifactPayload,
   type PricingAuthorityTrace,
+  type ConfigurationAuthorityTrace,
 } from "@/lib/projects/priced-boq-artifact";
 import { getHoneywellDemoUnitListPriceSarBySku } from "@/lib/projects/honeywell-demo-pricing-fixture";
 import { getHoneywellDemoPricingAuthorityProfile } from "@/lib/projects/honeywell-demo-pricing-authority";
@@ -157,6 +158,12 @@ export interface QuickBomPricingPayloadSummary {
   pricingSource: QuickBomPricingSourceSummary;
   /** Copied pricing authority trace from the artifact payload; present only when the artifact carries one. */
   pricingAuthority?: PricingAuthorityTrace;
+  /**
+   * Copied configuration authority trace from the priced_boq artifact payload;
+   * present only when the source configuration_expansion artifact carried one.
+   * Configuration authority only - separate from pricingAuthority and pricingSource.
+   */
+  configurationAuthority?: ConfigurationAuthorityTrace;
   lineCount: number;
   summary: QuickBomPricingSummary;
 }
@@ -234,6 +241,14 @@ function toPayloadSummary(payload: PricedBoqArtifactPayload): QuickBomPricingPay
     pricingSource: { ...PRICING_SOURCE },
     ...(payload.pricingAuthority !== undefined
       ? { pricingAuthority: { ...payload.pricingAuthority, boundary: { ...payload.pricingAuthority.boundary } } }
+      : {}),
+    ...(payload.configurationAuthority !== undefined
+      ? {
+          configurationAuthority: {
+            ...payload.configurationAuthority,
+            dispositionSummary: { ...payload.configurationAuthority.dispositionSummary },
+          },
+        }
       : {}),
     lineCount: payload.lineCount,
     summary: copyPricingSummary(payload.summary),
