@@ -96,3 +96,24 @@ source constant `HONEYWELL_DEMO_CATALOG_LOOKUP_SOURCE =
 "honeywell_mvp_demo_catalog_supplement"`, so matches resolved via the Honeywell overlay
 now report that source instead of `local_stc_historical_mock`. Default local mock
 lookup behavior is unchanged.
+
+## Prompt 110: Subset SKU Resolution Evidence
+
+A subset/reordered BoQ containing approved Honeywell demo SKUs resolves deterministically
+through the explicit Honeywell overlay via `buildSkuResolutionDraft` with
+`catalogIndex: getHoneywellDemoCatalogLookupIndex()`.
+
+Key properties of subset resolution:
+
+- The default local mock catalog still returns `not_found` for known missing Honeywell
+  parent SKUs (`CW9178I-CFG`, `C9300X-48HX-A`, `C9300L-24P-4X-A`).
+- The overlay resolves those same SKUs as `needs_review` suggestions only; no SKU is
+  auto-accepted.
+- Input row order is preserved exactly and each resolved line gets one same-SKU suggestion.
+- `summary.catalogSource` is `"honeywell_mvp_demo_catalog_supplement"`.
+- `acceptedCount` and `rejectedCount` are always 0 in a draft.
+- No `acceptedSku`, `decidedBy`, or `decidedAt` fields are set.
+- Optic `SFP-10G-LR-S=` remains a standalone input row suggestion with no parent/child
+  fields attached.
+- No pricing, configuration-expansion, parent/child, replacement, or substitution fields
+  appear on any decision.
