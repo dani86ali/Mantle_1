@@ -226,3 +226,29 @@ Key facts:
 - The configuration_expansion draft starts `needs_review` and requires explicit
   engineer line-level review before approval.
 - No artifact payloads or uploaded SKU details are exposed in the page UI.
+
+## Prompt 115: SKU Capability Profile
+
+Prompt 115 adds `src/lib/projects/honeywell-demo-sku-capability.ts`, a pure read-only
+capability profile for the approved Honeywell MVP demo SKU set.
+
+Key facts:
+
+- The profile joins the existing Honeywell demo catalog supplement, the approved
+  Batch 1+2+3 rule pack, and the demo pricing fixture to report per-SKU coverage.
+  It does not change runtime behavior and creates no new authority.
+- For every known Honeywell MVP demo catalog SKU the profile reports catalog coverage,
+  pricing coverage, configuration-expansion parent coverage, child coverage, and
+  standalone optic status.
+- Parent expansion coverage and standalone optic treatment remain exactly as already
+  approved and proven in Prompts 112-114. The two standalone optics (`SFP-10G-LR-S=`
+  and `SFP-10/25G-LR-S=`) are `standalone_customer_boq_line` with no expansion
+  children; they are not attached under switches.
+- Unknown or out-of-scope SKUs are explicitly deferred: `kind: "unknown_deferred"`,
+  `catalogCovered: false`, `pricingCovered: false`, `deferred: true`. No silent
+  substitution or normalization is performed.
+- No pricing math (sell price, margin, markup, VAT), replacement, substitution,
+  accepted-SKU, review-decision, or approval fields appear on any capability row.
+- The module imports only the three approved demo sources and contains no DB, API/UI,
+  engine, coordinator, adapter, AI/LLM, workbook/export, artifact store, route,
+  or filesystem code. It is ASCII-only.
