@@ -2,7 +2,10 @@
 
 Execution tracker only. `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md`
 is the architecture source of truth; this backlog never overrides it and is not a
-planning document. Last refreshed by Prompt 98 to reflect the committed repo state
+planning document. Last refreshed by Prompt 132 after Prompts 104-131 (P104-P114
+Honeywell demo catalog supplement explicit opt-in and authority-safe UI wiring;
+P126-P131 line-level SKU/config/pricing review UI screens and full seven-line Honeywell
+app proof). Prior closure: refreshed by Prompt 98 to reflect the committed repo state
 after Prompts 83-97 (the broader Quick BoM app route/action chain), closing the
 Prompt 83-98 app-readiness sequence. The Prompt 65-82 seeded Honeywell closure record
 is preserved below: the proven in-memory P66-P71 Honeywell Quick BoM spine (active
@@ -28,8 +31,13 @@ with material missing-SKU gaps).
 This backlog remains an execution tracker, not the architecture source of truth. The
 Prompt 97 app-level arbitrary-Project proof runs the current app/routes/services for a
 non-seeded quick_bom Project under the test harness/in-memory store on a reduced
-catalog-resolvable CSV subset. It does NOT prove production readiness; the honest
-limitations are listed in Section 5E and the remaining gaps in Sections 6-7.
+catalog-resolvable CSV subset. Prompts 104-114 added explicit Honeywell demo catalog
+supplement opt-in and authority-safe UI wiring. Prompts 126-131 added line-level
+SKU/config/pricing review UI screens (`src/app/projects/[id]/quick-bom/page.tsx`,
+tested by `tests/ui/project-quick-bom-page.test.tsx`) and proved the full seven-line
+Honeywell BoQ upload through the app UI/panels with committed fixture totals (Section 5F).
+Prompt 132 is this docs/test alignment refresh. None of these proofs claim production
+readiness; honest remaining gaps are in Sections 6-7.
 
 ## 2. Status
 
@@ -92,9 +100,9 @@ is implemented as pure helpers plus narrow DB-backed services under
 this spine end to end (Section 5B). A seeded Honeywell app-level surface wraps the
 spine for the full Honeywell demo Project (Section 5D), and the broader app
 route/action chain now exists for a non-seeded arbitrary quick_bom Project
-(Section 5E). Real DB provisioning, manual browser QA, full uploaded Honeywell
-catalog coverage through real SKU resolution, and line-level review UI remain open
-(Sections 6-7).
+(Section 5E). Line-level SKU/config/pricing review UI now exists (P126-P131,
+Section 5F). Real DB provisioning, manual browser QA, and full uploaded Honeywell
+catalog coverage through real SKU resolution remain open (Sections 6-7).
 
 Project/stage/artifact foundation (confirmed):
 
@@ -434,11 +442,12 @@ subset; it does not prove full uploaded Honeywell customer BoQ catalog coverage 
 real SKU resolution.
 
 In the P97 flow the SKU and configuration line reviews are made through direct route
-calls (`.../sku-resolution/review`, `.../configuration-expansion/review`) - the UI shows
-a line-review-required notice, not a per-line review screen - while priced review is
-driven UI-only and export approval runs through the UI. The seeded Honeywell fixture
-(Section 5D) remains the full 60-row Honeywell CCW parity demo path; the arbitrary
-Project E2E is the route/action chain proof on reduced catalog-resolvable input.
+calls (`.../sku-resolution/review`, `.../configuration-expansion/review`) - the UI
+showed a line-review-required notice at P97 time; line-level review UI screens were
+added in P126-P131 (Section 5F). Priced review is driven UI-only and export approval
+runs through the UI. The seeded Honeywell fixture (Section 5D) remains the full 60-row
+Honeywell CCW parity demo path; the arbitrary Project E2E is the route/action chain
+proof on reduced catalog-resolvable input.
 
 This app-level arbitrary-Project proof does NOT prove:
 
@@ -447,8 +456,7 @@ This app-level arbitrary-Project proof does NOT prove:
 - full uploaded Honeywell BoQ through real SKU resolution;
 - full local catalog coverage for Honeywell parent SKUs;
 - production pricing authority;
-- broad Cisco-general configuration authority;
-- line-level SKU/config/pricing review UI.
+- broad Cisco-general configuration authority.
 
 Prompt 102 added a read-only Honeywell catalog coverage audit
 (`docs/quick-bom/HONEYWELL_CATALOG_COVERAGE_AUDIT.md`,
@@ -471,6 +479,36 @@ pricing authority and configuration authority stay separate; Batch 4 is a decisi
 record only; optics are standalone customer BoQ lines; replacements remain deferred
 with no silent substitution.
 
+## 5F. UI Hardening And Full App Proof (P104-P131)
+
+Prompts 104-114 added explicit Honeywell demo catalog supplement opt-in and
+authority-safe UI wiring. The catalog supplement is explicit opt-in only and demo
+scoped; it grants no production pricing or catalog authority.
+
+Prompts 126-131 added line-level SKU/config/pricing review UI screens to
+`src/app/projects/[id]/quick-bom/page.tsx` and proved the full seven-line Honeywell
+BoQ upload through the app UI/panels under the test harness/in-memory store.
+Test file: `tests/ui/project-quick-bom-page.test.tsx`.
+
+Prompt 131 full seven-line Honeywell app proof (committed fixture totals):
+
+- 7 normalized customer rows
+- 7 accepted SKU review decisions
+- 60 accepted configuration lines
+- 60 priced lines
+- 60 export rows
+- no unpriced lines / no missing prices
+- totalPriceSar 2185708.76
+- totalIncVatSar 2513565.07
+
+The proof runs under the test harness/in-memory store, not live/provisioned DB or real
+browser QA. Authority boundaries unchanged: Honeywell demo catalog supplement is
+explicit opt-in only and demo scoped; runtime AI performs no SKU/config/pricing
+decisions; configuration authority is approved Honeywell Batch 1+2+3 only; pricing
+authority is committed Honeywell demo fixture only. Live/provisioned production DB run
+remains unverified; manual browser QA remains not run. Batch 4 remains a decision
+record only; optics remain standalone customer BoQ lines; no silent SKU replacement.
+
 ## 6. Demo Blockers
 
 Priority key: P0 blocks a credible demo. P1 means the demo can proceed with a
@@ -483,15 +521,15 @@ see Sections 5B-5D for the proven path.
 | B1 | P0 | Orchestration | End-to-end Quick BoM wiring at the runner level and app route/action level. | The pure in-memory runner `src/lib/projects/quick-bom-runner.ts` composes the spine end to end and is proven by `honeywell-quick-bom-demo-e2e.test.ts` (Section 5B). A seeded app-level surface drives the Honeywell demo Project (Section 5D, P77-P81), and the P83-P97 app route/action chain proves a non-seeded arbitrary Project path on reduced catalog-resolvable input (Section 5E). | The demo path runs in-memory via the runner; the seeded demo runs through the app routes/UI; the arbitrary route/action chain is proven under the test harness/in-memory store. | Done at runner level (P67); seeded-demo app surface done (P77-P81); route/action chain done (P83-P97); production DB/browser hardening still open (B10/B12) |
 | B2 | P0 | Expansion pack selection | Active runtime selector/composer for the Batch 1+2+3 packs. | `getHoneywellMvpConfigExpansionRulePack` (`src/lib/projects/honeywell-config-expansion-rule-pack.ts`) reads the committed Batch 1+2+3 approved pack JSON and composes them via `composeApprovedConfigExpansionRulePacks` into the active pack that `buildConfigurationExpansionDraft` accepts. | Expansion now runs from disk-loaded approved packs; pricing and export are reachable. Composition only - no new approval, no pricing. | Done (P66) |
 | B3 | P0 | Demo fixture | A reproducible Honeywell demo run through the spine. | The committed fixture `data/quick-bom/honeywell-demo-pricing-fixture.json` plus the runner carry one Honeywell-shaped run `normalize-input -> expand -> review -> price -> Mantle model`, proven by the P71 e2e test. A persisted Honeywell demo Project fixture now seeds the same run through the Project stores (`honeywell-demo-project-fixture.ts`, P78), exercised against an in-memory store in the P81 app E2E. Real DB provisioning/migrations remain open (B10). | The in-memory demo and the seeded demo Project are reproducible and proven; a run against a provisioned real DB is still verification work. | In-memory demo proven (P68/P71); seeded demo Project present (P78); real DB provisioning still open (B10) |
-| B4 | P1 | Review surfaces | Product-facing review/approval surface for the approval-gated Quick BoM artifacts. | A review/approval service (`project-quick-bom-approval.ts`, P79) and POST route (`approvals/route.ts`) record an approve/reject decision against an EXACT artifact version for the four gated types, and the UI page (`page.tsx`, P80/P96) offers approve/reject plus the workflow action rail; proven by the P81 and P97 app E2Es. Per-line SKU/config review routes (`.../sku-resolution/review` P87, `.../configuration-expansion/review` P89) and the priced review route (`.../priced-boq/review` P91) exist, but P97 drives the SKU/config line reviews via direct route calls and the UI shows a line-review-required notice, not a per-line review screen. | Reviewers can approve/reject the gated artifacts and record per-line SKU/config decisions over the routes; line-level review UI screens remain future. | Minimally present (P79/P80); per-line review routes present (P87/P89/P91); line-level review UI later/post-MVP |
-| B5 | P1 | Orchestration | Driving the spine no longer needs hand-built artifacts. | The runner advances input -> expand -> review -> price -> Mantle model deterministically; `quick-bom-readiness.ts` remains a read-only report alongside it. The P77-P81 seeded-demo app surface renders readiness for the Honeywell demo Project, and the P83-P97 route/action chain drives upload -> normalize -> review -> price -> export -> download for a non-seeded arbitrary Project under test. | Operator no longer hand-assembles each step in-memory; seeded and reduced arbitrary app flows have driver/readiness surfaces. Production DB/browser hardening and line-level review UI remain future. | Done at runner level (P67); seeded-demo readiness surface done (P77-P81); arbitrary route/action chain done (P83-P97) |
+| B4 | P1 | Review surfaces | Product-facing review/approval surface for the approval-gated Quick BoM artifacts. | A review/approval service (`project-quick-bom-approval.ts`, P79) and POST route (`approvals/route.ts`) record an approve/reject decision against an EXACT artifact version for the four gated types, and the UI page (`page.tsx`, P80/P96) offers approve/reject plus the workflow action rail; proven by the P81 and P97 app E2Es. Per-line SKU/config review routes (`.../sku-resolution/review` P87, `.../configuration-expansion/review` P89) and the priced review route (`.../priced-boq/review` P91) exist. Line-level SKU/config/pricing review UI screens now exist (P126-P131, `tests/ui/project-quick-bom-page.test.tsx`). | Reviewers can approve/reject gated artifacts and record per-line SKU/config decisions; line-level review UI now exists (P126-P131). | Minimally present (P79/P80); per-line review routes present (P87/P89/P91); line-level review UI done (P126-P131) |
+| B5 | P1 | Orchestration | Driving the spine no longer needs hand-built artifacts. | The runner advances input -> expand -> review -> price -> Mantle model deterministically; `quick-bom-readiness.ts` remains a read-only report alongside it. The P77-P81 seeded-demo app surface renders readiness for the Honeywell demo Project, and the P83-P97 route/action chain drives upload -> normalize -> review -> price -> export -> download for a non-seeded arbitrary Project under test. | Operator no longer hand-assembles each step in-memory; seeded and reduced arbitrary app flows have driver/readiness surfaces. Production DB/browser hardening remains open; line-level review UI is done (P126-P131). | Done at runner level (P67); seeded-demo readiness surface done (P77-P81); arbitrary route/action chain done (P83-P97) |
 | B6 | P1 | Staleness | Upstream changes do not automatically mark downstream artifacts stale at runtime. | `staleness.ts planStaleArtifactUpdates` is pure planning with no caller in `src` (grep); `project-approval-store.ts` and `project-artifact-store.ts` explicitly do not propagate staleness. | Regenerating an upstream artifact mid-demo leaves stale downstream artifacts looking valid; the canonical "auto-stale" rule is not enforced. | later/post-MVP |
 | B7 | P1 | Demo data | Committed SAR price source and Mantle category map for the Honeywell scope. | The committed demo fixture supplies a SAR `unitListPriceSarBySku` map and a SKU->Mantle-category map for exactly the 50 demo SKUs (loader `honeywell-demo-pricing-fixture.ts`); the P71 e2e test prices all 60 lines with correct category totals and no warnings. Fixture pricing is temporary demo-fixture evidence only, never production authority (Section 3). | Pricing and category totals are correct for the Honeywell demo scope. | Done (P68) |
 | B8 | P1 | Mantle export tests | Real-input Mantle export proof for the Honeywell shape. | `honeywell-quick-bom-demo-e2e.test.ts` writes the Honeywell Mantle model to a temporary workbook and re-opens it to assert rows, order, category footers, and totals against the committed template. Marafiq/EnergyTech real-input export tests are still not present. | Honeywell "customer-ready without manual reformatting" is now proven; other customer formats remain unproven. | Done for Honeywell (P71); other formats later |
 | B9 | P2 | Catalog coverage | SKU resolution resolves only against a committed local STC mock catalog; Prompt 102 verified which Honeywell-scope SKUs that mock resolves and misses. | `catalog-lookup.ts` reads `getCatalogMock()` (`LOCAL_CATALOG_SOURCE = local_stc_historical_mock`); exact + normalized only, no fuzzy/AI. The read-only Prompt 102 audit (`docs/quick-bom/HONEYWELL_CATALOG_COVERAGE_AUDIT.md`, `src/lib/projects/honeywell-catalog-coverage-audit.ts`, `tests/lib/projects/honeywell-catalog-coverage-audit.test.ts`) records customer rows 7 total, 4 matched, 3 not_found, 0 ambiguous (missing CW9178I-CFG, C9300X-48HX-A, C9300L-24P-4X-A) and broader demo SKUs 50 total, 30 matched, 20 not_found, 0 ambiguous, against local_stc_historical_mock only. Audit-only: no pricing, configuration, production catalog, or substitution authority. | A full uploaded Honeywell BoQ through real SKU resolution would still leave those missing rows unresolved unless explicit catalog-fixture/authority work is approved later; the demo runner sidesteps this by taking human-accepted SKU decisions (acceptedSku == originalSku). | Coverage verified (P102); missing-SKU gap still open |
 | B10 | P2 | DB provisioning (needs verification) | Project-table provisioning against a live/provisioned Postgres DB is unverified, though committed schema, migration SQL, and the tenant-context wrapper now exist and are unit-tested. | Committed migration SQL exists under `src/lib/db/migrations/` (the `drizzle.config.ts` `out` path), including `0004_project_state.sql`, which creates the six Project tables plus their RLS tenant-isolation policies. `withTenantDb` (`src/lib/db/index.ts`) sets PostgreSQL `app.tenant_id` transaction-locally and is covered by `tests/lib/db/tenant-db.test.ts` (P100). A live/provisioned Postgres run remains unverified: both the in-memory runner and the P97 arbitrary-flow E2E sidestep DB persistence (in-memory store). | Schema, migration SQL, and the tenant-scoped DB wrapper are committed and unit-tested, but a demo against a real provisioned DB still needs the migrations applied (e.g. `drizzle-kit` migrate/push) plus a live run; production DB readiness is still open. | Migration SQL + tenant wrapper present and unit-tested (P100); live/provisioned Postgres run still unverified |
 | B11 | P0 | Operator command | Operator-facing command/script that writes the Honeywell Mantle demo workbook on demand. | `scripts/write-honeywell-quick-bom-demo.ts` (P73) invokes `runHoneywellQuickBomDemoMantleExportModel` + `writeMantlePriceEstimateWorkbook` to write a fresh `.xlsx` an operator can open (`--output <path>`; default under the OS temp dir), and prints an operator summary derived from the computed model. | An operator can regenerate the demo workbook live without the test harness. | Done (P73) |
-| B12 | P1 | App-level wiring | Broad canonical Project/API/UI/DB flow for the Quick BoM path beyond the seeded fixture. | The app route/action chain now exists beyond the seeded demo Project: create Project (`POST /api/projects/quick-bom`), upload (`.../quick-bom/files`), normalize, SKU draft/review, configuration draft/review, pricing, pricing review, export creation, and export download, wired into `src/app/projects/[id]/quick-bom/page.tsx` and proved for an arbitrary Project by `tests/app/project-quick-bom-arbitrary-flow-e2e.test.tsx` (P83-P97, Section 5E). Still unbuilt: production DB provisioning/migrations, full customer/general production readiness, and line-level SKU/config/pricing review UI; the legacy estimate/pipeline UI remains the E2 path. | The arbitrary-Project chain runs through the app routes/UI on reduced catalog-resolvable input; production provisioning and per-line review UI remain future, and broad app wiring must not shortcut through legacy E2. | Seeded-demo surface done (P77-P81); route/action chain done (P83-P97); production provisioning + per-line review UI later |
+| B12 | P1 | App-level wiring | Broad canonical Project/API/UI/DB flow for the Quick BoM path beyond the seeded fixture. | The app route/action chain now exists beyond the seeded demo Project: create Project (`POST /api/projects/quick-bom`), upload (`.../quick-bom/files`), normalize, SKU draft/review, configuration draft/review, pricing, pricing review, export creation, and export download, wired into `src/app/projects/[id]/quick-bom/page.tsx` and proved for an arbitrary Project by `tests/app/project-quick-bom-arbitrary-flow-e2e.test.tsx` (P83-P97, Section 5E). Still unbuilt: production DB provisioning/migrations and full customer/general production readiness; the legacy estimate/pipeline UI remains the E2 path. Line-level SKU/config/pricing review UI now exists (P126-P131). | The arbitrary-Project chain runs through the app routes/UI on reduced catalog-resolvable input; production provisioning remains open; line-level review UI is done (P126-P131); broad app wiring must not shortcut through legacy E2. | Seeded-demo surface done (P77-P81); route/action chain done (P83-P97); line-level review UI done (P126-P131); production provisioning open |
 
 ## 7. Missing Functions / Product Gaps
 
@@ -519,24 +557,25 @@ SKU review:
   exact + normalized lookup is wired. Both remaining steps are suggestion-only and
   human-approved by design - never a runtime AI decision.
 - A per-line SKU review route now exists (`.../sku-resolution/review`, P87) and records
-  explicit per-line accept/reject decisions; P97 drives it via direct route calls and
-  the UI shows a line-review-required notice. There is still no line-level SKU review
-  UI screen to present individual suggestions per line.
+  explicit per-line accept/reject decisions. A line-level SKU review UI now exists in
+  `src/app/projects/[id]/quick-bom/page.tsx` (P126-P131, tested by
+  `tests/ui/project-quick-bom-page.test.tsx`).
 
 Configuration expansion review:
 - Active selector/composer exists (P66, Section 5B) and a per-line configuration
   expansion review route now exists (`.../configuration-expansion/review`, P89) that
-  records explicit per-line accept/reject decisions; P97 drives it via direct route
-  calls. Remaining gap: no line-level configuration review UI screen to present the
-  expansion draft per line.
+  records explicit per-line accept/reject decisions. A line-level configuration
+  expansion review UI now exists in `src/app/projects/[id]/quick-bom/page.tsx`
+  (P126-P131, tested by `tests/ui/project-quick-bom-page.test.tsx`).
 
 Pricing review:
 - Committed Honeywell demo SAR price map exists (P68, B7), demo-fixture authority
   only. The `priced_boq` artifact is created by `.../priced-boq` (P90) and reviewed
   through the dedicated `.../priced-boq/review` route (P91), driven UI-only by the
   Project Quick BoM page. Still missing: production catalog->SAR sourcing/conversion
-  (no production pricing authority beyond the demo fixture) and any line-level pricing
-  review UI.
+  (no production pricing authority beyond the demo fixture). A line-level pricing
+  review UI now exists in `src/app/projects/[id]/quick-bom/page.tsx` (P126-P131,
+  tested by `tests/ui/project-quick-bom-page.test.tsx`).
 
 Export approval:
 - The `export_package` artifact is created by `.../export-package` (P94) and
@@ -692,6 +731,19 @@ Completed (P83-P98) - the app-readiness closure slice, kept as the execution rec
 - P98 - App-readiness closure: this refresh (this doc and the runbook, plus their
   doc regression tests).
 
+Completed (P104-P132) - the UI/evidence hardening and docs/test alignment slice, kept
+as the execution record:
+
+- P104-P114 - Honeywell demo catalog supplement explicit opt-in and authority-safe UI
+  wiring - DONE.
+- P115-P125 - Authority/catalog hardening (closed by the existing authority story) - DONE.
+- P126-P131 - Line-level SKU/config/pricing review UI screens and full seven-line
+  Honeywell BoQ app proof - DONE (`src/app/projects/[id]/quick-bom/page.tsx`,
+  `tests/ui/project-quick-bom-page.test.tsx`; Prompt 131 proved 7 customer rows,
+  7 SKU decisions, 60 config/priced/export rows, totalPriceSar 2185708.76,
+  totalIncVatSar 2513565.07).
+- P132 - Docs/test alignment refresh (this refresh) - DONE.
+
 Post-closure follow-ups (no prompt numbers assigned; ordering is a recommendation,
 not a commitment):
 
@@ -710,8 +762,6 @@ not a commitment):
   1+2+3 packs.
 - Deterministic fuzzy SKU suggestion (step 3), then human-approved AI-assisted
   suggestion (step 4) - suggestions only, never a runtime AI decision.
-- Line-level SKU/config/pricing review UI screens (the per-line SKU/config review
-  routes exist; P97 drives them directly and priced review is UI-only).
 - Automatic staleness propagation caller so upstream changes mark downstream stale.
 - Marafiq and EnergyTech real-input/app-level paths.
 - Manual browser QA of the arbitrary-Project app flow.
@@ -724,9 +774,9 @@ not a commitment):
   only who signs off on any future Batch 4 expansion pack (optics and replacements
   stay out of expansion until then).
 - Q2: Resolved - the local command/script (P73), the seeded-demo app surface
-  (P77-P81), and the broader app route/action chain (P83-P97, Section 5E) are all
-  shipped. Production provisioning and line-level review UI remain follow-ups
-  (Section 9).
+  (P77-P81), the broader app route/action chain (P83-P97, Section 5E), and the
+  line-level SKU/config/pricing review UI (P126-P131, Section 5F) are all shipped.
+  Production provisioning remains a follow-up (Section 9).
 - Q3: The seeded-demo app E2E (P81) and the arbitrary-flow app E2E (P97) both run
   against an in-memory store; whether the first live demo uses real project DB
   persistence (requires DB provisioning, B10) or the in-memory path remains open.

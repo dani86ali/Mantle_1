@@ -4,18 +4,20 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Honeywell Quick BoM demo operator runbook
- * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 98.
+ * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 132.
  *
- * It asserts the runbook: records the Prompt 98 refresh; still defines the generated
+ * It asserts the runbook: records the Prompt 132 refresh; still defines the generated
  * Honeywell Mantle workbook correctly (what it is, and the historical/CCW/customer-input
  * files it is NOT); keeps the Prompt 73 local operator command and its manual workbook
  * checklist with the key counts/totals; preserves the Batch 4 / optics / replacement /
  * pricing / runtime-AI boundaries; documents the Prompt 81 app-level E2E proof (the real
  * GET route, POST route/service, UI page, seeded fixture, on-disk workbook, export
  * approval to customer-deliverable ready, and no payload leak); documents the Prompt 97
- * arbitrary-flow proof and its honest limitations; and no longer says app-level testing
- * is "not ready yet" or "comes later" as a blanket statement. The doc is read from disk
- * only; no runtime module is imported (a pure documentation regression test).
+ * arbitrary-flow proof and its limitations (line-level review UI now exists per P126-P131,
+ * DB/browser QA still open); documents the Prompt 131 full seven-line Honeywell app
+ * proof counts/totals; and no longer says app-level testing is "not ready yet" or
+ * "comes later" as a blanket statement. The doc is read from disk only; no runtime
+ * module is imported (a pure documentation regression test).
  */
 
 const DOC_PATH = join(
@@ -39,8 +41,8 @@ describe("honeywell quick bom demo runbook - exists and is hygienic", () => {
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 98 refresh", () => {
-    expect(docTextLower).toContain("refreshed by prompt 98");
+  it("records the Prompt 132 refresh", () => {
+    expect(docTextLower).toContain("refreshed by prompt 132");
   });
 
   it("keeps the runbook ASCII-only", () => {
@@ -207,7 +209,33 @@ describe("honeywell quick bom demo runbook - arbitrary flow proof (Prompt 97)", 
     expect(docTextLower).toContain("full local catalog coverage for honeywell parent skus");
     expect(docTextLower).toContain("no production pricing authority");
     expect(docTextLower).toContain("no broad cisco-general configuration authority");
-    expect(docTextLower).toContain("no line-level sku/config/pricing review ui screens");
+  });
+
+  it("states line-level review UI now exists per P126-P131 (not missing at P97)", () => {
+    expect(docTextLower).toContain("line-level sku/config/pricing review ui screens now exist");
+    expect(docTextLower).toContain("p126-p131");
+    expect(docText).toContain("tests/ui/project-quick-bom-page.test.tsx");
+  });
+});
+
+describe("honeywell quick bom demo runbook - Prompt 131 full seven-line app proof", () => {
+  it("documents the P131 seven-line Honeywell app proof counts", () => {
+    expect(docTextLower).toContain("7 normalized customer rows");
+    expect(docTextLower).toContain("7 accepted sku review decisions");
+    expect(docTextLower).toContain("60 accepted configuration lines");
+    expect(docTextLower).toContain("60 priced lines");
+    expect(docTextLower).toContain("60 export rows");
+    expect(docTextLower).toContain("no unpriced lines");
+  });
+
+  it("documents the P131 seven-line Honeywell app proof totals", () => {
+    expect(docText).toContain("`totalPriceSar` 2185708.76");
+    expect(docText).toContain("`totalIncVatSar` 2513565.07");
+  });
+
+  it("states the proof runs under the test harness/in-memory store", () => {
+    expect(docTextLower).toContain("test harness/in-memory store");
+    expect(docTextLower).toContain("not live/provisioned db");
   });
 });
 
@@ -220,6 +248,10 @@ describe("honeywell quick bom demo runbook - app-level status is accurate", () =
     expect(docTextLower).toContain("manual browser qa");
     expect(docTextLower).toContain("follow-up work");
     expect(docTextLower).toContain("provisioned database");
+  });
+
+  it("says line-level review UI now exists (P126-P131)", () => {
+    expect(docTextLower).toContain("line-level sku/config/pricing review ui now exists");
   });
 
   it("no longer says app-level testing is 'not ready yet' or 'comes later'", () => {

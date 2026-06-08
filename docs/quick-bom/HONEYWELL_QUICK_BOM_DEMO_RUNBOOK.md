@@ -1,13 +1,14 @@
 # Honeywell Quick BoM Demo Runbook
 
 Status: operator runbook for the Honeywell MVP Quick BoM demo (demo scope only).
-Refreshed by Prompt 98.
+Refreshed by Prompt 132.
 
 Operator-facing runbook for the Honeywell Quick BoM demo. It defines what the
 generated Honeywell Mantle workbook is, the local operator command (Prompt 73), the
 authority boundaries, the manual workbook checklist, the app-level seeded demo proof
-(Prompt 81), and the app-level arbitrary flow proof (Prompt 97). It is a demo runbook,
-not an architecture source of truth;
+(Prompt 81), the app-level arbitrary flow proof (Prompt 97), and the full seven-line
+Honeywell app proof (Prompt 131). It is a demo runbook, not an architecture source of
+truth;
 `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md` remains the source
 of truth and `docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md` is the execution tracker.
 
@@ -166,22 +167,44 @@ Honest limitations of the arbitrary flow proof (the same boundaries as the backl
 - No production pricing authority (the demo pricing fixture is demo-only authority).
 - No broad Cisco-general configuration authority (only the approved Honeywell Batch
   1+2+3 packs).
-- No line-level SKU/config/pricing review UI screens.
+- Line-level SKU/config/pricing review UI screens now exist (P126-P131,
+  `src/app/projects/[id]/quick-bom/page.tsx`, tested by
+  `tests/ui/project-quick-bom-page.test.tsx`); they were not present at P97 time.
 
 All authority boundaries in Section 3 stay intact: no runtime AI/catalog/pricing/
 configuration decisions; configuration and pricing authority stay separate; Batch 4 is
 a decision record only; optics are standalone customer BoQ lines; replacements remain
 deferred with no silent substitution.
 
-## 7. App-level manual testing status
+## 7. Prompt 131 full seven-line Honeywell app proof
+
+Prompt 131 proved the full seven-line Honeywell BoQ upload through the app UI/panels
+(line-level review screens added by P126-P131) under the test harness/in-memory store.
+`src/app/projects/[id]/quick-bom/page.tsx` now includes line-level SKU/config/pricing
+review UI; test file: `tests/ui/project-quick-bom-page.test.tsx`.
+
+Committed fixture totals from the Prompt 131 proof:
+
+- 7 normalized customer rows
+- 7 accepted SKU review decisions
+- 60 accepted configuration lines
+- 60 priced lines
+- 60 export rows
+- no unpriced lines / no missing prices
+- totalPriceSar 2185708.76
+- totalIncVatSar 2513565.07
+
+The proof runs under the test harness/in-memory store, not live/provisioned DB or real
+browser QA. Authority boundaries from Section 3 remain unchanged.
+
+## 8. App-level manual testing status
 
 The automated app-level demo paths above are proven for the seeded Honeywell demo
-Project (Prompt 81) and, for a non-seeded arbitrary quick_bom Project, by the Prompt 97
-route/action chain E2E. The app route/action chain - create Project, upload, normalize,
-SKU draft/review, configuration draft/review, pricing, pricing review, export creation,
-and download - now exists beyond the seeded fixture. Still follow-up work and not part
-of this demo slice: manual browser QA of the flow, production DB provisioning with
-migrations (a provisioned database), full uploaded Honeywell BoQ through real SKU
-resolution, production pricing authority, and line-level SKU/config/pricing review UI.
-Broad app wiring must build the canonical Project Quick BoM flow and must not shortcut
-through the legacy estimate/pipeline (E2) UI.
+Project (Prompt 81), for a non-seeded arbitrary quick_bom Project by the Prompt 97
+route/action chain E2E, and end-to-end through the UI panels by the Prompt 131
+seven-line app proof. Line-level SKU/config/pricing review UI now exists (P126-P131).
+Still follow-up work and not part of this demo slice: manual browser QA of the flow,
+production DB provisioning with migrations (a provisioned database), full uploaded
+Honeywell BoQ through real SKU resolution, and production pricing authority. Broad app
+wiring must build the canonical Project Quick BoM flow and must not shortcut through
+the legacy estimate/pipeline (E2) UI.

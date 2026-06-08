@@ -4,44 +4,26 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Quick BoM demo-readiness backlog
- * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 98 to reflect the
- * committed repo state after Prompts 83-97 (the broader Quick BoM app route/action
- * chain), closing the Prompt 83-98 app-readiness sequence.
+ * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 132 after Prompts
+ * 104-131 (P104-P114 Honeywell demo catalog supplement UI wiring; P126-P131 line-level
+ * review UI and full seven-line Honeywell app proof).
  *
- * It asserts the backlog: records Prompt 98 as the refresh and still treats the
- * planning file as the source of truth (itself an execution tracker); preserves the
- * P65-P82 seeded Honeywell closure record and adds the P83-P98 app-readiness closure;
- * names the Prompt 73 operator command, the Prompt 74-76 CCW parity/order evidence, the
- * Prompt 77-81 seeded app-level pieces, and the Prompt 83-97 app route/action chain by
- * route/file; no longer carries the stale negatives that there is no general upload
- * endpoint, no driver from an arbitrary uploaded file, or no download/serve surface;
- * documents the seven honest limitations of the P97 arbitrary-flow proof (no production
- * DB provisioning/RLS/migrations, no full uploaded Honeywell BoQ through real SKU
- * resolution, no full local catalog coverage for Honeywell parent SKUs, no production
- * pricing authority, no broad Cisco-general configuration authority, no line-level
- * SKU/config/pricing review UI, no manual browser QA); preserves the demo-only pricing
- * boundary, the pricing/configuration authority separation, the no-runtime-AI rule,
- * Batch 4 as a decision record only, standalone optics, and deferred replacements with
- * no silent substitution; and stays ASCII-only.
+ * Prior closure: Prompt 98 reflected the committed repo state after Prompts 83-97 (the
+ * broader Quick BoM app route/action chain), closing the Prompt 83-98 app-readiness
+ * sequence. Prompt 101 aligned the DB-readiness evidence; Prompt 103 aligned the
+ * catalog-coverage evidence.
  *
- * Prompt 101 additionally aligns the DB-readiness evidence after Prompt 100: the backlog
- * names the committed migration SQL under src/lib/db/migrations/ (including
- * 0004_project_state.sql) and the withTenantDb tenant-context wrapper proven by
- * tests/lib/db/tenant-db.test.ts, drops the stale "no committed migration directory" /
- * "glob empty" claim, and still says a live/provisioned Postgres run is unverified
- * (production DB readiness still open).
- *
- * Prompt 103 additionally aligns the catalog-coverage evidence after the Prompt 102
- * read-only Honeywell catalog coverage audit: the backlog drops the stale B9
- * "needs verification" / "catalog coverage is still unverified" framing, names the audit
- * doc/module/test (HONEYWELL_CATALOG_COVERAGE_AUDIT.md,
- * honeywell-catalog-coverage-audit.ts, honeywell-catalog-coverage-audit.test.ts), records
- * the verified counts (customer rows 7 total, 4 matched, 3 not_found, 0 ambiguous; broader
- * demo SKUs 50 total, 30 matched, 20 not_found, 0 ambiguous) and the missing customer
- * parent SKUs, keeps the local_stc_historical_mock source and the audit-only boundary
- * (no pricing/configuration/production-catalog/substitution authority), and still carries
- * full uploaded Honeywell BoQ through real SKU resolution as a remaining gap. B10's DB
- * "(needs verification)" / "unverified" wording legitimately stays.
+ * This test asserts the backlog: records Prompt 132 as the current refresh; keeps the
+ * planning file as source of truth; preserves the P65-P82 seeded Honeywell closure
+ * record, the P83-P98 app-readiness closure, and adds the P104-P132 UI/evidence
+ * hardening closure; no longer lists line-level SKU/config/pricing review UI as a
+ * missing gap (it now exists in src/app/projects/[id]/quick-bom/page.tsx, tested by
+ * tests/ui/project-quick-bom-page.test.tsx); documents the Prompt 131 full seven-line
+ * Honeywell app proof counts/totals; keeps DB/browser QA/staleness/future suggestion
+ * steps as open; preserves the demo-only pricing boundary, the
+ * pricing/configuration authority separation, the no-runtime-AI rule, Batch 4 as a
+ * decision record only, standalone optics, and deferred replacements with no silent
+ * substitution; and stays ASCII-only.
  *
  * The doc is read from disk and never mutated; no runtime evaluator, composer, pricing,
  * or expansion code is imported or run.
@@ -66,9 +48,11 @@ const APPROVED_PACK_FILES = [
 ];
 const BATCH4_DECISION_RECORD_FILE = "honeywell-batch4-decision-record.json";
 
-// Both closed slices are kept as the execution record: the seeded slice P65-P82
-// (Prompt 82 closure) and the app-readiness slice P83-P98 (Prompt 98 closure). Each
-// closure prompt is the refresh itself, not a "next" prompt.
+// Three closed slices are kept as the execution record: the seeded slice P65-P82
+// (Prompt 82 closure), the app-readiness slice P83-P98 (Prompt 98 closure), and the
+// UI/evidence hardening slice P104-P132 (Prompt 132 closure). Each closure prompt is
+// the refresh itself, not a "next" prompt. P104-P132 are listed as grouped ranges in
+// the doc (not individually), so only the P65-P98 range is checked individually here.
 const COMPLETED_PROMPTS = [
   "P65", "P66", "P67", "P68", "P69", "P70", "P71", "P72", "P73",
   "P74", "P75", "P76", "P77", "P78", "P79", "P80", "P81", "P82",
@@ -109,7 +93,7 @@ const P83_TO_P97_PIECES = [
   "tests/app/project-quick-bom-arbitrary-flow-e2e.test.tsx",
 ];
 
-// Stale framing that must NOT survive the Prompt 98 refresh. Matched
+// Stale framing that must NOT survive the Prompt 132 refresh. Matched
 // case-sensitively and exactly. (B10's old "no committed migration directory" /
 // "(glob empty)" DB claim is corrected by Prompt 101; its absence is checked by the
 // DB-readiness alignment block below, not here.)
@@ -134,6 +118,17 @@ const STALE_PHRASES = [
   "catalog coverage is still unverified",
   "whether the Honeywell-scope SKUs are present is unverified",
   "Honeywell SKU coverage in the local mock catalog is unverified",
+  // Prompt 132: stale line-level review UI gap statements retired (UI now exists).
+  "line-level review UI later/post-MVP",
+  "line-level review UI screens remain future",
+  "There is still no line-level SKU review",
+  "no line-level configuration review UI screen",
+  "Production DB/browser hardening and line-level review UI remain future",
+  "production provisioning and per-line review UI remain future",
+  "production provisioning + per-line review UI later",
+  "Production provisioning and line-level review UI remain follow-ups",
+  "Still unbuilt: production DB provisioning/migrations, full customer/general production readiness, and line-level SKU/config/pricing review UI",
+  "Production provisioning and line-level review UI remain follow-ups",
 ];
 
 describe("quick bom demo-readiness backlog - exists and stays an execution tracker", () => {
@@ -142,7 +137,9 @@ describe("quick bom demo-readiness backlog - exists and stays an execution track
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 98 refresh and keeps the planning file as source of truth", () => {
+  it("records the Prompt 132 refresh and keeps the planning file as source of truth", () => {
+    expect(docFlat).toContain("refreshed by prompt 132");
+    expect(docFlat).toContain("prompts 104-131");
     expect(docFlat).toContain("refreshed by prompt 98");
     expect(docFlat).toContain("prompt 83-98 app-readiness sequence");
     expect(doc).toContain("MVP_CANONICAL_PROJECT_STATE.md");
@@ -207,13 +204,20 @@ describe("quick bom demo-readiness backlog - authority separation and fixture bo
   });
 });
 
-describe("quick bom demo-readiness backlog - P65-P98 slices complete", () => {
+describe("quick bom demo-readiness backlog - P65-P132 slices complete", () => {
   it("carries P65-P98 as the closed completed execution-record list", () => {
     expect(docFlat).toContain("completed (p65-p82)");
     expect(docFlat).toContain("completed (p83-p98)");
     for (const prompt of COMPLETED_PROMPTS) {
       expect(doc, prompt).toContain(`- ${prompt} -`);
     }
+  });
+
+  it("carries the closed P104-P132 UI/evidence hardening record", () => {
+    expect(docFlat).toContain("completed (p104-p132)");
+    expect(docFlat).toContain("p104-p114");
+    expect(docFlat).toContain("p126-p131");
+    expect(docFlat).toContain("p132");
   });
 
   it("names the Prompt 73 command, P74-P76 CCW evidence, and P77-P81 app pieces", () => {
@@ -238,6 +242,32 @@ describe("quick bom demo-readiness backlog - P65-P98 slices complete", () => {
   it("frames the Honeywell Quick BoM MVP path as first target, RFP out of scope", () => {
     expect(docFlat).toContain("10-14 prompt");
     expect(docFlat).toContain("rfp remains out of current scope");
+  });
+});
+
+describe("quick bom demo-readiness backlog - Prompt 131 full seven-line app proof", () => {
+  it("documents the P131 seven-line Honeywell app proof counts", () => {
+    expect(docFlat).toContain("7 normalized customer rows");
+    expect(docFlat).toContain("7 accepted sku review decisions");
+    expect(docFlat).toContain("60 accepted configuration lines");
+    expect(docFlat).toContain("60 priced lines");
+    expect(docFlat).toContain("60 export rows");
+    expect(docFlat).toContain("no unpriced lines");
+  });
+
+  it("documents the P131 seven-line Honeywell app proof totals", () => {
+    expect(doc).toContain("totalPriceSar 2185708.76");
+    expect(doc).toContain("totalIncVatSar 2513565.07");
+  });
+
+  it("states line-level SKU/config/pricing review UI now exists", () => {
+    expect(docFlat).toContain("line-level sku/config/pricing review ui screens now exist");
+    expect(doc).toContain("tests/ui/project-quick-bom-page.test.tsx");
+  });
+
+  it("states the proof runs under the test harness/in-memory store", () => {
+    expect(docFlat).toContain("test harness/in-memory store");
+    expect(docFlat).toContain("not live/provisioned db");
   });
 });
 
