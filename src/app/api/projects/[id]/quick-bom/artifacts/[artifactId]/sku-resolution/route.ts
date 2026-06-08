@@ -4,21 +4,32 @@
  *
  * POST only. Authenticated via requireAuth; session.tenantId is the only tenant
  * authority and the route params id/artifactId are the only project/source-
- * artifact authority. The request body is ignored entirely - this action operates
- * on a persisted normalized_boq artifact. The service result maps to HTTP:
- * not_found -> 404, wrong_mode -> 409 (with the lean project summary),
- * normalized_boq_not_found -> 404, artifact_not_normalized_boq -> 409 (artifact
- * included when known), normalized_boq_not_ready -> 409 (with the source artifact
- * summary), invalid_normalized_boq_payload -> 409, ok -> 201 with
- * { artifact, payloadSummary }. An unexpected service error maps to a controlled
- * 500 that never exposes the thrown error. Imports only Next.js server primitives,
- * requireAuth, and the SKU-resolution wrapper service (no DB, stores, raw BoQ
- * loader/parser, artifact/approval/evidence store, pricing, config expansion,
- * export, runner, AI, catalog, engine, coordinator, or adapter).
+ * artifact authority. Optional JSON body: { catalogProfile?: "default" |
+ * "honeywell_mvp_demo" }. All other body fields are ignored. Non-JSON requests
+ * preserve original behavior. Invalid JSON -> 400 invalid_request_body.
+ * Unsupported catalogProfile -> 400 invalid_catalog_profile. The service result
+ * maps to HTTP: not_found -> 404, wrong_mode -> 409 (with the lean project
+ * summary), normalized_boq_not_found -> 404, artifact_not_normalized_boq -> 409
+ * (artifact included when known), normalized_boq_not_ready -> 409 (with the
+ * source artifact summary), invalid_normalized_boq_payload -> 409, ok -> 201
+ * with { artifact, payloadSummary }. An unexpected service error maps to a
+ * controlled 500 that never exposes the thrown error. Imports only Next.js
+ * server primitives, requireAuth, and the SKU-resolution wrapper service (no DB,
+ * stores, raw BoQ loader/parser, artifact/approval/evidence store, pricing,
+ * config expansion, export, runner, AI, catalog, engine, coordinator, or
+ * adapter).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/middleware/auth";
-import { createProjectQuickBomSkuResolutionDraft } from "@/lib/projects/project-quick-bom-sku-resolution";
+import {
+  createProjectQuickBomSkuResolutionDraft,
+  type QuickBomSkuResolutionCatalogProfile,
+} from "@/lib/projects/project-quick-bom-sku-resolution";
+
+const SUPPORTED_CATALOG_PROFILES: ReadonlySet<string> = new Set([
+  "default",
+  "honeywell_mvp_demo",
+]);
 
 export async function POST(
   request: NextRequest,
@@ -27,11 +38,48 @@ export async function POST(
   const session = requireAuth(request);
   if (session instanceof NextResponse) return session;
 
+  let catalogProfile: QuickBomSkuResolutionCatalogProfile | undefined;
+
+  const contentType = (request.headers.get("content-type") ?? "").toLowerCase();
+  if (contentType.includes("application/json")) {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        {
+          code: "invalid_request_body",
+          error: "Request body is not valid JSON.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (body !== null && typeof body === "object" && !Array.isArray(body)) {
+      const raw = (body as Record<string, unknown>).catalogProfile;
+      if (raw !== undefined) {
+        if (typeof raw !== "string" || !SUPPORTED_CATALOG_PROFILES.has(raw)) {
+          return NextResponse.json(
+            {
+              code: "invalid_catalog_profile",
+              error: "Unsupported catalogProfile value.",
+            },
+            { status: 400 }
+          );
+        }
+        if (raw !== "default") {
+          catalogProfile = raw as QuickBomSkuResolutionCatalogProfile;
+        }
+      }
+    }
+  }
+
   try {
     const result = await createProjectQuickBomSkuResolutionDraft({
       tenantId: session.tenantId,
       projectId: params.id,
       normalizedBoqArtifactId: params.artifactId,
+      ...(catalogProfile !== undefined ? { catalogProfile } : {}),
     });
 
     if (result.status === "not_found") {

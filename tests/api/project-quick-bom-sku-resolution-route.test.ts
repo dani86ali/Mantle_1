@@ -85,8 +85,9 @@ const WRONG_MODE_PROJECT = {
 
 const PARAMS = { params: { id: PROJECT, artifactId: ARTIFACT_ID } };
 
-// The route ignores the body; the mock exposes json/formData spies seeded with
-// decoy tenant/project/artifact fields so a test can prove neither is read.
+// req() simulates a non-JSON request (no content-type header); json spy is
+// seeded with decoy tenant/project/artifact fields so tests can prove they
+// are never read when no JSON content-type is present.
 function req(): NextRequest {
   return {
     headers: { get: () => null },
@@ -98,6 +99,32 @@ function req(): NextRequest {
         normalizedBoqArtifactId: "attacker-artifact",
       })
     ),
+    formData: vi.fn(() => Promise.resolve(new FormData())),
+  } as unknown as NextRequest;
+}
+
+// jsonReq() simulates a JSON request with the given body.
+function jsonReq(body: unknown): NextRequest {
+  return {
+    headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) },
+    json: vi.fn(() => Promise.resolve(body)),
+    formData: vi.fn(() => Promise.resolve(new FormData())),
+  } as unknown as NextRequest;
+}
+
+function mixedCaseJsonReq(body: unknown): NextRequest {
+  return {
+    headers: { get: (h: string) => (h === "content-type" ? "Application/JSON; charset=utf-8" : null) },
+    json: vi.fn(() => Promise.resolve(body)),
+    formData: vi.fn(() => Promise.resolve(new FormData())),
+  } as unknown as NextRequest;
+}
+
+// badJsonReq() simulates a JSON request where parsing fails.
+function badJsonReq(): NextRequest {
+  return {
+    headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) },
+    json: vi.fn(() => Promise.reject(new SyntaxError("Unexpected token"))),
     formData: vi.fn(() => Promise.resolve(new FormData())),
   } as unknown as NextRequest;
 }
@@ -128,7 +155,7 @@ describe("POST .../quick-bom/artifacts/[artifactId]/sku-resolution - auth", () =
 });
 
 describe("POST .../quick-bom/artifacts/[artifactId]/sku-resolution - tenant/param authority", () => {
-  it("uses session.tenantId plus route params only and never reads the request body", async () => {
+  it("uses session.tenantId plus route params only and never reads json when no JSON content-type", async () => {
     const request = req();
 
     await POST(request, PARAMS);
@@ -145,9 +172,79 @@ describe("POST .../quick-bom/artifacts/[artifactId]/sku-resolution - tenant/para
     expect(arg.projectId).not.toBe("attacker-project");
     expect(arg.normalizedBoqArtifactId).not.toBe("attacker-artifact");
 
-    // The body is ignored entirely.
+    // No JSON content-type: json() is never called.
     expect(request.json).not.toHaveBeenCalled();
     expect(request.formData).not.toHaveBeenCalled();
+  });
+
+  it("JSON body with decoy tenant/project/artifact fields does not override route authority", async () => {
+    const request = jsonReq({
+      tenantId: "attacker-tenant",
+      projectId: "attacker-project",
+      artifactId: "attacker-artifact",
+      normalizedBoqArtifactId: "attacker-artifact",
+    });
+
+    await POST(request, PARAMS);
+
+    const arg = mockCreateDraft.mock.calls[0][0];
+    expect(arg.tenantId).toBe(SESSION.tenantId);
+    expect(arg.projectId).toBe(PROJECT);
+    expect(arg.normalizedBoqArtifactId).toBe(ARTIFACT_ID);
+  });
+});
+
+describe("POST .../quick-bom/artifacts/[artifactId]/sku-resolution - catalog profile", () => {
+  it("JSON body { catalogProfile: 'default' } calls service with no catalogProfile", async () => {
+    await POST(jsonReq({ catalogProfile: "default" }), PARAMS);
+
+    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
+    const arg = mockCreateDraft.mock.calls[0][0];
+    expect(arg).toEqual({
+      tenantId: SESSION.tenantId,
+      projectId: PROJECT,
+      normalizedBoqArtifactId: ARTIFACT_ID,
+    });
+    expect("catalogProfile" in arg).toBe(false);
+  });
+
+  it("JSON body { catalogProfile: 'honeywell_mvp_demo' } passes catalogProfile to the service", async () => {
+    await POST(jsonReq({ catalogProfile: "honeywell_mvp_demo" }), PARAMS);
+
+    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
+    expect(mockCreateDraft).toHaveBeenCalledWith({
+      tenantId: SESSION.tenantId,
+      projectId: PROJECT,
+      normalizedBoqArtifactId: ARTIFACT_ID,
+      catalogProfile: "honeywell_mvp_demo",
+    });
+  });
+
+  it("matches JSON content-type case-insensitively", async () => {
+    await POST(mixedCaseJsonReq({ catalogProfile: "honeywell_mvp_demo" }), PARAMS);
+
+    expect(mockCreateDraft).toHaveBeenCalledWith({
+      tenantId: SESSION.tenantId,
+      projectId: PROJECT,
+      normalizedBoqArtifactId: ARTIFACT_ID,
+      catalogProfile: "honeywell_mvp_demo",
+    });
+  });
+
+  it("unsupported catalogProfile returns 400 invalid_catalog_profile and skips the service", async () => {
+    const res = await POST(jsonReq({ catalogProfile: "evil_profile" }), PARAMS);
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("invalid_catalog_profile");
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+  });
+
+  it("invalid JSON returns 400 invalid_request_body and skips the service", async () => {
+    const res = await POST(badJsonReq(), PARAMS);
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("invalid_request_body");
+    expect(mockCreateDraft).not.toHaveBeenCalled();
   });
 });
 
