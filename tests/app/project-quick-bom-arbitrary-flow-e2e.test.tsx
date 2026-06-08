@@ -877,6 +877,16 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     expect(dom).not.toContain("C9300X-48HX-A");
     expect(dom).not.toContain("CW9178I-CFG");
     expect(dom).not.toContain("honeywell-upload.csv");
+    // Artifact payload internals and workbook source paths must not surface in the DOM.
+    expect(dom).not.toContain("activeSourceWorkbookPath");
+    expect(dom).not.toContain("activeSourceSheetName");
+    expect(dom).not.toContain("Estimate_NB167337237YA.xlsx");
+    expect(dom).not.toContain("unitListPriceSarBySku");
+    expect(dom).not.toContain("acceptedLines");
+    expect(dom).not.toContain("rejectedLines");
+    expect(dom).not.toContain("sourceEvidence");
+    expect(dom).not.toContain("originalCells");
+    expect(dom).not.toContain("amounts");
   }
 
   function hwSkuAcceptActions(artifact: ProjectArtifact) {
@@ -1027,6 +1037,32 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     const configReviewBody = await configReviewRes.json();
     await approveArtifact(project.id, configReviewBody.artifact.id);
 
+    // Re-render and assert configuration authority provenance visible in UI.
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    const cfgBlock = await screen.findByTestId("authority-config-configuration_expansion");
+    expect(cfgBlock).toBeInTheDocument();
+    // Rule pack id and version.
+    expect(cfgBlock.textContent).toContain("honeywell-mvp-composed-batch1-batch2-batch3");
+    expect(cfgBlock.textContent).toContain("1.0.0");
+    // Status.
+    expect(cfgBlock.textContent).toContain("approved");
+    // Approval record id.
+    expect(cfgBlock.textContent).toContain("prompt-116-user-approved-honeywell-config-authority");
+    // Scope.
+    expect(cfgBlock.textContent).toContain("honeywell_mvp_demo_only");
+    // Runtime flags.
+    expect(cfgBlock.textContent).toContain("Runtime AI: off");
+    expect(cfgBlock.textContent).toContain("Replacement: off");
+    expect(cfgBlock.textContent).toContain("Substitution: off");
+    expect(cfgBlock.textContent).toContain("Unknown deferred: yes");
+    expect(cfgBlock.textContent).toContain("Optics auto-attached: no");
+
+    // configuration_expansion must NOT render a pricing authority block.
+    expect(screen.queryByTestId("authority-pricing-configuration_expansion")).toBeNull();
+
     view.unmount();
     view = render(<ProjectQuickBomPage />);
     await screen.findByTestId("project-name");
@@ -1041,6 +1077,34 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("spine-priced_boq")).toHaveTextContent("approved")
     );
+
+    // Assert both configuration and pricing authority provenance visible for priced_boq.
+    const pricedCfgBlock = await screen.findByTestId("authority-config-priced_boq");
+    expect(pricedCfgBlock).toBeInTheDocument();
+    expect(pricedCfgBlock.textContent).toContain("honeywell-mvp-composed-batch1-batch2-batch3");
+
+    const pricingBlock = await screen.findByTestId("authority-pricing-priced_boq");
+    expect(pricingBlock).toBeInTheDocument();
+    // Profile id.
+    expect(pricingBlock.textContent).toContain("honeywell-mvp-demo-pricing-authority-profile");
+    // Active source.
+    expect(pricingBlock.textContent).toContain("committed_honeywell_demo_pricing_fixture");
+    // Fixture status.
+    expect(pricingBlock.textContent).toContain("approved_demo_fixture");
+    // Approval record id.
+    expect(pricingBlock.textContent).toContain("prompt-119-user-approved-honeywell-demo-pricing-authority");
+    // Currency.
+    expect(pricingBlock.textContent).toContain("SAR");
+    // Boundary flags.
+    expect(pricingBlock.textContent).toContain("Deterministic fixture: yes");
+    expect(pricingBlock.textContent).toContain("Production authority: no");
+    expect(pricingBlock.textContent).toContain("Broad authority: no");
+    expect(pricingBlock.textContent).toContain("Runtime AI: off");
+    expect(pricingBlock.textContent).toContain("Runtime catalog: off");
+    expect(pricingBlock.textContent).toContain("Config authority: no");
+    expect(pricingBlock.textContent).toContain("Replacement: no");
+    expect(pricingBlock.textContent).toContain("Substitution: no");
+    expect(pricingBlock.textContent).toContain("Missing reported: yes");
 
     const createExport = await screen.findByTestId("workflow-create-export_package");
     await act(async () => {
