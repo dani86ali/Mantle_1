@@ -804,6 +804,185 @@ describe("ProjectQuickBomPage - review failures (distinct, no stack)", () => {
   });
 });
 
+// -- authority provenance fixtures --
+const CONFIG_PROVENANCE = {
+  scope: "honeywell_mvp_demo_only",
+  approvalRecordId: "appr-cfg-1",
+  rulePackId: "honeywell-scope-rules",
+  rulePackVersion: "1.0.0",
+  rulePackStatus: "approved",
+  rulePackSourceScope: "honeywell_mvp_demo_only",
+  dispositionSummary: {
+    expandByApprovedRulePackCount: 12,
+    preserveKnownRulePackChildCount: 4,
+    preserveStandaloneCustomerLineCount: 2,
+    deferUnknownRelationshipCount: 1,
+  },
+  runtimeAi: false,
+  replacementAuthority: false,
+  skuSubstitutionAuthority: false,
+  unknownRelationshipsDeferred: true,
+  attachesOpticsUnderSwitches: false,
+};
+
+const PRICING_PROVENANCE = {
+  profileId: "honeywell-mvp-demo-pricing-authority-profile",
+  scope: "honeywell_mvp_demo_only",
+  approvalRecordId: "appr-pricing-1",
+  activeSource: "committed_honeywell_demo_pricing_fixture",
+  activeSourceFixtureId: "honeywell-mvp-demo-pricing-fixture",
+  activeSourceStatus: "approved_demo_fixture",
+  currency: "SAR",
+  pricedSkuCount: 339,
+  missingPriceSkuCount: 2,
+  boundary: {
+    deterministicPricingAuthority: true,
+    demoFixtureAuthority: true,
+    activeRuntimeSourceReadsExternalGplCsv: false,
+    productionCiscoPricingAuthority: false,
+    broadCiscoGeneralPricingAuthority: false,
+    runtimeAiPricing: false,
+    runtimeCatalogLookup: false,
+    configurationAuthority: false,
+    replacementAuthority: false,
+    skuSubstitutionAuthority: false,
+    silentSkuSubstitution: false,
+    missingPricesReported: true,
+  },
+};
+
+function workspaceWithConfigProvenance(): Record<string, unknown> {
+  const ws = baseWorkspace();
+  const sa = spineOf(ws);
+  (sa.configuration_expansion as Record<string, unknown>).authorityProvenance = {
+    configurationAuthority: CONFIG_PROVENANCE,
+  };
+  return ws;
+}
+
+function workspaceWithPricedProvenance(): Record<string, unknown> {
+  const ws = baseWorkspace();
+  const sa = spineOf(ws);
+  (sa.sku_resolution as Record<string, unknown>).status = "approved";
+  (sa.configuration_expansion as Record<string, unknown>).status = "approved";
+  (sa.configuration_expansion as Record<string, unknown>).authorityProvenance = {
+    configurationAuthority: CONFIG_PROVENANCE,
+  };
+  sa.priced_boq = {
+    ...artifact("art-priced", "priced_boq", "needs_review", "boq_pricing_review"),
+    authorityProvenance: {
+      configurationAuthority: CONFIG_PROVENANCE,
+      pricingAuthority: PRICING_PROVENANCE,
+    },
+  };
+  return ws;
+}
+
+describe("ProjectQuickBomPage - authority provenance rendering", () => {
+  it("renders configuration authority provenance for configuration_expansion when present", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom"))
+        return jsonResponse({ workspace: workspaceWithConfigProvenance() });
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    expect(screen.getByTestId("authority-provenance-configuration_expansion")).toBeInTheDocument();
+    expect(screen.getByTestId("authority-config-configuration_expansion")).toBeInTheDocument();
+    expect(screen.queryByTestId("authority-pricing-configuration_expansion")).toBeNull();
+
+    const block = screen.getByTestId("authority-config-configuration_expansion");
+    expect(block).toHaveTextContent("honeywell-scope-rules");
+    expect(block).toHaveTextContent("1.0.0");
+    expect(block).toHaveTextContent("approved");
+    expect(block).toHaveTextContent("appr-cfg-1");
+    expect(block).toHaveTextContent("12");
+    expect(block).toHaveTextContent("deferred (unknown)");
+    // boundary facts
+    expect(block.textContent).toMatch(/Runtime AI:\s*off/);
+    expect(block.textContent).toMatch(/Replacement:\s*off/);
+    expect(block.textContent).toMatch(/Substitution:\s*off/);
+    expect(block.textContent).toMatch(/Unknown deferred:\s*yes/);
+    expect(block.textContent).toMatch(/Optics auto-attached:\s*no/);
+  });
+
+  it("renders both config and pricing authority provenance for priced_boq", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom"))
+        return jsonResponse({ workspace: workspaceWithPricedProvenance() });
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    expect(screen.getByTestId("authority-provenance-priced_boq")).toBeInTheDocument();
+    expect(screen.getByTestId("authority-config-priced_boq")).toBeInTheDocument();
+    expect(screen.getByTestId("authority-pricing-priced_boq")).toBeInTheDocument();
+
+    const pricingBlock = screen.getByTestId("authority-pricing-priced_boq");
+    expect(pricingBlock).toHaveTextContent("honeywell-mvp-demo-pricing-authority-profile");
+    expect(pricingBlock).toHaveTextContent("honeywell-mvp-demo-pricing-fixture");
+    expect(pricingBlock).toHaveTextContent("appr-pricing-1");
+    expect(pricingBlock).toHaveTextContent("SAR");
+    expect(pricingBlock).toHaveTextContent("339");
+    expect(pricingBlock).toHaveTextContent("2");
+    // boundary facts
+    expect(pricingBlock.textContent).toMatch(/Deterministic fixture:\s*yes/);
+    expect(pricingBlock.textContent).toMatch(/External GPL read:\s*no/);
+    expect(pricingBlock.textContent).toMatch(/Production authority:\s*no/);
+    expect(pricingBlock.textContent).toMatch(/Broad authority:\s*no/);
+    expect(pricingBlock.textContent).toMatch(/Runtime AI:\s*off/);
+    expect(pricingBlock.textContent).toMatch(/Runtime catalog:\s*off/);
+    expect(pricingBlock.textContent).toMatch(/Config authority:\s*no/);
+    expect(pricingBlock.textContent).toMatch(/Replacement:\s*no/);
+    expect(pricingBlock.textContent).toMatch(/Substitution:\s*no/);
+    expect(pricingBlock.textContent).toMatch(/Missing reported:\s*yes/);
+  });
+
+  it("does not render a provenance block for artifacts without authorityProvenance", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    expect(screen.queryByTestId("authority-provenance-normalized_boq")).toBeNull();
+    expect(screen.queryByTestId("authority-provenance-sku_resolution")).toBeNull();
+    expect(screen.queryByTestId("authority-provenance-configuration_expansion")).toBeNull();
+    expect(screen.queryByTestId("authority-provenance-priced_boq")).toBeNull();
+    expect(screen.queryByTestId("authority-provenance-export_package")).toBeNull();
+  });
+
+  it("does not render forbidden payload fields in the document", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom"))
+        return jsonResponse({ workspace: workspaceWithPricedProvenance() });
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    const body = document.body.textContent ?? "";
+    for (const forbidden of [
+      "activeSourceWorkbookPath",
+      "activeSourceSheetName",
+      "Estimate_NB167337237YA.xlsx",
+      "lines",
+      "acceptedLines",
+      "rejectedLines",
+      "evidence",
+      "originalCells",
+      "amounts",
+      "unitListPriceSarBySku",
+    ]) {
+      expect(body).not.toContain(forbidden);
+    }
+  });
+
+});
+
 describe("ProjectQuickBomPage - static source purity", () => {
   const SRC_PATH = join(process.cwd(), "src/app/projects/[id]/quick-bom/page.tsx");
   const TEST_PATH = join(process.cwd(), "tests/ui/project-quick-bom-page.test.tsx");

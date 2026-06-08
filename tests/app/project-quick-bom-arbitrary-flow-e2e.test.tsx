@@ -753,7 +753,10 @@ describe("arbitrary Project Quick BoM app-level E2E (Prompt 97)", () => {
     await act(async () => {
       fireEvent.click(createExport);
     });
-    expect(await screen.findByTestId("approve-export_package")).toBeInTheDocument();
+    await waitFor(
+      () => expect(screen.getByTestId("approve-export_package")).toBeInTheDocument(),
+      { timeout: 5000 }
+    );
     await act(async () => {
       fireEvent.click(screen.getByTestId("approve-export_package"));
     });
@@ -1043,7 +1046,10 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     await act(async () => {
       fireEvent.click(createExport);
     });
-    expect(await screen.findByTestId("approve-export_package")).toBeInTheDocument();
+    await waitFor(
+      () => expect(screen.getByTestId("approve-export_package")).toBeInTheDocument(),
+      { timeout: 5000 }
+    );
     await act(async () => {
       fireEvent.click(screen.getByTestId("approve-export_package"));
     });

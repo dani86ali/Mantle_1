@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Read-model-driven Project Quick BoM workspace page (Prompt 80, Prompt 96, Prompt 113).
+ * Read-model-driven Project Quick BoM workspace page (Prompt 80, Prompt 96, Prompt 113, Prompt 123).
  *
  * GETs the read-only workspace from /api/projects/[id]/quick-bom and renders the
  * project summary, readiness, stages, latest spine artifacts, and approvals. It
@@ -32,6 +32,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import type {
+  ArtifactAuthorityProvenance,
   ProjectArtifactSummary,
   ProjectQuickBomWorkspace,
   QuickBomSpineArtifacts,
@@ -92,6 +93,71 @@ function bodyMessage(body: unknown): string | null {
 
 function humanize(value: string): string {
   return value.replace(/_/g, " ");
+}
+
+function ProvenanceBlock({
+  artifactType,
+  provenance,
+}: {
+  artifactType: string;
+  provenance: ArtifactAuthorityProvenance;
+}) {
+  const { configurationAuthority: cfg, pricingAuthority: pricing } = provenance;
+  if (!cfg && !pricing) return null;
+  return (
+    <div
+      data-testid={`authority-provenance-${artifactType}`}
+      className="mt-2 space-y-2 rounded border border-[var(--border)] bg-bg-card px-3 py-2 text-xs text-text-secondary"
+    >
+      {cfg && (
+        <dl
+          data-testid={`authority-config-${artifactType}`}
+          className="space-y-0.5"
+        >
+          <dt className="font-semibold text-text-primary">Configuration authority</dt>
+          <dd>Pack: {cfg.rulePackId} v{cfg.rulePackVersion} ({cfg.rulePackStatus})</dd>
+          <dd>Scope: {cfg.scope} / pack source: {cfg.rulePackSourceScope}</dd>
+          <dd>Approval: {cfg.approvalRecordId}</dd>
+          <dd>
+            Dispositions: {cfg.dispositionSummary.expandByApprovedRulePackCount} expanded,{" "}
+            {cfg.dispositionSummary.preserveKnownRulePackChildCount} preserved (child),{" "}
+            {cfg.dispositionSummary.preserveStandaloneCustomerLineCount} preserved (standalone),{" "}
+            {cfg.dispositionSummary.deferUnknownRelationshipCount} deferred (unknown)
+          </dd>
+          <dd>
+            Runtime AI: {cfg.runtimeAi ? "on" : "off"} | Replacement: {cfg.replacementAuthority ? "on" : "off"} |
+            Substitution: {cfg.skuSubstitutionAuthority ? "on" : "off"} |
+            Unknown deferred: {cfg.unknownRelationshipsDeferred ? "yes" : "no"} |
+            Optics auto-attached: {cfg.attachesOpticsUnderSwitches ? "yes" : "no"}
+          </dd>
+        </dl>
+      )}
+      {pricing && (
+        <dl
+          data-testid={`authority-pricing-${artifactType}`}
+          className="space-y-0.5"
+        >
+          <dt className="font-semibold text-text-primary">Pricing authority</dt>
+          <dd>Profile: {pricing.profileId} | Source: {pricing.activeSource}</dd>
+          <dd>Fixture: {pricing.activeSourceFixtureId} ({pricing.activeSourceStatus})</dd>
+          <dd>Approval: {pricing.approvalRecordId}</dd>
+          <dd>Currency: {pricing.currency} | Priced SKUs: {pricing.pricedSkuCount} | Missing: {pricing.missingPriceSkuCount}</dd>
+          <dd>
+            Deterministic fixture: {pricing.boundary.demoFixtureAuthority ? "yes" : "no"} |
+            External GPL read: {pricing.boundary.activeRuntimeSourceReadsExternalGplCsv ? "yes" : "no"} |
+            Production authority: {pricing.boundary.productionCiscoPricingAuthority ? "yes" : "no"} |
+            Broad authority: {pricing.boundary.broadCiscoGeneralPricingAuthority ? "yes" : "no"} |
+            Runtime AI: {pricing.boundary.runtimeAiPricing ? "on" : "off"} |
+            Runtime catalog: {pricing.boundary.runtimeCatalogLookup ? "on" : "off"} |
+            Config authority: {pricing.boundary.configurationAuthority ? "yes" : "no"} |
+            Replacement: {pricing.boundary.replacementAuthority ? "yes" : "no"} |
+            Substitution: {pricing.boundary.skuSubstitutionAuthority ? "yes" : "no"} |
+            Missing reported: {pricing.boundary.missingPricesReported ? "yes" : "no"}
+          </dd>
+        </dl>
+      )}
+    </div>
+  );
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -556,10 +622,18 @@ export default function ProjectQuickBomPage() {
                   )}
                 </div>
                 {artifact && (
-                  <div className="mt-1 flex items-center justify-between gap-2">
-                    <span className="text-xs text-text-secondary">version {artifact.version}</span>
-                    {reviewControls(artifact)}
-                  </div>
+                  <>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span className="text-xs text-text-secondary">version {artifact.version}</span>
+                      {reviewControls(artifact)}
+                    </div>
+                    {artifact.authorityProvenance && (
+                      <ProvenanceBlock
+                        artifactType={artifact.type}
+                        provenance={artifact.authorityProvenance}
+                      />
+                    )}
+                  </>
                 )}
               </li>
             );
