@@ -1459,6 +1459,151 @@ describe("ProjectQuickBomPage - SKU line review panel", () => {
     expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
   });
 
+  // -- Prompt 153: reject/defer guidance batch --
+  const GUIDANCE_NOTE =
+    "Defer: not a benchmark-priced Honeywell NB167337 customer row; reject before pricing/export.";
+
+  function guided(sourceRowNumber: number, originalSku: string): Record<string, unknown> {
+    return {
+      sourceFileId: "file-1",
+      sourceRowNumber,
+      originalLineNumber: `L-00${sourceRowNumber}`,
+      originalSku,
+      status: "needs_review",
+      suggestions: [{ suggestedSku: originalSku, source: "exact" }],
+      reviewGuidance: {
+        action: "reject",
+        reasonCode: "honeywell_nb167337_non_benchmark_defer",
+        note: GUIDANCE_NOTE,
+      },
+    };
+  }
+
+  function eligible(sourceRowNumber: number, originalSku: string): Record<string, unknown> {
+    return {
+      sourceFileId: "file-1",
+      sourceRowNumber,
+      originalLineNumber: `L-00${sourceRowNumber}`,
+      originalSku,
+      status: "needs_review",
+      suggestions: [{ suggestedSku: originalSku, source: "exact" }],
+    };
+  }
+
+  // Two eligible same-SKU lines (rows 2, 5) and two guided deferred lines (rows 3, 4).
+  function guidedSkuReview(): Record<string, unknown> {
+    return skuReviewOkResponse({
+      reviewSummary: { totalLineCount: 4, needsReviewCount: 4, acceptedCount: 0, rejectedCount: 0, unresolvedCount: 0 },
+      lines: [
+        eligible(2, "C9300X-48HX-A"),
+        guided(3, "SC9300UK9-1712"),
+        guided(4, "SPACES-EXT-S"),
+        eligible(5, "CW9178I-CFG"),
+      ],
+    });
+  }
+
+  it("excludes guided lines from Accept all same-SKU and counts them in Reject all deferred", async () => {
+    stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(guidedSkuReview());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    // Accept-all excludes the two guided lines; reject-all-deferred counts exactly them.
+    expect(screen.getByTestId("sku-review-accept-all-same-sku")).toHaveTextContent("(2)");
+    const rejectBatch = screen.getByTestId("sku-review-reject-all-deferred");
+    expect(rejectBatch).not.toBeDisabled();
+    expect(rejectBatch).toHaveTextContent("(2)");
+
+    // A short visible reason renders on each guided line.
+    const reasons = screen.getAllByTestId("sku-review-guidance");
+    expect(reasons).toHaveLength(2);
+    expect(reasons[0]).toHaveTextContent(GUIDANCE_NOTE);
+  });
+
+  it("Reject all deferred POSTs one batch of sanitized reject actions (no acceptedSku, no authority fields)", async () => {
+    const calls = stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(guidedSkuReview());
+      }
+      if (SKU_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(skuReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-reject-all-deferred"));
+    });
+    await waitFor(() =>
+      expect(calls.some((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")).toBe(true)
+    );
+
+    const posts = calls.filter((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST");
+    expect(posts).toHaveLength(1);
+    const actions = (posts[0].body as { actions: Record<string, unknown>[] }).actions;
+    expect(actions).toHaveLength(2);
+
+    // Only the two guided rows (3, 4) are rejected; eligible rows are untouched.
+    const rows = actions.map((a) => a.sourceRowNumber).sort();
+    expect(rows).toEqual([3, 4]);
+
+    for (const action of actions) {
+      expect(action.decision).toBe("reject");
+      expect(action.sourceFileId).toBe("file-1");
+      expect(action.note).toBe(GUIDANCE_NOTE);
+      // A reject action never carries an accepted SKU.
+      expect("acceptedSku" in action).toBe(false);
+      for (const forbidden of [
+        "tenantId", "projectId", "artifactId", "skuResolutionArtifactId", "decidedBy",
+        "decidedAt", "pricing", "catalog", "catalogProfile", "replacement", "substitution",
+        "authority", "configuration", "approval",
+      ]) {
+        expect(forbidden in action, forbidden).toBe(false);
+      }
+    }
+  });
+
+  it("disables Reject all deferred when no line carries reject/defer guidance", async () => {
+    stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(skuReviewOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    const rejectBatch = screen.getByTestId("sku-review-reject-all-deferred");
+    expect(rejectBatch).toBeDisabled();
+    expect(rejectBatch).toHaveTextContent("(0)");
+    expect(screen.queryByTestId("sku-review-guidance")).toBeNull();
+  });
+
   it("shows a controlled error and no stack when the GET review request fails", async () => {
     const secret = "sku-review-get-boom-internal";
     vi.stubGlobal(

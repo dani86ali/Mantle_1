@@ -206,8 +206,12 @@ function expansionLine(
 }
 
 /**
- * Walk customer lines in order: a line whose human-ACCEPTED SKU starts a segment per
- * its matched parent rule; each approved child not already present is added after it.
+ * Walk human-ACCEPTED customer lines in order: a line whose accepted SKU starts a
+ * segment per its matched parent rule; each approved child not already present is
+ * added after it. This is the canonical gate from reviewed SKU decisions into
+ * configuration expansion - only lines whose decision is `accepted` with a non-empty
+ * acceptedSku carry forward. Rows with no decision, or `rejected`/`needs_review`/
+ * `unresolved`/accepted-without-acceptedSku status, are omitted from the draft.
  */
 export function buildConfigurationExpansionDraft(
   input: BuildConfigurationExpansionDraftInput
@@ -219,18 +223,26 @@ export function buildConfigurationExpansionDraft(
   const parentRuleBySku = new Map<string, ConfigExpansionParentRule>();
   for (const parent of rulePack.parentRules) parentRuleBySku.set(parent.parentSku, parent);
 
-  const acceptedSkus = lines.map((line) => acceptedSkuFor(decisionByKey.get(decisionKey(line))));
-  const matchedRules = acceptedSkus.map((sku) => (sku ? parentRuleBySku.get(sku) : undefined));
+  // Canonical accept gate: keep only lines with an accepted, non-empty SKU decision,
+  // preserving original BoQ order. Everything downstream (IDs, segments, quantities,
+  // summary counts) is computed over these carried-forward lines, never the raw input.
+  const accepted: { line: CanonicalBoqLine; acceptedSku: string }[] = [];
+  for (const line of lines) {
+    const acceptedSku = acceptedSkuFor(decisionByKey.get(decisionKey(line)));
+    if (acceptedSku === undefined) continue;
+    accepted.push({ line, acceptedSku });
+  }
 
-  // Project-wide accepted customer quantity per effective (accepted) SKU. Backs the
-  // related-SKU quantity model and the project_sku duplicate policy, both of which
-  // reach beyond a single parent segment. addedQtyBySku tracks expansion lines so a
-  // project-unique SKU is not re-added across segments.
+  const matchedRules = accepted.map((entry) => parentRuleBySku.get(entry.acceptedSku));
+
+  // Project-wide accepted customer quantity per effective (accepted) SKU, over the
+  // carried-forward lines only. Backs the related-SKU quantity model and the
+  // project_sku duplicate policy, both of which reach beyond a single parent segment.
+  // addedQtyBySku tracks expansion lines so a project-unique SKU is not re-added
+  // across segments.
   const acceptedQtyBySku = new Map<string, number>();
-  for (let i = 0; i < lines.length; i++) {
-    const sku = acceptedSkus[i];
-    if (sku === undefined) continue;
-    acceptedQtyBySku.set(sku, (acceptedQtyBySku.get(sku) ?? 0) + lines[i].quantity);
+  for (const entry of accepted) {
+    acceptedQtyBySku.set(entry.acceptedSku, (acceptedQtyBySku.get(entry.acceptedSku) ?? 0) + entry.line.quantity);
   }
   const addedQtyBySku = new Map<string, number>();
 
@@ -239,19 +251,21 @@ export function buildConfigurationExpansionDraft(
   let requiresReviewCount = 0;
   let includedItemCount = 0;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  for (let i = 0; i < accepted.length; i++) {
+    const { line, acceptedSku } = accepted[i];
+    // IDs follow carried-forward order, not the original normalized index.
     const parentLineId = `line-${i + 1}`;
-    draftLines.push(customerLine(line, parentLineId, acceptedSkus[i]));
+    draftLines.push(customerLine(line, parentLineId, acceptedSku));
 
     const rule = matchedRules[i];
     if (!rule) continue;
 
-    // Parent segment: this line through the line before the next parent match.
+    // Parent segment: this line through the line before the next parent match, over
+    // carried-forward accepted lines only.
     let end = i + 1;
-    while (end < lines.length && matchedRules[end] === undefined) end++;
+    while (end < accepted.length && matchedRules[end] === undefined) end++;
     const present = new Set<string>();
-    for (let k = i; k < end; k++) present.add(acceptedSkus[k] ?? lines[k].sku);
+    for (let k = i; k < end; k++) present.add(accepted[k].acceptedSku);
 
     let ordinal = 0;
     for (const child of rule.childLines) {
@@ -284,9 +298,9 @@ export function buildConfigurationExpansionDraft(
   return {
     lines: draftLines,
     summary: {
-      customerLineCount: lines.length,
+      customerLineCount: accepted.length,
       addedLineCount,
-      totalLineCount: lines.length + addedLineCount,
+      totalLineCount: accepted.length + addedLineCount,
       requiresReviewCount,
       includedItemCount,
     },

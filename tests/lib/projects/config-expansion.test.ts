@@ -233,28 +233,31 @@ describe("buildConfigurationExpansionDraft - rule pack rejection", () => {
 // --- Customer line preservation --------------------------------------------
 
 describe("buildConfigurationExpansionDraft - customer lines", () => {
-  it("preserves every customer line in order with its source identity", () => {
+  it("preserves each accepted customer line in order with its source identity", () => {
     const l = line({
-      sku: "UNKNOWN",
+      sku: "RAW-5",
       sourceRowNumber: 5,
       sourceSheetName: "BoQ",
       originalLineNumber: "5",
-      originalCells: { "#": "5", "Part Number": "UNKNOWN" },
+      originalCells: { "#": "5", "Part Number": "RAW-5" },
     });
-    const draft = build({ lines: [l], decisions: [], rulePack: approvedPack([parent()]) });
+    // Accepted to a SKU that matches no parent rule: the line carries forward with no
+    // expansion, so we can prove source identity in isolation.
+    const d = accept({ sourceRowNumber: 5, originalLineNumber: "5", originalSku: "RAW-5", acceptedSku: "NO-RULE" });
+    const draft = build({ lines: [l], decisions: [d], rulePack: approvedPack([parent()]) });
 
     expect(draft.lines).toHaveLength(1);
     const c = draft.lines[0];
     expect(c.origin).toBe("customer");
     expect(c.lineId).toBe("line-1");
-    expect(c.sku).toBe("UNKNOWN");
-    expect(c.originalSku).toBe("UNKNOWN");
-    expect(c.acceptedSku).toBeUndefined();
+    expect(c.sku).toBe("RAW-5");
+    expect(c.originalSku).toBe("RAW-5");
+    expect(c.acceptedSku).toBe("NO-RULE");
     expect(c.sourceFileId).toBe("file-1");
     expect(c.sourceRowNumber).toBe(5);
     expect(c.sourceSheetName).toBe("BoQ");
     expect(c.originalLineNumber).toBe("5");
-    expect(c.originalCells).toEqual({ "#": "5", "Part Number": "UNKNOWN" });
+    expect(c.originalCells).toEqual({ "#": "5", "Part Number": "RAW-5" });
     // The draft copies cells; it does not alias the input line.
     expect(c.originalCells).not.toBe(l.originalCells);
     expect(draft.summary.customerLineCount).toBe(1);
@@ -267,6 +270,83 @@ describe("buildConfigurationExpansionDraft - customer lines", () => {
     const draft = build({ lines: [l], decisions: [d], rulePack: approvedPack([parent()]) });
     expect(draft.lines[0].originalSku).toBe("RAW-X");
     expect(draft.lines[0].acceptedSku).toBe("PARENT-A");
+  });
+});
+
+// --- Accept gate: only accepted decisions carry forward ---------------------
+
+describe("buildConfigurationExpansionDraft - accept gate", () => {
+  // A row carries forward only when its decision is `accepted` with a non-empty
+  // acceptedSku. Every other state - no decision, rejected, needs_review,
+  // unresolved, or accepted-without-acceptedSku - is omitted from the draft.
+  it("omits a row that has no SKU decision", () => {
+    const draft = build({ lines: [line()], decisions: [], rulePack: approvedPack([parent()]) });
+    expect(draft.lines).toHaveLength(0);
+    expect(draft.summary.customerLineCount).toBe(0);
+    expect(draft.summary.totalLineCount).toBe(0);
+    expect(draft.summary.addedLineCount).toBe(0);
+  });
+
+  it("omits a rejected row", () => {
+    const draft = build({
+      lines: [line()],
+      decisions: [accept({ status: "rejected", acceptedSku: undefined })],
+      rulePack: approvedPack([parent()]),
+    });
+    expect(draft.lines).toHaveLength(0);
+    expect(draft.summary.customerLineCount).toBe(0);
+  });
+
+  it("omits needs_review and unresolved rows", () => {
+    for (const status of ["needs_review", "unresolved"] as const) {
+      const draft = build({
+        lines: [line()],
+        decisions: [accept({ status, acceptedSku: undefined })],
+        rulePack: approvedPack([parent()]),
+      });
+      expect(draft.lines, status).toHaveLength(0);
+      expect(draft.summary.customerLineCount, status).toBe(0);
+    }
+  });
+
+  it("omits an accepted row whose acceptedSku is empty or blank", () => {
+    for (const acceptedSku of ["", "   "]) {
+      const draft = build({
+        lines: [line()],
+        decisions: [accept({ acceptedSku })],
+        rulePack: approvedPack([parent()]),
+      });
+      expect(draft.lines, JSON.stringify(acceptedSku)).toHaveLength(0);
+      expect(draft.summary.customerLineCount, JSON.stringify(acceptedSku)).toBe(0);
+    }
+  });
+
+  it("carries forward only the accepted rows, in original order, renumbering IDs", () => {
+    // Three rows: row 1 rejected, row 2 accepted, row 3 no decision, row 4 accepted.
+    // Only rows 2 and 4 survive, and they become line-1 / line-2 in draft order.
+    const draft = build({
+      lines: [
+        line({ sourceRowNumber: 1, originalLineNumber: "1", sku: "DROP-1", originalCells: { "#": "1", "Part Number": "DROP-1" } }),
+        line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "KEEP-A", originalCells: { "#": "2", "Part Number": "KEEP-A" } }),
+        line({ sourceRowNumber: 3, originalLineNumber: "3", sku: "DROP-2", originalCells: { "#": "3", "Part Number": "DROP-2" } }),
+        line({ sourceRowNumber: 4, originalLineNumber: "4", sku: "KEEP-B", originalCells: { "#": "4", "Part Number": "KEEP-B" } }),
+      ],
+      decisions: [
+        accept({ sourceRowNumber: 1, originalLineNumber: "1", originalSku: "DROP-1", status: "rejected", acceptedSku: undefined }),
+        accept({ sourceRowNumber: 2, originalLineNumber: "2", originalSku: "KEEP-A", acceptedSku: "KEEP-A" }),
+        accept({ sourceRowNumber: 4, originalLineNumber: "4", originalSku: "KEEP-B", acceptedSku: "KEEP-B" }),
+      ],
+      rulePack: approvedPack([parent()]),
+    });
+
+    const customer = draft.lines.filter((l) => l.origin === "customer");
+    expect(customer.map((l) => l.sku)).toEqual(["KEEP-A", "KEEP-B"]);
+    expect(customer.map((l) => l.lineId)).toEqual(["line-1", "line-2"]);
+    // Source identity is preserved on the carried lines despite the renumbering.
+    expect(customer.map((l) => l.sourceRowNumber)).toEqual([2, 4]);
+    expect(customer.map((l) => l.originalLineNumber)).toEqual(["2", "4"]);
+    expect(draft.summary.customerLineCount).toBe(2);
+    expect(draft.summary.totalLineCount).toBe(2);
   });
 });
 
@@ -353,11 +433,37 @@ describe("buildConfigurationExpansionDraft - parent segments", () => {
     const p = parent({ childLines: [child({ sku: "CHILD-1" }), child({ sku: "CHILD-2" })] });
     const draft = build({
       lines: [l1, l2],
-      decisions: [accept({ sourceRowNumber: 1, acceptedSku: "PARENT-A" })],
+      decisions: [
+        accept({ sourceRowNumber: 1, acceptedSku: "PARENT-A" }),
+        accept({ sourceRowNumber: 2, originalSku: "CHILD-1", acceptedSku: "CHILD-1" }),
+      ],
       rulePack: approvedPack([p]),
     });
-    // CHILD-1 already present as the next customer line; only CHILD-2 is added.
+    // CHILD-1 already present as the next accepted customer line; only CHILD-2 is added.
     expect(addedLines(draft).map((l) => l.sku)).toEqual(["CHILD-2"]);
+  });
+
+  it("ignores an unaccepted segment row for duplicate detection but respects accepted siblings", () => {
+    // Row 2 carries CHILD-1 but is rejected, so it never enters the segment: CHILD-1
+    // is NOT considered present and is added. Row 3 carries CHILD-2 and is accepted,
+    // so CHILD-2 IS present and is skipped.
+    const l1 = line({ sourceRowNumber: 1, originalLineNumber: "1", sku: "PARENT-A" });
+    const l2 = line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "CHILD-1" });
+    const l3 = line({ sourceRowNumber: 3, originalLineNumber: "3", sku: "CHILD-2" });
+    const p = parent({ childLines: [child({ sku: "CHILD-1" }), child({ sku: "CHILD-2" })] });
+    const draft = build({
+      lines: [l1, l2, l3],
+      decisions: [
+        accept({ sourceRowNumber: 1, acceptedSku: "PARENT-A" }),
+        accept({ sourceRowNumber: 2, originalSku: "CHILD-1", status: "rejected", acceptedSku: undefined }),
+        accept({ sourceRowNumber: 3, originalSku: "CHILD-2", acceptedSku: "CHILD-2" }),
+      ],
+      rulePack: approvedPack([p]),
+    });
+    // CHILD-1 added (rejected row ignored); CHILD-2 skipped (accepted sibling present).
+    expect(addedLines(draft).map((l) => l.sku)).toEqual(["CHILD-1"]);
+    // Only the two accepted rows carry forward as customer lines.
+    expect(draft.lines.filter((l) => l.origin === "customer").map((l) => l.sku)).toEqual(["PARENT-A", "CHILD-2"]);
   });
 
   it("skips a child present via a segment line's accepted SKU, not its original", () => {
@@ -701,7 +807,10 @@ describe("buildConfigurationExpansionDraft - project_sku duplicate policy", () =
     const l2 = line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "CHILD-1" });
     const draft = build({
       lines: [l1, l2],
-      decisions: [accept({ sourceRowNumber: 1, acceptedSku: "PARENT-A" })],
+      decisions: [
+        accept({ sourceRowNumber: 1, acceptedSku: "PARENT-A" }),
+        accept({ sourceRowNumber: 2, originalSku: "CHILD-1", acceptedSku: "CHILD-1" }),
+      ],
       rulePack: approvedPack([parent({ childLines: [child({ sku: "CHILD-1" }), child({ sku: "CHILD-2" })] })]),
     });
     expect(addedLines(draft).map((l) => l.sku)).toEqual(["CHILD-2"]);

@@ -70,6 +70,7 @@ import type {
 } from "@/lib/db/project-approval-store";
 import type { CreateProjectFileRecordInput } from "@/lib/db/project-file-store";
 import type { ConfigurationExpansionDraftLine } from "@/lib/projects/config-expansion-types";
+import { isHoneywellDeferredReviewSku } from "@/lib/projects/honeywell-sku-review-guidance";
 
 type ProjectRow = {
   id: string;
@@ -1996,35 +1997,56 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       calls.filter((c) => c.method === "GET" && /\/sku-resolution\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // All 52 lines resolve as same-SKU exact suggestions, eligible for the single batch.
+    // 36 of the 52 lines resolve as same-SKU exact suggestions eligible for the batch
+    // accept; the other 16 are deferred/non-priced Honeywell rows the engineer must
+    // explicitly reject before pricing/export (recognition is not pricing eligibility).
     const skuDraftDecisions = (skuDraft.payload.decisions ?? []) as SkuResolutionDecision[];
     const eligibleSameSku = skuDraftDecisions.filter(
       (d) =>
         d.status === "needs_review" &&
         d.suggestions.length === 1 &&
         d.suggestions[0].suggestedSku.trim().toLowerCase() ===
-          d.originalSku.trim().toLowerCase()
+          d.originalSku.trim().toLowerCase() &&
+        !isHoneywellDeferredReviewSku(d.originalSku)
     );
-    expect(eligibleSameSku).toHaveLength(52);
+    expect(eligibleSameSku).toHaveLength(36);
+    const deferredDecisions = skuDraftDecisions.filter(
+      (d) => d.status === "needs_review" && isHoneywellDeferredReviewSku(d.originalSku)
+    );
+    expect(deferredDecisions).toHaveLength(16);
 
     const batchBtn = screen.getByTestId("sku-review-accept-all-same-sku");
     expect(batchBtn).not.toBeDisabled();
-    expect(batchBtn).toHaveTextContent("(52)");
+    expect(batchBtn).toHaveTextContent("(36)");
     await act(async () => {
       fireEvent.click(batchBtn);
     });
 
-    // After the batch resolves all lines the panel disappears and approve appears.
+    // The accept batch resolves 36 lines and mints a new version that still needs
+    // review (16 deferred rows remain), so the panel reloads in place: the same-SKU
+    // accept button drops to (0) while the deferred reject batch stays at (16).
+    await waitFor(() =>
+      expect(screen.getByTestId("sku-review-accept-all-same-sku")).toHaveTextContent("(0)")
+    );
+    const rejectBtn = screen.getByTestId("sku-review-reject-all-deferred");
+    expect(rejectBtn).not.toBeDisabled();
+    expect(rejectBtn).toHaveTextContent("(16)");
+    await act(async () => {
+      fireEvent.click(rejectBtn);
+    });
+
+    // After both batches decide all 52 lines the panel disappears and approve appears.
     expect(await screen.findByTestId("approve-sku_resolution")).toBeInTheDocument();
 
-    // Exactly one SKU review POST carrying all 52 sanitized accept actions.
+    // Two SKU review POSTs: a 36-action accept batch, then a 16-action reject batch.
     const skuReviewPostCalls = calls.filter(
       (c) => c.method === "POST" && /\/sku-resolution\/review$/.test(c.url)
     );
-    expect(skuReviewPostCalls).toHaveLength(1);
-    const skuBatchActions = (skuReviewPostCalls[0].body as { actions: Record<string, unknown>[] }).actions;
-    expect(skuBatchActions).toHaveLength(52);
-    for (const action of skuBatchActions) {
+    expect(skuReviewPostCalls).toHaveLength(2);
+
+    const acceptActions = (skuReviewPostCalls[0].body as { actions: Record<string, unknown>[] }).actions;
+    expect(acceptActions).toHaveLength(36);
+    for (const action of acceptActions) {
       expect(action.decision).toBe("accept");
       expect(action).not.toHaveProperty("tenantId");
       expect(action).not.toHaveProperty("projectId");
@@ -2032,17 +2054,41 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       expect(action).not.toHaveProperty("decidedBy");
       expect(action).not.toHaveProperty("decidedAt");
       expect(action).not.toHaveProperty("pricing");
+      expect(action).not.toHaveProperty("catalog");
       expect(action).not.toHaveProperty("catalogProfile");
+      expect(action).not.toHaveProperty("authority");
       expect(action).not.toHaveProperty("replacement");
       expect(action).not.toHaveProperty("substitution");
-      expect(action).not.toHaveProperty("authority");
     }
 
-    // Reviewed sku_resolution has 52 accepted decisions, none with replacement/substitution.
+    // The reject batch carries 16 sanitized defer actions: decision "reject", no
+    // acceptedSku, and none of the tenant/project/artifact/decidedBy/decidedAt/pricing/
+    // catalog/authority/replacement/substitution fields.
+    const rejectActions = (skuReviewPostCalls[1].body as { actions: Record<string, unknown>[] }).actions;
+    expect(rejectActions).toHaveLength(16);
+    for (const action of rejectActions) {
+      expect(action.decision).toBe("reject");
+      expect(action).not.toHaveProperty("acceptedSku");
+      expect(action).not.toHaveProperty("tenantId");
+      expect(action).not.toHaveProperty("projectId");
+      expect(action).not.toHaveProperty("artifactId");
+      expect(action).not.toHaveProperty("decidedBy");
+      expect(action).not.toHaveProperty("decidedAt");
+      expect(action).not.toHaveProperty("pricing");
+      expect(action).not.toHaveProperty("catalog");
+      expect(action).not.toHaveProperty("catalogProfile");
+      expect(action).not.toHaveProperty("authority");
+      expect(action).not.toHaveProperty("replacement");
+      expect(action).not.toHaveProperty("substitution");
+    }
+
+    // Reviewed sku_resolution has 52 decisions: 36 accepted, 16 rejected, none carrying
+    // a replacement/substitution field.
     const reviewedSkuArtifact = hoisted.store.latestArtifact("sku_resolution");
     const reviewedDecisions = (reviewedSkuArtifact.payload.decisions ?? []) as SkuResolutionDecision[];
     expect(reviewedDecisions).toHaveLength(52);
-    expect(reviewedDecisions.filter((d) => d.status === "accepted")).toHaveLength(52);
+    expect(reviewedDecisions.filter((d) => d.status === "accepted")).toHaveLength(36);
+    expect(reviewedDecisions.filter((d) => d.status === "rejected")).toHaveLength(16);
     for (const d of reviewedDecisions) {
       expect(d).not.toHaveProperty("replacementFor");
       expect(d).not.toHaveProperty("substitutedSku");
@@ -2070,8 +2116,9 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
     ).toBeInTheDocument();
     expect(screen.queryByTestId("approve-configuration_expansion")).toBeNull();
 
-    // Draft summary matches current deterministic behavior: 52 customer lines,
-    // 24 added/expansion lines, 76 total lines, 24 requiring review.
+    // Draft summary matches current deterministic behavior: only the 36 accepted SKU
+    // lines carry forward as customer lines, plus 24 added/expansion lines, for 60
+    // total lines and 24 requiring review.
     const configDraft = hoisted.store.latestArtifact("configuration_expansion");
     expect(configDraft.payload.payloadKind).toBe("configuration_expansion_draft");
     const configSummary = configDraft.payload.summary as {
@@ -2080,9 +2127,9 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       totalLineCount: number;
       requiresReviewCount: number;
     };
-    expect(configSummary.customerLineCount).toBe(52);
+    expect(configSummary.customerLineCount).toBe(36);
     expect(configSummary.addedLineCount).toBe(24);
-    expect(configSummary.totalLineCount).toBe(76);
+    expect(configSummary.totalLineCount).toBe(60);
     expect(configSummary.requiresReviewCount).toBe(24);
 
     // Load config review panel via the UI button.
@@ -2090,7 +2137,7 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       fireEvent.click(screen.getByTestId("config-review-load"));
     });
     expect(await screen.findByTestId("config-review-summary")).toBeInTheDocument();
-    expect(screen.getAllByTestId("config-review-line")).toHaveLength(76);
+    expect(screen.getAllByTestId("config-review-line")).toHaveLength(60);
     expect(screen.getAllByTestId("config-review-accept")).toHaveLength(24);
     expect(
       calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))

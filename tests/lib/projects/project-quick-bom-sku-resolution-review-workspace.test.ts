@@ -420,6 +420,83 @@ describe("loadQuickBomSkuResolutionReviewWorkspace - arrays/objects are copies",
   });
 });
 
+describe("loadQuickBomSkuResolutionReviewWorkspace - Honeywell reject/defer guidance projection", () => {
+  function guidancePayload(): Record<string, unknown> {
+    return {
+      sourceNormalizedBoqArtifactId: "art-nb-7",
+      sourceNormalizedBoqArtifactVersion: 5,
+      sourceFileIds: ["file-1"],
+      lineCount: 3,
+      summary: { totalLines: 3 },
+      decisions: [
+        {
+          // Deferred non-priced SKU, still needs review -> carries reject guidance.
+          sourceFileId: "file-1",
+          sourceRowNumber: 6,
+          originalLineNumber: "L-1",
+          originalSku: "SC9300UK9-1712",
+          status: "needs_review",
+          suggestions: [{ suggestedSku: "SC9300UK9-1712", source: "exact" }],
+        },
+        {
+          // Benchmark-priced eligible SKU, needs review -> no guidance.
+          sourceFileId: "file-1",
+          sourceRowNumber: 7,
+          originalLineNumber: "L-2",
+          originalSku: "C9300X-48HX-A",
+          status: "needs_review",
+          suggestions: [{ suggestedSku: "C9300X-48HX-A", source: "exact" }],
+        },
+        {
+          // Deferred SKU but already accepted -> not needs_review, so no guidance.
+          sourceFileId: "file-1",
+          sourceRowNumber: 8,
+          originalLineNumber: "L-3",
+          originalSku: "SPACES-EXT-S",
+          status: "accepted",
+          acceptedSku: "SPACES-EXT-S",
+          suggestions: [{ suggestedSku: "SPACES-EXT-S", source: "exact" }],
+        },
+      ],
+    };
+  }
+
+  it("stamps a reject/defer recommendation only on needs_review deferred lines", async () => {
+    getArtifactMock.mockResolvedValue(makeArtifact({ payload: guidancePayload() }));
+    const result = await loadQuickBomSkuResolutionReviewWorkspace(TENANT, PROJECT, ARTIFACT_ID);
+    if (result.status !== "ok") throw new Error("expected ok");
+    const [deferred, eligible, accepted] = result.review.lines;
+
+    expect(deferred.reviewGuidance).toEqual({
+      action: "reject",
+      reasonCode: "honeywell_nb167337_non_benchmark_defer",
+      note: expect.any(String),
+    });
+    expect(eligible.reviewGuidance).toBeUndefined();
+    // Deferred SKU but already decided: no advisory guidance on a non-needs_review line.
+    expect(accepted.reviewGuidance).toBeUndefined();
+  });
+
+  it("keeps the guidance payload-safe: no replacement/current/substitute/price fields", async () => {
+    getArtifactMock.mockResolvedValue(makeArtifact({ payload: guidancePayload() }));
+    const result = await loadQuickBomSkuResolutionReviewWorkspace(TENANT, PROJECT, ARTIFACT_ID);
+    if (result.status !== "ok") throw new Error("expected ok");
+    const guidance = result.review.lines[0].reviewGuidance;
+    expect(guidance).toBeDefined();
+    expect(Object.keys(guidance ?? {}).sort()).toEqual(["action", "note", "reasonCode"].sort());
+    const serialized = JSON.stringify(result.review);
+    for (const forbidden of [
+      "replacement",
+      "currentSku",
+      "substitut",
+      "C9300-DNA-A-48-3Y",
+      "SC9300UK9-1715",
+    ]) {
+      expect(serialized.includes(forbidden), forbidden).toBe(false);
+    }
+  });
+});
+
 describe("loadQuickBomSkuResolutionReviewWorkspace - static source purity", () => {
   const SRC_PATH = join(
     process.cwd(),
@@ -431,20 +508,30 @@ describe("loadQuickBomSkuResolutionReviewWorkspace - static source purity", () =
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports only DB store getters and type-only project types", () => {
+  it("imports only DB store getters, type-only project types, and the pure guidance helper", () => {
     const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
     expect(froms).toEqual([
       "@/lib/db/project-store",
       "@/lib/db/project-artifact-store",
       "@/types/project",
+      "@/lib/projects/honeywell-sku-review-guidance",
     ]);
   });
 
-  it("does not import artifact writers, approvals, AI, catalog, pricing, config-expansion, or engine modules", () => {
+  it("does not import artifact writers, approvals, AI, catalog, pricing, config-expansion, export, or engine modules", () => {
+    // Forbid SPECIFIC dangerous siblings, not the broad "@/lib/projects/" prefix: the
+    // pure honeywell-sku-review-guidance helper is a legitimate sibling import (pinned
+    // exactly by the imports test above). See the project_quick_bom_route_wrapper_purity
+    // pattern: forbid modules, not the prefix the read model legitimately uses.
     for (const forbidden of [
       "createProjectArtifactVersion",
       "createProjectApproval",
-      'from "@/lib/projects/',
+      'from "@/lib/projects/sku-resolution-review',
+      'from "@/lib/projects/config-expansion',
+      'from "@/lib/projects/priced-boq',
+      'from "@/lib/projects/mantle',
+      'from "@/lib/projects/quick-bom-runner',
+      'from "@/lib/projects/project-quick-bom-export',
       'from "@/lib/adapters',
       'from "@/lib/agent',
       'from "@/lib/ai',

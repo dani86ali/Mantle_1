@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Read-model-driven Project Quick BoM workspace page (Prompt 80, Prompt 96, Prompt 113, Prompt 123).
+ * Read-model-driven Project Quick BoM workspace page (Prompt 80, Prompt 96, Prompt 113, Prompt 123, Prompt 153).
  *
  * GETs the read-only workspace from /api/projects/[id]/quick-bom and renders the
  * project summary, readiness, stages, latest spine artifacts, and approvals. It
@@ -25,6 +25,12 @@
  *     .../configuration-expansion/review). Once a line review mints a `generated`
  *     sku/config version, it is approved/rejected through the same generic /approvals
  *     route as export_package so the workflow can advance.
+ *   - SKU line review (Prompt 153): besides per-line accept/reject and the same-SKU
+ *     batch accept, lines carrying a read-model reject/defer recommendation are
+ *     excluded from the same-SKU batch and can be rejected together via an explicit
+ *     reject/defer batch (sanitized { decision: "reject", sourceFileId,
+ *     sourceRowNumber, note? } actions). The recommendation is advisory and the
+ *     engineer must click - nothing is auto-rejected, replaced, or substituted.
  *   - download: a plain anchor to the export-package/download route (no fetch).
  * Types come from the read-model module via `import type`, erased at compile time,
  * so no server/DB code reaches the client.
@@ -106,16 +112,27 @@ function isConfigurationExpansionDraft(artifact: ProjectArtifactSummary): boolea
 
 /**
  * A SKU review line is safe to batch-accept only when it still needs review, carries
- * exactly one suggestion, and that suggestion is the same SKU as the original (case-
- * insensitive, trimmed). This deliberately excludes unresolved, ambiguous, multi-
- * suggestion, already-decided, and different-SKU lines.
+ * NO reject/defer guidance, carries exactly one suggestion, and that suggestion is the
+ * same SKU as the original (case-insensitive, trimmed). This deliberately excludes
+ * deferred/non-priced guided lines, unresolved, ambiguous, multi-suggestion, already-
+ * decided, and different-SKU lines.
  */
 function isSameSkuSuggestionAcceptable(line: QuickBomSkuResolutionReviewLine): boolean {
   if (line.status !== "needs_review") return false;
+  if (line.reviewGuidance?.action === "reject") return false;
   if (line.suggestions.length !== 1) return false;
   const suggested = line.suggestions[0].suggestedSku.trim().toLowerCase();
   const original = line.originalSku.trim().toLowerCase();
   return suggested !== "" && suggested === original;
+}
+
+/**
+ * A SKU review line is eligible for the explicit reject/defer batch only when it still
+ * needs review and carries a reject/defer recommendation (a known deferred/non-priced
+ * Honeywell row). Already-decided lines are excluded.
+ */
+function isDeferredRejectGuided(line: QuickBomSkuResolutionReviewLine): boolean {
+  return line.status === "needs_review" && line.reviewGuidance?.action === "reject";
 }
 
 /** Controlled error/code string from a parsed API body, else null. No stacks. */
@@ -696,6 +713,28 @@ export default function ProjectQuickBomPage() {
     void submitSkuReviewActions(artifactId, actions);
   }
 
+  // Explicit batch reject/defer for the guided non-priced lines only: each must still
+  // be needs_review and carry a reject/defer recommendation. One POST carries every
+  // eligible reject; the engineer triggers this explicitly - nothing is auto-rejected.
+  // Each action is sanitized to { decision: "reject", sourceFileId, sourceRowNumber,
+  // note? }; the optional note is the advisory recommendation reason - never a tenant/
+  // project/artifact/decidedBy/decidedAt/pricing/authority/replacement field, and never
+  // an acceptedSku.
+  function onRejectAllDeferred(
+    artifactId: string,
+    review: QuickBomSkuResolutionReviewWorkspace
+  ): void {
+    const actions = review.lines.filter(isDeferredRejectGuided).map((line) => ({
+      decision: "reject",
+      sourceFileId: line.sourceFileId,
+      sourceRowNumber: line.sourceRowNumber,
+      ...(line.reviewGuidance?.note !== undefined
+        ? { note: line.reviewGuidance.note }
+        : {}),
+    }));
+    void submitSkuReviewActions(artifactId, actions);
+  }
+
   // Record an explicit accept for one expansion line locally. No POST happens here -
   // the complete batch is submitted only when every expansion line has been decided.
   function onAcceptConfigLine(line: QuickBomConfigExpansionReviewLine): void {
@@ -869,6 +908,10 @@ export default function ProjectQuickBomPage() {
   // Lines safe to batch-accept (single same-SKU suggestion still needing review).
   const sameSkuEligibleCount = skuReview
     ? skuReview.lines.filter(isSameSkuSuggestionAcceptable).length
+    : 0;
+  // Lines flagged for explicit reject/defer (deferred non-priced rows still needing review).
+  const deferredRejectCount = skuReview
+    ? skuReview.lines.filter(isDeferredRejectGuided).length
     : 0;
 
   return (
@@ -1044,15 +1087,26 @@ export default function ProjectQuickBomPage() {
                 {skuReview.reviewSummary.rejectedCount} rejected,{" "}
                 {skuReview.reviewSummary.unresolvedCount} unresolved
               </p>
-              <button
-                type="button"
-                data-testid="sku-review-accept-all-same-sku"
-                disabled={skuReviewBusy || sameSkuEligibleCount === 0}
-                onClick={() => onAcceptAllSameSku(skuResolution.id, skuReview)}
-                className={APPROVE_BTN}
-              >
-                Accept all same-SKU suggestions ({sameSkuEligibleCount})
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  data-testid="sku-review-accept-all-same-sku"
+                  disabled={skuReviewBusy || sameSkuEligibleCount === 0}
+                  onClick={() => onAcceptAllSameSku(skuResolution.id, skuReview)}
+                  className={APPROVE_BTN}
+                >
+                  Accept all same-SKU suggestions ({sameSkuEligibleCount})
+                </button>
+                <button
+                  type="button"
+                  data-testid="sku-review-reject-all-deferred"
+                  disabled={skuReviewBusy || deferredRejectCount === 0}
+                  onClick={() => onRejectAllDeferred(skuResolution.id, skuReview)}
+                  className={REJECT_BTN}
+                >
+                  Reject all deferred non-priced rows ({deferredRejectCount})
+                </button>
+              </div>
               <ol className="space-y-2">
                 {skuReview.lines.map((line) => (
                   <li
@@ -1075,6 +1129,14 @@ export default function ProjectQuickBomPage() {
                         ? "none"
                         : line.suggestions.map((s) => s.suggestedSku).join(", ")}
                     </p>
+                    {line.reviewGuidance?.action === "reject" && (
+                      <p
+                        data-testid="sku-review-guidance"
+                        className="mt-0.5 text-xs text-warning"
+                      >
+                        {line.reviewGuidance.note}
+                      </p>
+                    )}
                     {line.status === "needs_review" && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {line.suggestions.map((suggestion) => (

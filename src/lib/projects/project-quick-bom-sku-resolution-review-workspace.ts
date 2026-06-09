@@ -14,9 +14,13 @@
  * runner, AI, catalog, engine, coordinator, or adapter. It exposes only the fields
  * an engineer needs to choose accept/reject per line: no full payload, no
  * originalCells, no pricing, no file/workbook paths, and no customer source-row
- * cells beyond the projected fields. Every array/object in the result is copied,
- * so the projection never aliases the stored artifact payload. Review counts are
- * counted in TypeScript from the projected line statuses, never inferred by an LLM.
+ * cells beyond the projected fields. It may also stamp an advisory reject/defer
+ * recommendation (action/reasonCode/note - never a replacement/current SKU) on a
+ * `needs_review` line whose original SKU is in the pure Honeywell deferred-row set;
+ * the recommendation is advisory only - nothing is auto-rejected here. Every array/
+ * object in the result is copied, so the projection never aliases the stored artifact
+ * payload. Review counts are counted in TypeScript from the projected line statuses,
+ * never inferred by an LLM.
  */
 import { getProjectById } from "@/lib/db/project-store";
 import { getProjectArtifactById } from "@/lib/db/project-artifact-store";
@@ -31,6 +35,7 @@ import type {
   SkuResolutionStatus,
   SkuResolutionSuggestion,
 } from "@/types/project";
+import { getHoneywellSkuReviewGuidance } from "@/lib/projects/honeywell-sku-review-guidance";
 
 /** Lean project summary for the review header; tenant-scoped projection. */
 export interface QuickBomSkuResolutionReviewWorkspaceProject {
@@ -85,6 +90,18 @@ export interface QuickBomSkuResolutionReviewLineSuggestion {
   rationale?: string;
 }
 
+/**
+ * Payload-safe reject/defer recommendation for a `needs_review` line whose original
+ * SKU is a known deferred/non-priced Honeywell row. Carries only a reject action, a
+ * reason code, and a safe note: never a replacement/current/substitute SKU, price,
+ * or path. It is advisory - the engineer still triggers every reject explicitly.
+ */
+export interface QuickBomSkuResolutionReviewLineGuidance {
+  action: "reject";
+  reasonCode: string;
+  note: string;
+}
+
 /** One BoQ line's current resolution state, projected for line-level review. */
 export interface QuickBomSkuResolutionReviewLine {
   sourceFileId: string;
@@ -97,6 +114,8 @@ export interface QuickBomSkuResolutionReviewLine {
   decidedBy?: string;
   decidedAt?: string;
   note?: string;
+  /** Present only on `needs_review` lines in the deferred Honeywell guidance set. */
+  reviewGuidance?: QuickBomSkuResolutionReviewLineGuidance;
 }
 
 /** The lean, serializable SKU line-review projection returned on `ok`. */
@@ -207,6 +226,11 @@ function toReviewLine(raw: unknown): QuickBomSkuResolutionReviewLine | null {
   }
 
   const decidedAtIso = toIsoString(decidedAt);
+  // Reject/defer recommendation is advisory and only for lines still needing review
+  // whose original SKU is a known deferred/non-priced Honeywell row. It is projected
+  // field-by-field so no replacement/current SKU or other helper field can survive.
+  const guidance =
+    status === "needs_review" ? getHoneywellSkuReviewGuidance(originalSku) : null;
   return {
     sourceFileId,
     sourceRowNumber,
@@ -218,6 +242,15 @@ function toReviewLine(raw: unknown): QuickBomSkuResolutionReviewLine | null {
     ...(typeof decidedBy === "string" ? { decidedBy } : {}),
     ...(decidedAtIso !== undefined ? { decidedAt: decidedAtIso } : {}),
     ...(typeof note === "string" ? { note } : {}),
+    ...(guidance !== null
+      ? {
+          reviewGuidance: {
+            action: guidance.action,
+            reasonCode: guidance.reasonCode,
+            note: guidance.note,
+          },
+        }
+      : {}),
   };
 }
 
