@@ -19,6 +19,7 @@ import {
   getHoneywellDemoCatalogLookupIndex,
   HONEYWELL_DEMO_CATALOG_LOOKUP_SOURCE,
 } from "@/lib/projects/honeywell-demo-catalog-lookup";
+import { DEFAULT_QUICK_BOM_CATALOG_SOURCE } from "@/lib/projects/default-quick-bom-catalog";
 import type { CanonicalBoqLine } from "@/types/project";
 
 const TEST_PATH = join(process.cwd(), "tests/lib/projects/honeywell-sku-resolution-overlay-evidence.test.ts");
@@ -72,11 +73,11 @@ const SUBSET_BOQ: CanonicalBoqLine[] = [
 const SUBSET_SKUS = SUBSET_BOQ.map((l) => l.sku);
 const MISSING_PARENT_SKUS = ["CW9178I-CFG", "C9300X-48HX-A", "C9300L-24P-4X-A"] as const;
 
-describe("default local mock catalog misses known Honeywell parent SKUs", () => {
-  it("the default SKU-resolution draft leaves the known missing parent SKUs unresolved", () => {
+describe("default Quick BoM catalog resolves known Honeywell SKUs without an explicit overlay index", () => {
+  function defaultDraftForMissingParents() {
     const lines = MISSING_PARENT_SKUS.map((sku, index): CanonicalBoqLine => ({
       sourceFormat: "format_1_line_item",
-      sourceFileId: "honeywell-default-miss-evidence",
+      sourceFileId: "honeywell-default-resolve-evidence",
       sourceRowNumber: index + 2,
       originalLineNumber: String(index + 1),
       sku,
@@ -84,11 +85,44 @@ describe("default local mock catalog misses known Honeywell parent SKUs", () => 
       quantity: 1,
       originalCells: {},
     }));
-    const draft = buildSkuResolutionDraft({ lines });
+    // No catalogIndex passed: exercises the canonical default Quick BoM catalog path.
+    return buildSkuResolutionDraft({ lines });
+  }
+
+  it("resolves the known Honeywell SKUs as needs_review same-SKU suggestions", () => {
+    const draft = defaultDraftForMissingParents();
     expect(draft.decisions.map((d) => d.originalSku)).toEqual([...MISSING_PARENT_SKUS]);
+    for (let i = 0; i < draft.decisions.length; i++) {
+      const decision = draft.decisions[i];
+      expect(decision.status).toBe("needs_review");
+      expect(decision.suggestions).toHaveLength(1);
+      expect(decision.suggestions[0].suggestedSku).toBe(MISSING_PARENT_SKUS[i]);
+    }
+  });
+
+  it("reports the default Quick BoM catalog source", () => {
+    const draft = defaultDraftForMissingParents();
+    expect(draft.summary.catalogSource).toBe(DEFAULT_QUICK_BOM_CATALOG_SOURCE);
+    expect(draft.summary.catalogSource).toBe("default_quick_bom_approved_catalog");
+  });
+
+  it("default decisions carry no pricing, configuration, or replacement/substitution fields", () => {
+    const draft = defaultDraftForMissingParents();
     for (const decision of draft.decisions) {
-      expect(decision.status).toBe("unresolved");
-      expect(decision.suggestions).toEqual([]);
+      for (const forbidden of [
+        "unitPrice",
+        "extendedPrice",
+        "listPrice",
+        "discountedPrice",
+        "parentSku",
+        "parentLineId",
+        "children",
+        "configExpansion",
+        "replacementFor",
+        "substitutedSku",
+      ]) {
+        expect(decision).not.toHaveProperty(forbidden);
+      }
     }
   });
 });
@@ -221,14 +255,18 @@ describe("standalone optic SFP-10G-LR-S= remains a flat input row suggestion", (
   });
 });
 
-describe("default local mock leaves known missing parent SKUs unresolved for subset", () => {
-  it("C9300X-48HX-A and CW9178I-CFG are unresolved without the overlay", () => {
-    const missingLines = SUBSET_BOQ.filter(
+describe("default Quick BoM catalog resolves the subset's Honeywell SKUs without the explicit overlay", () => {
+  it("C9300X-48HX-A and CW9178I-CFG resolve as needs_review same-SKU suggestions by default", () => {
+    const honeywellLines = SUBSET_BOQ.filter(
       (l) => l.sku === "C9300X-48HX-A" || l.sku === "CW9178I-CFG"
     );
-    const draft = buildSkuResolutionDraft({ lines: missingLines });
-    for (const decision of draft.decisions) {
-      expect(decision.status).toBe("unresolved");
+    const draft = buildSkuResolutionDraft({ lines: honeywellLines });
+    expect(draft.summary.catalogSource).toBe(DEFAULT_QUICK_BOM_CATALOG_SOURCE);
+    for (let i = 0; i < draft.decisions.length; i++) {
+      const decision = draft.decisions[i];
+      expect(decision.status).toBe("needs_review");
+      expect(decision.suggestions).toHaveLength(1);
+      expect(decision.suggestions[0].suggestedSku).toBe(honeywellLines[i].sku);
     }
   });
 });

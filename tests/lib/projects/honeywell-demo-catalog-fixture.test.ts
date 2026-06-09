@@ -62,7 +62,7 @@ describe("honeywell demo catalog fixture - authority boundary", () => {
       productionPricingAuthority: false,
       runtimeAi: false,
       attachesOpticsUnderSwitches: false,
-      wiredIntoRuntimeSkuResolution: false,
+      wiredIntoRuntimeSkuResolution: true,
     });
   });
 

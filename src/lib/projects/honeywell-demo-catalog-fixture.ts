@@ -6,9 +6,11 @@
  * customer BoQ optics); each item carries a description, a Mantle-compatible category, and
  * the already-approved demo SAR list price. It exists because the local STC historical/mock
  * catalog misses key Honeywell parent SKUs, so a later SKU-resolution step needs a demo-
- * scoped supplement to resolve them deterministically. It does NOT wire the supplement into
- * runtime SKU resolution. Full boundary: HONEYWELL_DEMO_CATALOG_FIXTURE_BOUNDARY below;
- * demo scope/limitations: KNOWN_LIMITATIONS below.
+ * scoped supplement to resolve them deterministically. This approved SKU metadata is part of
+ * the default Quick BoM SKU lookup source (composed by default-quick-bom-catalog.ts), but it
+ * remains NOT pricing authority, NOT configuration authority, NOT replacement/substitution
+ * authority, and NOT broad Cisco-general catalog authority. Full boundary:
+ * HONEYWELL_DEMO_CATALOG_FIXTURE_BOUNDARY below; demo scope/limitations: KNOWN_LIMITATIONS below.
  *
  * PURE LOADER: imports only the approved demo rule-pack selector and demo pricing fixture
  * loader (both fresh-copy sources); no DB, API/UI, engine, coordinator, adapter, AI/LLM,
@@ -25,7 +27,8 @@ import {
 /**
  * Authority boundary: Honeywell MVP demo scope only; grants no production catalog, broad
  * Cisco SKU, configuration, child-relationship, replacement/substitution, production
- * pricing, or runtime-AI authority, and is not wired into runtime SKU resolution.
+ * pricing, or runtime-AI authority. Its SKU metadata IS part of the default Quick BoM SKU
+ * lookup source, but that grants only same-SKU catalog recognition - none of the above authority.
  */
 export const HONEYWELL_DEMO_CATALOG_FIXTURE_BOUNDARY = {
   scope: "honeywell_mvp_demo_only",
@@ -39,7 +42,7 @@ export const HONEYWELL_DEMO_CATALOG_FIXTURE_BOUNDARY = {
   productionPricingAuthority: false,
   runtimeAi: false,
   attachesOpticsUnderSwitches: false,
-  wiredIntoRuntimeSkuResolution: false,
+  wiredIntoRuntimeSkuResolution: true,
 } as const;
 
 /** Mantle-compatible total-bucket category, reused from the demo pricing fixture. */
@@ -103,7 +106,7 @@ const KNOWN_LIMITATIONS = [
   "Not production Cisco catalog authority and not broad Cisco-general SKU authority; production catalog resolution must later come from an approved Cisco API/CCW/catalog integration.",
   "Not configuration authority: parent/child derivation stays with the approved configuration-expansion rule packs; items carry no parent/child relationship.",
   "Not pricing authority beyond the already-approved Honeywell demo pricing fixture, and it approves no SKU replacement or silent substitution.",
-  "Not wired into runtime SKU resolution: this is a foundation projection only.",
+  "This SKU metadata is part of the default Quick BoM SKU lookup source (same-SKU catalog recognition only); it is still not pricing, configuration, replacement, or broad Cisco-general authority.",
 ];
 
 /** Guard messages; the projection fails loudly rather than emitting a partial item. */
