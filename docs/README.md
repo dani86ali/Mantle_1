@@ -1,8 +1,8 @@
 # BOMATIC Documentation Index
 
-This folder contains a mix of current product guidance, evidence records, runtime
-fixtures, and historical planning material. Do not treat every file here as a source
-of truth.
+This folder contains current evidence, runtime fixtures, execution history,
+reference material, and archived historical planning. Do not treat every file here
+as a source of truth.
 
 ## Current Source Of Truth
 
@@ -41,55 +41,45 @@ language without abstraction.
 Use these only as scoped Honeywell evidence until the authority-pack abstraction is
 introduced.
 
-## Runtime/Test Fixtures In This Folder
+## Runtime Fixtures Kept In Root
 
-Do not move these without updating runtime imports/tests:
+These stay in `docs/` root because runtime code still imports or discovers them by
+path:
 
 - `docs/BOMATIC_Device_Specs.json`
 - `docs/Q22026_USD for MIDDLE EAST & AFRICA_Recommended_Enduser_PriceList_05042026 1.xlsx`
-- `docs/SS2_Reference_Data.json`
-- `docs/BOMATIC_Capability_Matrix.xlsx`
-- `docs/DEMO_TEST_TRACKER.xlsx`
 
-Some legacy app pages still read these directly. That is a product cleanup task, not
-a documentation cleanup task.
+Moving these is a product cleanup task because it requires source/test updates.
 
-## Historical Or Future-Scope Reference
+## Reference Material
 
-These documents may contain useful RFP/HLD/proposal knowledge, but they are not
-current Project-spine implementation authority unless a prompt explicitly targets
-that area and verifies them against current code:
+These documents may contain useful RFP, HLD, proposal, catalog, or historical Cisco
+workflow knowledge, but they are not current Project-spine implementation authority
+unless a prompt explicitly targets that area and verifies them against current code:
 
-- `docs/BOMATIC_Runtime_Architecture.md`
-- `docs/BoQ_Template_Patterns.md`
-- `docs/ccw_workflow_patterns.md`
-- `docs/Design_Patterns.md`
-- `docs/Discovery_Patterns.md`
-- `docs/E1_RFP_Parser_Process_Flow.md`
-- `docs/Fortinet_Catalog_Model.md`
-- `docs/Network_PreSales_Playbook_Final_Consolidated.md`
-- `docs/RFP_Compliance_Patterns.md`
-- `docs/STC_Complete_Packages.md`
-- `docs/STC_Data_Inventory.md`
-- `docs/TP_Template_Model.md`
-- `docs/Tender_Analyzer_Model.md`
-- `docs/shahid-cisco-ground-truth.md`
-- `docs/flowcharts/*.svg`
+- `docs/reference/catalog/`
+- `docs/reference/rfp/`
+- `docs/reference/hld/`
+- `docs/reference/flowcharts/`
 
 ## Execution History
 
 Prompt/story docs are historical evidence only. Use them to understand why a change
 exists, not to decide current behavior:
 
-- `docs/BOMATIC_PROMPTS_042_098_STORY.md`
-- `docs/BOMATIC_PROMPTS_104_125_AUTHORITY_STORY.md`
-- `docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md`
+- `docs/execution-history/BOMATIC_PROMPTS_042_098_STORY.md`
+- `docs/execution-history/BOMATIC_PROMPTS_104_125_AUTHORITY_STORY.md`
+- `docs/execution-history/QUICK_BOM_DEMO_READINESS_BACKLOG.md`
 
 ## Archive
 
 Archived docs are retained for history and should not be read by default:
 
 - `docs/archive/`
+
+Superseded runtime/demo docs are under:
+
+- `docs/archive/superseded/`
 
 ## Product Spine Guard Checklist
 

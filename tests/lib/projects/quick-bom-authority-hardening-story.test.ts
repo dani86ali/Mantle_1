@@ -5,6 +5,7 @@ import { join } from "path";
 const DOC_PATH = join(
   process.cwd(),
   "docs",
+  "execution-history",
   "BOMATIC_PROMPTS_104_125_AUTHORITY_STORY.md"
 );
 

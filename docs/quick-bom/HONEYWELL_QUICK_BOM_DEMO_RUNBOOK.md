@@ -15,7 +15,8 @@ Prompt 139 live-DB seeded browser render smoke proof, the Prompt 140 automated
 browser-driven UI/live DB workflow proof, and the Prompt 142 local production build
 proof. It is a demo runbook, not an architecture source of truth;
 `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md` remains the source
-of truth and `docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md` is the execution tracker.
+of truth and `docs/execution-history/QUICK_BOM_DEMO_READINESS_BACKLOG.md` is the
+execution tracker.
 
 ## 1. What the Honeywell Mantle workbook is
 

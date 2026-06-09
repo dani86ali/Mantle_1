@@ -1,5 +1,5 @@
 /** E3 financial proposal Excel writer — companion workbook to the Word TP.
- *  Source: docs/Network_PreSales_Playbook_Final_Consolidated.md §7.1 (cost
+ *  Source: docs/reference/hld/Network_PreSales_Playbook_Final_Consolidated.md §7.1 (cost
  *  stack) and §7.5 (Good/Better/Best). Pure I/O — no LLM, no math beyond
  *  arithmetic over the inputs already produced by margin-analyzer and
  *  pricing-tiers. Sheet layout described in E3-D6.

@@ -1,7 +1,7 @@
 /** E3 orchestrator — runs the full 15-section proposal pipeline:
  *  deterministic sections → 5 AI sections → pricing tiers → margin analysis
  *  → Word + Excel artifacts.
- *  Source: docs/BOMATIC_Runtime_Architecture.md §4.3 (E3 pipeline flow).
+ *  Historical source: docs/archive/superseded/BOMATIC_Runtime_Architecture.md §4.3 (E3 pipeline flow).
  *  AI sections degrade to deterministic fallbacks inside their generators,
  *  so an AI outage still yields a complete proposal.
  */

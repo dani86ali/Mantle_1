@@ -4,7 +4,7 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Quick BoM demo-readiness backlog
- * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 142 (docs/test
+ * (docs/execution-history/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 142 (docs/test
  * alignment for the local production build proof: npm.cmd run build completed
  * successfully after Prompt 141; Quick BoM API/UI routes present in the generated route
  * table; Redis/ioredis ECONNREFUSED :6379 noise is a known non-failing build/test noise
@@ -56,7 +56,12 @@ import { join } from "path";
  * or expansion code is imported or run.
  */
 
-const DOC_PATH = join(process.cwd(), "docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md");
+const DOC_PATH = join(
+  process.cwd(),
+  "docs",
+  "execution-history",
+  "QUICK_BOM_DEMO_READINESS_BACKLOG.md"
+);
 const TEST_PATH = join(
   process.cwd(),
   "tests/lib/projects/quick-bom-demo-readiness-backlog.test.ts"

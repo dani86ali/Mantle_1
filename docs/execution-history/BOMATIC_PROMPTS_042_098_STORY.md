@@ -47,7 +47,7 @@ This record was reconstructed from:
 - Git history through `a41d043 docs(projects): close quick bom app readiness`.
 - Prompt files in `C:\tmp\bomatic-prompts`, especially P42, P44, and P48-P98.
 - Harness run summaries in `C:\tmp\bomatic-runs`.
-- `docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md`.
+- `docs/execution-history/QUICK_BOM_DEMO_READINESS_BACKLOG.md`.
 - `docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md`.
 - Current source and tests under `src/lib/projects`, `src/app/api/projects`, `src/app/projects`, `tests/lib/projects`, `tests/api`, `tests/app`, and `tests/ui`.
 

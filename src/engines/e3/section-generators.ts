@@ -1,7 +1,7 @@
 /** E3 section-generators — deterministic content for the 8 non-AI proposal
  *  sections (cover, requirements, technical specs, service levels, commercial,
  *  compliance, appendices, signature page). Pure functions per First Commandment.
- *  Source: docs/Network_PreSales_Playbook_Final_Consolidated.md §6.1.
+ *  Source: docs/reference/hld/Network_PreSales_Playbook_Final_Consolidated.md §6.1.
  */
 
 import { getBoilerplate, renderBoilerplate } from './boilerplate-kb';

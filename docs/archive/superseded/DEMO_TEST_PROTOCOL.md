@@ -2,7 +2,7 @@
 
 **Audience:** A tester who has never seen the BOMATIC codebase.
 **Goal:** Walk every demo path end-to-end and surface defects before the customer demo.
-**Companion artifact:** `docs/DEMO_TEST_TRACKER.xlsx` — log each test result there.
+**Companion artifact:** `docs/archive/superseded/DEMO_TEST_TRACKER.xlsx` — log each test result there.
 
 ## Before you start
 - The app runs locally at `http://localhost:3000`.
@@ -473,7 +473,7 @@
 
 ## Recording results
 For every test:
-1. Note **PASS / FAIL / BLOCKED / SKIP** in `docs/DEMO_TEST_TRACKER.xlsx` column **E**.
+1. Note **PASS / FAIL / BLOCKED / SKIP** in `docs/archive/superseded/DEMO_TEST_TRACKER.xlsx` column **E**.
 2. On FAIL: capture a screenshot and a Network/Console log snippet. Drop the screenshot in `docs/test-screenshots/T-NNN.png` and reference the filename in column J.
 3. Fill **Bug Description** (col H) with reproduction steps + observed behavior. Be precise: "Click 'Approve Deal' on `/estimates/<id>/margin`, banner shows 'Approve failed (500)', Network tab shows `PATCH /api/estimates/<id>` 500 with body `{...}`." That is what Claude CLI needs.
 4. Tag **Severity** (col K): Critical = blocks demo, High = visible bug in demo flow, Medium = cosmetic/edge case, Low = polish.

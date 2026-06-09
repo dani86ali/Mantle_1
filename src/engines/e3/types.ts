@@ -1,5 +1,5 @@
 /** E3 Proposal Engine — types for the 15-section solution document.
- *  Outline source: docs/Network_PreSales_Playbook_Final_Consolidated.md §6.1
+ *  Outline source: docs/reference/hld/Network_PreSales_Playbook_Final_Consolidated.md §6.1
  */
 
 export type GenerationMethod = 'deterministic' | 'ai' | 'semi';
