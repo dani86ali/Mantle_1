@@ -666,13 +666,16 @@ export default function ProjectQuickBomPage() {
         </ol>
       </Card>
 
-      {skuResolution && skuResolution.status === "needs_review" && (
-        <SkuResolutionReviewPanel
-          projectId={id}
-          artifactId={skuResolution.id}
-          onReviewSubmitted={loadWorkspace}
-        />
-      )}
+      {skuResolution &&
+        (skuResolution.status === "needs_review" ||
+          skuResolution.status === "generated" ||
+          skuResolution.status === "approved") && (
+          <SkuResolutionReviewPanel
+            projectId={id}
+            artifactId={skuResolution.id}
+            onReviewSubmitted={loadWorkspace}
+          />
+        )}
 
       {configExpansion && isConfigurationExpansionDraft(configExpansion) && (
         <ConfigurationExpansionReviewPanel

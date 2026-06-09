@@ -73,7 +73,7 @@ import type {
 } from "@/lib/db/project-approval-store";
 import type { CreateProjectFileRecordInput } from "@/lib/db/project-file-store";
 import type { ConfigurationExpansionDraftLine } from "@/lib/projects/config-expansion-types";
-import { isHoneywellDeferredReviewSku } from "@/lib/projects/honeywell-sku-review-guidance";
+import { isDeferredReviewSku } from "@/lib/projects/sku-deferred-review-set";
 import {
   locateMantlePriceEstimateLayout,
   MANTLE_PRICE_ESTIMATE_SHEET_NAME,
@@ -1430,7 +1430,7 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
     ).toHaveLength(1);
 
     // The 7 canonical SKUs resolve as same-SKU exact suggestions, so all are eligible
-    // for the single batch "Accept all same-SKU suggestions" action.
+    // and pre-selected for approval in the single-submit review.
     const skuDraftForBatch = hoisted.store.latestArtifact("sku_resolution");
     const skuDraftDecisions = (skuDraftForBatch.payload.decisions ?? []) as SkuResolutionDecision[];
     const eligibleSameSku = skuDraftDecisions.filter(
@@ -1442,15 +1442,19 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
     );
     expect(eligibleSameSku).toHaveLength(7);
 
-    // One explicit batch click accepts every eligible same-SKU line in a single POST.
-    const batchBtn = screen.getByTestId("sku-review-accept-all-same-sku");
-    expect(batchBtn).not.toBeDisabled();
-    expect(batchBtn).toHaveTextContent("(7)");
+    // All 7 rows are eligible same-SKU, so all 7 checkboxes are enabled and checked.
+    const checkboxes = screen.getAllByTestId("sku-review-checkbox") as HTMLInputElement[];
+    expect(checkboxes).toHaveLength(7);
+    expect(checkboxes.filter((c) => !c.disabled && c.checked)).toHaveLength(7);
+
+    // One submit accepts every eligible same-SKU line in a single POST.
+    const submitBtn = screen.getByTestId("sku-review-submit");
+    expect(submitBtn).toHaveTextContent("(7 approve / 0 reject)");
     await act(async () => {
-      fireEvent.click(batchBtn);
+      fireEvent.click(submitBtn);
     });
 
-    // After the batch resolves all lines, the panel disappears and approve appears.
+    // After submitting decides all lines, the panel disappears and approve appears.
     expect(await screen.findByTestId("approve-sku_resolution")).toBeInTheDocument();
 
     // Assert exactly one SKU review POST carrying all 7 sanitized accept actions.
@@ -1796,8 +1800,8 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
     ).toHaveLength(1);
 
     // The 4 canonical SKUs resolve as same-SKU exact suggestions, so all are eligible
-    // for the single batch "Accept all same-SKU suggestions" action. One explicit click
-    // resolves every line in a single POST - no per-line clicking, no re-Load.
+    // and pre-selected. One submit resolves every line in a single POST - no per-line
+    // clicking, no re-Load.
     const skuDraftForBatch = hoisted.store.latestArtifact("sku_resolution");
     const skuDraftDecisions = (skuDraftForBatch.payload.decisions ?? []) as SkuResolutionDecision[];
     const eligibleSameSku = skuDraftDecisions.filter(
@@ -1809,14 +1813,16 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
     );
     expect(eligibleSameSku).toHaveLength(4);
 
-    const batchBtn = screen.getByTestId("sku-review-accept-all-same-sku");
-    expect(batchBtn).not.toBeDisabled();
-    expect(batchBtn).toHaveTextContent("(4)");
+    const checkboxes = screen.getAllByTestId("sku-review-checkbox") as HTMLInputElement[];
+    expect(checkboxes).toHaveLength(4);
+    expect(checkboxes.filter((c) => !c.disabled && c.checked)).toHaveLength(4);
+    const submitBtn = screen.getByTestId("sku-review-submit");
+    expect(submitBtn).toHaveTextContent("(4 approve / 0 reject)");
     await act(async () => {
-      fireEvent.click(batchBtn);
+      fireEvent.click(submitBtn);
     });
 
-    // After the batch resolves all lines the panel disappears and approve appears.
+    // After submitting decides all lines the panel disappears and approve appears.
     expect(await screen.findByTestId("approve-sku_resolution")).toBeInTheDocument();
 
     // Assert exactly one SKU review POST carrying all 4 sanitized accept actions.
@@ -2096,9 +2102,9 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       calls.filter((c) => c.method === "GET" && /\/sku-resolution\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // 36 of the 52 lines resolve as same-SKU exact suggestions eligible for the batch
-    // accept; the other 16 are deferred/non-priced Honeywell rows the engineer must
-    // explicitly reject before pricing/export (recognition is not pricing eligibility).
+    // 36 of the 52 lines resolve as same-SKU exact suggestions eligible for approval
+    // (pre-selected); the other 16 are deferred/non-priced rows that are unselectable
+    // and must be rejected before pricing/export (recognition is not pricing eligibility).
     const skuDraftDecisions = (skuDraft.payload.decisions ?? []) as SkuResolutionDecision[];
     const eligibleSameSku = skuDraftDecisions.filter(
       (d) =>
@@ -2106,47 +2112,45 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
         d.suggestions.length === 1 &&
         d.suggestions[0].suggestedSku.trim().toLowerCase() ===
           d.originalSku.trim().toLowerCase() &&
-        !isHoneywellDeferredReviewSku(d.originalSku)
+        !isDeferredReviewSku(d.originalSku)
     );
     expect(eligibleSameSku).toHaveLength(36);
     const deferredDecisions = skuDraftDecisions.filter(
-      (d) => d.status === "needs_review" && isHoneywellDeferredReviewSku(d.originalSku)
+      (d) => d.status === "needs_review" && isDeferredReviewSku(d.originalSku)
     );
     expect(deferredDecisions).toHaveLength(16);
 
-    const batchBtn = screen.getByTestId("sku-review-accept-all-same-sku");
-    expect(batchBtn).not.toBeDisabled();
-    expect(batchBtn).toHaveTextContent("(36)");
+    // Default selection: 36 eligible rows are enabled+checked; 16 deferred rows are
+    // disabled+unchecked (impossible to approve through the checkbox UI).
+    const checkboxes = screen.getAllByTestId("sku-review-checkbox") as HTMLInputElement[];
+    expect(checkboxes).toHaveLength(52);
+    expect(checkboxes.filter((c) => !c.disabled && c.checked)).toHaveLength(36);
+    expect(checkboxes.filter((c) => c.disabled && !c.checked)).toHaveLength(16);
+
+    // One submit records an explicit decision for every reviewed line.
+    const submitBtn = screen.getByTestId("sku-review-submit");
+    expect(submitBtn).toHaveTextContent("(36 approve / 16 reject)");
     await act(async () => {
-      fireEvent.click(batchBtn);
+      fireEvent.click(submitBtn);
     });
 
-    // The accept batch resolves 36 lines and mints a new version that still needs
-    // review (16 deferred rows remain), so the panel reloads in place: the same-SKU
-    // accept button drops to (0) while the deferred reject batch stays at (16).
-    await waitFor(() =>
-      expect(screen.getByTestId("sku-review-accept-all-same-sku")).toHaveTextContent("(0)")
-    );
-    const rejectBtn = screen.getByTestId("sku-review-reject-all-deferred");
-    expect(rejectBtn).not.toBeDisabled();
-    expect(rejectBtn).toHaveTextContent("(16)");
-    await act(async () => {
-      fireEvent.click(rejectBtn);
-    });
-
-    // After both batches decide all 52 lines the panel disappears and approve appears.
+    // After deciding all 52 lines in one pass the panel disappears and approve appears.
     expect(await screen.findByTestId("approve-sku_resolution")).toBeInTheDocument();
 
-    // Two SKU review POSTs: a 36-action accept batch, then a 16-action reject batch.
+    // Exactly one SKU review POST carrying all 52 sanitized decisions.
     const skuReviewPostCalls = calls.filter(
       (c) => c.method === "POST" && /\/sku-resolution\/review$/.test(c.url)
     );
-    expect(skuReviewPostCalls).toHaveLength(2);
+    expect(skuReviewPostCalls).toHaveLength(1);
 
-    const acceptActions = (skuReviewPostCalls[0].body as { actions: Record<string, unknown>[] }).actions;
+    const allActions = (skuReviewPostCalls[0].body as { actions: Record<string, unknown>[] }).actions;
+    expect(allActions).toHaveLength(52);
+    const acceptActions = allActions.filter((a) => a.decision === "accept");
+    const rejectActions = allActions.filter((a) => a.decision === "reject");
     expect(acceptActions).toHaveLength(36);
+    expect(rejectActions).toHaveLength(16);
+
     for (const action of acceptActions) {
-      expect(action.decision).toBe("accept");
       expect(action).not.toHaveProperty("tenantId");
       expect(action).not.toHaveProperty("projectId");
       expect(action).not.toHaveProperty("artifactId");
@@ -2160,13 +2164,10 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       expect(action).not.toHaveProperty("substitution");
     }
 
-    // The reject batch carries 16 sanitized defer actions: decision "reject", no
-    // acceptedSku, and none of the tenant/project/artifact/decidedBy/decidedAt/pricing/
-    // catalog/authority/replacement/substitution fields.
-    const rejectActions = (skuReviewPostCalls[1].body as { actions: Record<string, unknown>[] }).actions;
-    expect(rejectActions).toHaveLength(16);
+    // The 16 deferred decisions are sanitized rejects: no acceptedSku and none of the
+    // tenant/project/artifact/decidedBy/decidedAt/pricing/catalog/authority/replacement/
+    // substitution fields.
     for (const action of rejectActions) {
-      expect(action.decision).toBe("reject");
       expect(action).not.toHaveProperty("acceptedSku");
       expect(action).not.toHaveProperty("tenantId");
       expect(action).not.toHaveProperty("projectId");

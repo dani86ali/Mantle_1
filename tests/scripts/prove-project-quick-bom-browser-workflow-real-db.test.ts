@@ -249,7 +249,7 @@ describe("prove-project-quick-bom-browser-workflow-real-db script hygiene", () =
       "workflow-upload-normalize",
       "workflow-create-sku_resolution",
       "sku-review-load",
-      "sku-review-accept-all-same-sku",
+      "sku-review-submit",
       "approve-sku_resolution",
       "workflow-create-configuration_expansion",
       "config-review-load",
@@ -268,23 +268,25 @@ describe("prove-project-quick-bom-browser-workflow-real-db script hygiene", () =
     }
   });
 
-  it("drives the explicit batch review controls, not the per-line/bulk accept paths", () => {
-    // The fixed UI uses single batch buttons; the proof must click those.
-    expect(source.includes("sku-review-accept-all-same-sku")).toBe(true);
+  it("drives the explicit single review controls, not the per-line/bulk accept paths", () => {
+    // The fixed UI uses one Submit for SKU review and a single batch button for config;
+    // the proof must click those.
+    expect(source.includes("sku-review-submit")).toBe(true);
     expect(source.includes("config-review-accept-all-expansion")).toBe(true);
     expect(
-      source.includes('clickTestId(cdp, sessionId, "sku-review-accept-all-same-sku")')
+      source.includes('clickTestId(cdp, sessionId, "sku-review-submit")')
     ).toBe(true);
     expect(
       source.includes(
         'clickTestId(cdp, sessionId, "config-review-accept-all-expansion")'
       )
     ).toBe(true);
-    // The old proof path is gone: no per-line sku accept loop, no bulk-click of the
-    // per-line config accept buttons.
+    // The old proof path is gone: no per-line sku accept loop and no same-SKU batch
+    // button, no bulk-click of the per-line config accept buttons.
     expect(source.includes('clickTestId(cdp, sessionId, "sku-review-accept")')).toBe(
       false
     );
+    expect(source.includes("sku-review-accept-all-same-sku")).toBe(false);
     expect(source.includes('clickAllTestId(cdp, sessionId, "config-review-accept")')).toBe(
       false
     );

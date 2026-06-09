@@ -19,9 +19,9 @@ import { describe, expect, it } from "vitest";
 import { buildSkuResolutionDraft } from "@/lib/projects/sku-resolution";
 import { DEFAULT_QUICK_BOM_CATALOG_SOURCE } from "@/lib/projects/default-quick-bom-catalog";
 import {
-  isHoneywellDeferredReviewSku,
-  listHoneywellDeferredReviewSkus,
-} from "@/lib/projects/honeywell-sku-review-guidance";
+  isDeferredReviewSku,
+  listDeferredReviewSkus,
+} from "@/lib/projects/sku-deferred-review-set";
 import type { CanonicalBoqLine } from "@/types/project";
 
 const TEST_PATH = join(
@@ -194,22 +194,22 @@ describe("real 52-line Honeywell BoQ resolves fully against the default Quick Bo
 
 describe("recognition is not pricing eligibility: 36 priceable / 16 deferred split (Prompt 153)", () => {
   it("flags exactly 16 of the 52 row occurrences as deferred/non-priced, leaving 36 eligible", () => {
-    const deferred = HONEYWELL_BOQ_SKUS.filter((sku) => isHoneywellDeferredReviewSku(sku));
-    const eligible = HONEYWELL_BOQ_SKUS.filter((sku) => !isHoneywellDeferredReviewSku(sku));
+    const deferred = HONEYWELL_BOQ_SKUS.filter((sku) => isDeferredReviewSku(sku));
+    const eligible = HONEYWELL_BOQ_SKUS.filter((sku) => !isDeferredReviewSku(sku));
     expect(deferred).toHaveLength(16);
     expect(eligible).toHaveLength(36);
     expect(deferred.length + eligible.length).toBe(52);
   });
 
   it("covers all 13 distinct deferred SKUs, each present in the 52-row BoQ", () => {
-    const listed = listHoneywellDeferredReviewSkus();
+    const listed = listDeferredReviewSkus();
     expect(listed).toHaveLength(13);
     const boqSet = new Set<string>(HONEYWELL_BOQ_SKUS);
     for (const sku of listed) {
       expect(boqSet.has(sku), sku).toBe(true);
     }
     const deferredDistinct = new Set(
-      HONEYWELL_BOQ_SKUS.filter((sku) => isHoneywellDeferredReviewSku(sku))
+      HONEYWELL_BOQ_SKUS.filter((sku) => isDeferredReviewSku(sku))
     );
     expect(deferredDistinct.size).toBe(13);
   });
@@ -217,7 +217,7 @@ describe("recognition is not pricing eligibility: 36 priceable / 16 deferred spl
   it("does not imply deferred rows are priceable: every line still needs review, none accepted", () => {
     const draft = buildSkuResolutionDraft({ lines: honeywellBoqLines() });
     const deferredDecisions = draft.decisions.filter((d) =>
-      isHoneywellDeferredReviewSku(d.originalSku)
+      isDeferredReviewSku(d.originalSku)
     );
     expect(deferredDecisions).toHaveLength(16);
     for (const d of deferredDecisions) {
@@ -229,7 +229,7 @@ describe("recognition is not pricing eligibility: 36 priceable / 16 deferred spl
 
   it("the deferred guidance names no current replacement SKU (no silent substitution)", () => {
     const forbidden = new Set<string>(FORBIDDEN_CURRENT_SKUS);
-    for (const sku of listHoneywellDeferredReviewSkus()) {
+    for (const sku of listDeferredReviewSkus()) {
       expect(forbidden.has(sku), sku).toBe(false);
     }
   });
