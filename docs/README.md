@@ -9,8 +9,10 @@ as a source of truth.
 Read these first for current BOMATIC work:
 
 1. `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md`
-2. This file: `docs/README.md`
-3. The code and tests for the feature being changed.
+2. `C:\Pre-Sales\bomatic_planning\BUILD_PROCESS_ARCHITECTURE.md` when coordinating
+   Claude branches, worktrees, or parallel implementation.
+3. This file: `docs/README.md`
+4. The code and tests for the feature being changed.
 
 The current architecture is Project-centered:
 
