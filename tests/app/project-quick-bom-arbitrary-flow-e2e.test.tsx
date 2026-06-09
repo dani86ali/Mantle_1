@@ -1284,37 +1284,39 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       calls.filter((c) => c.method === "GET" && /\/sku-resolution\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // Accept all 7 SKU lines one at a time through the UI accept buttons.
-    for (let i = 0; i < 7; i++) {
-      if (i > 0) {
-        await waitFor(() =>
-          expect(screen.queryByTestId("sku-review-load")).not.toBeDisabled(),
-          { timeout: 3000 }
-        );
-        await act(async () => {
-          fireEvent.click(screen.getByTestId("sku-review-load"));
-        });
-        await screen.findByTestId("sku-review-summary");
-      }
-      const acceptBtns = screen.getAllByTestId("sku-review-accept");
-      expect(acceptBtns.length).toBeGreaterThan(0);
-      await act(async () => {
-        fireEvent.click(acceptBtns[0]);
-      });
-    }
+    // The 7 canonical SKUs resolve as same-SKU exact suggestions, so all are eligible
+    // for the single batch "Accept all same-SKU suggestions" action.
+    const skuDraftForBatch = hoisted.store.latestArtifact("sku_resolution");
+    const skuDraftDecisions = (skuDraftForBatch.payload.decisions ?? []) as SkuResolutionDecision[];
+    const eligibleSameSku = skuDraftDecisions.filter(
+      (d) =>
+        d.status === "needs_review" &&
+        d.suggestions.length === 1 &&
+        d.suggestions[0].suggestedSku.trim().toLowerCase() ===
+          d.originalSku.trim().toLowerCase()
+    );
+    expect(eligibleSameSku).toHaveLength(7);
 
-    // After 7 accepts, panel disappears and approve button appears.
+    // One explicit batch click accepts every eligible same-SKU line in a single POST.
+    const batchBtn = screen.getByTestId("sku-review-accept-all-same-sku");
+    expect(batchBtn).not.toBeDisabled();
+    expect(batchBtn).toHaveTextContent("(7)");
+    await act(async () => {
+      fireEvent.click(batchBtn);
+    });
+
+    // After the batch resolves all lines, the panel disappears and approve appears.
     expect(await screen.findByTestId("approve-sku_resolution")).toBeInTheDocument();
 
-    // Assert exactly 7 SKU review POST calls, each sanitized.
+    // Assert exactly one SKU review POST carrying all 7 sanitized accept actions.
     const skuReviewPostCalls = calls.filter(
       (c) => c.method === "POST" && /\/sku-resolution\/review$/.test(c.url)
     );
-    expect(skuReviewPostCalls).toHaveLength(7);
-    for (const call of skuReviewPostCalls) {
-      const body = call.body as { actions: Record<string, unknown>[] };
-      expect(body.actions).toHaveLength(1);
-      const action = body.actions[0];
+    expect(skuReviewPostCalls).toHaveLength(1);
+    const batchActions = (skuReviewPostCalls[0].body as { actions: Record<string, unknown>[] }).actions;
+    expect(batchActions).toHaveLength(7);
+    for (const action of batchActions) {
+      expect(action.decision).toBe("accept");
       expect(action).not.toHaveProperty("tenantId");
       expect(action).not.toHaveProperty("projectId");
       expect(action).not.toHaveProperty("artifactId");
@@ -1646,42 +1648,39 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       calls.filter((c) => c.method === "GET" && /\/sku-resolution\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // Accept all 4 SKU lines one at a time through the UI accept buttons.
-    // Each accept POSTs one action and mints a new artifact version. Between accepts
-    // the panel reloads (workspace refresh) so each iteration re-queries the buttons.
-    // The last accept mints a generated artifact and the panel disappears.
-    for (let i = 0; i < 4; i++) {
-      if (i > 0) {
-        // Wait for panel busy to clear (previous accept + workspace reload completed)
-        // then reload for the next line.
-        await waitFor(() =>
-          expect(screen.queryByTestId("sku-review-load")).not.toBeDisabled(),
-          { timeout: 3000 }
-        );
-        await act(async () => {
-          fireEvent.click(screen.getByTestId("sku-review-load"));
-        });
-        await screen.findByTestId("sku-review-summary");
-      }
-      const acceptBtns = screen.getAllByTestId("sku-review-accept");
-      expect(acceptBtns.length).toBeGreaterThan(0);
-      await act(async () => {
-        fireEvent.click(acceptBtns[0]);
-      });
-    }
+    // The 4 canonical SKUs resolve as same-SKU exact suggestions, so all are eligible
+    // for the single batch "Accept all same-SKU suggestions" action. One explicit click
+    // resolves every line in a single POST - no per-line clicking, no re-Load.
+    const skuDraftForBatch = hoisted.store.latestArtifact("sku_resolution");
+    const skuDraftDecisions = (skuDraftForBatch.payload.decisions ?? []) as SkuResolutionDecision[];
+    const eligibleSameSku = skuDraftDecisions.filter(
+      (d) =>
+        d.status === "needs_review" &&
+        d.suggestions.length === 1 &&
+        d.suggestions[0].suggestedSku.trim().toLowerCase() ===
+          d.originalSku.trim().toLowerCase()
+    );
+    expect(eligibleSameSku).toHaveLength(4);
 
-    // After 4 accepts the panel disappears (generated artifact) and approve appears.
+    const batchBtn = screen.getByTestId("sku-review-accept-all-same-sku");
+    expect(batchBtn).not.toBeDisabled();
+    expect(batchBtn).toHaveTextContent("(4)");
+    await act(async () => {
+      fireEvent.click(batchBtn);
+    });
+
+    // After the batch resolves all lines the panel disappears and approve appears.
     expect(await screen.findByTestId("approve-sku_resolution")).toBeInTheDocument();
 
-    // Assert SKU review POSTs: sanitized actions only, no authority fields.
+    // Assert exactly one SKU review POST carrying all 4 sanitized accept actions.
     const skuReviewPostCalls = calls.filter(
       (c) => c.method === "POST" && /\/sku-resolution\/review$/.test(c.url)
     );
-    expect(skuReviewPostCalls).toHaveLength(4);
-    for (const call of skuReviewPostCalls) {
-      const body = call.body as { actions: Record<string, unknown>[] };
-      expect(body.actions).toHaveLength(1);
-      const action = body.actions[0];
+    expect(skuReviewPostCalls).toHaveLength(1);
+    const batchActions = (skuReviewPostCalls[0].body as { actions: Record<string, unknown>[] }).actions;
+    expect(batchActions).toHaveLength(4);
+    for (const action of batchActions) {
+      expect(action.decision).toBe("accept");
       expect(action).not.toHaveProperty("tenantId");
       expect(action).not.toHaveProperty("projectId");
       expect(action).not.toHaveProperty("artifactId");

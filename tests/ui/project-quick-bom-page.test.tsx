@@ -1055,11 +1055,26 @@ function skuReviewOkResponse(overrides: Record<string, unknown> = {}): Record<st
   };
 }
 
+// All lines resolved: the minted artifact is `generated`, so the panel clears and
+// the normal artifact approval controls take over (no auto-refresh GET).
 function skuReviewPostOkResponse(): Record<string, unknown> {
   return {
-    artifact: { id: "art-sku-v3", status: "needs_review" },
+    artifact: { id: "art-sku-v3", status: "generated" },
     payloadSummary: { lineCount: 2, summary: {} },
     reviewSummary: { totalLineCount: 2, needsReviewCount: 0, acceptedCount: 2, rejectedCount: 0, unresolvedCount: 0 },
+  };
+}
+
+// One line resolved but others still need review: the minted artifact stays
+// `needs_review` and carries a new id, so the panel auto-refreshes against it.
+const SKU_ARTIFACT_V3_ID = "art-sku-v3";
+const SKU_REVIEW_V3_ROUTE_RE =
+  /\/api\/projects\/proj-1\/quick-bom\/artifacts\/art-sku-v3\/sku-resolution\/review$/;
+function skuReviewPostStillNeedsReviewResponse(): Record<string, unknown> {
+  return {
+    artifact: { id: SKU_ARTIFACT_V3_ID, status: "needs_review" },
+    payloadSummary: { lineCount: 2, summary: {} },
+    reviewSummary: { totalLineCount: 2, needsReviewCount: 1, acceptedCount: 1, rejectedCount: 0, unresolvedCount: 0 },
   };
 }
 
@@ -1193,7 +1208,58 @@ describe("ProjectQuickBomPage - SKU line review panel", () => {
     expect("acceptedSku" in action).toBe(false);
   });
 
-  it("clears the SKU review panel and re-GETs the workspace after a successful review POST", async () => {
+  it("auto-refreshes the panel against the returned new artifact id while still needs_review (no re-Load click)", async () => {
+    const v3Calls: string[] = [];
+    stubFetch((url, init) => {
+      // First version still needs review on load.
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(skuReviewOkResponse());
+      }
+      // POST mints a new version (art-sku-v3) that still needs review.
+      if (SKU_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(skuReviewPostStillNeedsReviewResponse());
+      }
+      // Auto-refresh GET targets the returned new artifact id.
+      if (SKU_REVIEW_V3_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        v3Calls.push(url);
+        return jsonResponse(
+          skuReviewOkResponse({
+            artifact: {
+              id: SKU_ARTIFACT_V3_ID, projectId: PROJECT_ID, stageId: "sku_resolution",
+              type: "sku_resolution", status: "needs_review", version: 3,
+              sourceFileIds: [], sourceArtifactIds: [],
+              createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-01T10:00:00.000Z",
+            },
+            reviewSummary: { totalLineCount: 3, needsReviewCount: 1, acceptedCount: 2, rejectedCount: 0, unresolvedCount: 0 },
+          })
+        );
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByTestId("sku-review-accept")[0]);
+    });
+
+    // The panel stays open and shows the refreshed projection from the new artifact id;
+    // no second "Load SKU review lines" click was needed.
+    await waitFor(() =>
+      expect(screen.getByTestId("sku-review-summary")).toHaveTextContent("3 lines")
+    );
+    expect(v3Calls.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTestId("sku-review-summary")).toBeInTheDocument();
+  });
+
+  it("clears the SKU review panel after a POST whose minted artifact is no longer needs_review", async () => {
     const refreshed = baseWorkspace();
     (refreshed.project as Record<string, unknown>).name = "SKU REVIEW REFRESHED";
     let reviewLoaded = false;
@@ -1225,8 +1291,143 @@ describe("ProjectQuickBomPage - SKU line review panel", () => {
     });
 
     expect(await screen.findByText("SKU REVIEW REFRESHED")).toBeInTheDocument();
-    // Panel is cleared after the POST; the summary should not be visible
+    // Minted artifact is `generated`, so the panel clears.
     await waitFor(() => expect(screen.queryByTestId("sku-review-summary")).toBeNull());
+  });
+
+  it("Accept all same-SKU sends one POST with multiple sanitized same-SKU accepts and excludes ineligible rows", async () => {
+    // Two eligible same-SKU single-suggestion lines (rows 2 and 6; row 2 also exercises
+    // the case-insensitive match). Three ineligible lines must be excluded: a different
+    // suggested SKU (row 3), an ambiguous multi-suggestion line (row 4), and an already
+    // accepted line (row 5).
+    const multiSkuReview = skuReviewOkResponse({
+      reviewSummary: { totalLineCount: 5, needsReviewCount: 4, acceptedCount: 1, rejectedCount: 0, unresolvedCount: 0 },
+      lines: [
+        {
+          sourceFileId: "file-1", sourceRowNumber: 2, originalLineNumber: "L-002",
+          originalSku: "c9300-48p-a", status: "needs_review",
+          suggestions: [{ suggestedSku: "C9300-48P-A", source: "exact" }],
+        },
+        {
+          sourceFileId: "file-1", sourceRowNumber: 3, originalLineNumber: "L-003",
+          originalSku: "WS-C3650-48FD-E", status: "needs_review",
+          suggestions: [{ suggestedSku: "C9300-24P-A", source: "normalized" }],
+        },
+        {
+          sourceFileId: "file-1", sourceRowNumber: 4, originalLineNumber: "L-004",
+          originalSku: "AMBIG", status: "needs_review",
+          suggestions: [
+            { suggestedSku: "AMBIG", source: "normalized" },
+            { suggestedSku: "AMBIG-2", source: "normalized" },
+          ],
+        },
+        {
+          sourceFileId: "file-1", sourceRowNumber: 5, originalLineNumber: "L-005",
+          originalSku: "OLD", status: "accepted", acceptedSku: "OLD",
+          suggestions: [{ suggestedSku: "OLD", source: "exact" }],
+        },
+        {
+          sourceFileId: "file-1", sourceRowNumber: 6, originalLineNumber: "L-006",
+          originalSku: "ABC-123", status: "needs_review",
+          suggestions: [{ suggestedSku: "ABC-123", source: "exact" }],
+        },
+      ],
+    });
+
+    const calls = stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(multiSkuReview);
+      }
+      if (SKU_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(skuReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    // Two eligible same-SKU lines.
+    const batch = screen.getByTestId("sku-review-accept-all-same-sku");
+    expect(batch).not.toBeDisabled();
+    expect(batch).toHaveTextContent("(2)");
+
+    await act(async () => {
+      fireEvent.click(batch);
+    });
+
+    await waitFor(() =>
+      expect(calls.some((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")).toBe(true)
+    );
+
+    const posts = calls.filter((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST");
+    expect(posts).toHaveLength(1);
+    const actions = (posts[0].body as { actions: Record<string, unknown>[] }).actions;
+    expect(actions).toHaveLength(2);
+
+    // Only the two eligible rows (2 and 6) are present; ineligible rows are excluded.
+    const rows = actions.map((a) => a.sourceRowNumber).sort();
+    expect(rows).toEqual([2, 6]);
+    expect(rows).not.toContain(3);
+    expect(rows).not.toContain(4);
+    expect(rows).not.toContain(5);
+
+    const byRow = (n: number) => actions.find((a) => a.sourceRowNumber === n) as Record<string, unknown>;
+    expect(byRow(2).decision).toBe("accept");
+    expect(byRow(2).acceptedSku).toBe("C9300-48P-A");
+    expect(byRow(6).acceptedSku).toBe("ABC-123");
+
+    // Each action is sanitized: no authority/pricing/catalog/replacement fields.
+    for (const action of actions) {
+      expect(action.decision).toBe("accept");
+      expect(action.sourceFileId).toBe("file-1");
+      for (const forbidden of [
+        "tenantId", "projectId", "artifactId", "skuResolutionArtifactId", "decidedBy",
+        "decidedAt", "pricing", "catalog", "catalogProfile", "replacement", "substitution",
+        "configuration", "approval",
+      ]) {
+        expect(forbidden in action).toBe(false);
+      }
+    }
+  });
+
+  it("disables Accept all same-SKU when there are no eligible same-SKU lines", async () => {
+    const noEligible = skuReviewOkResponse({
+      reviewSummary: { totalLineCount: 1, needsReviewCount: 1, acceptedCount: 0, rejectedCount: 0, unresolvedCount: 0 },
+      lines: [
+        {
+          sourceFileId: "file-1", sourceRowNumber: 2, originalLineNumber: "L-002",
+          originalSku: "WS-C3650-48FD-E", status: "needs_review",
+          suggestions: [{ suggestedSku: "C9300-48P-A", source: "normalized" }],
+        },
+      ],
+    });
+
+    stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(noEligible);
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    const batch = screen.getByTestId("sku-review-accept-all-same-sku");
+    expect(batch).toBeDisabled();
+    expect(batch).toHaveTextContent("(0)");
   });
 
   it("does not approve the artifact client-side after a successful review POST", async () => {

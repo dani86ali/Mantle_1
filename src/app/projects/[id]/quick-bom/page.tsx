@@ -104,6 +104,20 @@ function isConfigurationExpansionDraft(artifact: ProjectArtifactSummary): boolea
   );
 }
 
+/**
+ * A SKU review line is safe to batch-accept only when it still needs review, carries
+ * exactly one suggestion, and that suggestion is the same SKU as the original (case-
+ * insensitive, trimmed). This deliberately excludes unresolved, ambiguous, multi-
+ * suggestion, already-decided, and different-SKU lines.
+ */
+function isSameSkuSuggestionAcceptable(line: QuickBomSkuResolutionReviewLine): boolean {
+  if (line.status !== "needs_review") return false;
+  if (line.suggestions.length !== 1) return false;
+  const suggested = line.suggestions[0].suggestedSku.trim().toLowerCase();
+  const original = line.originalSku.trim().toLowerCase();
+  return suggested !== "" && suggested === original;
+}
+
 /** Controlled error/code string from a parsed API body, else null. No stacks. */
 function bodyMessage(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
@@ -449,14 +463,19 @@ export default function ProjectQuickBomPage() {
     [id]
   );
 
-  // POST exactly one explicit accept/reject action to the existing review route.
-  // A successful POST mints a NEW sku_resolution version (new artifact id), so we
-  // clear the panel and refresh the main workspace; the engineer re-loads to review
-  // the fresh version. This is line review, not stage approval - nothing is approved
-  // here. The body carries only { actions: [oneSanitizedAction] }; no tenant/project/
-  // artifact/decidedBy/decidedAt/pricing/authority field is ever sent.
-  const submitSkuReviewAction = useCallback(
-    async (artifactId: string, action: Record<string, unknown>): Promise<void> => {
+  // POST one or more explicit accept/reject actions to the existing review route.
+  // A successful POST mints a NEW sku_resolution version (new artifact id). When the
+  // minted artifact still needs_review, the panel stays open and auto-refreshes
+  // against the returned new artifact id - the engineer never re-clicks "Load SKU
+  // review lines" after each action. When the minted artifact is no longer
+  // needs_review, the panel clears so the normal artifact approval controls appear.
+  // The main workspace is refreshed either way so the spine points at the latest
+  // version. This is line review, not stage approval - nothing is approved here. The
+  // body carries only { actions: [...sanitizedActions] }; no tenant/project/artifact/
+  // decidedBy/decidedAt/pricing/authority field is ever sent.
+  const submitSkuReviewActions = useCallback(
+    async (artifactId: string, actions: Record<string, unknown>[]): Promise<void> => {
+      if (actions.length === 0) return;
       setSkuReviewError(null);
       setSkuReviewBusy(true);
       try {
@@ -465,7 +484,7 @@ export default function ProjectQuickBomPage() {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ actions: [action] }),
+            body: JSON.stringify({ actions }),
           }
         );
         const body = await res.json().catch(() => null);
@@ -473,15 +492,24 @@ export default function ProjectQuickBomPage() {
           setSkuReviewError(bodyMessage(body) ?? SKU_REVIEW_ERROR);
           return;
         }
-        setSkuReview(null);
+        const artifact = (body as { artifact?: { id?: unknown; status?: unknown } } | null)
+          ?.artifact;
+        const nextId =
+          typeof artifact?.id === "string" && artifact.id !== "" ? artifact.id : null;
+        const stillNeedsReview = artifact?.status === "needs_review";
         await loadWorkspace();
+        if (stillNeedsReview && nextId) {
+          await loadSkuReview(nextId);
+        } else {
+          setSkuReview(null);
+        }
       } catch {
         setSkuReviewError(SKU_REVIEW_ERROR);
       } finally {
         setSkuReviewBusy(false);
       }
     },
-    [id, loadWorkspace]
+    [id, loadWorkspace, loadSkuReview]
   );
 
   // GET the read-only configuration-expansion line-review projection for one draft
@@ -621,12 +649,14 @@ export default function ProjectQuickBomPage() {
     line: QuickBomSkuResolutionReviewLine,
     acceptedSku: string
   ): void {
-    void submitSkuReviewAction(artifactId, {
-      decision: "accept",
-      sourceFileId: line.sourceFileId,
-      sourceRowNumber: line.sourceRowNumber,
-      acceptedSku,
-    });
+    void submitSkuReviewActions(artifactId, [
+      {
+        decision: "accept",
+        sourceFileId: line.sourceFileId,
+        sourceRowNumber: line.sourceRowNumber,
+        acceptedSku,
+      },
+    ]);
   }
 
   // Reject one line; optionally attach a note. Never carries an acceptedSku.
@@ -635,12 +665,35 @@ export default function ProjectQuickBomPage() {
     line: QuickBomSkuResolutionReviewLine
   ): void {
     const note = promptNote();
-    void submitSkuReviewAction(artifactId, {
-      decision: "reject",
-      sourceFileId: line.sourceFileId,
-      sourceRowNumber: line.sourceRowNumber,
-      ...(note !== undefined ? { note } : {}),
-    });
+    void submitSkuReviewActions(artifactId, [
+      {
+        decision: "reject",
+        sourceFileId: line.sourceFileId,
+        sourceRowNumber: line.sourceRowNumber,
+        ...(note !== undefined ? { note } : {}),
+      },
+    ]);
+  }
+
+  // Explicit batch accept for the safe same-SKU lines only: each must still be
+  // needs_review, carry exactly one suggestion, and that suggestion must equal the
+  // original SKU (case-insensitive, trimmed). Ambiguous, multi-suggestion, unresolved,
+  // already-decided, or different-SKU lines are excluded. acceptedSku is the suggested
+  // SKU the server already produced - never invented. One POST carries every eligible
+  // accept; nothing is auto-clicked or inferred - the engineer triggers this explicitly.
+  function onAcceptAllSameSku(
+    artifactId: string,
+    review: QuickBomSkuResolutionReviewWorkspace
+  ): void {
+    const actions = review.lines
+      .filter(isSameSkuSuggestionAcceptable)
+      .map((line) => ({
+        decision: "accept",
+        sourceFileId: line.sourceFileId,
+        sourceRowNumber: line.sourceRowNumber,
+        acceptedSku: line.suggestions[0].suggestedSku,
+      }));
+    void submitSkuReviewActions(artifactId, actions);
   }
 
   // Record an explicit accept for one expansion line locally. No POST happens here -
@@ -795,6 +848,10 @@ export default function ProjectQuickBomPage() {
   const allConfigExpansionDecided = configExpansionLines.every(
     (line) => configDecisions[line.lineId] !== undefined
   );
+  // Lines safe to batch-accept (single same-SKU suggestion still needing review).
+  const sameSkuEligibleCount = skuReview
+    ? skuReview.lines.filter(isSameSkuSuggestionAcceptable).length
+    : 0;
 
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-6">
@@ -969,6 +1026,15 @@ export default function ProjectQuickBomPage() {
                 {skuReview.reviewSummary.rejectedCount} rejected,{" "}
                 {skuReview.reviewSummary.unresolvedCount} unresolved
               </p>
+              <button
+                type="button"
+                data-testid="sku-review-accept-all-same-sku"
+                disabled={skuReviewBusy || sameSkuEligibleCount === 0}
+                onClick={() => onAcceptAllSameSku(skuResolution.id, skuReview)}
+                className={APPROVE_BTN}
+              >
+                Accept all same-SKU suggestions ({sameSkuEligibleCount})
+              </button>
               <ol className="space-y-2">
                 {skuReview.lines.map((line) => (
                   <li
