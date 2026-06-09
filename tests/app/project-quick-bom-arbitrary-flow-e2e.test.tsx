@@ -932,7 +932,7 @@ describe("Default Quick BoM catalog app-level E2E (Honeywell SKUs covered by def
   });
 });
 
-describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
+describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Prompt 147)", () => {
   const HW_CSV = [
     "#,Description,Part Number,Qty",
     "1,Switch,C9300X-48HX-A,2",
@@ -973,7 +973,7 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     });
   }
 
-  it("explicit Honeywell catalog opt-in completes the full app workflow for a non-seeded uploaded subset", async () => {
+  it("Honeywell subset resolves via default catalog and completes the full app workflow for a non-seeded uploaded subset", async () => {
     const project = await createArbitraryProject();
     const calls = dispatchQuickBomFetch();
     let view = render(<ProjectQuickBomPage />);
@@ -1598,7 +1598,7 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     view.unmount();
   });
 
-  it("UI review panels drive the full Honeywell opt-in app chain", async () => {
+  it("UI review panels drive the full Honeywell default-catalog app chain", async () => {
     const project = await createArbitraryProject();
     const calls = dispatchQuickBomFetch();
     let view = render(<ProjectQuickBomPage />);

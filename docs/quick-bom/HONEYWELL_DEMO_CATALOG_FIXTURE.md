@@ -164,29 +164,30 @@ Key facts:
   catalog authority, API/UI behavior, artifact records, approval records, export
   behavior, runner behavior, or broad Cisco authority.
 
-## Prompt 113: Project Quick BoM UI Opt-In
+## Prompt 113: Project Quick BoM UI Opt-In (superseded by Prompt 147)
 
-Prompt 113 wires an explicit Honeywell MVP demo catalog-profile checkbox into the
-Project Quick BoM workspace page (`src/app/projects/[id]/quick-bom/page.tsx`).
+Prompt 113 originally wired an explicit Honeywell MVP demo catalog-profile checkbox
+into the Project Quick BoM workspace page.
 
-Key facts:
+**Superseded by Prompt 147:** The runtime catalog-profile selector (checkbox and
+`catalogProfile` API field) was removed. Honeywell SKU metadata is now composed into
+the default Quick BoM approved catalog path. The checkbox
+(`data-testid="workflow-honeywell-demo-catalog-profile"`) no longer exists in the UI.
+SKU-resolution requests always use the default catalog; any JSON request that includes
+`catalogProfile` is rejected with `catalog_profile_not_supported`.
 
-- The Workflow actions card now has a checkbox
-  (`data-testid="workflow-honeywell-demo-catalog-profile"`) that an engineer must
-  explicitly tick to use the Honeywell MVP demo catalog supplement for SKU resolution.
-- Default Project Quick BoM UI behavior is unchanged. When the checkbox is unchecked,
-  the SKU-resolution create action still POSTs with no body and no `Content-Type`
-  header, and the default catalog path is used. Honeywell is never inferred from the
-  project, customer, or file name.
-- When the checkbox is ticked, only the `sku_resolution` create action POSTs
-  `{ catalogProfile: "honeywell_mvp_demo" }` as `application/json`. No other create
-  action sends this body.
-- This is app wiring only. The SKU-resolution route and service already supported the
-  `catalogProfile`; Prompt 113 does not change them.
-- The checkbox only selects the demo catalog overlay for SKU-resolution suggestions.
-  It does not create auto-acceptance (drafts stay `needs_review`), pricing authority,
-  configuration authority, replacement/substitution authority, export behavior, or
-  broad Cisco authority. It surfaces no artifact payloads or line decisions in the UI.
+The `getHoneywellDemoCatalogLookupIndex()` function (added in Prompt 105) remains as a
+lower-level fixture/projection helper used internally when composing the default
+approved catalog. It is not a runtime UI/API profile selector and is not callable by
+clients.
+
+Historical key facts for Prompt 113 (before removal):
+
+- A checkbox was required to opt in; Honeywell was never inferred from project,
+  customer, or file name.
+- The checkbox only selected the demo catalog overlay for SKU-resolution suggestions.
+  It did not create auto-acceptance, pricing authority, configuration authority,
+  replacement/substitution authority, export behavior, or broad Cisco authority.
 
 ## Prompt 114: Explicit Opt-In Full App Chain Evidence
 

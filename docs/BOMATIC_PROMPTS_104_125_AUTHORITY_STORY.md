@@ -75,7 +75,7 @@ Strengthen the Honeywell Quick BoM demo beyond seeded copy/parity by:
 | P106 | Catalog lookup source provenance | Lookup results carry a source provenance field indicating which catalog contributed each entry. |
 | P107 | Explicit SKU resolution catalog index injection | SKU resolution engine receives an explicit catalog index parameter; no implicit global state. |
 | P108 | Honeywell SKU resolution catalog opt-in | Opt-in flag on resolution call; supplement consulted only when explicitly enabled. |
-| P109 | SKU resolution route catalog profile opt-in | The SKU-resolution POST route accepts only an explicit, validated `catalogProfile: "honeywell_mvp_demo"` body; default no-body behavior is unchanged. |
+| P109 | SKU resolution route catalog profile opt-in | The SKU-resolution POST route accepts only an explicit, validated `catalogProfile: "honeywell_mvp_demo"` body; default no-body behavior is unchanged. _(Superseded by P147: the runtime profile selector was removed; see note below.)_ |
 | P110 | Honeywell SKU resolution overlay evidence | Tests proved a subset/reordered Honeywell-shaped BoQ resolves through the explicit overlay as review-gated suggestions only; default local mock gaps remain visible. |
 | P111 | Honeywell SKU review remains explicit | Confirmed no path bypasses line-level SKU review; supplement suggestions enter review queue. |
 | P112 | Honeywell subset expansion draft evidence | Tests proved explicitly accepted overlay SKU decisions feed the approved Honeywell Batch 1+2+3 rule pack and produce a review-required expansion draft. |
@@ -92,6 +92,21 @@ Strengthen the Honeywell Quick BoM demo beyond seeded copy/parity by:
 | P123 | Project Quick BoM UI renders the lean authority provenance summaries | UI displays lean config and pricing authority summary cards. Payload internals, source paths, evidence detail not shown. |
 | P124 | App-level Honeywell catalog opt-in flow proves authority provenance is visible and payload/workbook internals do not leak | App-flow test proves: opt-in roundtrip works, provenance summaries appear, no payload/path/evidence leakage at read-model boundary. |
 | P125 | Close Quick BoM Honeywell authority/catalog hardening record | This closure document and its doc regression test. Closes the P104-P125 sequence without changing architecture source of truth, runtime behavior, or UI. |
+
+---
+
+## Prompt 147 Supersession Note
+
+**Prompt 147 (post-sequence)** removed the runtime catalog-profile selector introduced in
+Prompts 109 and 113. The `catalogProfile` API field and the UI checkbox
+(`workflow-honeywell-demo-catalog-profile`) no longer exist. Any JSON request that
+includes `catalogProfile` is rejected with `catalog_profile_not_supported`.
+
+Honeywell SKU metadata is now composed directly into the default Quick BoM approved
+catalog path. `getHoneywellDemoCatalogLookupIndex()` remains as an internal
+fixture/projection helper used during catalog composition; it is not a runtime API or
+UI selector. All other authority boundaries (SKU review gate, configuration authority,
+pricing authority, no silent substitution) are unchanged.
 
 ---
 
