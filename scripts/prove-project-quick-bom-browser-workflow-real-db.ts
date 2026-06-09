@@ -12,8 +12,7 @@
  *   -> navigate to /projects/{projectId}/quick-bom
  *   -> upload the full seven-line Honeywell CSV through the real file input
  *   -> click the upload+normalize button
- *   -> tick the Honeywell MVP demo catalog checkbox
- *   -> click create sku_resolution
+ *   -> click create sku_resolution (default Quick BoM approved catalog, no profile)
  *   -> load SKU review lines and accept all seven suggestions through the UI
  *   -> approve sku_resolution through the artifact approval control
  *   -> click create configuration_expansion
@@ -580,25 +579,6 @@ async function clickAllTestId(
   return typeof value === "number" ? value : 0;
 }
 
-/** Tick a checkbox (only if not already checked); returns its final checked state. */
-async function ensureChecked(
-  cdp: CdpClient,
-  sessionId: string,
-  testid: string
-): Promise<boolean> {
-  const sel = '[data-testid="' + testid + '"]';
-  const expr =
-    "(function(){var el=document.querySelector(" +
-    JSON.stringify(sel) +
-    ");if(!el)return false;if(!el.checked)el.click();return !!el.checked;})()";
-  const r = await cdp.send(
-    "Runtime.evaluate",
-    { expression: expr, returnByValue: true },
-    sessionId
-  );
-  return (r.result as { value?: unknown } | undefined)?.value === true;
-}
-
 /** Set the page file input (by data-testid) to a single on-disk path via CDP DOM. */
 async function setFileInput(
   cdp: CdpClient,
@@ -1147,15 +1127,7 @@ async function main(): Promise<void> {
     );
     stepsCompleted.push("upload + normalize seven-line CSV");
 
-    // 4) Tick the Honeywell demo catalog checkbox, then create sku_resolution.
-    assert(
-      await ensureChecked(
-        cdp,
-        sessionId,
-        "workflow-honeywell-demo-catalog-profile"
-      ),
-      "Honeywell MVP demo catalog checkbox is ticked"
-    );
+    // 4) Create sku_resolution using the default Quick BoM catalog (no profile).
     assert(
       await clickTestId(cdp, sessionId, "workflow-create-sku_resolution"),
       "clicked create sku_resolution"
@@ -1164,7 +1136,7 @@ async function main(): Promise<void> {
       await waitForSpineStatus(cdp, sessionId, "sku_resolution", "needs review", 90000),
       "sku_resolution created as needs_review"
     );
-    stepsCompleted.push("create sku_resolution (Honeywell demo catalog opt-in)");
+    stepsCompleted.push("create sku_resolution (default Quick BoM catalog)");
 
     // 5) SKU review loop: load lines, accept exactly one suggestion, repeat until
     //    every line is accepted and the artifact is no longer needs_review.

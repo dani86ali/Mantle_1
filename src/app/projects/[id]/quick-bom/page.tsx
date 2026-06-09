@@ -15,11 +15,8 @@
  *     /files/[fileId]/normalize, then reload the workspace.
  *   - create sku_resolution/configuration_expansion/priced_boq/export_package: POST
  *     no body to the matching /artifacts/[sourceId]/<segment> route, then reload.
- *     Prompt 113 exception: when the engineer explicitly ticks the Honeywell MVP
- *     demo catalog checkbox, the sku_resolution create (only) POSTs
- *     { catalogProfile: "honeywell_mvp_demo" } as application/json to select the
- *     demo catalog overlay for suggestions. No other action sends a body, and
- *     Honeywell is never inferred from project/customer/file names.
+ *     The default Quick BoM approved catalog is always used for sku_resolution; there
+ *     is no catalog profile selector and no action sends a body.
  *   - priced_boq review: POST { decision, note? } to .../priced-boq/review.
  *   - export_package review: POST { artifactId, decision, note? } to /approvals.
  *   - sku_resolution / configuration_expansion while `needs_review` are NOT approved
@@ -236,9 +233,6 @@ export default function ProjectQuickBomPage() {
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [workflowStatus, setWorkflowStatus] = useState<string | null>(null);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
-  // Prompt 113: explicit engineer opt-in to the Honeywell MVP demo catalog overlay.
-  // Only the sku_resolution create action reads this; default behavior is unchanged.
-  const [useHoneywellDemoCatalog, setUseHoneywellDemoCatalog] = useState(false);
   // Prompt 127: minimal SKU line-review panel. Loaded on demand from the read-only
   // review route; null until the engineer clicks load (the main workspace stays
   // payload-free). Cleared after every successful review POST.
@@ -340,26 +334,16 @@ export default function ProjectQuickBomPage() {
     async (
       sourceArtifactId: string,
       segment: string,
-      label: string,
-      requestBody?: Record<string, unknown>
+      label: string
     ): Promise<void> => {
       setWorkflowError(null);
       setWorkflowStatus(`Creating ${label}...`);
       setWorkflowBusy(true);
       try {
-        // Default create posts no body. Only the explicit Honeywell opt-in
-        // (sku_resolution only) adds a JSON body and Content-Type (Prompt 113).
-        const init: RequestInit =
-          requestBody === undefined
-            ? { method: "POST" }
-            : {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(requestBody),
-              };
+        // Every create action posts no body; the default Quick BoM catalog is used.
         const res = await fetch(
           `/api/projects/${id}/quick-bom/artifacts/${sourceArtifactId}/${segment}`,
-          init
+          { method: "POST" }
         );
         const body = await res.json().catch(() => null);
         if (!res.ok) {
@@ -1271,24 +1255,6 @@ export default function ProjectQuickBomPage() {
           </button>
         </div>
 
-        <div className="mt-4 flex items-start gap-2">
-          <input
-            id="workflow-honeywell-demo-catalog-profile"
-            type="checkbox"
-            data-testid="workflow-honeywell-demo-catalog-profile"
-            checked={useHoneywellDemoCatalog}
-            onChange={(e) => setUseHoneywellDemoCatalog(e.target.checked)}
-            className="mt-0.5"
-          />
-          <label
-            htmlFor="workflow-honeywell-demo-catalog-profile"
-            className="text-xs text-text-secondary"
-          >
-            Use the Honeywell MVP demo catalog supplement for SKU resolution
-            suggestions (demo overlay only).
-          </label>
-        </div>
-
         <div className="mt-4 flex flex-wrap gap-2">
           {CREATE_ACTIONS.map((action) => {
             const source = spineArtifacts[action.source];
@@ -1301,16 +1267,7 @@ export default function ProjectQuickBomPage() {
                 type="button"
                 data-testid={`workflow-create-${action.type}`}
                 disabled={workflowBusy}
-                onClick={() =>
-                  void runCreate(
-                    source.id,
-                    action.segment,
-                    label,
-                    action.type === "sku_resolution" && useHoneywellDemoCatalog
-                      ? { catalogProfile: "honeywell_mvp_demo" }
-                      : undefined
-                  )
-                }
+                onClick={() => void runCreate(source.id, action.segment, label)}
                 className={APPROVE_BTN}
               >
                 Create {label}

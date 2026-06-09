@@ -467,7 +467,7 @@ describe("quick bom demo-readiness backlog - Prompt 137 live-DB Quick BoM API ro
 
   it("documents the P137 proof route chain facts", () => {
     expect(docFlat).toContain("normalized line count: 7");
-    expect(docFlat).toContain("honeywell_mvp_demo_catalog_supplement");
+    expect(docFlat).toContain("default_quick_bom_approved_catalog");
     expect(docFlat).toContain("sku accepted count: 7");
     expect(docFlat).toContain("config accepted lines: 60");
     expect(docFlat).toContain("priced line count: 60");
@@ -490,8 +490,8 @@ describe("quick bom demo-readiness backlog - Prompt 137 live-DB Quick BoM API ro
     expect(docFlat).toContain("production cisco pricing authority");
   });
 
-  it("states honeywell_mvp_demo catalog profile/supplement and demo fixture authority (not full catalog)", () => {
-    expect(docFlat).toContain("honeywell_mvp_demo catalog profile");
+  it("states the default Quick BoM catalog path covers Honeywell SKU metadata and demo fixture authority (not full catalog)", () => {
+    expect(docFlat).toContain("default quick bom catalog path");
     expect(docFlat).toContain("demo fixture authority");
   });
 });

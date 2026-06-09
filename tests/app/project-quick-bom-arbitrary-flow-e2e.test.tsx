@@ -873,8 +873,8 @@ describe("arbitrary Project Quick BoM app-level E2E (Prompt 97)", () => {
   });
 });
 
-describe("Honeywell demo catalog opt-in app-level E2E (Prompt 113)", () => {
-  it("opting in posts the catalogProfile body and persists the Honeywell overlay source", async () => {
+describe("Default Quick BoM catalog app-level E2E (Honeywell SKUs covered by default)", () => {
+  it("creates the SKU resolution with no catalog profile and resolves via the default catalog", async () => {
     await createArbitraryProject();
     const calls = dispatchQuickBomFetch();
     render(<ProjectQuickBomPage />);
@@ -894,14 +894,9 @@ describe("Honeywell demo catalog opt-in app-level E2E (Prompt 113)", () => {
       expect(screen.getByTestId("spine-normalized_boq")).toHaveTextContent("generated")
     );
 
-    // Explicit engineer opt-in: tick the Honeywell demo catalog checkbox before
-    // creating the SKU resolution draft. This checkbox is the only thing that
-    // selects the demo overlay - nothing is inferred from project/customer/file.
-    const checkbox = screen.getByTestId("workflow-honeywell-demo-catalog-profile");
-    expect(checkbox).toBeInTheDocument();
-    await act(async () => {
-      fireEvent.click(checkbox);
-    });
+    // There is no catalog profile checkbox anymore; the default Quick BoM approved
+    // catalog (which now carries Honeywell SKU metadata) is always used.
+    expect(screen.queryByTestId("workflow-honeywell-demo-catalog-profile")).toBeNull();
     await act(async () => {
       fireEvent.click(await screen.findByTestId("workflow-create-sku_resolution"));
     });
@@ -913,18 +908,18 @@ describe("Honeywell demo catalog opt-in app-level E2E (Prompt 113)", () => {
     expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
     expect(screen.queryByTestId("reject-sku_resolution")).toBeNull();
 
-    // The SKU-resolution fetch carried exactly the explicit Honeywell profile body.
+    // The SKU-resolution fetch carried no body / no catalog profile.
     const skuCalls = calls.filter(
       (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
     );
     expect(skuCalls).toHaveLength(1);
-    expect(skuCalls[0].body).toEqual({ catalogProfile: "honeywell_mvp_demo" });
+    expect(skuCalls[0].body).toBeNull();
 
-    // The persisted draft resolved through the explicit Honeywell overlay source.
+    // The persisted draft resolved through the default Quick BoM approved catalog.
     const skuDraft = hoisted.store.latestArtifact("sku_resolution");
     expect(skuDraft.status).toBe("needs_review");
     const summary = (skuDraft.payload as { summary: { catalogSource: string } }).summary;
-    expect(summary.catalogSource).toBe("honeywell_mvp_demo_catalog_supplement");
+    expect(summary.catalogSource).toBe("default_quick_bom_approved_catalog");
 
     // The opt-in exercises no downstream authority: no SKU approval, configuration
     // expansion, pricing, export, approval record, or download.
@@ -999,14 +994,9 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     );
     assertNoPayloadLeakHoneywell();
 
-    // Explicit engineer opt-in: tick the Honeywell demo catalog checkbox before
-    // creating the SKU resolution draft. Nothing about the project, customer, or
-    // file name selects this path automatically.
-    const checkbox = screen.getByTestId("workflow-honeywell-demo-catalog-profile");
-    expect(checkbox).toBeInTheDocument();
-    await act(async () => {
-      fireEvent.click(checkbox);
-    });
+    // No catalog profile selector: the default Quick BoM approved catalog (which now
+    // carries Honeywell SKU metadata) is always used for SKU resolution.
+    expect(screen.queryByTestId("workflow-honeywell-demo-catalog-profile")).toBeNull();
 
     await act(async () => {
       fireEvent.click(await screen.findByTestId("workflow-create-sku_resolution"));
@@ -1015,12 +1005,12 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
     expect(screen.queryByTestId("reject-sku_resolution")).toBeNull();
 
-    // Assert the recorded SKU-resolution POST body is exactly { catalogProfile: "honeywell_mvp_demo" }.
+    // Assert the recorded SKU-resolution POST carried no body / no catalog profile.
     const skuCalls = calls.filter(
       (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
     );
     expect(skuCalls).toHaveLength(1);
-    expect(skuCalls[0].body).toEqual({ catalogProfile: "honeywell_mvp_demo" });
+    expect(skuCalls[0].body).toBeNull();
 
     // Assert the SKU draft starts needs_review, not approved.
     const skuDraft = hoisted.store.latestArtifact("sku_resolution");
@@ -1267,10 +1257,8 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
       expect(dom).not.toContain("unitListPriceSarBySku");
     }
 
-    // Explicit Honeywell opt-in before creating sku_resolution.
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("workflow-honeywell-demo-catalog-profile"));
-    });
+    // No catalog profile selector: the default catalog covers these Honeywell SKUs.
+    expect(screen.queryByTestId("workflow-honeywell-demo-catalog-profile")).toBeNull();
 
     // Create sku_resolution draft.
     await act(async () => {
@@ -1279,12 +1267,12 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     expect(await screen.findByTestId("line-review-required-sku_resolution")).toBeInTheDocument();
     expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
 
-    // Assert Honeywell catalog profile body appears only on sku-resolution creation.
+    // Assert sku-resolution creation carried no body / no catalog profile.
     const skuCreateCalls = calls.filter(
       (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
     );
     expect(skuCreateCalls).toHaveLength(1);
-    expect(skuCreateCalls[0].body).toEqual({ catalogProfile: "honeywell_mvp_demo" });
+    expect(skuCreateCalls[0].body).toBeNull();
 
     // Load SKU review panel via the UI button; assert the GET review route was called.
     await act(async () => {
@@ -1631,10 +1619,8 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     );
     assertNoPayloadLeakHoneywell();
 
-    // Explicit Honeywell opt-in: nothing about project/customer/file selects this path.
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("workflow-honeywell-demo-catalog-profile"));
-    });
+    // No catalog profile selector: the default catalog covers these Honeywell SKUs.
+    expect(screen.queryByTestId("workflow-honeywell-demo-catalog-profile")).toBeNull();
 
     // Create sku_resolution draft.
     await act(async () => {
@@ -1643,12 +1629,12 @@ describe("Honeywell catalog opt-in full app chain E2E (Prompt 114)", () => {
     expect(await screen.findByTestId("line-review-required-sku_resolution")).toBeInTheDocument();
     expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
 
-    // Assert Honeywell catalog profile body was sent.
+    // Assert sku-resolution creation carried no body / no catalog profile.
     const skuCreateCalls = calls.filter(
       (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
     );
     expect(skuCreateCalls).toHaveLength(1);
-    expect(skuCreateCalls[0].body).toEqual({ catalogProfile: "honeywell_mvp_demo" });
+    expect(skuCreateCalls[0].body).toBeNull();
 
     // Load SKU review panel via the UI button; assert the GET review route was called.
     await act(async () => {

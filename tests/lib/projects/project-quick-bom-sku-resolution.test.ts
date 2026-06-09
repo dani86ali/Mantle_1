@@ -23,9 +23,7 @@ import * as serviceModule from "@/lib/projects/project-quick-bom-sku-resolution"
 import {
   createProjectQuickBomSkuResolutionDraft,
   type CreateProjectQuickBomSkuResolutionDraftInput,
-  type QuickBomSkuResolutionCatalogProfile,
 } from "@/lib/projects/project-quick-bom-sku-resolution";
-import { getHoneywellDemoCatalogLookupIndex } from "@/lib/projects/honeywell-demo-catalog-lookup";
 import { getProjectById } from "@/lib/db/project-store";
 import { getProjectArtifactById } from "@/lib/db/project-artifact-store";
 import { createSkuResolutionArtifact } from "@/lib/projects/sku-resolution-artifact";
@@ -462,8 +460,8 @@ describe("createProjectQuickBomSkuResolutionDraft - immutability and copies", ()
   });
 });
 
-describe("createProjectQuickBomSkuResolutionDraft - catalog profile opt-in", () => {
-  it("omitted profile calls createSkuResolutionArtifact with only tenantId/projectId/normalizedBoqArtifactId", async () => {
+describe("createProjectQuickBomSkuResolutionDraft - default catalog path", () => {
+  it("calls createSkuResolutionArtifact with only tenantId/projectId/normalizedBoqArtifactId", async () => {
     const result = await createProjectQuickBomSkuResolutionDraft(input());
 
     expect(result.status).toBe("ok");
@@ -475,41 +473,17 @@ describe("createProjectQuickBomSkuResolutionDraft - catalog profile opt-in", () 
     });
   });
 
-  it('explicit "default" profile behaves identically to omitted', async () => {
-    const inp = { ...input(), catalogProfile: "default" as QuickBomSkuResolutionCatalogProfile };
-
-    const result = await createProjectQuickBomSkuResolutionDraft(inp);
-
-    expect(result.status).toBe("ok");
-    expect(createArtifactMock).toHaveBeenCalledTimes(1);
-    expect(createArtifactMock).toHaveBeenCalledWith({
-      tenantId: TENANT,
-      projectId: PROJECT,
-      normalizedBoqArtifactId: SOURCE_ID,
-    });
-  });
-
-  it('honeywell_mvp_demo profile passes a catalogIndex whose catalogSource is honeywell_mvp_demo_catalog_supplement', async () => {
-    const honeywellIndex = getHoneywellDemoCatalogLookupIndex();
-    const inp = { ...input(), catalogProfile: "honeywell_mvp_demo" as QuickBomSkuResolutionCatalogProfile };
-
-    const result = await createProjectQuickBomSkuResolutionDraft(inp);
+  it("never passes an explicit catalogIndex, so the lower layer uses the default catalog", async () => {
+    const result = await createProjectQuickBomSkuResolutionDraft(input());
 
     expect(result.status).toBe("ok");
     expect(createArtifactMock).toHaveBeenCalledTimes(1);
     const callArg = createArtifactMock.mock.calls[0][0];
-    expect(callArg.tenantId).toBe(TENANT);
-    expect(callArg.projectId).toBe(PROJECT);
-    expect(callArg.normalizedBoqArtifactId).toBe(SOURCE_ID);
-    expect(callArg.catalogIndex).toBeDefined();
-    expect(callArg.catalogIndex?.catalogSource).toBe("honeywell_mvp_demo_catalog_supplement");
-    expect(callArg.catalogIndex?.catalogSource).toBe(honeywellIndex.catalogSource);
+    expect("catalogIndex" in callArg).toBe(false);
   });
 
-  it("honeywell_mvp_demo result is still needs_review and returns lean summaries only", async () => {
-    const inp = { ...input(), catalogProfile: "honeywell_mvp_demo" as QuickBomSkuResolutionCatalogProfile };
-
-    const result = await createProjectQuickBomSkuResolutionDraft(inp);
+  it("result is needs_review and returns lean summaries only", async () => {
+    const result = await createProjectQuickBomSkuResolutionDraft(input());
 
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("unreachable");
@@ -526,58 +500,40 @@ describe("createProjectQuickBomSkuResolutionDraft - catalog profile opt-in", () 
     expect(json).not.toContain(SECRET_DECIDED_BY);
   });
 
-  it("honeywell_mvp_demo is gated by project existence check", async () => {
+  it("is gated by project existence check", async () => {
     getProjectMock.mockResolvedValue(null);
-    const inp = { ...input(), catalogProfile: "honeywell_mvp_demo" as QuickBomSkuResolutionCatalogProfile };
 
-    const result = await createProjectQuickBomSkuResolutionDraft(inp);
+    const result = await createProjectQuickBomSkuResolutionDraft(input());
 
     expect(result.status).toBe("not_found");
     expect(createArtifactMock).not.toHaveBeenCalled();
   });
 
-  it("honeywell_mvp_demo is gated by project mode check", async () => {
+  it("is gated by project mode check", async () => {
     getProjectMock.mockResolvedValue(makeProject({ mode: "rfp" }));
-    const inp = { ...input(), catalogProfile: "honeywell_mvp_demo" as QuickBomSkuResolutionCatalogProfile };
 
-    const result = await createProjectQuickBomSkuResolutionDraft(inp);
+    const result = await createProjectQuickBomSkuResolutionDraft(input());
 
     expect(result.status).toBe("wrong_mode");
     expect(createArtifactMock).not.toHaveBeenCalled();
   });
 
-  it("honeywell_mvp_demo is gated by source artifact type check", async () => {
+  it("is gated by source artifact type check", async () => {
     getArtifactMock.mockResolvedValue(makeSourceArtifact({ type: "priced_boq" }));
-    const inp = { ...input(), catalogProfile: "honeywell_mvp_demo" as QuickBomSkuResolutionCatalogProfile };
 
-    const result = await createProjectQuickBomSkuResolutionDraft(inp);
+    const result = await createProjectQuickBomSkuResolutionDraft(input());
 
     expect(result.status).toBe("artifact_not_normalized_boq");
     expect(createArtifactMock).not.toHaveBeenCalled();
   });
 
-  it("honeywell_mvp_demo is gated by source artifact readiness check", async () => {
+  it("is gated by source artifact readiness check", async () => {
     getArtifactMock.mockResolvedValue(makeSourceArtifact({ status: "stale" }));
-    const inp = { ...input(), catalogProfile: "honeywell_mvp_demo" as QuickBomSkuResolutionCatalogProfile };
 
-    const result = await createProjectQuickBomSkuResolutionDraft(inp);
+    const result = await createProjectQuickBomSkuResolutionDraft(input());
 
     expect(result.status).toBe("normalized_boq_not_ready");
     expect(createArtifactMock).not.toHaveBeenCalled();
-  });
-
-  it("a project named/customerName Honeywell with no explicit profile omits catalogIndex", async () => {
-    // makeProject already has name="Honeywell Quick BoM" and customerName="Honeywell"; use default input (no profile)
-    const result = await createProjectQuickBomSkuResolutionDraft(input());
-
-    expect(result.status).toBe("ok");
-    expect(createArtifactMock).toHaveBeenCalledWith({
-      tenantId: TENANT,
-      projectId: PROJECT,
-      normalizedBoqArtifactId: SOURCE_ID,
-    });
-    const callArg = createArtifactMock.mock.calls[0][0];
-    expect("catalogIndex" in callArg).toBe(false);
   });
 });
 
@@ -592,12 +548,17 @@ describe("module purity and surface (static source check)", () => {
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports the project store, the artifact read store, the lower-level SKU resolution artifact service, the Honeywell demo overlay, and the project types", () => {
+  it("imports the project store, the artifact read store, the lower-level SKU resolution artifact service, and the project types", () => {
     expect(source).toContain('from "@/lib/db/project-store"');
     expect(source).toContain('from "@/lib/db/project-artifact-store"');
     expect(source).toContain('from "@/lib/projects/sku-resolution-artifact"');
-    expect(source).toContain('from "@/lib/projects/honeywell-demo-catalog-lookup"');
     expect(source).toContain('from "@/types/project"');
+  });
+
+  it("no longer imports or references the Honeywell demo catalog overlay", () => {
+    expect(source).not.toContain('from "@/lib/projects/honeywell-demo-catalog-lookup"');
+    expect(source).not.toContain("getHoneywellDemoCatalogLookupIndex");
+    expect(source).not.toContain("catalogProfile");
   });
 
   it("does not import the artifact-write helper, approval/evidence stores, the pure SKU/catalog helpers, the normalizer, pricing, config expansion, mantle/export, runner, AI, catalog, coordinator, engine, or adapter modules", () => {

@@ -26,7 +26,6 @@ import {
   createSkuResolutionArtifact,
   type SkuResolutionArtifactPayload,
 } from "@/lib/projects/sku-resolution-artifact";
-import { getHoneywellDemoCatalogLookupIndex } from "@/lib/projects/honeywell-demo-catalog-lookup";
 import type {
   Project,
   ProjectArtifact,
@@ -54,15 +53,11 @@ const INVALID_PAYLOAD_MESSAGE = "Normalized BoQ artifact payload is invalid.";
  */
 const READY_SOURCE_STATUSES: ProjectArtifactStatus[] = ["generated", "approved"];
 
-/** Catalog profile opt-in for {@link createProjectQuickBomSkuResolutionDraft}. */
-export type QuickBomSkuResolutionCatalogProfile = "default" | "honeywell_mvp_demo";
-
 /** Input for {@link createProjectQuickBomSkuResolutionDraft}. */
 export interface CreateProjectQuickBomSkuResolutionDraftInput {
   tenantId: string;
   projectId: string;
   normalizedBoqArtifactId: string;
-  catalogProfile?: QuickBomSkuResolutionCatalogProfile;
 }
 
 /** Lean serializable project projection returned on a wrong-mode request; no tenantId. */
@@ -184,7 +179,7 @@ function toPayloadSummary(
 export async function createProjectQuickBomSkuResolutionDraft(
   input: CreateProjectQuickBomSkuResolutionDraftInput
 ): Promise<CreateProjectQuickBomSkuResolutionDraftResult> {
-  const { tenantId, projectId, normalizedBoqArtifactId, catalogProfile } = input;
+  const { tenantId, projectId, normalizedBoqArtifactId } = input;
 
   const project = await getProjectById(tenantId, projectId);
   if (project === null) return { status: "not_found" };
@@ -211,18 +206,12 @@ export async function createProjectQuickBomSkuResolutionDraft(
     };
   }
 
-  const catalogIndex =
-    catalogProfile === "honeywell_mvp_demo"
-      ? getHoneywellDemoCatalogLookupIndex()
-      : undefined;
-
   let result;
   try {
     result = await createSkuResolutionArtifact({
       tenantId,
       projectId,
       normalizedBoqArtifactId,
-      ...(catalogIndex !== undefined ? { catalogIndex } : {}),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";

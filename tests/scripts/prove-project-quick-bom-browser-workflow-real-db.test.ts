@@ -247,7 +247,6 @@ describe("prove-project-quick-bom-browser-workflow-real-db script hygiene", () =
   it("drives every workflow selector through the UI", () => {
     for (const selector of [
       "workflow-upload-normalize",
-      "workflow-honeywell-demo-catalog-profile",
       "workflow-create-sku_resolution",
       "sku-review-load",
       "sku-review-accept",

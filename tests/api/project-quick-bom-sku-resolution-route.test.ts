@@ -194,9 +194,9 @@ describe("POST .../quick-bom/artifacts/[artifactId]/sku-resolution - tenant/para
   });
 });
 
-describe("POST .../quick-bom/artifacts/[artifactId]/sku-resolution - catalog profile", () => {
-  it("JSON body { catalogProfile: 'default' } calls service with no catalogProfile", async () => {
-    await POST(jsonReq({ catalogProfile: "default" }), PARAMS);
+describe("POST .../quick-bom/artifacts/[artifactId]/sku-resolution - catalog profile removed", () => {
+  it("empty JSON body is accepted and creates SKU resolution with no catalog profile", async () => {
+    await POST(jsonReq({}), PARAMS);
 
     expect(mockCreateDraft).toHaveBeenCalledTimes(1);
     const arg = mockCreateDraft.mock.calls[0][0];
@@ -208,34 +208,27 @@ describe("POST .../quick-bom/artifacts/[artifactId]/sku-resolution - catalog pro
     expect("catalogProfile" in arg).toBe(false);
   });
 
-  it("JSON body { catalogProfile: 'honeywell_mvp_demo' } passes catalogProfile to the service", async () => {
-    await POST(jsonReq({ catalogProfile: "honeywell_mvp_demo" }), PARAMS);
-
-    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
-    expect(mockCreateDraft).toHaveBeenCalledWith({
-      tenantId: SESSION.tenantId,
-      projectId: PROJECT,
-      normalizedBoqArtifactId: ARTIFACT_ID,
-      catalogProfile: "honeywell_mvp_demo",
-    });
-  });
-
-  it("matches JSON content-type case-insensitively", async () => {
-    await POST(mixedCaseJsonReq({ catalogProfile: "honeywell_mvp_demo" }), PARAMS);
-
-    expect(mockCreateDraft).toHaveBeenCalledWith({
-      tenantId: SESSION.tenantId,
-      projectId: PROJECT,
-      normalizedBoqArtifactId: ARTIFACT_ID,
-      catalogProfile: "honeywell_mvp_demo",
-    });
-  });
-
-  it("unsupported catalogProfile returns 400 invalid_catalog_profile and skips the service", async () => {
-    const res = await POST(jsonReq({ catalogProfile: "evil_profile" }), PARAMS);
+  it("JSON body { catalogProfile: 'default' } fails closed with 400 catalog_profile_not_supported", async () => {
+    const res = await POST(jsonReq({ catalogProfile: "default" }), PARAMS);
 
     expect(res.status).toBe(400);
-    expect((await res.json()).code).toBe("invalid_catalog_profile");
+    expect((await res.json()).code).toBe("catalog_profile_not_supported");
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+  });
+
+  it("JSON body { catalogProfile: 'honeywell_mvp_demo' } fails closed with 400 catalog_profile_not_supported", async () => {
+    const res = await POST(jsonReq({ catalogProfile: "honeywell_mvp_demo" }), PARAMS);
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("catalog_profile_not_supported");
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+  });
+
+  it("rejects catalogProfile case-insensitively on the JSON content-type", async () => {
+    const res = await POST(mixedCaseJsonReq({ catalogProfile: "honeywell_mvp_demo" }), PARAMS);
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("catalog_profile_not_supported");
     expect(mockCreateDraft).not.toHaveBeenCalled();
   });
 

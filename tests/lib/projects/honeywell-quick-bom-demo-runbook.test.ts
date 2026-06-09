@@ -319,7 +319,7 @@ describe("honeywell quick bom demo runbook - Prompt 137 live-DB Quick BoM API ro
       "tenants, projects, project_files, project_stages, project_artifacts, project_approvals"
     );
     expect(docTextLower).toContain("normalized line count: 7");
-    expect(docTextLower).toContain("honeywell_mvp_demo_catalog_supplement");
+    expect(docTextLower).toContain("default_quick_bom_approved_catalog");
     expect(docTextLower).toContain("sku accepted count: 7");
     expect(docTextLower).toContain("config accepted lines: 60");
     expect(docTextLower).toContain("priced line count: 60");
@@ -342,8 +342,8 @@ describe("honeywell quick bom demo runbook - Prompt 137 live-DB Quick BoM API ro
     expect(docTextLower).toContain("production cisco pricing authority");
   });
 
-  it("states honeywell_mvp_demo catalog profile/supplement used (not full production catalog)", () => {
-    expect(docTextLower).toContain("honeywell_mvp_demo catalog profile");
+  it("states the default Quick BoM catalog path covers Honeywell SKU metadata (not full production catalog)", () => {
+    expect(docTextLower).toContain("default quick bom catalog path");
     expect(docTextLower).toContain("demo fixture authority");
   });
 

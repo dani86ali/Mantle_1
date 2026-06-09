@@ -5,8 +5,8 @@
  * real, provisioned local Postgres so the full route/action chain is proven end
  * to end against live Project persistence (not only the in-memory test store).
  * The chain exercised is: create quick_bom Project -> upload the full seven-line
- * Honeywell CSV -> normalize -> SKU resolution (explicit honeywell_mvp_demo
- * catalog profile opt-in) -> explicit per-line SKU review -> SKU approval ->
+ * Honeywell CSV -> normalize -> SKU resolution (default Quick BoM approved
+ * catalog, no catalog profile) -> explicit per-line SKU review -> SKU approval ->
  * configuration expansion draft -> explicit per-line configuration review ->
  * configuration approval -> deterministic SAR pricing -> priced approval ->
  * export package -> export approval -> approved workbook download.
@@ -70,7 +70,7 @@ const PROOF_SESSION_HEADER = JSON.stringify(PROOF_SESSION);
 
 const XLSX_MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-const HONEYWELL_CATALOG_SOURCE = "honeywell_mvp_demo_catalog_supplement";
+const DEFAULT_CATALOG_SOURCE = "default_quick_bom_approved_catalog";
 const STANDALONE_OPTICS = ["SFP-10G-LR-S=", "SFP-10/25G-LR-S="];
 
 /** Full seven-line Honeywell Format #2 CSV (proof input). */
@@ -152,18 +152,6 @@ function emptyRequest(): NextRequest {
 function jsonRequest(body: unknown): NextRequest {
   return {
     headers: headerBag(),
-    cookies: { get: () => undefined },
-    json: () => Promise.resolve(body),
-  } as unknown as NextRequest;
-}
-
-/**
- * Like jsonRequest but also reports an application/json content-type header so a
- * route that gates body parsing on content-type (sku-resolution) reads the body.
- */
-function jsonContentTypeRequest(body: unknown): NextRequest {
-  return {
-    headers: headerBag({ "content-type": "application/json" }),
     cookies: { get: () => undefined },
     json: () => Promise.resolve(body),
   } as unknown as NextRequest;
@@ -498,11 +486,10 @@ async function main(): Promise<void> {
     ).length;
     assert(normalizedLineCount === 7, "normalized BoQ has 7 lines");
 
-    // 4) SKU resolution with the explicit Honeywell demo catalog profile.
-    const skuRes = await skuRoute.POST(
-      jsonContentTypeRequest({ catalogProfile: "honeywell_mvp_demo" }),
-      { params: { id: projectId, artifactId: normalizedArtifactId } }
-    );
+    // 4) SKU resolution using the default Quick BoM catalog (no catalog profile).
+    const skuRes = await skuRoute.POST(emptyRequest(), {
+      params: { id: projectId, artifactId: normalizedArtifactId },
+    });
     const skuBody = await expectJson(skuRes, 201, "sku resolution");
     const skuArtifactId = (skuBody.artifact as { id: string }).id;
     const skuPayloadSummary = skuBody.payloadSummary as {
@@ -511,8 +498,8 @@ async function main(): Promise<void> {
     };
     assert(skuPayloadSummary.lineCount === 7, "SKU resolution has lineCount 7");
     assert(
-      skuPayloadSummary.summary.catalogSource === HONEYWELL_CATALOG_SOURCE,
-      "SKU resolution catalogSource is the Honeywell demo supplement"
+      skuPayloadSummary.summary.catalogSource === DEFAULT_CATALOG_SOURCE,
+      "SKU resolution catalogSource is the default Quick BoM approved catalog"
     );
     assert(
       skuPayloadSummary.summary.unresolvedCount === 0,
@@ -791,7 +778,7 @@ async function main(): Promise<void> {
     summary.push("project id:               " + projectId);
     summary.push("uploaded file id:          " + fileId);
     summary.push("normalized line count:     " + normalizedLineCount);
-    summary.push("SKU catalog source:        " + HONEYWELL_CATALOG_SOURCE);
+    summary.push("SKU catalog source:        " + DEFAULT_CATALOG_SOURCE);
     summary.push("SKU accepted count:        " + skuAcceptedCount);
     summary.push("config accepted lines:     " + configAcceptedLineCount);
     summary.push("priced line count:         " + pricedPayloadSummary.lineCount);

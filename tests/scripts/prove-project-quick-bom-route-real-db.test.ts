@@ -10,8 +10,9 @@
  * never printed; the 12 existing Quick BoM route handlers are imported
  * dynamically (route handlers are the only behavior path, not product services);
  * required-table checks point the operator to `npm.cmd run db:migrate`; the full
- * seven-line Honeywell CSV and the explicit honeywell_mvp_demo catalog profile are
- * present; no forbidden AI/engine/coordinator/adapter/agent/catalog/pricing/config
+ * seven-line Honeywell CSV is present and the SKU resolution uses the default Quick
+ * BoM approved catalog with no catalog profile; no forbidden
+ * AI/engine/coordinator/adapter/agent/catalog/pricing/config
  * authority module is imported; and no route request body supplies
  * tenantId/projectId/decidedBy/pricing/authority fields.
  */
@@ -219,15 +220,13 @@ describe("prove-project-quick-bom-route-real-db script hygiene", () => {
     }
   });
 
-  it("uses the explicit honeywell_mvp_demo catalog profile", () => {
-    expect(source.includes('catalogProfile: "honeywell_mvp_demo"')).toBe(true);
+  it("uses the default Quick BoM catalog with no catalog profile", () => {
+    expect(source.includes("catalogProfile")).toBe(false);
+    expect(source.includes('"default_quick_bom_approved_catalog"')).toBe(true);
   });
 
   it("never supplies tenantId/projectId/decidedBy/pricing/authority in a request body", () => {
-    const bodyArgs = [
-      ...callArguments(source, "jsonRequest"),
-      ...callArguments(source, "jsonContentTypeRequest"),
-    ];
+    const bodyArgs = [...callArguments(source, "jsonRequest")];
     expect(bodyArgs.length).toBeGreaterThan(0);
     const forbiddenBodyKey =
       /\b(tenantId|projectId|decidedBy|decidedAt|pricing|replacementAuthority|skuSubstitutionAuthority|configAuthority|pricingAuthority)\s*:/;

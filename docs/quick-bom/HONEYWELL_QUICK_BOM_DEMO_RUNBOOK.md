@@ -255,7 +255,8 @@ successfully against local Docker Postgres via
 - required tables: present (tenants, projects, project_files, project_stages,
   project_artifacts, project_approvals)
 - normalized line count: 7
-- SKU catalog source: honeywell_mvp_demo_catalog_supplement
+- SKU catalog source: default_quick_bom_approved_catalog (Honeywell SKU metadata is
+  now part of the default Quick BoM catalog path)
 - SKU accepted count: 7
 - config accepted lines: 60
 - priced line count: 60
@@ -267,8 +268,9 @@ successfully against local Docker Postgres via
 
 The script proves existing Next.js Quick BoM API route/action handlers against a real
 local/provisioned Postgres DB for the full Honeywell seven-line route chain:
-create quick_bom Project -> upload customer BoQ -> normalize -> SKU resolution with
-explicit honeywell_mvp_demo catalog profile -> explicit SKU review -> SKU approval ->
+create quick_bom Project -> upload customer BoQ -> normalize -> SKU resolution using
+the default Quick BoM approved catalog (no catalog profile) -> explicit SKU review ->
+SKU approval ->
 configuration expansion draft -> explicit configuration review -> configuration
 approval -> deterministic SAR pricing -> priced approval -> export package -> export
 approval -> approved workbook download. It is an operator proof/evidence command only;
@@ -279,8 +281,9 @@ UI against a live/provisioned DB is separately proven by the Prompt 140 automate
 headless browser workflow (Section 12). Prompt 137 does NOT close:
 - manual browser QA;
 - production deployment readiness;
-- full real-catalog Honeywell SKU resolution (uses explicit honeywell_mvp_demo catalog
-  profile/supplement and demo fixture authority, not full production Cisco catalog);
+- full real-catalog Honeywell SKU resolution (Honeywell SKU metadata is now part of the
+  default Quick BoM catalog path and demo fixture authority, NOT production Cisco catalog
+  authority, pricing authority, configuration authority, or replacement authority);
 - production Cisco pricing authority;
 - broad Cisco-general configuration authority.
 

@@ -4,11 +4,12 @@
  *
  * POST only. Authenticated via requireAuth; session.tenantId is the only tenant
  * authority and the route params id/artifactId are the only project/source-
- * artifact authority. Optional JSON body: { catalogProfile?: "default" |
- * "honeywell_mvp_demo" }. All other body fields are ignored. Non-JSON requests
- * preserve original behavior. Invalid JSON -> 400 invalid_request_body.
- * Unsupported catalogProfile -> 400 invalid_catalog_profile. The service result
- * maps to HTTP: not_found -> 404, wrong_mode -> 409 (with the lean project
+ * artifact authority. The default Quick BoM approved catalog is always used; there
+ * is no catalog profile selector. Empty JSON / no body / non-JSON requests are
+ * accepted and resolve from the normalized BoQ artifact. Invalid JSON -> 400
+ * invalid_request_body. A JSON body that includes catalogProfile -> 400
+ * catalog_profile_not_supported (fail closed, never silently switch). The service
+ * result maps to HTTP: not_found -> 404, wrong_mode -> 409 (with the lean project
  * summary), normalized_boq_not_found -> 404, artifact_not_normalized_boq -> 409
  * (artifact included when known), normalized_boq_not_ready -> 409 (with the
  * source artifact summary), invalid_normalized_boq_payload -> 409, ok -> 201
@@ -21,15 +22,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/middleware/auth";
-import {
-  createProjectQuickBomSkuResolutionDraft,
-  type QuickBomSkuResolutionCatalogProfile,
-} from "@/lib/projects/project-quick-bom-sku-resolution";
-
-const SUPPORTED_CATALOG_PROFILES: ReadonlySet<string> = new Set([
-  "default",
-  "honeywell_mvp_demo",
-]);
+import { createProjectQuickBomSkuResolutionDraft } from "@/lib/projects/project-quick-bom-sku-resolution";
 
 export async function POST(
   request: NextRequest,
@@ -37,8 +30,6 @@ export async function POST(
 ) {
   const session = requireAuth(request);
   if (session instanceof NextResponse) return session;
-
-  let catalogProfile: QuickBomSkuResolutionCatalogProfile | undefined;
 
   const contentType = (request.headers.get("content-type") ?? "").toLowerCase();
   if (contentType.includes("application/json")) {
@@ -55,22 +46,20 @@ export async function POST(
       );
     }
 
-    if (body !== null && typeof body === "object" && !Array.isArray(body)) {
-      const raw = (body as Record<string, unknown>).catalogProfile;
-      if (raw !== undefined) {
-        if (typeof raw !== "string" || !SUPPORTED_CATALOG_PROFILES.has(raw)) {
-          return NextResponse.json(
-            {
-              code: "invalid_catalog_profile",
-              error: "Unsupported catalogProfile value.",
-            },
-            { status: 400 }
-          );
-        }
-        if (raw !== "default") {
-          catalogProfile = raw as QuickBomSkuResolutionCatalogProfile;
-        }
-      }
+    if (
+      body !== null &&
+      typeof body === "object" &&
+      !Array.isArray(body) &&
+      "catalogProfile" in (body as Record<string, unknown>)
+    ) {
+      return NextResponse.json(
+        {
+          code: "catalog_profile_not_supported",
+          error:
+            "catalogProfile is no longer supported; the default Quick BoM catalog is always used.",
+        },
+        { status: 400 }
+      );
     }
   }
 
@@ -79,7 +68,6 @@ export async function POST(
       tenantId: session.tenantId,
       projectId: params.id,
       normalizedBoqArtifactId: params.artifactId,
-      ...(catalogProfile !== undefined ? { catalogProfile } : {}),
     });
 
     if (result.status === "not_found") {
