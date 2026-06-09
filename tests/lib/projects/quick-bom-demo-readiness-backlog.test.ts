@@ -4,8 +4,13 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Quick BoM demo-readiness backlog
- * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 141 (docs/test
- * alignment for the Prompt 139/140 live-DB browser proofs). Prompt 139 added
+ * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 142 (docs/test
+ * alignment for the local production build proof: npm.cmd run build completed
+ * successfully after Prompt 141; Quick BoM API/UI routes present in the generated route
+ * table; Redis/ioredis ECONNREFUSED :6379 noise is a known non-failing build/test noise
+ * and reliability follow-up; no production readiness claimed). Section 5K records the
+ * build proof. Prior: refreshed by Prompt 141 (docs/test alignment for the Prompt 139/140
+ * live-DB browser proofs). Prompt 139 added
  * scripts/prove-project-quick-bom-browser-real-db.ts (seeded live-DB headless browser
  * render smoke proof, Section 5I); Prompt 140 added
  * scripts/prove-project-quick-bom-browser-workflow-real-db.ts and proved the full
@@ -27,22 +32,25 @@ import { join } from "path";
  * Prompt 101 aligned the DB-readiness evidence; Prompt 103 aligned the catalog-coverage
  * evidence.
  *
- * This test asserts the backlog: records Prompt 138 as the current refresh while
- * preserving Prompt 137, Prompt 136, Prompt 135, Prompt 134, and earlier
- * closure records; asserts Prompt 137 live-DB Quick BoM API route/action-chain proof
- * facts (script name, run command, tables, SKU count, config/priced/export rows, totals,
- * cleanup); asserts Prompt 135 real-DB proof facts; asserts B10 is no longer framed as
- * needs-verification or unverified; asserts B6 is no longer framed as open/later/post-MVP;
- * keeps the planning file as source of truth; preserves the P65-P82 seeded Honeywell
- * closure record, the P83-P98 app-readiness closure, and the P104-P141
- * UI/evidence/staleness/real-DB/browser/docs hardening closure; records that an automated
- * browser-driven UI/live DB proof now exists (P140), while keeping manual browser QA,
- * full Honeywell BoQ through real SKU resolution, production deployment, production
- * pricing authority, broad Cisco-general configuration authority, and future suggestion
- * steps as open; preserves the demo-only pricing boundary, the
- * pricing/configuration authority separation, the no-runtime-AI rule, Batch 4 as a
- * decision record only, standalone optics, and deferred replacements with no silent
- * substitution; and stays ASCII-only.
+ * This test asserts the backlog: records Prompt 142 as the current refresh while
+ * preserving Prompt 141, Prompt 138, Prompt 137, Prompt 136, Prompt 135, Prompt 134,
+ * and earlier closure records; asserts the Prompt 142 local production build proof
+ * (npm.cmd run build success, Quick BoM routes present, Redis/ioredis ECONNREFUSED :6379
+ * noise documented as non-failing, no production readiness claimed, Section 5K);
+ * asserts Prompt 137 live-DB Quick BoM API route/action-chain proof facts (script name,
+ * run command, tables, SKU count, config/priced/export rows, totals, cleanup); asserts
+ * Prompt 135 real-DB proof facts; asserts B10 is no longer framed as needs-verification
+ * or unverified; asserts B6 is no longer framed as open/later/post-MVP; keeps the
+ * planning file as source of truth; preserves the P65-P82 seeded Honeywell closure
+ * record, the P83-P98 app-readiness closure, and the P104-P142
+ * UI/evidence/staleness/real-DB/browser/build/docs hardening closure; records that an
+ * automated browser-driven UI/live DB proof now exists (P140), while keeping manual
+ * browser QA, full Honeywell BoQ through real SKU resolution, production deployment,
+ * production pricing authority, broad Cisco-general configuration authority, hosted
+ * deployment readiness, CI readiness, and future suggestion steps as open; preserves
+ * the demo-only pricing boundary, the pricing/configuration authority separation, the
+ * no-runtime-AI rule, Batch 4 as a decision record only, standalone optics, and
+ * deferred replacements with no silent substitution; and stays ASCII-only.
  *
  * The doc is read from disk and never mutated; no runtime evaluator, composer, pricing,
  * or expansion code is imported or run.
@@ -172,6 +180,13 @@ const STALE_PHRASES = [
   "full Next.js API/UI/browser route chain against a live/provisioned database",
   "full Next.js API/UI/browser route chain against a live DB",
   "full Next.js route chain against a live DB remains open",
+  // Prompt 142: dangerous overclaim phrases that must never appear.
+  "production readiness is complete",
+  "hosted deployment readiness is complete",
+  "ci readiness is complete",
+  "manual qa completion is complete",
+  "production cisco pricing authority is now established",
+  "full real-catalog honeywell sku coverage is complete",
   // Prompt 134: stale staleness framing retired (B6 closed by Prompt 133).
   "planning only",
   "no caller in src",
@@ -188,7 +203,8 @@ describe("quick bom demo-readiness backlog - exists and stays an execution track
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 141 refresh and keeps earlier refresh records and planning file as source of truth", () => {
+  it("records the Prompt 142 refresh and keeps earlier refresh records and planning file as source of truth", () => {
+    expect(docFlat).toContain("refreshed by prompt 142");
     expect(docFlat).toContain("refreshed by prompt 141");
     expect(docFlat).toContain("refreshed by prompt 138");
     expect(docFlat).toContain("refreshed by prompt 136");
@@ -268,8 +284,8 @@ describe("quick bom demo-readiness backlog - P65-P132 slices complete", () => {
     }
   });
 
-  it("carries the closed P104-P141 UI/evidence/staleness/real-DB/browser/docs hardening record", () => {
-    expect(docFlat).toContain("completed (p104-p141)");
+  it("carries the closed P104-P142 UI/evidence/staleness/real-DB/browser/build/docs hardening record", () => {
+    expect(docFlat).toContain("completed (p104-p142)");
     expect(docFlat).toContain("p104-p114");
     expect(docFlat).toContain("p126-p131");
     expect(docFlat).toContain("p132");
@@ -282,6 +298,7 @@ describe("quick bom demo-readiness backlog - P65-P132 slices complete", () => {
     expect(docFlat).toContain("p139");
     expect(docFlat).toContain("p140");
     expect(docFlat).toContain("p141");
+    expect(docFlat).toContain("p142");
   });
 
   it("names the Prompt 73 command, P74-P76 CCW evidence, and P77-P81 app pieces", () => {
@@ -672,6 +689,37 @@ describe("quick bom demo-readiness backlog - catalog coverage evidence aligned (
     expect(
       doc.toLowerCase().includes("sku coverage in the local mock catalog is unverified")
     ).toBe(false);
+  });
+});
+
+describe("quick bom demo-readiness backlog - Prompt 142 local production build proof (Section 5K)", () => {
+  it("names npm.cmd run build as the build command and states it is a local proof only", () => {
+    expect(docFlat).toContain("npm.cmd run build");
+    expect(docFlat).toContain("local `npm.cmd run build` proof only");
+  });
+
+  it("records next.js production compilation success and Quick BoM routes present", () => {
+    expect(docFlat).toContain("next.js production compilation succeeded");
+    expect(docFlat).toContain("quick bom api/ui routes were present");
+  });
+
+  it("documents redis/ioredis econnrefused :6379 as a known non-failing build/test noise", () => {
+    expect(docFlat).toContain("econnrefused :6379");
+    expect(docFlat).toContain("known non-failing build/test noise");
+    expect(docFlat).toContain("reliability follow-up");
+  });
+
+  it("does not claim production readiness, hosted deployment readiness, CI readiness, or manual QA completion", () => {
+    expect(docFlat).toContain("not a hosted deployment proof");
+    expect(docFlat).toContain("not a ci/cd pipeline verification");
+    expect(docFlat).toContain("not a production readiness claim");
+  });
+
+  it("keeps manual browser QA, production deployment, production Cisco pricing authority, and full real-catalog Honeywell SKU coverage open after P142", () => {
+    expect(docFlat).toContain("manual browser qa (remains not run/open)");
+    expect(docFlat).toContain("production deployment/provisioning verification (remains open)");
+    expect(docFlat).toContain("production cisco pricing authority (remains open)");
+    expect(docFlat).toContain("full real-catalog honeywell sku coverage beyond the demo supplement/local mock");
   });
 });
 

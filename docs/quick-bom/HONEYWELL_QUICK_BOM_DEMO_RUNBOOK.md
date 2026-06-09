@@ -1,8 +1,9 @@
 # Honeywell Quick BoM Demo Runbook
 
 Status: operator runbook for the Honeywell MVP Quick BoM demo (demo scope only).
-Refreshed by Prompt 141. Prior record: Refreshed by Prompt 138. Prior: Refreshed by
-Prompt 136. Prior: Refreshed by Prompt 132.
+Refreshed by Prompt 142 (docs/test alignment for the local production build proof).
+Prior record: Refreshed by Prompt 141. Prior: Refreshed by Prompt 138. Prior: Refreshed
+by Prompt 136. Prior: Refreshed by Prompt 132.
 
 Operator-facing runbook for the Honeywell Quick BoM demo. It defines what the
 generated Honeywell Mantle workbook is, the local operator command (Prompt 73), the
@@ -10,9 +11,9 @@ authority boundaries, the manual workbook checklist, the app-level seeded demo p
 (Prompt 81), the app-level arbitrary flow proof (Prompt 97), the full seven-line
 Honeywell app proof (Prompt 131), the Prompt 135 local Docker Postgres Project-state
 real-DB proof, the Prompt 137 live-DB Quick BoM API route/action-chain proof, the
-Prompt 139 live-DB seeded browser render smoke proof, and the Prompt 140 automated
-browser-driven UI/live DB workflow proof. It is a demo runbook, not an architecture source of
-truth;
+Prompt 139 live-DB seeded browser render smoke proof, the Prompt 140 automated
+browser-driven UI/live DB workflow proof, and the Prompt 142 local production build
+proof. It is a demo runbook, not an architecture source of truth;
 `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md` remains the source
 of truth and `docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md` is the execution tracker.
 
@@ -342,4 +343,32 @@ QA. It does NOT close:
 - production Cisco pricing authority (remains open);
 - full real-catalog Honeywell SKU coverage (constrained by known local mock catalog gaps
   / demo supplement opt-in);
+- broad/general Cisco intelligence (out of scope).
+
+## 13. Prompt 142 local production build proof
+
+Prompt 142 records the local production build proof for the Honeywell Quick BoM flow.
+After Prompt 141, Codex ran `npm.cmd run build` and the build completed successfully:
+
+- Next.js production compilation succeeded.
+- Type/lint validity checks succeeded.
+- Static page generation completed.
+- The Quick BoM API/UI routes were present in the generated route table.
+
+This is a local `npm.cmd run build` proof only. It is not a hosted deployment proof,
+not a CI/CD pipeline verification, and not a production readiness claim.
+
+The build emitted known Redis/ioredis `ECONNREFUSED :6379` noise after the successful
+build. This noise did not fail the build and is a known non-failing build/test noise
+and reliability follow-up. It does not block demo use under a correctly-provisioned
+local Docker Postgres environment.
+
+Prompt 142 does NOT close:
+- manual browser QA (remains not run/open);
+- production deployment/provisioning verification (remains open);
+- production Cisco pricing authority (remains open);
+- full real-catalog Honeywell SKU coverage beyond the demo supplement/local mock
+  constraints (remains open);
+- hosted deployment readiness;
+- CI/CD pipeline verification;
 - broad/general Cisco intelligence (out of scope).

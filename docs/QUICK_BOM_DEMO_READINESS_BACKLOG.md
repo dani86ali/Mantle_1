@@ -2,8 +2,13 @@
 
 Execution tracker only. `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md`
 is the architecture source of truth; this backlog never overrides it and is not a
-planning document. Last refreshed by Prompt 141 (docs/test alignment for the Prompt
-139/140 live-DB browser proofs). Prior: refreshed by Prompt 138 (docs/test alignment cleanup, after Prompt 137 added
+planning document. Last refreshed by Prompt 142 (docs/test alignment for the local
+production build proof: `npm.cmd run build` completed successfully after Prompt 141
+with Next.js production compilation, type/lint validity, static page generation, and
+Quick BoM API/UI routes present; Redis/ioredis `ECONNREFUSED :6379` noise emitted
+post-build is a known non-failing build/test noise and reliability follow-up). Prior:
+refreshed by Prompt 141 (docs/test alignment for the Prompt 139/140 live-DB browser
+proofs). Prior: refreshed by Prompt 138 (docs/test alignment cleanup, after Prompt 137 added
 `scripts/prove-project-quick-bom-route-real-db.ts` and ran it against local Docker
 Postgres (live-DB Quick BoM API route/action-chain proof, Section 5H). Prior:
 refreshed by Prompt 136 after Prompt 135 added
@@ -62,9 +67,10 @@ headless browser seeded-render smoke proof against live/provisioned local Postgr
 `tests/scripts/prove-project-quick-bom-browser-workflow-real-db.test.ts`) and proved the
 full Honeywell Quick BoM workflow through an automated headless browser against
 live/provisioned local Postgres, so an automated browser-driven UI/live DB proof now
-exists for the Honeywell Quick BoM workflow (Section 5J). Prompt 141 is this docs/test
-alignment refresh. None of these proofs claim production readiness; honest remaining gaps
-are in Sections 6-7.
+exists for the Honeywell Quick BoM workflow (Section 5J). Prompt 141 is the prior
+docs/test alignment refresh. Prompt 142 is this docs/test alignment refresh recording
+the local production build proof (Section 5K). None of these proofs claim production
+readiness; honest remaining gaps are in Sections 6-7.
 
 ## 2. Status
 
@@ -684,6 +690,34 @@ QA. It does NOT close:
   / demo supplement opt-in);
 - broad/general Cisco intelligence (out of scope).
 
+## 5K. Local Production Build Proof (P142)
+
+Prompt 142 records the local production build proof for the Honeywell Quick BoM flow.
+After Prompt 141, Codex ran `npm.cmd run build` and the build completed successfully:
+
+- Next.js production compilation succeeded.
+- Type/lint validity checks succeeded.
+- Static page generation completed.
+- The Quick BoM API/UI routes were present in the generated route table.
+
+This is a local `npm.cmd run build` proof only. It is not a hosted deployment proof,
+not a CI/CD pipeline verification, and not a production readiness claim.
+
+The build emitted known Redis/ioredis `ECONNREFUSED :6379` noise after the successful
+build. This noise did not fail the build and is a known non-failing build/test noise.
+It remains a reliability/noise follow-up; it does not block demo use under a
+correctly-provisioned local Docker Postgres environment.
+
+Prompt 142 does NOT close:
+- manual browser QA (remains not run/open);
+- production deployment/provisioning verification (remains open);
+- production Cisco pricing authority (remains open);
+- full real-catalog Honeywell SKU coverage beyond the demo supplement/local mock
+  constraints (remains open);
+- hosted deployment readiness;
+- CI/CD pipeline verification;
+- broad Cisco-general intelligence (out of scope).
+
 ## 6. Demo Blockers
 
 Priority key: P0 blocks a credible demo. P1 means the demo can proceed with a
@@ -912,9 +946,9 @@ Completed (P83-P98) - the app-readiness closure slice, kept as the execution rec
 - P98 - App-readiness closure: this refresh (this doc and the runbook, plus their
   doc regression tests).
 
-Completed (P104-P141) - the UI/evidence hardening, staleness wiring, real-DB proof,
-Quick BoM API route/action-chain real-DB proof, live-DB browser proofs, and docs/test
-alignment slice, kept as the execution record:
+Completed (P104-P142) - the UI/evidence hardening, staleness wiring, real-DB proof,
+Quick BoM API route/action-chain real-DB proof, live-DB browser proofs, local production
+build proof, and docs/test alignment slice, kept as the execution record:
 
 - P104-P114 - Honeywell demo catalog supplement explicit opt-in and authority-safe UI
   wiring - DONE.
@@ -959,8 +993,11 @@ alignment slice, kept as the execution record:
   download link visible, cleanup ok), and fixed the default dev session user id to be
   UUID-shaped for the `project_approvals.decided_by` UUID column. Automated headless
   browser evidence, not human/manual QA. See Section 5J.
-- P141 - Docs/test alignment for the Prompt 139/140 live-DB browser proofs (this
-  refresh) - DONE.
+- P141 - Docs/test alignment for the Prompt 139/140 live-DB browser proofs - DONE.
+- P142 - Docs/test alignment for the local production build proof (this refresh) - DONE
+  (`npm.cmd run build` completed successfully after Prompt 141; Quick BoM API/UI routes
+  present; Redis/ioredis `ECONNREFUSED :6379` noise is a known non-failing reliability
+  follow-up; no production readiness claimed). See Section 5K.
 
 Post-closure follow-ups (no prompt numbers assigned; ordering is a recommendation,
 not a commitment):

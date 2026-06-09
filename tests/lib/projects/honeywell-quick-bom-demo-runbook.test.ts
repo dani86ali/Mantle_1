@@ -4,10 +4,17 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Honeywell Quick BoM demo operator runbook
- * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 141 (docs/test
- * alignment for the Prompt 139/140 live-DB browser proofs).
+ * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 142 (docs/test
+ * alignment for the local production build proof: npm.cmd run build completed successfully;
+ * Quick BoM API/UI routes present; Redis/ioredis ECONNREFUSED :6379 noise is a known
+ * non-failing build/test noise and reliability follow-up; no production readiness claimed).
+ * Section 13 records the local production build proof.
  *
- * It asserts the runbook: records the Prompt 141 refresh (prior: Prompt 138, 136, 132);
+ * It asserts the runbook: records the Prompt 142 refresh (prior: Prompt 141, 138, 136, 132);
+ * documents the Prompt 142 local production build proof (npm.cmd run build success, Quick
+ * BoM routes present, Redis/ioredis ECONNREFUSED :6379 noise as known non-failing noise,
+ * open gaps: manual browser QA, production deployment, production Cisco pricing authority,
+ * full real-catalog Honeywell SKU coverage, hosted deployment readiness, CI readiness);
  * documents the Prompt 139 live-DB seeded browser render smoke proof and the Prompt 140
  * automated browser-driven UI/live DB workflow proof (script names, evidence facts, and
  * the open manual-browser-QA / production-deployment gaps);
@@ -49,7 +56,8 @@ describe("honeywell quick bom demo runbook - exists and is hygienic", () => {
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 141 refresh and keeps the prior Prompt 138, 136, and 132 records", () => {
+  it("records the Prompt 142 refresh and keeps the prior Prompt 141, 138, 136, and 132 records", () => {
+    expect(docTextLower).toContain("refreshed by prompt 142");
     expect(docTextLower).toContain("refreshed by prompt 141");
     expect(docTextLower).toContain("refreshed by prompt 138");
     expect(docTextLower).toContain("refreshed by prompt 136");
@@ -374,6 +382,13 @@ describe("honeywell quick bom demo runbook - app-level status is accurate", () =
 
 describe("honeywell quick bom demo runbook - stale live-DB wording removed (Prompt 138/141)", () => {
   const STALE_PHRASES = [
+    // Prompt 142: dangerous overclaim phrases that must never appear.
+    "production readiness is complete",
+    "hosted deployment readiness is complete",
+    "ci readiness is complete",
+    "manual qa completion is complete",
+    "production cisco pricing authority is now established",
+    "full real-catalog honeywell sku coverage is complete",
     "full app route/action chain against a live/provisioned database remains unproven",
     "full Next.js API/UI/browser route chain against a live/provisioned database",
     "full Next.js API/UI/browser route chain against live DB remains unproven",
@@ -471,5 +486,36 @@ describe("honeywell quick bom demo runbook - Prompt 140 automated browser-driven
   it("keeps manual browser QA and production deployment open after Prompt 140", () => {
     expect(docTextLower).toContain("manual browser qa (remains not run/open)");
     expect(docTextLower).toContain("production deployment/provisioning verification (remains open)");
+  });
+});
+
+describe("honeywell quick bom demo runbook - Prompt 142 local production build proof (Section 13)", () => {
+  it("names npm.cmd run build as the build command and states it is a local proof only", () => {
+    expect(docTextLower).toContain("npm.cmd run build");
+    expect(docTextLower).toContain("local `npm.cmd run build` proof only");
+  });
+
+  it("records next.js production compilation success and Quick BoM routes present", () => {
+    expect(docTextLower).toContain("next.js production compilation succeeded");
+    expect(docTextLower).toContain("quick bom api/ui routes were present");
+  });
+
+  it("documents redis/ioredis econnrefused :6379 as a known non-failing build/test noise", () => {
+    expect(docTextLower).toContain("econnrefused :6379");
+    expect(docTextLower).toContain("known non-failing build/test noise");
+    expect(docTextLower).toContain("reliability follow-up");
+  });
+
+  it("does not claim production readiness, hosted deployment readiness, CI readiness, or manual QA completion", () => {
+    expect(docTextLower).toContain("not a hosted deployment proof");
+    expect(docTextLower).toContain("not a ci/cd pipeline verification");
+    expect(docTextLower).toContain("not a production readiness claim");
+  });
+
+  it("keeps manual browser QA, production deployment, production Cisco pricing authority, and full real-catalog Honeywell SKU coverage open after P142", () => {
+    expect(docTextLower).toContain("manual browser qa (remains not run/open)");
+    expect(docTextLower).toContain("production deployment/provisioning verification (remains open)");
+    expect(docTextLower).toContain("production cisco pricing authority (remains open)");
+    expect(docTextLower).toContain("full real-catalog honeywell sku coverage beyond the demo supplement/local mock");
   });
 });
