@@ -1391,13 +1391,15 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // Accept all expansion lines via UI buttons (local state only, no POST yet).
-    const configAcceptBtns = screen.getAllByTestId("config-review-accept");
+    // Accept every expansion line in one click via the batch button (local state only,
+    // no POST yet). The batch button must not POST or approve by itself.
+    const configExpansionLineCount = screen.getAllByTestId("config-review-accept").length;
     await act(async () => {
-      for (const btn of configAcceptBtns) {
-        fireEvent.click(btn);
-      }
+      fireEvent.click(screen.getByTestId("config-review-accept-all-expansion"));
     });
+    expect(
+      calls.filter((c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url))
+    ).toHaveLength(0);
 
     // Submit the complete decisions batch via the UI submit button.
     await act(async () => {
@@ -1417,7 +1419,7 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       decisions: Record<string, unknown>[];
     };
     expect(Array.isArray(configBatchBody.decisions)).toBe(true);
-    expect(configBatchBody.decisions.length).toBe(configAcceptBtns.length);
+    expect(configBatchBody.decisions.length).toBe(configExpansionLineCount);
     for (const d of configBatchBody.decisions) {
       expect(d).not.toHaveProperty("tenantId");
       expect(d).not.toHaveProperty("projectId");
@@ -1723,13 +1725,15 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // Accept all expansion lines via UI buttons (local state only, no POST yet).
-    const configAcceptBtns = screen.getAllByTestId("config-review-accept");
+    // Accept every expansion line in one click via the batch button (local state only,
+    // no POST yet). The batch button must not POST or approve by itself.
+    const configExpansionLineCount = screen.getAllByTestId("config-review-accept").length;
     await act(async () => {
-      for (const btn of configAcceptBtns) {
-        fireEvent.click(btn);
-      }
+      fireEvent.click(screen.getByTestId("config-review-accept-all-expansion"));
     });
+    expect(
+      calls.filter((c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url))
+    ).toHaveLength(0);
 
     // Submit the complete decisions batch via the UI submit button; then remount.
     await act(async () => {
@@ -1750,7 +1754,7 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       decisions: Record<string, unknown>[];
     };
     expect(Array.isArray(configBatchBody.decisions)).toBe(true);
-    expect(configBatchBody.decisions.length).toBe(configAcceptBtns.length);
+    expect(configBatchBody.decisions.length).toBe(configExpansionLineCount);
     for (const d of configBatchBody.decisions) {
       expect(d).not.toHaveProperty("tenantId");
       expect(d).not.toHaveProperty("projectId");

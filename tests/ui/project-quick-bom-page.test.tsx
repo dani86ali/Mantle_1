@@ -2062,6 +2062,101 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     expect(document.body.textContent ?? "").not.toContain(secret);
   });
 
+  it("batch button marks all expansion lines accepted, leaves customer lines read-only, enables submit, and does not POST until Submit", async () => {
+    const calls = stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgReviewOkResponse());
+      }
+      if (CFG_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(cfgReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
+    await screen.findByTestId("config-review-summary");
+
+    const submit = screen.getByTestId("config-review-submit");
+    expect(submit).toBeDisabled();
+
+    // One batch click decides every expansion line; no POST happens yet.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-accept-all-expansion"));
+    });
+    expect(submit).not.toBeDisabled();
+    expect(
+      calls.some((c) => CFG_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")
+    ).toBe(false);
+
+    // The customer line never gains accept/reject controls (read-only) - still 2 each.
+    expect(screen.getAllByTestId("config-review-accept")).toHaveLength(2);
+    expect(screen.getAllByTestId("config-review-reject")).toHaveLength(2);
+
+    // Submit posts exactly one batch of accepts, one per expansion line, no customer line.
+    await act(async () => { fireEvent.click(submit); });
+    await waitFor(() =>
+      expect(calls.some((c) => CFG_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")).toBe(true)
+    );
+    const posts = calls.filter((c) => CFG_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST");
+    expect(posts).toHaveLength(1);
+    const body = posts[0].body as { decisions: Record<string, unknown>[] };
+    expect(body.decisions).toHaveLength(2);
+    expect(body.decisions.every((d) => d.action === "accept")).toBe(true);
+    expect(body.decisions.some((d) => d.lineId === "line-cust-1")).toBe(false);
+    expect(new Set(body.decisions.map((d) => d.lineId))).toEqual(
+      new Set(["line-exp-1", "line-exp-2"])
+    );
+  });
+
+  it("a per-line reject overrides a prior batch accept and submits the reject note for that line", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Not needed for this site");
+    const calls = stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgReviewOkResponse());
+      }
+      if (CFG_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(cfgReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
+    await screen.findByTestId("config-review-summary");
+
+    // Batch accept everything, then reject the second expansion line individually.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-accept-all-expansion"));
+    });
+    const rejects = screen.getAllByTestId("config-review-reject");
+    await act(async () => { fireEvent.click(rejects[1]); });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-submit"));
+    });
+    await waitFor(() =>
+      expect(calls.some((c) => CFG_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")).toBe(true)
+    );
+
+    const post = calls.find((c) => CFG_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST");
+    const body = post!.body as { decisions: Record<string, unknown>[] };
+    expect(body.decisions).toHaveLength(2);
+    const exp1 = body.decisions.find((d) => d.lineId === "line-exp-1")!;
+    const exp2 = body.decisions.find((d) => d.lineId === "line-exp-2")!;
+    expect(exp1.action).toBe("accept");
+    expect("note" in exp1).toBe(false);
+    // The later individual reject overrode the batch accept and carries the note.
+    expect(exp2.action).toBe("reject");
+    expect(exp2.note).toBe("Not needed for this site");
+  });
+
   it("does not render review payload canary fields (evidence paths etc.) in the DOM", async () => {
     stubFetch((url, init) => {
       if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {

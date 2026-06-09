@@ -702,6 +702,24 @@ export default function ProjectQuickBomPage() {
     setConfigDecisions((prev) => ({ ...prev, [line.lineId]: { action: "accept" } }));
   }
 
+  // Explicit local batch accept: mark every expansion-origin line as accepted in one
+  // click. Customer-origin lines never receive a decision. This only sets local state -
+  // it never POSTs and never approves the configuration_expansion artifact. A later
+  // per-line reject can still override one of these accepts before the engineer submits.
+  function onAcceptAllExpansionLines(
+    review: QuickBomConfigExpansionReviewWorkspace
+  ): void {
+    setConfigDecisions((prev) => {
+      const next = { ...prev };
+      for (const line of review.lines) {
+        if (line.origin === "expansion") {
+          next[line.lineId] = { action: "accept" };
+        }
+      }
+      return next;
+    });
+  }
+
   // Record an explicit reject for one expansion line locally; optionally attach a note.
   function onRejectConfigLine(line: QuickBomConfigExpansionReviewLine): void {
     const note = promptNote();
@@ -1131,6 +1149,15 @@ export default function ProjectQuickBomPage() {
                 {configReview.reviewSummary.requiresDecisionCount} require decision,{" "}
                 {configReview.reviewSummary.includedItemCount} included items
               </p>
+              <button
+                type="button"
+                data-testid="config-review-accept-all-expansion"
+                disabled={configReviewBusy || configExpansionLines.length === 0}
+                onClick={() => onAcceptAllExpansionLines(configReview)}
+                className={APPROVE_BTN}
+              >
+                Accept all expansion lines ({configExpansionLines.length})
+              </button>
               <ol className="space-y-2">
                 {configReview.lines.map((line) => {
                   const decision = configDecisions[line.lineId];
