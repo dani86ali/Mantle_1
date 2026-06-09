@@ -17,8 +17,8 @@
  *   single batch control (sku-review-accept-all-same-sku)
  *   -> approve sku_resolution through the artifact approval control
  *   -> click create configuration_expansion
- *   -> load configuration review lines, accept every expansion line through the
- *   batch control (config-review-accept-all-expansion), submit
+ *   -> load configuration review lines (expansion rows selected/accepted by default),
+ *   keep them selected via the bulk control (config-review-select-all), submit
  *   -> approve configuration_expansion through the artifact approval control
  *   -> click create priced_boq
  *   -> load the priced review panel and assert 60 lines / deterministic totals
@@ -1207,16 +1207,16 @@ async function main(): Promise<void> {
       "clicked load configuration expansion review lines"
     );
     assert(
-      await waitForTestId(cdp, sessionId, "config-review-accept-all-expansion", 60000),
-      "configuration expansion batch accept control rendered"
+      await waitForTestId(cdp, sessionId, "config-review-select-all", 60000),
+      "configuration expansion select-all control rendered"
     );
     assert(
-      !(await testIdDisabled(cdp, sessionId, "config-review-accept-all-expansion")),
-      "configuration expansion batch accept control is enabled"
+      !(await testIdDisabled(cdp, sessionId, "config-review-select-all")),
+      "configuration expansion select-all control is enabled"
     );
     assert(
-      await clickTestId(cdp, sessionId, "config-review-accept-all-expansion"),
-      "clicked accept all expansion lines"
+      await clickTestId(cdp, sessionId, "config-review-select-all"),
+      "clicked select all expansion lines (default-selected, accept)"
     );
     configAcceptClicks = 1;
     assert(

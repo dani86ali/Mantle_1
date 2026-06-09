@@ -1536,11 +1536,11 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // Accept every expansion line in one click via the batch button (local state only,
-    // no POST yet). The batch button must not POST or approve by itself.
-    const configExpansionLineCount = screen.getAllByTestId("config-review-accept").length;
+    // Expansion lines default to selected (accept). "Select all" keeps them selected
+    // (local state only, no POST yet); the bulk button must not POST or approve by itself.
+    const configExpansionLineCount = screen.getAllByTestId("config-review-checkbox").length;
     await act(async () => {
-      fireEvent.click(screen.getByTestId("config-review-accept-all-expansion"));
+      fireEvent.click(screen.getByTestId("config-review-select-all"));
     });
     expect(
       calls.filter((c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url))
@@ -1870,11 +1870,11 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // Accept every expansion line in one click via the batch button (local state only,
-    // no POST yet). The batch button must not POST or approve by itself.
-    const configExpansionLineCount = screen.getAllByTestId("config-review-accept").length;
+    // Expansion lines default to selected (accept). "Select all" keeps them selected
+    // (local state only, no POST yet); the bulk button must not POST or approve by itself.
+    const configExpansionLineCount = screen.getAllByTestId("config-review-checkbox").length;
     await act(async () => {
-      fireEvent.click(screen.getByTestId("config-review-accept-all-expansion"));
+      fireEvent.click(screen.getByTestId("config-review-select-all"));
     });
     expect(
       calls.filter((c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url))
@@ -2237,14 +2237,15 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
     });
     expect(await screen.findByTestId("config-review-summary")).toBeInTheDocument();
     expect(screen.getAllByTestId("config-review-line")).toHaveLength(60);
-    expect(screen.getAllByTestId("config-review-accept")).toHaveLength(24);
+    expect(screen.getAllByTestId("config-review-checkbox")).toHaveLength(24);
     expect(
       calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // Accept every expansion line in one click (local state only, no POST yet).
+    // Expansion lines default to selected (accept); "Select all" keeps them selected
+    // (local state only, no POST yet).
     await act(async () => {
-      fireEvent.click(screen.getByTestId("config-review-accept-all-expansion"));
+      fireEvent.click(screen.getByTestId("config-review-select-all"));
     });
     expect(
       calls.filter((c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url))

@@ -253,7 +253,7 @@ describe("prove-project-quick-bom-browser-workflow-real-db script hygiene", () =
       "approve-sku_resolution",
       "workflow-create-configuration_expansion",
       "config-review-load",
-      "config-review-accept-all-expansion",
+      "config-review-select-all",
       "config-review-submit",
       "approve-configuration_expansion",
       "workflow-create-priced_boq",
@@ -269,25 +269,27 @@ describe("prove-project-quick-bom-browser-workflow-real-db script hygiene", () =
   });
 
   it("drives the explicit batch review controls, not the per-line/bulk accept paths", () => {
-    // The fixed UI uses single batch buttons; the proof must click those.
+    // The fixed UI uses single batch buttons; the proof must click those. The config
+    // review is now a checkbox/table flow whose bulk control is config-review-select-all.
     expect(source.includes("sku-review-accept-all-same-sku")).toBe(true);
-    expect(source.includes("config-review-accept-all-expansion")).toBe(true);
+    expect(source.includes("config-review-select-all")).toBe(true);
     expect(
       source.includes('clickTestId(cdp, sessionId, "sku-review-accept-all-same-sku")')
     ).toBe(true);
     expect(
       source.includes(
-        'clickTestId(cdp, sessionId, "config-review-accept-all-expansion")'
+        'clickTestId(cdp, sessionId, "config-review-select-all")'
       )
     ).toBe(true);
-    // The old proof path is gone: no per-line sku accept loop, no bulk-click of the
-    // per-line config accept buttons.
+    // The old proof path is gone: no per-line sku accept loop, no per-line config
+    // accept/reject buttons (replaced by checkboxes), no stale bulk accept testid.
     expect(source.includes('clickTestId(cdp, sessionId, "sku-review-accept")')).toBe(
       false
     );
     expect(source.includes('clickAllTestId(cdp, sessionId, "config-review-accept")')).toBe(
       false
     );
+    expect(source.includes("config-review-accept-all-expansion")).toBe(false);
   });
 
   it("asserts deterministic priced totals and 60-line counts", () => {

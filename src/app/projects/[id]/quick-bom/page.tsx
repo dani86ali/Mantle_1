@@ -101,6 +101,16 @@ function isConfigurationExpansionDraft(artifact: ProjectArtifactSummary): boolea
   );
 }
 
+// A reviewed (non-draft) configuration_expansion artifact carries its source draft id
+// as the third source artifact. Its recorded accept/reject decisions stay readable in a
+// read-only viewer at every status (needs_review after review, then approved/rejected).
+function isConfigurationExpansionReviewed(artifact: ProjectArtifactSummary): boolean {
+  return (
+    artifact.type === "configuration_expansion" &&
+    artifact.sourceArtifactIds[2] !== undefined
+  );
+}
+
 function ProvenanceBlock({
   artifactType,
   provenance,
@@ -678,7 +688,16 @@ export default function ProjectQuickBomPage() {
         <ConfigurationExpansionReviewPanel
           projectId={id}
           artifactId={configExpansion.id}
+          mode="draft"
           onReviewSubmitted={loadWorkspace}
+        />
+      )}
+
+      {configExpansion && isConfigurationExpansionReviewed(configExpansion) && (
+        <ConfigurationExpansionReviewPanel
+          projectId={id}
+          artifactId={configExpansion.id}
+          mode="reviewed"
         />
       )}
 

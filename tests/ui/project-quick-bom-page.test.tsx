@@ -1740,6 +1740,16 @@ function workspaceWithReviewedCfgNeedsApproval(): Record<string, unknown> {
   return ws;
 }
 
+// The reviewed artifact after generic approval: status flips to "approved" in place
+// (createProjectApproval updates the row, never re-versions), so sourceArtifactIds[2]
+// is retained and the read-only decisions viewer must keep mounting.
+function workspaceWithApprovedCfg(): Record<string, unknown> {
+  const ws = workspaceWithReviewedCfgNeedsApproval();
+  const cfg = spineOf(ws).configuration_expansion as Record<string, unknown>;
+  cfg.status = "approved";
+  return ws;
+}
+
 function cfgReviewOkResponse(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     review: {
@@ -1889,10 +1899,7 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
     await screen.findByTestId("config-review-summary");
 
-    for (const btn of screen.getAllByTestId("config-review-accept")) {
-      await act(async () => { fireEvent.click(btn); });
-    }
-
+    // Expansion rows default to selected (accept); one Submit records the batch.
     await act(async () => {
       fireEvent.click(screen.getByTestId("config-review-submit"));
     });
@@ -1932,7 +1939,7 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     expect(getCall).toBeTruthy();
   });
 
-  it("customer lines have no accept/reject buttons; expansion lines do", async () => {
+  it("customer lines have no checkbox; expansion lines render a checkbox selected by default", async () => {
     stubFetch((url, init) => {
       if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
         return jsonResponse(cfgReviewOkResponse());
@@ -1949,12 +1956,13 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     });
     await screen.findByTestId("config-review-summary");
 
-    // 2 expansion lines -> 2 accept + 2 reject buttons; customer line has none
-    expect(screen.getAllByTestId("config-review-accept")).toHaveLength(2);
-    expect(screen.getAllByTestId("config-review-reject")).toHaveLength(2);
+    // 2 expansion lines -> 2 checkboxes, both checked by default; customer line has none
+    const boxes = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
+    expect(boxes).toHaveLength(2);
+    expect(boxes.every((b) => b.checked)).toBe(true);
   });
 
-  it("submit is disabled until all expansion lines have decisions, then enabled", async () => {
+  it("Submit is enabled immediately because expansion rows default to selected (accept)", async () => {
     stubFetch((url, init) => {
       if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
         return jsonResponse(cfgReviewOkResponse());
@@ -1971,23 +1979,17 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     });
     await screen.findByTestId("config-review-summary");
 
-    const submit = screen.getByTestId("config-review-submit");
-    expect(submit).toBeDisabled();
+    // No per-line decision is required up front: defaults are explicit-on-submit.
+    expect(screen.getByTestId("config-review-submit")).not.toBeDisabled();
 
-    // Accept line-exp-1
-    const accepts = screen.getAllByTestId("config-review-accept");
-    await act(async () => {
-      fireEvent.click(accepts[0]);
-    });
-    expect(submit).toBeDisabled(); // still one undecided
-
-    // Reject line-exp-2
+    // Deselecting a line (reject) keeps Submit enabled.
     vi.spyOn(window, "prompt").mockReturnValue(null);
-    const rejects = screen.getAllByTestId("config-review-reject");
+    const boxes = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
     await act(async () => {
-      fireEvent.click(rejects[1]);
+      fireEvent.click(boxes[1]);
     });
-    expect(submit).not.toBeDisabled(); // all expansion lines decided
+    expect(boxes[1].checked).toBe(false);
+    expect(screen.getByTestId("config-review-submit")).not.toBeDisabled();
   });
 
   it("POSTs a sanitized decisions array with only lineId/action/note, no authority fields", async () => {
@@ -2009,10 +2011,9 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
     await screen.findByTestId("config-review-summary");
 
-    const accepts = screen.getAllByTestId("config-review-accept");
-    const rejects = screen.getAllByTestId("config-review-reject");
-    await act(async () => { fireEvent.click(accepts[0]); });
-    await act(async () => { fireEvent.click(rejects[1]); });
+    // Leave exp-1 selected (accept) and deselect exp-2 (reject).
+    const boxes = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
+    await act(async () => { fireEvent.click(boxes[1]); });
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("config-review-submit"));
@@ -2068,10 +2069,8 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
     await screen.findByTestId("config-review-summary");
 
-    const accepts = screen.getAllByTestId("config-review-accept");
-    const rejects = screen.getAllByTestId("config-review-reject");
-    await act(async () => { fireEvent.click(accepts[0]); });
-    await act(async () => { fireEvent.click(rejects[1]); });
+    const boxes = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
+    await act(async () => { fireEvent.click(boxes[1]); });
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("config-review-submit"));
@@ -2109,10 +2108,8 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
     await screen.findByTestId("config-review-summary");
 
-    const accepts = screen.getAllByTestId("config-review-accept");
-    const rejects = screen.getAllByTestId("config-review-reject");
-    await act(async () => { fireEvent.click(accepts[0]); });
-    await act(async () => { fireEvent.click(rejects[1]); });
+    const boxes = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
+    await act(async () => { fireEvent.click(boxes[1]); });
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("config-review-submit"));
@@ -2193,11 +2190,7 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
     await screen.findByTestId("config-review-summary");
 
-    const accepts = screen.getAllByTestId("config-review-accept");
-    const rejects = screen.getAllByTestId("config-review-reject");
-    await act(async () => { fireEvent.click(accepts[0]); });
-    await act(async () => { fireEvent.click(rejects[1]); });
-
+    // Default selection (all accept) is enough to submit; the POST then throws.
     await act(async () => {
       fireEvent.click(screen.getByTestId("config-review-submit"));
     });
@@ -2226,20 +2219,21 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     await screen.findByTestId("config-review-summary");
 
     const submit = screen.getByTestId("config-review-submit");
-    expect(submit).toBeDisabled();
-
-    // One batch click decides every expansion line; no POST happens yet.
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("config-review-accept-all-expansion"));
-    });
+    // Defaults are explicit-on-submit, so Submit is enabled from the start.
     expect(submit).not.toBeDisabled();
+
+    // "Select all" keeps every expansion line selected; no POST happens yet.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-select-all"));
+    });
     expect(
       calls.some((c) => CFG_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")
     ).toBe(false);
 
-    // The customer line never gains accept/reject controls (read-only) - still 2 each.
-    expect(screen.getAllByTestId("config-review-accept")).toHaveLength(2);
-    expect(screen.getAllByTestId("config-review-reject")).toHaveLength(2);
+    // The customer line never gains a checkbox (read-only) - still 2 boxes, both checked.
+    const boxes = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
+    expect(boxes).toHaveLength(2);
+    expect(boxes.every((b) => b.checked)).toBe(true);
 
     // Submit posts exactly one batch of accepts, one per expansion line, no customer line.
     await act(async () => { fireEvent.click(submit); });
@@ -2257,7 +2251,29 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     );
   });
 
-  it("a per-line reject overrides a prior batch accept and submits the reject note for that line", async () => {
+  it("does not render an unsafe Deselect all bulk action", async () => {
+    stubFetch((url, init) => {
+      if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgReviewOkResponse());
+      }
+      if (CFG_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(cfgReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: workspaceWithCfgNeedsReview() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-review-load");
+
+    await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
+    await screen.findByTestId("config-review-summary");
+
+    expect(screen.getByTestId("config-review-select-all")).toBeInTheDocument();
+    expect(screen.queryByTestId("config-review-deselect-all")).toBeNull();
+  });
+
+  it("Select all does NOT overwrite an explicit deselection; the reject and its note survive submit", async () => {
     vi.spyOn(window, "prompt").mockReturnValue("Not needed for this site");
     const calls = stubFetch((url, init) => {
       if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
@@ -2276,12 +2292,18 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
     await screen.findByTestId("config-review-summary");
 
-    // Batch accept everything, then reject the second expansion line individually.
+    // Explicitly deselect the second expansion line (reject + note)...
+    const boxes = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
+    await act(async () => { fireEvent.click(boxes[1]); });
+    expect(boxes[1].checked).toBe(false);
+
+    // ...then a bulk "Select all" must NOT silently re-include that explicit reject.
     await act(async () => {
-      fireEvent.click(screen.getByTestId("config-review-accept-all-expansion"));
+      fireEvent.click(screen.getByTestId("config-review-select-all"));
     });
-    const rejects = screen.getAllByTestId("config-review-reject");
-    await act(async () => { fireEvent.click(rejects[1]); });
+    const after = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
+    expect(after[0].checked).toBe(true); // exp-1 still selected
+    expect(after[1].checked).toBe(false); // exp-2 stays explicitly deselected
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("config-review-submit"));
@@ -2297,7 +2319,7 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     const exp2 = body.decisions.find((d) => d.lineId === "line-exp-2")!;
     expect(exp1.action).toBe("accept");
     expect("note" in exp1).toBe(false);
-    // The later individual reject overrode the batch accept and carries the note.
+    // The explicit deselect survived the bulk action and carries its note.
     expect(exp2.action).toBe("reject");
     expect(exp2.note).toBe("Not needed for this site");
   });
@@ -2325,6 +2347,148 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     // Structural key names must not be visible in the DOM
     expect(body).not.toContain("originalCells");
     expect(body).not.toContain("evidenceNote");
+  });
+});
+
+// -- Reviewed (approved) configuration-expansion read-only viewer fixtures --
+const CFG_APPROVED_ROUTE_RE =
+  /\/api\/projects\/proj-1\/quick-bom\/artifacts\/art-cfg-reviewed\/configuration-expansion\/review$/;
+
+function cfgApprovedOkResponse(): Record<string, unknown> {
+  return {
+    review: {
+      mode: "reviewed",
+      project: {
+        id: PROJECT_ID, tenantId: TENANT, name: "Honeywell Quick BoM", mode: "quick_bom",
+        createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-02T11:30:00.000Z",
+      },
+      artifact: {
+        id: "art-cfg-reviewed", projectId: PROJECT_ID,
+        stageId: "configuration_expansion_review",
+        type: "configuration_expansion", status: "needs_review", version: 3,
+        sourceFileIds: [], sourceArtifactIds: ["art-norm", "art-sku", CFG_ARTIFACT_ID],
+        createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-01T10:00:00.000Z",
+      },
+      reviewedSummary: {
+        customerLineCount: 1,
+        acceptedExpansionLineCount: 1,
+        rejectedExpansionLineCount: 1,
+        totalAcceptedLineCount: 2,
+        reviewedExpansionLineCount: 2,
+      },
+      lines: [
+        { lineId: "line-cust-1", origin: "customer", sku: "C9300-48P-A", description: "Customer switch", quantity: 2, evidenceCount: 0, evidenceSourceTypes: [] },
+        { lineId: "line-exp-1", origin: "expansion", sku: "C9300-NM-4G", description: "Network module", quantity: 2, sourceRuleId: "rule-nm-4g", evidenceCount: 1, evidenceSourceTypes: ["ccw_estimate"], decision: "accepted" },
+        // Planted canary on a recorded line; the read-only viewer must never render it.
+        { lineId: "line-exp-2", origin: "expansion", sku: "PWR-C1-715WAC", description: "Power supply", quantity: 2, evidenceCount: 0, evidenceSourceTypes: [], decision: "rejected", sourcePath: CFG_REVIEW_CANARY },
+      ],
+    },
+  };
+}
+
+describe("ProjectQuickBomPage - reviewed configuration expansion read-only viewer", () => {
+  it("mounts the read-only viewer (not the draft panel) for a reviewed artifact, keeping the separate Approve control", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) {
+        return jsonResponse({ workspace: workspaceWithReviewedCfgNeedsApproval() });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    // Read-only viewer present; the editable draft panel is not.
+    expect(screen.getByTestId("config-approved-load")).toBeInTheDocument();
+    expect(screen.queryByTestId("config-review-load")).toBeNull();
+    // Stage approval stays on the separate generic Approve control (requirement #7).
+    expect(screen.getByTestId("approve-configuration_expansion")).toBeInTheDocument();
+  });
+
+  it("loads recorded decisions read-only: accepted/rejected badges, no checkbox, no submit", async () => {
+    stubFetch((url, init) => {
+      if (CFG_APPROVED_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgApprovedOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) {
+        return jsonResponse({ workspace: workspaceWithReviewedCfgNeedsApproval() });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-approved-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-approved-load"));
+    });
+    const summary = await screen.findByTestId("config-approved-summary");
+    expect(summary).toHaveTextContent("2 accepted");
+    expect(summary).toHaveTextContent("1 rejected");
+
+    const decisions = screen.getAllByTestId("config-approved-decision");
+    expect(decisions).toHaveLength(2);
+    const labels = decisions.map((d) => d.getAttribute("data-decision"));
+    expect(new Set(labels)).toEqual(new Set(["accepted", "rejected"]));
+
+    // Read-only: no editable controls in this viewer.
+    expect(screen.queryByTestId("config-approved-checkbox")).toBeNull();
+    expect(screen.queryByTestId("config-review-checkbox")).toBeNull();
+    expect(screen.queryByTestId("config-approved-submit")).toBeNull();
+    expect(screen.queryByTestId("config-review-submit")).toBeNull();
+  });
+
+  it("keeps the read-only viewer after approval (status approved, no Approve control)", async () => {
+    stubFetch((url, init) => {
+      if (CFG_APPROVED_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgApprovedOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) {
+        return jsonResponse({ workspace: workspaceWithApprovedCfg() });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    // Requirement 5: approved decisions remain readable. Viewer still mounts...
+    expect(screen.getByTestId("config-approved-load")).toBeInTheDocument();
+    expect(screen.getByTestId("spine-configuration_expansion")).toHaveTextContent("approved");
+    // ...and the approve/reject control is gone once the artifact is approved.
+    expect(screen.queryByTestId("approve-configuration_expansion")).toBeNull();
+    expect(screen.queryByTestId("config-review-load")).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-approved-load"));
+    });
+    const summary = await screen.findByTestId("config-approved-summary");
+    expect(summary).toHaveTextContent("2 accepted");
+    expect(screen.getAllByTestId("config-approved-decision")).toHaveLength(2);
+  });
+
+  it("never renders recorded-line canary fields in the read-only viewer DOM", async () => {
+    stubFetch((url, init) => {
+      if (CFG_APPROVED_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(cfgApprovedOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) {
+        return jsonResponse({ workspace: workspaceWithReviewedCfgNeedsApproval() });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("config-approved-load");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-approved-load"));
+    });
+    await screen.findByTestId("config-approved-summary");
+
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(CFG_REVIEW_CANARY);
+    expect(body).not.toContain(PAYLOAD_CANARY);
   });
 });
 
