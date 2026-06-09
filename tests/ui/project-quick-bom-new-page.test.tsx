@@ -127,11 +127,52 @@ describe("NewProjectQuickBomPage - happy path", () => {
     expect(calls[normIdx].body).toBeNull();
   });
 
-  it("sends percent numbers directly with roundingDecimals 2 (no 0.18 / 0.15)", async () => {
+  it("defaults to pass-through pricing and posts markup 0 / VAT 15 when pricing is untouched", async () => {
+    const calls = stubHappy();
+    render(<NewProjectQuickBomPage />);
+
+    // The pricing fields default to pass-through and are left untouched here.
+    expect((screen.getByTestId("field-mode") as HTMLSelectElement).value).toBe(
+      "markup"
+    );
+    expect((screen.getByTestId("field-rate") as HTMLInputElement).value).toBe("0");
+    expect((screen.getByTestId("field-vat") as HTMLInputElement).value).toBe("15");
+
+    fireEvent.change(screen.getByTestId("field-name"), {
+      target: { value: "Acme Quick BoM" },
+    });
+    fireEvent.change(screen.getByTestId("field-customer"), {
+      target: { value: "Acme" },
+    });
+    selectFile();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("submit"));
+    });
+    await waitFor(() => expect(push).toHaveBeenCalled());
+
+    const create = calls.find(
+      (c) => c.url.endsWith("/api/projects/quick-bom") && c.method === "POST"
+    );
+    expect(create!.body).toEqual({
+      name: "Acme Quick BoM",
+      customerName: "Acme",
+      pricingConfig: {
+        mode: "markup",
+        ratePercent: 0,
+        vatRatePercent: 15,
+        roundingDecimals: 2,
+      },
+    });
+  });
+
+  it("respects user-edited pricing and sends percent numbers directly with roundingDecimals 2", async () => {
     const calls = stubHappy();
     render(<NewProjectQuickBomPage />);
 
     fillForm();
+    fireEvent.change(screen.getByTestId("field-mode"), {
+      target: { value: "margin" },
+    });
     selectFile();
     await act(async () => {
       fireEvent.click(screen.getByTestId("submit"));

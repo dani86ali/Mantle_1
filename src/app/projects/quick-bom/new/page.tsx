@@ -13,8 +13,10 @@
  *
  * The page is payload-free: it never parses or renders artifact payloads, never
  * prices, never resolves SKUs, never expands configuration, and never infers a
- * demo catalog from names. Percent values are sent as whole percents
- * (ratePercent: 18, vatRatePercent: 15) with roundingDecimals: 2, matching the
+ * demo catalog from names. Percent values are sent as whole percents. The
+ * default is pass-through pricing (mode: markup, ratePercent: 0,
+ * vatRatePercent: 15) with roundingDecimals: 2 so committed CCW-derived Unit
+ * List values are not uplifted; the fields stay editable. This matches the
  * create route contract. It imports only Next.js navigation and React.
  */
 
@@ -42,8 +44,9 @@ export default function NewProjectQuickBomPage() {
   const [name, setName] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [mode, setMode] = useState<PricingMode>("margin");
-  const [ratePercent, setRatePercent] = useState("30");
+  // Pass-through pricing default: markup 0% does not uplift committed Unit List.
+  const [mode, setMode] = useState<PricingMode>("markup");
+  const [ratePercent, setRatePercent] = useState("0");
   const [vatRatePercent, setVatRatePercent] = useState("15");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
