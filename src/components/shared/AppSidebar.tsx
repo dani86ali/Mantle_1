@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/estimate/new", label: "New Estimate", icon: PlusCircle },
-  { href: "/estimates", label: "Estimates", icon: FileStack },
+  { href: "/projects/quick-bom/new", label: "New Quick BoM", icon: PlusCircle },
+  { href: "/projects", label: "Projects", icon: FileStack },
   { href: "/catalog", label: "Catalog", icon: Search },
   { href: "/admin", label: "Settings", icon: Settings },
 ];
@@ -58,8 +58,11 @@ export function AppSidebar() {
         {NAV_ITEMS.map((item) => {
           const active =
             pathname === item.href ||
-            pathname.startsWith(item.href + "/") ||
-            (item.href === "/estimates" && pathname.startsWith("/estimate/"));
+            (item.href === "/projects"
+              ? (pathname.startsWith("/projects/") &&
+                  pathname !== "/projects/quick-bom/new") ||
+                pathname.startsWith("/estimates")
+              : pathname.startsWith(item.href + "/"));
           return (
             <Link
               key={item.href}
@@ -83,7 +86,7 @@ export function AppSidebar() {
       {!collapsed && (
         <div className="border-t border-[var(--border)] px-4 py-3">
           <p className="text-[11px] text-text-tertiary">
-            BOMATIC — Multi-vendor Pre-sales Platform
+            BOMATIC - Multi-vendor Pre-sales Platform
           </p>
         </div>
       )}

@@ -48,6 +48,8 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
     tenant_id: "tenantId",
     project_id: "projectId",
     stage_order: "stageOrder",
+    created_at: "createdAt",
+    updated_at: "updatedAt",
   };
 
   type Cond = { name: string; val: unknown };
@@ -103,22 +105,35 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
           return {
             where(pred: Pred) {
               const conds = flatten(pred);
-              const isStages = conds.some((c) => c.name === "project_id");
-              const source = (isStages
-                ? store.stages
-                : store.projects) as unknown as Array<Record<string, unknown>>;
-              const filtered = source.filter((row) =>
-                conds.every((c) => row[colMap[c.name]] === c.val)
-              );
+              const pickSource = (orderCol?: string) => {
+                const isStages =
+                  conds.some((c) => c.name === "project_id") ||
+                  orderCol === "stage_order";
+                return (isStages
+                  ? store.stages
+                  : store.projects) as unknown as Array<Record<string, unknown>>;
+              };
+              const filterRows = (source: Array<Record<string, unknown>>) =>
+                source.filter((row) =>
+                  conds.every((c) => row[colMap[c.name]] === c.val)
+                );
               return {
                 async limit(n: number) {
+                  const filtered = filterRows(pickSource());
                   return filtered.slice(0, n);
                 },
-                async orderBy(order: { col: { name: string } }) {
+                async orderBy(order: { col: { name: string }; direction?: "asc" | "desc" }) {
+                  const filtered = filterRows(pickSource(order.col.name));
                   const field = colMap[order.col.name];
-                  return [...filtered].sort(
-                    (a, b) => (a[field] as number) - (b[field] as number)
-                  );
+                  return [...filtered].sort((a, b) => {
+                    const av = a[field];
+                    const bv = b[field];
+                    const cmp =
+                      av instanceof Date && bv instanceof Date
+                        ? av.getTime() - bv.getTime()
+                        : (av as number) - (bv as number);
+                    return order.direction === "desc" ? -cmp : cmp;
+                  });
                 },
               };
             },
@@ -147,12 +162,17 @@ vi.mock("drizzle-orm", async () => {
     ...actual,
     eq: (col: { name: string }, val: unknown) => ({ type: "eq", col, val }),
     and: (...conds: unknown[]) => ({ type: "and", conds }),
-    asc: (col: { name: string }) => ({ type: "asc", col }),
+    asc: (col: { name: string }) => ({ type: "asc", direction: "asc", col }),
+    desc: (col: { name: string }) => ({ type: "desc", direction: "desc", col }),
   };
 });
 
 import * as store_module from "@/lib/db/project-store";
-import { createProject, getProjectById } from "@/lib/db/project-store";
+import {
+  createProject,
+  getProjectById,
+  listProjectSummaries,
+} from "@/lib/db/project-store";
 import type { CreateProjectInput } from "@/lib/db/project-store";
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
@@ -416,6 +436,136 @@ describe("getProjectById", () => {
     const project = await getProjectById(TENANT, "proj-1");
     expect(project!.stages).toHaveLength(1);
     expect(project!.stages[0].stageId).toBe("intake_package_review");
+  });
+});
+
+describe("listProjectSummaries", () => {
+  function seedProject(overrides: Partial<StoredProject>): StoredProject {
+    const now = new Date("2026-05-21T08:00:00Z");
+    const row: StoredProject = {
+      id: "proj-list-1",
+      tenantId: TENANT,
+      name: "Quick BoM Project",
+      customerName: "STC",
+      mode: "quick_bom",
+      pricingConfig: null,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    };
+    store.projects.push(row);
+    return row;
+  }
+
+  function seedStage(input: {
+    projectId: string;
+    stageId: string;
+    stageOrder: number;
+    status: string;
+    tenantId?: string;
+  }): void {
+    const now = new Date("2026-05-21T08:00:00Z");
+    store.stages.push({
+      id: `stage-${input.projectId}-${input.stageId}`,
+      projectId: input.projectId,
+      tenantId: input.tenantId ?? TENANT,
+      stageId: input.stageId,
+      stageOrder: input.stageOrder,
+      status: input.status,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  it("opens a tenant-scoped read and returns newest Projects first", async () => {
+    seedProject({
+      id: "old",
+      name: "Old Project",
+      updatedAt: new Date("2026-05-01T08:00:00Z"),
+    });
+    seedProject({
+      id: "new",
+      name: "New Project",
+      updatedAt: new Date("2026-05-03T08:00:00Z"),
+    });
+
+    const rows = await listProjectSummaries(TENANT);
+
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+    expect(rows.map((row) => row.id)).toEqual(["new", "old"]);
+  });
+
+  it("filters by tenant and derives status from canonical project stages", async () => {
+    seedProject({ id: "quick", name: "Quick", mode: "quick_bom" });
+    seedProject({ id: "other-tenant", tenantId: OTHER_TENANT, name: "Other" });
+    seedStage({
+      projectId: "quick",
+      stageId: "boq_format_validation",
+      stageOrder: 20,
+      status: "approved",
+    });
+    seedStage({
+      projectId: "quick",
+      stageId: "sku_resolution",
+      stageOrder: 30,
+      status: "needs_review",
+    });
+    seedStage({
+      projectId: "quick",
+      stageId: "proposal_review",
+      stageOrder: 80,
+      status: "not_applicable",
+    });
+    seedStage({
+      projectId: "other-tenant",
+      stageId: "boq_format_validation",
+      stageOrder: 20,
+      status: "approved",
+      tenantId: OTHER_TENANT,
+    });
+
+    const rows = await listProjectSummaries(TENANT);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: "quick",
+      tenantId: TENANT,
+      name: "Quick",
+      customerName: "STC",
+      mode: "quick_bom",
+      status: "needs_review",
+      activeStageId: "sku_resolution",
+      activeStageStatus: "needs_review",
+      stageCounts: {
+        total: 2,
+        approved: 1,
+        needsReview: 1,
+        inProgress: 0,
+        blocked: 0,
+        rejected: 0,
+      },
+    });
+  });
+
+  it("marks a Project approved only when every applicable stage is approved", async () => {
+    seedProject({ id: "done", name: "Done" });
+    seedStage({
+      projectId: "done",
+      stageId: "boq_format_validation",
+      stageOrder: 20,
+      status: "approved",
+    });
+    seedStage({
+      projectId: "done",
+      stageId: "export_approval",
+      stageOrder: 90,
+      status: "approved",
+    });
+
+    const rows = await listProjectSummaries(TENANT);
+
+    expect(rows[0].status).toBe("approved");
+    expect(rows[0].activeStageId).toBe("export_approval");
   });
 });
 

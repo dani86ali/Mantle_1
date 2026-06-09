@@ -1,6 +1,29 @@
-/** Dashboard helpers — status mapping and pipeline-progress derivation. */
+import type {
+  ProjectMode,
+  ProjectStageId,
+  ProjectStageStatus,
+} from "@/types/project";
+import type { ProjectListStatus } from "@/lib/db/project-store";
 
-export type RawStatus = string;
+export interface ProjectRow {
+  id: string;
+  name: string;
+  customerName?: string;
+  mode: ProjectMode;
+  status: ProjectListStatus;
+  activeStageId?: ProjectStageId;
+  activeStageStatus?: ProjectStageStatus;
+  stageCounts: {
+    total: number;
+    approved: number;
+    needsReview: number;
+    inProgress: number;
+    blocked: number;
+    rejected: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
 
 export type LifecycleStage =
   | "in_progress"
@@ -8,147 +31,103 @@ export type LifecycleStage =
   | "approved"
   | "failed";
 
-export interface EstimateRow {
-  id: string;
-  estimateId: string;
-  customer: string;
-  domain: string;
-  status: RawStatus;
-  created: string;
-  totalPrice: number;
-}
-
 export interface ActivityEntry {
   id: string;
-  estimateId: string;
-  estimateLinkId: string;
-  customer: string;
-  engine: "E1" | "E2" | "E3";
-  engineLabel: string;
+  projectId: string;
+  projectName: string;
+  customerName: string;
+  stageId?: ProjectStageId;
+  stageLabel: string;
   state: "completed" | "running" | "failed" | "awaiting_review";
   timestamp: string;
 }
 
-const IN_PROGRESS = new Set([
-  "PENDING",
-  "PROCESSING",
-  "AGENT_PROCESSING",
-  "NEEDS_CLARIFICATION",
-]);
-const REVIEW = new Set(["READY_FOR_REVIEW", "IN_REVIEW", "COMPLETED"]);
-const FAILED = new Set(["AGENT_FAILED", "AGENT_TIMEOUT", "REJECTED"]);
+const STAGE_LABELS: Record<ProjectStageId, string> = {
+  intake_package_review: "Intake Package Review",
+  boq_format_validation: "BoQ Format Validation",
+  sku_resolution: "SKU Resolution",
+  configuration_expansion_review: "Configuration Expansion Review",
+  requirements_baseline_review: "Requirements Baseline Review",
+  compliance_matrix_review: "Compliance Matrix Review",
+  hld_design_delta_review: "HLD / Design Delta Review",
+  boq_pricing_review: "BoQ Pricing Review",
+  proposal_review: "Proposal Review",
+  export_approval: "Export Approval",
+};
 
-export function lifecycleStage(status: RawStatus): LifecycleStage {
-  if (status === "APPROVED") return "approved";
-  if (REVIEW.has(status)) return "ready_for_review";
-  if (FAILED.has(status)) return "failed";
-  if (IN_PROGRESS.has(status)) return "in_progress";
+export function projectLink(row: Pick<ProjectRow, "id" | "mode">): string {
+  return row.mode === "quick_bom" ? `/projects/${row.id}/quick-bom` : `/projects/${row.id}`;
+}
+
+export function modeLabel(mode: ProjectMode): string {
+  return mode === "quick_bom" ? "Quick BoM" : "RFP";
+}
+
+export function stageLabel(stageId?: ProjectStageId): string {
+  return stageId ? STAGE_LABELS[stageId] : "Project";
+}
+
+export function lifecycleStage(status: ProjectListStatus): LifecycleStage {
+  if (status === "approved") return "approved";
+  if (status === "needs_review") return "ready_for_review";
+  if (status === "rejected" || status === "blocked") return "failed";
   return "in_progress";
 }
 
-export function statusLabel(status: RawStatus): string {
-  const map: Record<string, string> = {
-    PENDING: "Pending",
-    PROCESSING: "Processing",
-    AGENT_PROCESSING: "Processing",
-    NEEDS_CLARIFICATION: "Needs Info",
-    READY_FOR_REVIEW: "Ready for Review",
-    IN_REVIEW: "In Review",
-    COMPLETED: "Ready for Review",
-    APPROVED: "Approved",
-    AGENT_FAILED: "Failed",
-    AGENT_TIMEOUT: "Timed Out",
-    REJECTED: "Rejected",
+export function statusLabel(status: ProjectListStatus): string {
+  const map: Record<ProjectListStatus, string> = {
+    not_started: "Not Started",
+    in_progress: "In Progress",
+    needs_review: "Needs Review",
+    approved: "Approved",
+    rejected: "Rejected",
+    blocked: "Blocked",
   };
-  return map[status] ?? "Draft";
+  return map[status];
 }
 
-export type EngineState = "pending" | "running" | "done" | "failed";
+export type StageProgressState = "pending" | "running" | "done" | "failed";
 
-export interface PipelineProgress {
-  e1: EngineState;
-  e2: EngineState;
-  e3: EngineState;
+export interface ProjectProgress {
+  completed: number;
+  total: number;
+  state: StageProgressState;
 }
 
-/**
- * Derive a 3-stage pipeline view from the bom_draft status. Since a bom_draft
- * row implies E1 produced enough requirements for E2 to start, we mark E1 as
- * done once we see anything past PENDING. APPROVED implies the post-review
- * E3 stage is done as well.
- */
-export function pipelineProgress(status: RawStatus): PipelineProgress {
-  if (status === "APPROVED") return { e1: "done", e2: "done", e3: "done" };
-  if (REVIEW.has(status)) {
-    return { e1: "done", e2: "done", e3: "pending" };
+export function projectProgress(row: ProjectRow): ProjectProgress {
+  const { total, approved } = row.stageCounts;
+  if (row.status === "approved") return { completed: total, total, state: "done" };
+  if (row.status === "rejected" || row.status === "blocked") {
+    return { completed: approved, total, state: "failed" };
   }
-  if (status === "AGENT_PROCESSING" || status === "PROCESSING") {
-    return { e1: "done", e2: "running", e3: "pending" };
-  }
-  if (FAILED.has(status)) {
-    return { e1: "done", e2: "failed", e3: "pending" };
-  }
-  return { e1: "running", e2: "pending", e3: "pending" };
+  if (row.status === "not_started") return { completed: approved, total, state: "pending" };
+  return { completed: approved, total, state: "running" };
 }
 
-/** Build a synthetic activity feed from recent estimate rows. */
-export function buildActivityFeed(rows: EstimateRow[]): ActivityEntry[] {
-  const out: ActivityEntry[] = [];
-  for (const r of rows) {
-    const stage = lifecycleStage(r.status);
-    const linkId = r.id;
-    const display = r.estimateId;
-    if (stage === "approved") {
-      out.push({
-        id: `${r.id}-approved`,
-        estimateId: display,
-        estimateLinkId: linkId,
-        customer: r.customer,
-        engine: "E3",
-        engineLabel: "Review & Approval",
-        state: "completed",
-        timestamp: r.created,
-      });
-    } else if (stage === "ready_for_review") {
-      out.push({
-        id: `${r.id}-review`,
-        estimateId: display,
-        estimateLinkId: linkId,
-        customer: r.customer,
-        engine: "E2",
-        engineLabel: "BoM Engine",
-        state: "awaiting_review",
-        timestamp: r.created,
-      });
-    } else if (stage === "failed") {
-      out.push({
-        id: `${r.id}-failed`,
-        estimateId: display,
-        estimateLinkId: linkId,
-        customer: r.customer,
-        engine: "E2",
-        engineLabel: "BoM Engine",
-        state: "failed",
-        timestamp: r.created,
-      });
-    } else {
-      const prog = pipelineProgress(r.status);
-      const engine: "E1" | "E2" = prog.e2 === "running" ? "E2" : "E1";
-      out.push({
-        id: `${r.id}-running`,
-        estimateId: display,
-        estimateLinkId: linkId,
-        customer: r.customer,
-        engine,
-        engineLabel: engine === "E2" ? "BoM Engine" : "Compliance Engine",
-        state: "running",
-        timestamp: r.created,
-      });
-    }
-  }
-  return out
-    .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
-    .slice(0, 8);
+export function buildActivityFeed(rows: ProjectRow[]): ActivityEntry[] {
+  return [...rows]
+    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+    .slice(0, 8)
+    .map((row) => {
+      const stage = lifecycleStage(row.status);
+      return {
+        id: `${row.id}-${row.status}`,
+        projectId: row.id,
+        projectName: row.name,
+        customerName: row.customerName ?? "No customer",
+        stageId: row.activeStageId,
+        stageLabel: stageLabel(row.activeStageId),
+        state:
+          stage === "approved"
+            ? "completed"
+            : stage === "ready_for_review"
+            ? "awaiting_review"
+            : stage === "failed"
+            ? "failed"
+            : "running",
+        timestamp: row.updatedAt,
+      };
+    });
 }
 
 export function relativeTime(iso: string): string {
