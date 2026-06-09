@@ -13,10 +13,12 @@
  *   -> upload the full seven-line Honeywell CSV through the real file input
  *   -> click the upload+normalize button
  *   -> click create sku_resolution (default Quick BoM approved catalog, no profile)
- *   -> load SKU review lines and accept all seven suggestions through the UI
+ *   -> load SKU review once and accept all seven same-SKU suggestions through the
+ *   single batch control (sku-review-accept-all-same-sku)
  *   -> approve sku_resolution through the artifact approval control
  *   -> click create configuration_expansion
- *   -> load configuration review lines, accept every expansion line, submit
+ *   -> load configuration review lines, accept every expansion line through the
+ *   batch control (config-review-accept-all-expansion), submit
  *   -> approve configuration_expansion through the artifact approval control
  *   -> click create priced_boq
  *   -> load the priced review panel and assert 60 lines / deterministic totals
@@ -103,6 +105,9 @@ const HONEYWELL_SEVEN_LINE_CSV = [
   "6,Standalone optic,SFP-10/25G-LR-S=,14",
   "7,Desk phone,CP-7841-K9=,59",
 ].join("\n");
+
+/** Expected SKU review line count (the seven-line Honeywell input). */
+const EXPECTED_SKU_LINE_COUNT = 7;
 
 /** Expected deterministic priced/export totals (committed demo pricing fixture). */
 const EXPECTED_SUBTOTAL_SELL_SAR = 2185708.76;
@@ -559,24 +564,23 @@ async function clickTestId(
   return (r.result as { value?: unknown } | undefined)?.value === true;
 }
 
-/** Click EVERY element with `data-testid=testid`; returns how many were clicked. */
-async function clickAllTestId(
+/** True when the first element with `data-testid=testid` is present and disabled. */
+async function testIdDisabled(
   cdp: CdpClient,
   sessionId: string,
   testid: string
-): Promise<number> {
+): Promise<boolean> {
   const sel = '[data-testid="' + testid + '"]';
   const expr =
-    "(function(){var b=document.querySelectorAll(" +
+    "(function(){var el=document.querySelector(" +
     JSON.stringify(sel) +
-    ");for(var i=0;i<b.length;i++){b[i].click();}return b.length;})()";
+    ");return el?!!el.disabled:true;})()";
   const r = await cdp.send(
     "Runtime.evaluate",
     { expression: expr, returnByValue: true },
     sessionId
   );
-  const value = (r.result as { value?: unknown } | undefined)?.value;
-  return typeof value === "number" ? value : 0;
+  return (r.result as { value?: unknown } | undefined)?.value === true;
 }
 
 /** Set the page file input (by data-testid) to a single on-disk path via CDP DOM. */
@@ -620,22 +624,6 @@ async function waitForTestId(
   const sel = '[data-testid="' + testid + '"]';
   for (;;) {
     if (await querySelectorExists(cdp, sessionId, sel)) return true;
-    if (Date.now() > deadline) return false;
-    await sleep(500);
-  }
-}
-
-/** Poll until an element with `data-testid=testid` is gone or the timeout elapses. */
-async function waitForTestIdGone(
-  cdp: CdpClient,
-  sessionId: string,
-  testid: string,
-  timeoutMs: number
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  const sel = '[data-testid="' + testid + '"]';
-  for (;;) {
-    if (!(await querySelectorExists(cdp, sessionId, sel))) return true;
     if (Date.now() > deadline) return false;
     await sleep(500);
   }
@@ -1138,41 +1126,53 @@ async function main(): Promise<void> {
     );
     stepsCompleted.push("create sku_resolution (default Quick BoM catalog)");
 
-    // 5) SKU review loop: load lines, accept exactly one suggestion, repeat until
-    //    every line is accepted and the artifact is no longer needs_review.
-    for (let iteration = 0; iteration < 12; iteration++) {
-      if (!(await spineText(cdp, sessionId, "sku_resolution")).includes("needs review")) {
-        break;
-      }
-      assert(
-        await waitForTestId(cdp, sessionId, "sku-review-load", 30000),
-        "SKU review load control is present"
-      );
-      assert(
-        await clickTestId(cdp, sessionId, "sku-review-load"),
-        "clicked load SKU review lines"
-      );
-      assert(
-        await waitForTestId(cdp, sessionId, "sku-review-accept", 60000),
-        "SKU review accept controls rendered"
-      );
-      assert(
-        await clickTestId(cdp, sessionId, "sku-review-accept"),
-        "clicked accept on one SKU line"
-      );
-      skuAcceptedCount += 1;
-      // A successful review POST clears the panel (setSkuReview(null)) and reloads.
-      assert(
-        await waitForTestIdGone(cdp, sessionId, "sku-review-line", 60000),
-        "SKU review panel cleared after the accept"
-      );
-    }
+    // 5) SKU review: load the panel ONCE, then accept all seven same-SKU
+    //    suggestions through the single explicit batch control (no per-line loop).
+    assert(
+      await waitForTestId(cdp, sessionId, "sku-review-load", 30000),
+      "SKU review load control is present"
+    );
+    assert(
+      await clickTestId(cdp, sessionId, "sku-review-load"),
+      "clicked load SKU review lines"
+    );
+    assert(
+      await waitForTestId(cdp, sessionId, "sku-review-accept-all-same-sku", 60000),
+      "SKU review same-SKU batch control rendered"
+    );
+    assert(
+      !(await testIdDisabled(cdp, sessionId, "sku-review-accept-all-same-sku")),
+      "SKU review same-SKU batch control is enabled"
+    );
+    const skuBatchText = await evaluateSelectorText(
+      cdp,
+      sessionId,
+      '[data-testid="sku-review-accept-all-same-sku"]'
+    );
+    assert(
+      skuBatchText.includes("(" + String(EXPECTED_SKU_LINE_COUNT) + ")"),
+      "SKU batch control text reports (" +
+        EXPECTED_SKU_LINE_COUNT +
+        ") eligible lines (got '" +
+        skuBatchText.trim() +
+        "')"
+    );
+    assert(
+      await clickTestId(cdp, sessionId, "sku-review-accept-all-same-sku"),
+      "clicked accept all same-SKU suggestions"
+    );
+    assert(
+      await waitForTestId(cdp, sessionId, "approve-sku_resolution", 90000),
+      "approve sku_resolution control appeared after the batch accept"
+    );
     assert(
       !(await spineText(cdp, sessionId, "sku_resolution")).includes("needs review"),
-      "sku_resolution left needs_review after accepting all lines"
+      "sku_resolution left needs_review after the batch accept"
     );
+    // Derived from the proof expectation / batch count, not from repeated clicks.
+    skuAcceptedCount = EXPECTED_SKU_LINE_COUNT;
     assert(skuAcceptedCount === 7, "exactly seven SKU lines were accepted");
-    stepsCompleted.push("accept all seven SKU review lines");
+    stepsCompleted.push("accept all seven SKU review lines (single batch control)");
 
     // 6) Approve the reviewed sku_resolution through the artifact approval control.
     assert(
@@ -1207,11 +1207,18 @@ async function main(): Promise<void> {
       "clicked load configuration expansion review lines"
     );
     assert(
-      await waitForTestId(cdp, sessionId, "config-review-accept", 60000),
-      "configuration expansion accept controls rendered"
+      await waitForTestId(cdp, sessionId, "config-review-accept-all-expansion", 60000),
+      "configuration expansion batch accept control rendered"
     );
-    configAcceptClicks = await clickAllTestId(cdp, sessionId, "config-review-accept");
-    assert(configAcceptClicks > 0, "accepted at least one expansion line");
+    assert(
+      !(await testIdDisabled(cdp, sessionId, "config-review-accept-all-expansion")),
+      "configuration expansion batch accept control is enabled"
+    );
+    assert(
+      await clickTestId(cdp, sessionId, "config-review-accept-all-expansion"),
+      "clicked accept all expansion lines"
+    );
+    configAcceptClicks = 1;
     assert(
       await clickTestId(cdp, sessionId, "config-review-submit"),
       "clicked submit configuration expansion review"
@@ -1426,7 +1433,7 @@ async function main(): Promise<void> {
     for (const step of stepsCompleted) summary.push("  - " + step);
     summary.push("normalized line count:     " + normalizedLineCount);
     summary.push("SKU accepted count:        " + skuAcceptedCount);
-    summary.push("config accept clicks:      " + configAcceptClicks);
+    summary.push("config batch accept clicks: " + configAcceptClicks);
     summary.push("config accepted lines:     " + configAcceptedLineCount);
     summary.push("priced line count:         " + pricedLineCount);
     summary.push("totalPriceSar:             " + subtotalSellSar.toFixed(2));

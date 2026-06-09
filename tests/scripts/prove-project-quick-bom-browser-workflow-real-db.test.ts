@@ -249,11 +249,11 @@ describe("prove-project-quick-bom-browser-workflow-real-db script hygiene", () =
       "workflow-upload-normalize",
       "workflow-create-sku_resolution",
       "sku-review-load",
-      "sku-review-accept",
+      "sku-review-accept-all-same-sku",
       "approve-sku_resolution",
       "workflow-create-configuration_expansion",
       "config-review-load",
-      "config-review-accept",
+      "config-review-accept-all-expansion",
       "config-review-submit",
       "approve-configuration_expansion",
       "workflow-create-priced_boq",
@@ -266,6 +266,28 @@ describe("prove-project-quick-bom-browser-workflow-real-db script hygiene", () =
     ]) {
       expect(source.includes(selector), `missing selector ${selector}`).toBe(true);
     }
+  });
+
+  it("drives the explicit batch review controls, not the per-line/bulk accept paths", () => {
+    // The fixed UI uses single batch buttons; the proof must click those.
+    expect(source.includes("sku-review-accept-all-same-sku")).toBe(true);
+    expect(source.includes("config-review-accept-all-expansion")).toBe(true);
+    expect(
+      source.includes('clickTestId(cdp, sessionId, "sku-review-accept-all-same-sku")')
+    ).toBe(true);
+    expect(
+      source.includes(
+        'clickTestId(cdp, sessionId, "config-review-accept-all-expansion")'
+      )
+    ).toBe(true);
+    // The old proof path is gone: no per-line sku accept loop, no bulk-click of the
+    // per-line config accept buttons.
+    expect(source.includes('clickTestId(cdp, sessionId, "sku-review-accept")')).toBe(
+      false
+    );
+    expect(source.includes('clickAllTestId(cdp, sessionId, "config-review-accept")')).toBe(
+      false
+    );
   });
 
   it("asserts deterministic priced totals and 60-line counts", () => {
