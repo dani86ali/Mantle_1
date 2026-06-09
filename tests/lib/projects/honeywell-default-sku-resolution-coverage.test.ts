@@ -77,11 +77,26 @@ const HONEYWELL_BOQ_SKUS = [
 ] as const;
 
 // Current replacement SKUs that must NEVER be surfaced as a suggestion (Batch 4 deferral).
-const FORBIDDEN_CURRENT_SKUS = ["DNAC", "C9300X-DNA-A-48-3Y", "C9300L-DNA-A-24-3Y"] as const;
+const FORBIDDEN_CURRENT_SKUS = [
+  "C9300-DNA-A-48-3Y",
+  "C9300L-DNA-A-24-3Y",
+  "SC9300UK9-1715",
+  "S9300LUK9-1718",
+  "D-DNAS-EXT-S-T",
+  "D-DNAS-EXT-S-3Y",
+  "CON-L1NCD-C9300XY4",
+  "CON-L1SWT-C93A48",
+  "CON-L1NCD-C93024PX",
+  "CON-L1SWT-C93LA24",
+  "CON-L1NBD-P7PK94P1",
+  "C9300L-STACK-KIT2",
+  "C9300L-STACK-A",
+  "STACK-T3A-50CM",
+] as const;
 
 function honeywellBoqLines(): CanonicalBoqLine[] {
   return HONEYWELL_BOQ_SKUS.map((sku, index): CanonicalBoqLine => ({
-    sourceFormat: "format_1_line_item",
+    sourceFormat: "format_2_number_part_qty",
     sourceFileId: "honeywell-52-line-boq",
     sourceRowNumber: index + 6,
     originalLineNumber: String(index + 1),
@@ -130,6 +145,11 @@ describe("real 52-line Honeywell BoQ resolves fully against the default Quick Bo
       for (const suggestion of decision.suggestions) {
         expect(forbidden.has(suggestion.suggestedSku), suggestion.suggestedSku).toBe(false);
       }
+      // For every line the only permitted suggestion is the original SKU itself.
+      expect(
+        decision.suggestions.every((s) => s.suggestedSku === decision.originalSku),
+        `${decision.originalSku} got a non-self suggestion`,
+      ).toBe(true);
     }
   });
 

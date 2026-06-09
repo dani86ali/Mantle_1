@@ -35,7 +35,22 @@ const EXPECTED_SKUS = [
 ] as const;
 
 // Current replacement SKUs that must NEVER appear as a suggested SKU (Batch 4: deferred).
-const FORBIDDEN_CURRENT_SKUS = ["DNAC", "C9300X-DNA-A-48-3Y", "C9300L-DNA-A-24-3Y"] as const;
+const FORBIDDEN_CURRENT_SKUS = [
+  "C9300-DNA-A-48-3Y",
+  "C9300L-DNA-A-24-3Y",
+  "SC9300UK9-1715",
+  "S9300LUK9-1718",
+  "D-DNAS-EXT-S-T",
+  "D-DNAS-EXT-S-3Y",
+  "CON-L1NCD-C9300XY4",
+  "CON-L1SWT-C93A48",
+  "CON-L1NCD-C93024PX",
+  "CON-L1SWT-C93LA24",
+  "CON-L1NBD-P7PK94P1",
+  "C9300L-STACK-KIT2",
+  "C9300L-STACK-A",
+  "STACK-T3A-50CM",
+] as const;
 
 function importSpecifiers(source: string): string[] {
   const importRegex = /import\s+(?:type\s+)?[\s\S]*?from\s+["']([^"']+)["']/g;
@@ -56,7 +71,15 @@ describe("getHoneywellKnownSameSkuCatalogItems", () => {
     const forbidden = new Set<string>(FORBIDDEN_CURRENT_SKUS);
     for (const [key, item] of Object.entries(items)) {
       expect(item.sku).toBe(key);
-      expect(forbidden.has(item.sku)).toBe(false);
+      expect(forbidden.has(item.sku), `item.sku ${item.sku} is a forbidden replacement`).toBe(false);
+      // No runtime string field should contain any forbidden replacement SKU value.
+      for (const [field, value] of Object.entries(item)) {
+        if (typeof value === "string") {
+          for (const forbiddenSku of FORBIDDEN_CURRENT_SKUS) {
+            expect(value.includes(forbiddenSku), `field ${field} contains forbidden SKU ${forbiddenSku}`).toBe(false);
+          }
+        }
+      }
     }
   });
 
