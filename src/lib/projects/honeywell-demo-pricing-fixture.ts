@@ -4,7 +4,9 @@
  * Serves the committed data/quick-bom/honeywell-demo-pricing-fixture.json: a
  * TEMPORARY, demo-only per-SKU SAR list price map and Mantle total-bucket category
  * map for exactly the 50 Honeywell MVP target SKUs (every unique configuration-
- * expansion parent/child SKU plus the two standalone customer BoQ optics). Each
+ * expansion parent/child SKU plus the two standalone customer BoQ optics), plus a
+ * Mantle export presentation row-order SKU occurrence sequence (CCW item-row order,
+ * presentation/order evidence only, no pricing/config/replacement authority). Each
  * demo price is the effective per-unit list price derived from the configured CCW
  * estimate (Estimate_NB167337237YA.xlsx) as Extended ListPrice / Quantity, which
  * deliberately captures term/effective unit pricing.
@@ -77,6 +79,15 @@ export interface HoneywellDemoPricingFixture {
   unitListPriceSarBySku: Record<string, HoneywellDemoUnitListPriceSar>;
   priceSourceEvidenceBySku: Record<string, HoneywellDemoPriceSourceEvidence>;
   categoryByAcceptedSku: Record<string, HoneywellDemoMantleCategory>;
+  /**
+   * Mantle EXPORT PRESENTATION row order only: the 60-entry CCW item-row SKU
+   * occurrence sequence (with duplicates) from Estimate_NB167337237YA.xlsx, used to
+   * order the generated Mantle workbook rows to match the approved benchmark. This is
+   * order/presentation evidence only - NOT pricing authority, NOT configuration
+   * authority, NOT replacement authority, and it authorizes no SKU substitution or
+   * re-resolution.
+   */
+  mantleRowOrderSkuSequence: string[];
   knownLimitations: string[];
 }
 
@@ -123,4 +134,17 @@ export function getHoneywellDemoUnitListPriceSarBySku(): Record<string, Honeywel
  */
 export function getHoneywellDemoMantleCategoryByAcceptedSku(): Record<string, HoneywellDemoMantleCategory> {
   return deepCopy(FIXTURE.categoryByAcceptedSku);
+}
+
+/**
+ * Return the Mantle export presentation row-order SKU occurrence sequence as a fresh
+ * copy, ready to pass as buildMantlePriceEstimateModel's rowOrderSkuSequence. It is the
+ * 60-entry CCW item-row order (including duplicate SKU occurrences) from the configured
+ * estimate, used ONLY to order the generated Mantle workbook rows to match the approved
+ * benchmark. This is export presentation/order evidence only: never pricing authority,
+ * never configuration authority, never replacement authority, and it authorizes no SKU
+ * substitution or re-resolution. Demo fixture authority only.
+ */
+export function getHoneywellDemoMantleRowOrderSkuSequence(): string[] {
+  return deepCopy(FIXTURE.mantleRowOrderSkuSequence);
 }

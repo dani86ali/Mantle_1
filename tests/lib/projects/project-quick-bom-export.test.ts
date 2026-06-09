@@ -15,6 +15,7 @@ vi.mock("@/lib/projects/mantle-export-artifact", () => ({
 }));
 vi.mock("@/lib/projects/honeywell-demo-pricing-fixture", () => ({
   getHoneywellDemoMantleCategoryByAcceptedSku: vi.fn(),
+  getHoneywellDemoMantleRowOrderSkuSequence: vi.fn(),
 }));
 vi.mock("node:fs/promises", () => ({ rm: vi.fn() }));
 
@@ -30,12 +31,16 @@ import {
   type CreateMantleExportArtifactResult,
   type MantleExportArtifactPayload,
 } from "@/lib/projects/mantle-export-artifact";
-import { getHoneywellDemoMantleCategoryByAcceptedSku } from "@/lib/projects/honeywell-demo-pricing-fixture";
+import {
+  getHoneywellDemoMantleCategoryByAcceptedSku,
+  getHoneywellDemoMantleRowOrderSkuSequence,
+} from "@/lib/projects/honeywell-demo-pricing-fixture";
 import { rm } from "node:fs/promises";
 
 const getProjectMock = vi.mocked(getProjectById);
 const createMock = vi.mocked(createMantleExportArtifact);
 const getCategoryMock = vi.mocked(getHoneywellDemoMantleCategoryByAcceptedSku);
+const getRowOrderMock = vi.mocked(getHoneywellDemoMantleRowOrderSkuSequence);
 const rmMock = vi.mocked(rm);
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
@@ -203,12 +208,15 @@ function input(
 }
 
 let categoryMap: Record<string, "product" | "service" | "subscription">;
+let rowOrderSequence: string[];
 
 beforeEach(() => {
   vi.clearAllMocks();
   categoryMap = makeCategoryMap();
+  rowOrderSequence = ["PARENT-A", "ACC-1"];
   getProjectMock.mockResolvedValue(makeProject());
   getCategoryMock.mockReturnValue(categoryMap);
+  getRowOrderMock.mockReturnValue(rowOrderSequence);
   createMock.mockResolvedValue(makeDelegateResult());
   rmMock.mockResolvedValue(undefined);
 });
@@ -324,11 +332,26 @@ describe("createProjectQuickBomExportPackage - category fixture authority + dele
     expect(arg.projectId).toBe(PROJECT);
     expect(arg.pricedBoqArtifactId).toBe(PRICED_ID);
     expect(arg.categoryByAcceptedSku).toBe(categoryMap);
+    expect(arg.rowOrderSkuSequence).toBe(rowOrderSequence);
     expect(arg.outputPath.endsWith(".xlsx")).toBe(true);
-    // Exactly the five server-derived authority fields; no caller body fields.
+    // Exactly the six server-derived authority fields; no caller body fields.
     expect(Object.keys(arg).sort()).toEqual(
-      ["categoryByAcceptedSku", "outputPath", "pricedBoqArtifactId", "projectId", "tenantId"].sort()
+      [
+        "categoryByAcceptedSku",
+        "outputPath",
+        "pricedBoqArtifactId",
+        "projectId",
+        "rowOrderSkuSequence",
+        "tenantId",
+      ].sort()
     );
+  });
+
+  it("passes the committed demo row-order sequence (fresh copy) as the only export ordering source", async () => {
+    await createProjectQuickBomExportPackage(input());
+
+    expect(getRowOrderMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0][0].rowOrderSkuSequence).toBe(rowOrderSequence);
   });
 
   it("verifies the project before generating a path or loading the category fixture", async () => {

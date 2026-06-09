@@ -83,6 +83,13 @@ export interface CreateMantleExportArtifactInput {
   priceList?: string;
   /** Explicit Mantle line category per accepted SKU. Passed through to the model unchanged. */
   categoryByAcceptedSku?: Readonly<Record<string, MantleLineCategory>>;
+  /**
+   * Optional Mantle export presentation row order (SKU occurrence sequence). Passed
+   * through to the model to re-order workbook rows only; it is not stored on the
+   * export payload and changes no pricing, totals, or category. Absent -> model keeps
+   * the priced_boq line order.
+   */
+  rowOrderSkuSequence?: readonly string[];
 }
 
 /** The created export artifact, the source priced_boq artifact, payload, model, and path. */
@@ -188,7 +195,8 @@ export function buildMantleExportArtifactPayload(
  * Generate the Mantle workbook and persist a new `export_package` artifact version:
  * load exactly one priced_boq artifact (exact missing/wrong-type/not-approved/invalid
  * messages), require it approved, validate its payload, build the Mantle model
- * (passing the explicit category map through), write the workbook (writer errors
+ * (passing the explicit category map and optional export row-order sequence through),
+ * write the workbook (writer errors
  * bubble before any artifact exists), and create exactly one `needs_review`
  * export_package at `export_approval` whose single source artifact is the priced_boq
  * artifact and whose filePath is the writer's returned path. No mutation.
@@ -196,7 +204,7 @@ export function buildMantleExportArtifactPayload(
 export async function createMantleExportArtifact(
   input: CreateMantleExportArtifactInput
 ): Promise<CreateMantleExportArtifactResult> {
-  const { tenantId, projectId, outputPath, categoryByAcceptedSku } = input;
+  const { tenantId, projectId, outputPath, categoryByAcceptedSku, rowOrderSkuSequence } = input;
 
   const pricedBoqArtifact = await getProjectArtifactById(
     tenantId,
@@ -212,6 +220,7 @@ export async function createMantleExportArtifact(
   const model = buildMantlePriceEstimateModel({
     payload: pricedPayload,
     ...(categoryByAcceptedSku !== undefined ? { categoryByAcceptedSku } : {}),
+    ...(rowOrderSkuSequence !== undefined ? { rowOrderSkuSequence } : {}),
   });
 
   const workbookFilePath = await writeMantlePriceEstimateWorkbook({

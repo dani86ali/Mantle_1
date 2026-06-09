@@ -12,8 +12,10 @@
  * service, CSV loader, normalizer, SKU/config review services, pricing service,
  * Mantle export writer, and download service run for real.
  */
-import { readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import ExcelJS from "exceljs";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   act,
@@ -49,6 +51,7 @@ import { GET as exportDownloadGET } from "@/app/api/projects/[id]/quick-bom/arti
 
 import type { NextRequest } from "next/server";
 import type {
+  CanonicalBoqLine,
   Project,
   ProjectApproval,
   ProjectArtifact,
@@ -71,6 +74,10 @@ import type {
 import type { CreateProjectFileRecordInput } from "@/lib/db/project-file-store";
 import type { ConfigurationExpansionDraftLine } from "@/lib/projects/config-expansion-types";
 import { isHoneywellDeferredReviewSku } from "@/lib/projects/honeywell-sku-review-guidance";
+import {
+  locateMantlePriceEstimateLayout,
+  MANTLE_PRICE_ESTIMATE_SHEET_NAME,
+} from "@/lib/projects/mantle-layout-locator";
 
 type ProjectRow = {
   id: string;
@@ -478,6 +485,143 @@ const CSV = [
 const XLSX_MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const OPTICS = ["SFP-10G-LR-S=", "SFP-10/25G-LR-S="];
+
+// --- Real Honeywell BoQ + CCW benchmark parity (Prompt 154) ------------------
+// The actual customer BoQ workbook the user uploaded from the browser, and the
+// primary configured/priced CCW reference estimate it must match. The parsing
+// helpers and column mappings below are lifted verbatim from
+// tests/lib/projects/honeywell-ccw-parity-evidence.test.ts so this app proof is
+// self-contained (no cross-test import). Evidence/regression only: no runtime,
+// pricing, or configuration authority is created here.
+const HONEYWELL_BOQ_PATH =
+  "C:\\Pre-Sales\\Benchmarck_Files\\Honeywell_Doc_RFP\\Honeywell_BoQ.xlsx";
+const CCW_PATH = "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx";
+const CCW_SHEET = "EstimateDetails_NB167337237YA";
+// CCW column layout (1-based) confirmed from the reference sheet header row.
+const CCW_COL = { lineNumber: 1, itemName: 2, quantity: 9, listPrice: 11, extendedListPrice: 12 };
+const EXPECTED_ITEM_ROWS = 60;
+// The pre-Prompt-153 leak shipped 52 customer rows (incl. 16 deferred) + 24
+// expansion = 76; the export must never regress to that count.
+const REGRESSION_ROW_COUNT = 76;
+const EXPECTED_TOTAL_EXTENDED_SAR = 2185708.76;
+const EXPECTED_TOTAL_INC_VAT_SAR = 2513565.07;
+const EXPECTED_PRODUCT_TOTAL_SAR = 1669647.61;
+const EXPECTED_SERVICE_TOTAL_SAR = 304972.06;
+const EXPECTED_SUBSCRIPTION_TOTAL_SAR = 211089.09;
+const MONEY_TOLERANCE = 0.01;
+
+interface ParsedItemRow {
+  sku: string;
+  quantity: number;
+  extended: number;
+  listPrice: number;
+}
+
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function cellText(cell: ExcelJS.Cell): string {
+  if (cell.type === ExcelJS.ValueType.Merge) return "";
+  const value = cell.value;
+  if (value === null || value === undefined) return "";
+  return String(cell.text).trim();
+}
+
+/** Numeric value of a cell (number, formula cached result, or numeric text); null if blank/non-numeric. */
+function numericCell(cell: ExcelJS.Cell): number | null {
+  const value = cell.value;
+  if (typeof value === "number") return value;
+  if (value !== null && typeof value === "object" && "result" in value) {
+    const result = (value as { result?: unknown }).result;
+    if (typeof result === "number") return result;
+  }
+  const text = cellText(cell);
+  if (text === "") return null;
+  const parsed = Number(text.replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Plain string value of a cell; "" when not a string. */
+function stringValue(cell: ExcelJS.Cell): string {
+  const value = cell.value;
+  return typeof value === "string" ? value : "";
+}
+
+/** Extended amount of a generated Mantle row: prefer the BOMATIC-cached formula result. */
+function generatedExtended(cell: ExcelJS.Cell): number {
+  const result = cell.result;
+  if (typeof result === "number") return result;
+  const value = cell.value;
+  if (typeof value === "number") return value;
+  return 0;
+}
+
+function aggregateBySku(rows: ParsedItemRow[]): {
+  qtyBySku: Record<string, number>;
+  extBySku: Record<string, number>;
+  skus: string[];
+} {
+  const qtyBySku: Record<string, number> = {};
+  const extBySku: Record<string, number> = {};
+  for (const row of rows) {
+    qtyBySku[row.sku] = (qtyBySku[row.sku] ?? 0) + row.quantity;
+    extBySku[row.sku] = round2((extBySku[row.sku] ?? 0) + row.extended);
+  }
+  return { qtyBySku, extBySku, skus: Object.keys(qtyBySku) };
+}
+
+/**
+ * Parse the CCW reference item rows. An item row needs a Line Number, an Item
+ * Name/SKU, a positive Quantity, and a numeric ListPrice (0 allowed). A blank
+ * Extended ListPrice cell (zero-priced included item) is read as 0.
+ */
+function parseCcwItemRows(worksheet: ExcelJS.Worksheet): ParsedItemRow[] {
+  const rows: ParsedItemRow[] = [];
+  for (let r = 1; r <= worksheet.rowCount; r += 1) {
+    const wsRow = worksheet.getRow(r);
+    const lineNumber = cellText(wsRow.getCell(CCW_COL.lineNumber));
+    const sku = cellText(wsRow.getCell(CCW_COL.itemName));
+    const quantity = numericCell(wsRow.getCell(CCW_COL.quantity));
+    const listPrice = numericCell(wsRow.getCell(CCW_COL.listPrice));
+    if (lineNumber === "" || sku === "" || quantity === null || quantity <= 0 || listPrice === null) {
+      continue;
+    }
+    const extended = numericCell(wsRow.getCell(CCW_COL.extendedListPrice)) ?? 0;
+    rows.push({ sku, quantity, extended, listPrice });
+  }
+  return rows;
+}
+
+/** Parse the written Mantle data rows (non-blank Part Number) above the footer, in order. */
+function parseGeneratedItemRows(
+  worksheet: ExcelJS.Worksheet,
+  layout: Awaited<ReturnType<typeof locateMantlePriceEstimateLayout>>
+): ParsedItemRow[] {
+  const col = (header: string): number =>
+    layout.columns.find((c) => c.header === header)!.columnNumber;
+  const partCol = col("Part Number");
+  const qtyCol = col("Qty");
+  const listCol = col("Unit List Price");
+  const extCol = col("Extended Net Price");
+  const footerStart = layout.footerRows.reduce(
+    (min, f) => Math.min(min, f.rowNumber),
+    Number.POSITIVE_INFINITY
+  );
+  const rows: ParsedItemRow[] = [];
+  for (let r = layout.dataStartRowNumber; r < footerStart; r += 1) {
+    const wsRow = worksheet.getRow(r);
+    const sku = stringValue(wsRow.getCell(partCol));
+    if (sku === "") continue;
+    rows.push({
+      sku,
+      quantity: numericCell(wsRow.getCell(qtyCol)) ?? 0,
+      extended: generatedExtended(wsRow.getCell(extCol)),
+      listPrice: numericCell(wsRow.getCell(listCol)) ?? 0,
+    });
+  }
+  return rows;
+}
 
 interface RecordedFetch {
   url: string;
@@ -1865,80 +2009,19 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
     view.unmount();
   });
 
-  it("real 52-row Honeywell BoQ upload drives the UI through configuration review (Prompt 150)", async () => {
-    // Canonical 52-SKU Honeywell order, identical to HONEYWELL_BOQ_SKUS in
-    // tests/lib/projects/honeywell-default-sku-resolution-coverage.test.ts. Kept
-    // local to this app test (no cross-test import) so the app proof is
-    // self-contained. Duplicates are preserved at their original row positions.
-    const HW52_SKUS = [
-      "C9300X-48HX-A",
-      "CON-L1NBX-C9300XY4",
-      "C9300-DNX-A-48-3Y",
-      "CON-L1SWX-93XA48MY",
-      "C9300-NW-A-48",
-      "SC9300UK9-1712",
-      "PWR-C1-1100WAC-P",
-      "PWR-C1-1100WAC-P/2",
-      "CAB-C15-CBN",
-      "C9300-SSD-NONE",
-      "STACK-T1-50CM",
-      "CAB-SPWR-30CM",
-      "C9K-ACC-RBFT",
-      "C9K-ACC-SCR-4",
-      "CAB-GUIDE-1RU",
-      "C9300X-NM-8Y",
-      "NETWORK-PNP-LIC",
-      "SVS-DNXS-CATSUBEM",
-      "SVS-DNXD-CATHWEM",
-      "SPACES-EXT-S",
-      "C9300L-24P-4X-A",
-      "CON-L1NBX-C93024PX",
-      "C9300L-DNX-A-24-3Y",
-      "CON-L1SWX-3LXA24MY",
-      "S9300LUK9-1712",
-      "C9300L-NW-A-24",
-      "C9300L-STACK-BLANK",
-      "FAN-T2",
-      "PWR-C1-715WAC-P",
-      "PWR-C1-715WAC-P/2",
-      "CAB-C15-CBN",
-      "C9300L-SSD-NONE",
-      "C9K-ACC-RBFT",
-      "C9K-ACC-SCR-4",
-      "CAB-GUIDE-1RU",
-      "NETWORK-PNP-LIC",
-      "SVS-DNXS-CATSUBEM",
-      "SVS-DNXD-CATHWEM",
-      "SPACES-EXT-S",
-      "SFP-10G-LR-S=",
-      "SFP-10/25G-LR-S=",
-      "CW9178I-CFG",
-      "CON-ROB-CW9178IC",
-      "AIR-AP-BRACKET-2",
-      "AIR-AP-T-RAIL-F",
-      "CW9178-SINGLE",
-      "CISCO-NETWORK-SUB",
-      "LIC-CW-A",
-      "LIC-SPACES-ADV",
-      "SVS-L0SPT-CN",
-      "CP-7841-K9=",
-      "CON-SNT-P7PK94P1",
-    ];
-    expect(HW52_SKUS).toHaveLength(52);
-
-    const HW52_CSV = [
-      "#,Description,Part Number,Qty",
-      ...HW52_SKUS.map((sku, i) => `${i + 1},${sku},${sku},1`),
-    ].join("\n");
-
+  it("real Honeywell BoQ workbook upload drives the UI through priced export at CCW parity (Prompt 154)", async () => {
     const project = await createArbitraryProject();
     const calls = dispatchQuickBomFetch();
     let view = render(<ProjectQuickBomPage />);
 
     await screen.findByTestId("project-name");
 
-    // Upload the 52-row Honeywell BoQ through the UI file input.
-    const file = new File([HW52_CSV], "honeywell-52-upload.csv", { type: "text/csv" });
+    // Upload the ACTUAL Honeywell BoQ workbook (not a synthetic CSV) through the UI
+    // file input, exactly as the user did from the browser. The deterministic loader
+    // normalizes this workbook to 52 lines from sheet "Honeywell_BoQ". A fresh
+    // Uint8Array copy keeps the binary bytes intact through the jsdom File/Blob path.
+    const workbookBytes = new Uint8Array(readFileSync(HONEYWELL_BOQ_PATH));
+    const file = new File([workbookBytes], "Honeywell_BoQ.xlsx", { type: XLSX_MIME });
     await act(async () => {
       fireEvent.change(screen.getByTestId("workflow-upload-file"), {
         target: { files: [file] },
@@ -1951,9 +2034,25 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       expect(screen.getByTestId("spine-normalized_boq")).toHaveTextContent("generated")
     );
 
-    // Normalized artifact carries exactly 52 lines.
+    // Normalized artifact carries exactly 52 lines, all from the Honeywell_BoQ sheet,
+    // with the REAL workbook quantities preserved (not the synthetic quantity=1).
     const normalizedArtifact = hoisted.store.latestArtifact("normalized_boq");
-    expect((normalizedArtifact.payload.lines as unknown[]) ?? []).toHaveLength(52);
+    const normalizedLines = (normalizedArtifact.payload.lines ?? []) as CanonicalBoqLine[];
+    expect(normalizedLines).toHaveLength(52);
+    expect(normalizedLines.every((l) => l.sourceSheetName === "Honeywell_BoQ")).toBe(true);
+    const normalizedQtyForSku = (sku: string): number | undefined =>
+      normalizedLines.find((l) => l.sku === sku)?.quantity;
+    // First BoQ line is the access switch at quantity 7.
+    expect(normalizedLines[0].sku).toBe("C9300X-48HX-A");
+    expect(normalizedLines[0].quantity).toBe(7);
+    expect(normalizedQtyForSku("C9300X-48HX-A")).toBe(7);
+    expect(normalizedQtyForSku("C9300L-24P-4X-A")).toBe(6);
+    expect(normalizedQtyForSku("CW9178I-CFG")).toBe(12);
+    expect(normalizedQtyForSku("CP-7841-K9=")).toBe(59);
+    // The single phone line (CP-7841-K9=) carries quantity 59.
+    const phoneLines = normalizedLines.filter((l) => l.sku === "CP-7841-K9=");
+    expect(phoneLines).toHaveLength(1);
+    expect(phoneLines[0].quantity).toBe(59);
 
     // No catalog profile selector: the default catalog covers all 52 Honeywell SKUs.
     expect(screen.queryByTestId("workflow-honeywell-demo-catalog-profile")).toBeNull();
@@ -2203,8 +2302,7 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
     // No active replacement/substitution fields in the sanitized POST body.
     assertNoActiveReplacementSubstitutionFields(configBatchBody);
 
-    // Reviewed configuration_expansion artifact is present; approve control appears.
-    // Stop here: do not continue into pricing/export.
+    // Reviewed configuration_expansion artifact is present; approve it through the UI.
     view.unmount();
     view = render(<ProjectQuickBomPage />);
     await screen.findByTestId("project-name");
@@ -2213,6 +2311,192 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
     ).toBeInTheDocument();
     const reviewedConfig = hoisted.store.latestArtifact("configuration_expansion");
     expect(reviewedConfig.payload.payloadKind).not.toBe("configuration_expansion_draft");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-configuration_expansion"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-configuration_expansion")).toHaveTextContent("approved")
+    );
+
+    // Create priced_boq through the UI.
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-priced_boq"));
+    });
+    expect(await screen.findByTestId("approve-priced_boq")).toBeInTheDocument();
+
+    // priced_boq is fully priced: 60 lines, none unpriced/missing. Pass-through pricing
+    // (Prompt 152) means list subtotal == sell subtotal == the CCW extended total, and
+    // the VAT-inclusive total matches the committed Honeywell demo fixture.
+    const pricedArtifact = hoisted.store.latestArtifact("priced_boq");
+    expect((pricedArtifact.payload.lines as unknown[]) ?? []).toHaveLength(60);
+    const pricedSummary = pricedArtifact.payload.summary as {
+      unpricedLineCount: number;
+      missingPriceCount: number;
+      totals: {
+        lineCount: number;
+        subtotalListPriceSar: number;
+        subtotalSellPriceSar: number;
+        totalIncVatSar: number;
+      };
+    };
+    expect(pricedSummary.totals.lineCount).toBe(60);
+    expect(pricedSummary.unpricedLineCount).toBe(0);
+    expect(pricedSummary.missingPriceCount).toBe(0);
+    expect(
+      Math.abs(pricedSummary.totals.subtotalListPriceSar - EXPECTED_TOTAL_EXTENDED_SAR)
+    ).toBeLessThan(MONEY_TOLERANCE);
+    expect(
+      Math.abs(pricedSummary.totals.subtotalSellPriceSar - EXPECTED_TOTAL_EXTENDED_SAR)
+    ).toBeLessThan(MONEY_TOLERANCE);
+    expect(
+      Math.abs(pricedSummary.totals.totalIncVatSar - EXPECTED_TOTAL_INC_VAT_SAR)
+    ).toBeLessThan(MONEY_TOLERANCE);
+
+    // Load the priced review panel via the UI: 60 priced lines, no unpriced/missing-price
+    // warnings, and the panel is read-only (no POST).
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("priced-review-load"));
+    });
+    expect(await screen.findByTestId("priced-review-summary")).toBeInTheDocument();
+    expect(screen.getAllByTestId("priced-review-line")).toHaveLength(60);
+    const pricedReviewText = screen.getByTestId("priced-review-summary").textContent ?? "";
+    expect(pricedReviewText).toContain("60 priced");
+    expect(pricedReviewText).toContain("0 unpriced");
+    expect(pricedReviewText).toContain("0 missing price");
+    expect(
+      calls.filter((c) => c.method === "POST" && /\/priced-boq\/review$/.test(c.url))
+    ).toHaveLength(0);
+
+    // Approve priced_boq through the UI.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-priced_boq"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-priced_boq")).toHaveTextContent("approved")
+    );
+
+    // Create export_package through the UI.
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-export_package"));
+    });
+    await waitFor(
+      () => expect(screen.getByTestId("approve-export_package")).toBeInTheDocument(),
+      { timeout: 5000 }
+    );
+
+    // export_package payload: 60 rows, no warnings, committed Honeywell category totals.
+    const exportArtifact = hoisted.store.latestArtifact("export_package");
+    const exportPayload = exportArtifact.payload as {
+      rowCount: number;
+      warnings: string[];
+      totals: {
+        productTotalSar: number;
+        serviceTotalSar: number;
+        subscriptionTotalSar: number;
+        totalIncVatSar: number;
+      };
+    };
+    expect(exportPayload.rowCount).toBe(60);
+    expect(exportPayload.warnings).toEqual([]);
+    expect(
+      Math.abs(exportPayload.totals.productTotalSar - EXPECTED_PRODUCT_TOTAL_SAR)
+    ).toBeLessThan(MONEY_TOLERANCE);
+    expect(
+      Math.abs(exportPayload.totals.serviceTotalSar - EXPECTED_SERVICE_TOTAL_SAR)
+    ).toBeLessThan(MONEY_TOLERANCE);
+    expect(
+      Math.abs(exportPayload.totals.subscriptionTotalSar - EXPECTED_SUBSCRIPTION_TOTAL_SAR)
+    ).toBeLessThan(MONEY_TOLERANCE);
+    expect(
+      Math.abs(exportPayload.totals.totalIncVatSar - EXPECTED_TOTAL_INC_VAT_SAR)
+    ).toBeLessThan(MONEY_TOLERANCE);
+
+    // Approve export_package and exercise the REAL download route.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-export_package"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-export_package")).toHaveTextContent("approved")
+    );
+    const link = await screen.findByTestId("download-export_package");
+    expect(link).toHaveAttribute(
+      "href",
+      `/api/projects/${project.id}/quick-bom/artifacts/${exportArtifact.id}/export-package/download`
+    );
+
+    const downloadRes = await exportDownloadGET(emptyRequest(), {
+      params: { id: project.id, artifactId: exportArtifact.id },
+    });
+    expect(downloadRes.status).toBe(200);
+    expect(downloadRes.headers.get("content-type")).toBe(XLSX_MIME);
+    const downloadedBytes = new Uint8Array(await downloadRes.arrayBuffer());
+    expect(downloadedBytes.byteLength).toBeGreaterThan(0);
+
+    // Parse the ACTUAL downloaded workbook bytes and the CCW benchmark, then prove
+    // parity. The downloaded bytes are written to a temp .xlsx so the existing
+    // (path-based) Mantle layout locator parses exactly what the browser downloads.
+    const parityTmpDir = mkdtempSync(join(tmpdir(), "bomatic-hw-parity-app-"));
+    const generatedPath = join(parityTmpDir, "downloaded-export.xlsx");
+    let genRows: ParsedItemRow[];
+    let ccwRows: ParsedItemRow[];
+    try {
+      writeFileSync(generatedPath, downloadedBytes);
+      const genLayout = await locateMantlePriceEstimateLayout(generatedPath);
+      const genWb = new ExcelJS.Workbook();
+      await genWb.xlsx.readFile(generatedPath);
+      const genSheet = genWb.getWorksheet(MANTLE_PRICE_ESTIMATE_SHEET_NAME);
+      if (!genSheet) throw new Error("generated workbook missing the Price Estimate sheet");
+      genRows = parseGeneratedItemRows(genSheet, genLayout);
+
+      const ccwWb = new ExcelJS.Workbook();
+      await ccwWb.xlsx.readFile(CCW_PATH);
+      const ccwSheet = ccwWb.getWorksheet(CCW_SHEET);
+      if (!ccwSheet) throw new Error(`CCW benchmark missing sheet ${CCW_SHEET}`);
+      ccwRows = parseCcwItemRows(ccwSheet);
+    } finally {
+      rmSync(parityTmpDir, { recursive: true, force: true });
+    }
+
+    // Parity assertions are ordered cheap -> exact so a failure is self-diagnosing:
+    // row count, then SKU membership, quantities, amounts, total, and finally the
+    // exact ordered SKU sequence.
+    // (1) Both sides have 60 item rows; no 76-row export regression.
+    expect(genRows).toHaveLength(EXPECTED_ITEM_ROWS);
+    expect(ccwRows).toHaveLength(EXPECTED_ITEM_ROWS);
+    expect(genRows.length).not.toBe(REGRESSION_ROW_COUNT);
+
+    const genAgg = aggregateBySku(genRows);
+    const ccwAgg = aggregateBySku(ccwRows);
+
+    // (2) Identical SKU multiset (no missing/extra), compared as sorted sets.
+    expect(genAgg.skus.slice().sort()).toEqual(ccwAgg.skus.slice().sort());
+
+    // (3) Aggregate quantity per SKU matches.
+    for (const sku of ccwAgg.skus) {
+      expect(genAgg.qtyBySku[sku], `quantity for ${sku}`).toBe(ccwAgg.qtyBySku[sku]);
+    }
+
+    // (4) Aggregate extended (net/list) amount per SKU matches within 0.01 SAR.
+    for (const sku of ccwAgg.skus) {
+      expect(genAgg.extBySku[sku], `extended present for ${sku}`).not.toBeUndefined();
+      expect(
+        Math.abs(genAgg.extBySku[sku] - ccwAgg.extBySku[sku]),
+        `extended for ${sku}`
+      ).toBeLessThan(MONEY_TOLERANCE);
+    }
+
+    // (4b) Total generated extended == 2,185,708.76 == benchmark total.
+    const genTotal = round2(genRows.reduce((sum, r) => sum + r.extended, 0));
+    const ccwTotal = round2(ccwRows.reduce((sum, r) => sum + r.extended, 0));
+    expect(Math.abs(genTotal - EXPECTED_TOTAL_EXTENDED_SAR)).toBeLessThan(MONEY_TOLERANCE);
+    expect(Math.abs(ccwTotal - EXPECTED_TOTAL_EXTENDED_SAR)).toBeLessThan(MONEY_TOLERANCE);
+    expect(Math.abs(genTotal - ccwTotal)).toBeLessThan(MONEY_TOLERANCE);
+
+    // (5) Strongest, least-foolable check: the entire ordered SKU sequence is identical
+    // to the benchmark across all 60 rows.
+    const genSkus = genRows.map((r) => r.sku);
+    const ccwSkus = ccwRows.map((r) => r.sku);
+    expect(genSkus).toEqual(ccwSkus);
 
     view.unmount();
   });

@@ -7,6 +7,7 @@ import {
   getHoneywellDemoPricingFixture,
   getHoneywellDemoUnitListPriceSarBySku,
   getHoneywellDemoMantleCategoryByAcceptedSku,
+  getHoneywellDemoMantleRowOrderSkuSequence,
   type HoneywellDemoMantleCategory,
 } from "@/lib/projects/honeywell-demo-pricing-fixture";
 import { getHoneywellMvpConfigExpansionRulePack } from "@/lib/projects/honeywell-config-expansion-rule-pack";
@@ -221,12 +222,83 @@ describe("honeywell demo pricing fixture - categories", () => {
   });
 });
 
+// --- Mantle export presentation row order -----------------------------------
+
+describe("honeywell demo pricing fixture - Mantle export row order", () => {
+  // The CCW benchmark (Estimate_NB167337237YA.xlsx) has 60 item rows; the sequence is
+  // one entry per row, in order, including duplicate SKU occurrences.
+  const EXPECTED_ITEM_ROWS = 60;
+  // Known duplicate SKU occurrence counts in the CCW item-row order: every cross-
+  // section expansion child that appears under both the C9300X and C9300L switch
+  // sections shows up exactly twice in the 60-row sequence.
+  const EXPECTED_DUPLICATE_OCCURRENCES: Array<[string, number]> = [
+    ["TE-EMBEDDED-T", 2],
+    ["TE-EMBEDDED-T-3Y", 2],
+    ["D-DNAS-EXT-S-T", 2],
+    ["D-DNAS-EXT-S-3Y", 2],
+    ["TE-C9K-SW", 2],
+    ["C9K-ACC-RBFT", 2],
+    ["C9K-ACC-SCR-4", 2],
+    ["CAB-GUIDE-1RU", 2],
+    ["CAB-C15-CBN", 2],
+    ["NETWORK-PNP-LIC", 2],
+  ];
+
+  function occurrences(sequence: string[]): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const sku of sequence) counts.set(sku, (counts.get(sku) ?? 0) + 1);
+    return counts;
+  }
+
+  it("is a 60-entry SKU occurrence sequence bounded by the first and last CCW item rows", () => {
+    const sequence = getHoneywellDemoMantleRowOrderSkuSequence();
+    expect(sequence).toHaveLength(EXPECTED_ITEM_ROWS);
+    expect(sequence[0]).toBe("CW9178I-CFG");
+    expect(sequence[sequence.length - 1]).toBe("CON-L1NBD-P7PK94P1");
+    for (const sku of sequence) expect(typeof sku).toBe("string");
+  });
+
+  it("repeats known cross-section SKUs by occurrence and covers exactly the 50 SKU universe", () => {
+    const sequence = getHoneywellDemoMantleRowOrderSkuSequence();
+    const counts = occurrences(sequence);
+    for (const [sku, expectedCount] of EXPECTED_DUPLICATE_OCCURRENCES) {
+      expect(counts.get(sku), sku).toBe(expectedCount);
+    }
+    // The 50 unique SKUs of the sequence are exactly the priced fixture's SKU universe.
+    expect(Array.from(counts.keys()).sort()).toEqual(expectedTargetSkusSorted());
+  });
+
+  it("returns a fresh copy each call; mutation cannot leak", () => {
+    const first = getHoneywellDemoMantleRowOrderSkuSequence();
+    first[0] = "MUTATED";
+    first.push("INJECTED");
+    const second = getHoneywellDemoMantleRowOrderSkuSequence();
+    expect(second[0]).toBe("CW9178I-CFG");
+    expect(second).toHaveLength(EXPECTED_ITEM_ROWS);
+    expect(second).not.toContain("INJECTED");
+  });
+
+  it("creates no replacement/substitution authority: it is presentation/order evidence only", () => {
+    const f = getHoneywellDemoPricingFixture();
+    // The sequence is a flat string[] - it carries no replacement/substitution fields,
+    // and the fixture's authority flags stay false alongside it.
+    expect(Array.isArray(f.mantleRowOrderSkuSequence)).toBe(true);
+    expect(f.mantleRowOrderSkuSequence.every((sku) => typeof sku === "string")).toBe(true);
+    expect(f.replacementAuthority).toBe(false);
+    expect(f.silentSkuSubstitution).toBe(false);
+    // Every SKU in the order sequence is already a known target SKU (no new/substitute SKU).
+    const known = new Set(Object.keys(f.unitListPriceSarBySku));
+    for (const sku of f.mantleRowOrderSkuSequence) expect(known.has(sku), sku).toBe(true);
+  });
+});
+
 // --- Loader getters return fresh deep copies --------------------------------
 
 describe("honeywell demo pricing fixture - fresh deep copies", () => {
-  it("exposes exactly the three documented getters at runtime", () => {
+  it("exposes exactly the four documented getters at runtime", () => {
     expect(Object.keys(fixtureLoader).sort()).toEqual([
       "getHoneywellDemoMantleCategoryByAcceptedSku",
+      "getHoneywellDemoMantleRowOrderSkuSequence",
       "getHoneywellDemoPricingFixture",
       "getHoneywellDemoUnitListPriceSarBySku",
     ]);

@@ -434,6 +434,34 @@ describe("createMantleExportArtifact - category map (no inference)", () => {
   });
 });
 
+describe("createMantleExportArtifact - export row ordering (pass-through)", () => {
+  it("passes rowOrderSkuSequence to the real model so the workbook rows are re-ordered", async () => {
+    const lines = [
+      pricedLine({ sourceRowNumber: 1, acceptedSku: "A" }),
+      pricedLine({ sourceRowNumber: 2, acceptedSku: "B" }),
+      pricedLine({ sourceRowNumber: 3, acceptedSku: "C" }),
+    ];
+    mockArtifact(pricedArtifact({ payload: pricedPayload(lines) as unknown as Record<string, unknown> }));
+    const result = await createMantleExportArtifact(
+      input({ rowOrderSkuSequence: ["C", "A", "B"] })
+    );
+    // The sequence reached the real model: rows follow the supplied occurrence order.
+    expect(result.model.rows.map((r) => r.partNumber)).toEqual(["C", "A", "B"]);
+    // The same model object is handed to the writer.
+    expect(writeMock.mock.calls[0][0].model).toBe(result.model);
+  });
+
+  it("preserves priced_boq line order when no rowOrderSkuSequence is supplied", async () => {
+    const lines = [
+      pricedLine({ sourceRowNumber: 1, acceptedSku: "A" }),
+      pricedLine({ sourceRowNumber: 2, acceptedSku: "B" }),
+    ];
+    mockArtifact(pricedArtifact({ payload: pricedPayload(lines) as unknown as Record<string, unknown> }));
+    const result = await createMantleExportArtifact(input());
+    expect(result.model.rows.map((r) => r.partNumber)).toEqual(["A", "B"]);
+  });
+});
+
 describe("createMantleExportArtifact - freshness & purity", () => {
   it("passes fresh source arrays that cannot corrupt the source artifact", async () => {
     const pricedArt = pricedArtifact();

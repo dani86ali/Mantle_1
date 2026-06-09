@@ -640,6 +640,112 @@ describe("buildMantlePriceEstimateModel - metadata, defaults & purity", () => {
   });
 });
 
+describe("buildMantlePriceEstimateModel - optional export row ordering", () => {
+  it("preserves payload line order when no rowOrderSkuSequence is supplied", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "A" }),
+        pricedLine({ sourceRowNumber: 2, acceptedSku: "B" }),
+        pricedLine({ sourceRowNumber: 3, acceptedSku: "C" }),
+      ]),
+    });
+    expect(model.rows.map((r) => r.partNumber)).toEqual(["A", "B", "C"]);
+  });
+
+  it("re-orders rows by the supplied SKU occurrence sequence", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "A" }),
+        pricedLine({ sourceRowNumber: 2, acceptedSku: "B" }),
+        pricedLine({ sourceRowNumber: 3, acceptedSku: "C" }),
+      ]),
+      rowOrderSkuSequence: ["C", "A", "B"],
+    });
+    expect(model.rows.map((r) => r.partNumber)).toEqual(["C", "A", "B"]);
+  });
+
+  it("maps duplicate SKUs by occurrence order: first row -> first position, second -> second", () => {
+    // Two DUP rows with distinguishable source rows; the sequence places the second
+    // section's DUP (CCW position 1) before the first section's DUP (CCW position 4).
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 10, acceptedSku: "DUP" }), // 1st generated DUP
+        pricedLine({ sourceRowNumber: 11, acceptedSku: "X" }),
+        pricedLine({ sourceRowNumber: 12, acceptedSku: "DUP" }), // 2nd generated DUP
+      ]),
+      // Occurrence positions for DUP are indices 0 and 2; X is index 1.
+      rowOrderSkuSequence: ["DUP", "X", "DUP"],
+    });
+    // First generated DUP took the earlier (index 0) position, second took index 2.
+    expect(model.rows.map((r) => r.partNumber)).toEqual(["DUP", "X", "DUP"]);
+    expect(model.rows.map((r) => r.sourceRowNumber)).toEqual([10, 11, 12]);
+  });
+
+  it("keeps rows with no remaining sequence position after the ordered rows, in original order", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "KNOWN-1" }),
+        pricedLine({ sourceRowNumber: 2, acceptedSku: "UNLISTED-A" }),
+        pricedLine({ sourceRowNumber: 3, acceptedSku: "KNOWN-2" }),
+        // A second KNOWN-1 with only one sequence position falls to the tail.
+        pricedLine({ sourceRowNumber: 4, acceptedSku: "KNOWN-1" }),
+        pricedLine({ sourceRowNumber: 5, acceptedSku: "UNLISTED-B" }),
+      ]),
+      rowOrderSkuSequence: ["KNOWN-2", "KNOWN-1"],
+    });
+    // Ordered rows first (by sequence), then the leftover rows in original relative order.
+    expect(model.rows.map((r) => r.partNumber)).toEqual([
+      "KNOWN-2",
+      "KNOWN-1",
+      "UNLISTED-A",
+      "KNOWN-1",
+      "UNLISTED-B",
+    ]);
+    expect(model.rows.map((r) => r.sourceRowNumber)).toEqual([3, 1, 2, 4, 5]);
+  });
+
+  it("does not change totals, the category split, or warnings when re-ordering", () => {
+    const lines = [
+      pricedLine({ sourceRowNumber: 1, acceptedSku: "HW" }), // 160 product
+      pricedLine({ sourceRowNumber: 2, acceptedSku: "SVC" }), // 160 service
+      pricedLine({ sourceRowNumber: 3, acceptedSku: "SUB" }), // 160 subscription
+    ];
+    const categoryByAcceptedSku: Record<string, MantleLineCategory> = {
+      HW: "product",
+      SVC: "service",
+      SUB: "subscription",
+    };
+    const unordered = buildMantlePriceEstimateModel({ payload: payload(lines), categoryByAcceptedSku });
+    const ordered = buildMantlePriceEstimateModel({
+      payload: payload(lines),
+      categoryByAcceptedSku,
+      rowOrderSkuSequence: ["SUB", "HW", "SVC"],
+    });
+    expect(ordered.rows.map((r) => r.partNumber)).toEqual(["SUB", "HW", "SVC"]);
+    expect(ordered.totals).toEqual(unordered.totals);
+    expect(ordered.warnings).toEqual(unordered.warnings);
+    // Each row keeps its own resolved category through the re-order.
+    const categoryBySku = new Map(ordered.rows.map((r) => [r.partNumber, r.category]));
+    expect(categoryBySku.get("HW")).toBe("product");
+    expect(categoryBySku.get("SVC")).toBe("service");
+    expect(categoryBySku.get("SUB")).toBe("subscription");
+  });
+
+  it("does not mutate the payload, its lines, or the rowOrderSkuSequence", () => {
+    const lines = [
+      pricedLine({ sourceRowNumber: 1, acceptedSku: "A" }),
+      pricedLine({ sourceRowNumber: 2, acceptedSku: "B" }),
+    ];
+    const pay = payload(lines);
+    const sequence = ["B", "A"];
+    const paySnapshot = structuredClone(pay);
+    const sequenceSnapshot = [...sequence];
+    buildMantlePriceEstimateModel({ payload: pay, rowOrderSkuSequence: sequence });
+    expect(pay).toEqual(paySnapshot);
+    expect(sequence).toEqual(sequenceSnapshot);
+  });
+});
+
 describe("buildMantlePriceEstimateModel - surface & isolation", () => {
   const source = readFileSync(
     join(process.cwd(), "src/lib/projects/mantle-price-estimate-model.ts"),

@@ -15,13 +15,16 @@
  * AUTHORITY BOUNDARY: export consumes only an approved priced_boq artifact. It never
  * re-prices, re-resolves SKUs, re-expands configuration, infers categories from SKU
  * text/description, or reads normalized_boq/sku_resolution/configuration_expansion
- * directly. For this MVP demo wiring only, the committed Honeywell demo Mantle category
- * fixture (via {@link getHoneywellDemoMantleCategoryByAcceptedSku}) is the ONLY
- * categoryByAcceptedSku source. That fixture is TEMPORARY demo category/export-bucket
- * metadata only: not pricing authority, not configuration authority, not production
- * Cisco authority, not catalog lookup, not runtime AI, not replacement authority, and
- * it authorizes no silent SKU substitution. Missing categories stay the lower Mantle
- * model's warning/default behavior; this service infers no categories.
+ * directly. For this MVP demo wiring only, the committed Honeywell demo fixture supplies
+ * the ONLY categoryByAcceptedSku source (via {@link getHoneywellDemoMantleCategoryByAcceptedSku})
+ * AND the ONLY Mantle export presentation row-order source (via
+ * {@link getHoneywellDemoMantleRowOrderSkuSequence}, which orders the generated workbook
+ * rows to the approved CCW benchmark). That fixture is TEMPORARY demo category/export-bucket
+ * and export-ordering metadata only: not pricing authority, not configuration authority,
+ * not production Cisco authority, not catalog lookup, not runtime AI, not replacement
+ * authority, and it authorizes no silent SKU substitution or re-resolution. Missing
+ * categories stay the lower Mantle model's warning/default behavior; this service infers
+ * no categories and re-orders nothing itself.
  *
  * The workbook output path is always generated here under the OS temp dir with a unique
  * id - never accepted from caller input or a request body. The caller supplies no
@@ -42,7 +45,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getProjectById } from "@/lib/db/project-store";
 import { createMantleExportArtifact } from "@/lib/projects/mantle-export-artifact";
-import { getHoneywellDemoMantleCategoryByAcceptedSku } from "@/lib/projects/honeywell-demo-pricing-fixture";
+import {
+  getHoneywellDemoMantleCategoryByAcceptedSku,
+  getHoneywellDemoMantleRowOrderSkuSequence,
+} from "@/lib/projects/honeywell-demo-pricing-fixture";
 import type {
   CreateMantleExportArtifactResult,
   MantleExportArtifactPayload,
@@ -303,9 +309,11 @@ export async function createProjectQuickBomExportPackage(
   }
 
   // The workbook path is generated server-side (never from input/body); the demo
-  // category fixture getter returns a fresh deep copy and is the ONLY category source.
+  // fixture getters each return a fresh copy and are the ONLY source of the Mantle
+  // category map and the Mantle export presentation row order (order evidence only).
   const outputPath = generateOutputPath(projectId, pricedBoqArtifactId);
   const categoryByAcceptedSku = getHoneywellDemoMantleCategoryByAcceptedSku();
+  const rowOrderSkuSequence = getHoneywellDemoMantleRowOrderSkuSequence();
 
   let result: CreateMantleExportArtifactResult;
   try {
@@ -315,6 +323,7 @@ export async function createProjectQuickBomExportPackage(
       pricedBoqArtifactId,
       outputPath,
       categoryByAcceptedSku,
+      rowOrderSkuSequence,
     });
   } catch (error) {
     // Best-effort cleanup of a possibly-written workbook; it must never mask the
