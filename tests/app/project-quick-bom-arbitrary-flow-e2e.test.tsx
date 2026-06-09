@@ -1863,6 +1863,312 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
 
     view.unmount();
   });
+
+  it("real 52-row Honeywell BoQ upload drives the UI through configuration review (Prompt 150)", async () => {
+    // Canonical 52-SKU Honeywell order, identical to HONEYWELL_BOQ_SKUS in
+    // tests/lib/projects/honeywell-default-sku-resolution-coverage.test.ts. Kept
+    // local to this app test (no cross-test import) so the app proof is
+    // self-contained. Duplicates are preserved at their original row positions.
+    const HW52_SKUS = [
+      "C9300X-48HX-A",
+      "CON-L1NBX-C9300XY4",
+      "C9300-DNX-A-48-3Y",
+      "CON-L1SWX-93XA48MY",
+      "C9300-NW-A-48",
+      "SC9300UK9-1712",
+      "PWR-C1-1100WAC-P",
+      "PWR-C1-1100WAC-P/2",
+      "CAB-C15-CBN",
+      "C9300-SSD-NONE",
+      "STACK-T1-50CM",
+      "CAB-SPWR-30CM",
+      "C9K-ACC-RBFT",
+      "C9K-ACC-SCR-4",
+      "CAB-GUIDE-1RU",
+      "C9300X-NM-8Y",
+      "NETWORK-PNP-LIC",
+      "SVS-DNXS-CATSUBEM",
+      "SVS-DNXD-CATHWEM",
+      "SPACES-EXT-S",
+      "C9300L-24P-4X-A",
+      "CON-L1NBX-C93024PX",
+      "C9300L-DNX-A-24-3Y",
+      "CON-L1SWX-3LXA24MY",
+      "S9300LUK9-1712",
+      "C9300L-NW-A-24",
+      "C9300L-STACK-BLANK",
+      "FAN-T2",
+      "PWR-C1-715WAC-P",
+      "PWR-C1-715WAC-P/2",
+      "CAB-C15-CBN",
+      "C9300L-SSD-NONE",
+      "C9K-ACC-RBFT",
+      "C9K-ACC-SCR-4",
+      "CAB-GUIDE-1RU",
+      "NETWORK-PNP-LIC",
+      "SVS-DNXS-CATSUBEM",
+      "SVS-DNXD-CATHWEM",
+      "SPACES-EXT-S",
+      "SFP-10G-LR-S=",
+      "SFP-10/25G-LR-S=",
+      "CW9178I-CFG",
+      "CON-ROB-CW9178IC",
+      "AIR-AP-BRACKET-2",
+      "AIR-AP-T-RAIL-F",
+      "CW9178-SINGLE",
+      "CISCO-NETWORK-SUB",
+      "LIC-CW-A",
+      "LIC-SPACES-ADV",
+      "SVS-L0SPT-CN",
+      "CP-7841-K9=",
+      "CON-SNT-P7PK94P1",
+    ];
+    expect(HW52_SKUS).toHaveLength(52);
+
+    const HW52_CSV = [
+      "#,Description,Part Number,Qty",
+      ...HW52_SKUS.map((sku, i) => `${i + 1},${sku},${sku},1`),
+    ].join("\n");
+
+    const project = await createArbitraryProject();
+    const calls = dispatchQuickBomFetch();
+    let view = render(<ProjectQuickBomPage />);
+
+    await screen.findByTestId("project-name");
+
+    // Upload the 52-row Honeywell BoQ through the UI file input.
+    const file = new File([HW52_CSV], "honeywell-52-upload.csv", { type: "text/csv" });
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("workflow-upload-file"), {
+        target: { files: [file] },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("workflow-upload-normalize"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-normalized_boq")).toHaveTextContent("generated")
+    );
+
+    // Normalized artifact carries exactly 52 lines.
+    const normalizedArtifact = hoisted.store.latestArtifact("normalized_boq");
+    expect((normalizedArtifact.payload.lines as unknown[]) ?? []).toHaveLength(52);
+
+    // No catalog profile selector: the default catalog covers all 52 Honeywell SKUs.
+    expect(screen.queryByTestId("workflow-honeywell-demo-catalog-profile")).toBeNull();
+
+    // Create sku_resolution draft.
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-sku_resolution"));
+    });
+    expect(await screen.findByTestId("line-review-required-sku_resolution")).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
+
+    // SKU-resolution creation carried no body / no catalog profile.
+    const skuCreateCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
+    );
+    expect(skuCreateCalls).toHaveLength(1);
+    expect(skuCreateCalls[0].body).toBeNull();
+
+    // The persisted draft resolved through the default Quick BoM approved catalog,
+    // with 52 lines, 52 needing review, 0 unresolved.
+    const skuDraft = hoisted.store.latestArtifact("sku_resolution");
+    expect(skuDraft.status).toBe("needs_review");
+    const skuSummary = skuDraft.payload.summary as {
+      totalLines: number;
+      needsReviewCount: number;
+      unresolvedCount: number;
+      catalogSource: string;
+    };
+    expect(skuSummary.totalLines).toBe(52);
+    expect(skuSummary.needsReviewCount).toBe(52);
+    expect(skuSummary.unresolvedCount).toBe(0);
+    expect(skuSummary.catalogSource).toBe("default_quick_bom_approved_catalog");
+
+    // Load SKU review panel via the UI button.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    expect(await screen.findByTestId("sku-review-summary")).toBeInTheDocument();
+    expect(screen.getAllByTestId("sku-review-line")).toHaveLength(52);
+    expect(
+      calls.filter((c) => c.method === "GET" && /\/sku-resolution\/review$/.test(c.url))
+    ).toHaveLength(1);
+
+    // All 52 lines resolve as same-SKU exact suggestions, eligible for the single batch.
+    const skuDraftDecisions = (skuDraft.payload.decisions ?? []) as SkuResolutionDecision[];
+    const eligibleSameSku = skuDraftDecisions.filter(
+      (d) =>
+        d.status === "needs_review" &&
+        d.suggestions.length === 1 &&
+        d.suggestions[0].suggestedSku.trim().toLowerCase() ===
+          d.originalSku.trim().toLowerCase()
+    );
+    expect(eligibleSameSku).toHaveLength(52);
+
+    const batchBtn = screen.getByTestId("sku-review-accept-all-same-sku");
+    expect(batchBtn).not.toBeDisabled();
+    expect(batchBtn).toHaveTextContent("(52)");
+    await act(async () => {
+      fireEvent.click(batchBtn);
+    });
+
+    // After the batch resolves all lines the panel disappears and approve appears.
+    expect(await screen.findByTestId("approve-sku_resolution")).toBeInTheDocument();
+
+    // Exactly one SKU review POST carrying all 52 sanitized accept actions.
+    const skuReviewPostCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution\/review$/.test(c.url)
+    );
+    expect(skuReviewPostCalls).toHaveLength(1);
+    const skuBatchActions = (skuReviewPostCalls[0].body as { actions: Record<string, unknown>[] }).actions;
+    expect(skuBatchActions).toHaveLength(52);
+    for (const action of skuBatchActions) {
+      expect(action.decision).toBe("accept");
+      expect(action).not.toHaveProperty("tenantId");
+      expect(action).not.toHaveProperty("projectId");
+      expect(action).not.toHaveProperty("artifactId");
+      expect(action).not.toHaveProperty("decidedBy");
+      expect(action).not.toHaveProperty("decidedAt");
+      expect(action).not.toHaveProperty("pricing");
+      expect(action).not.toHaveProperty("catalogProfile");
+      expect(action).not.toHaveProperty("replacement");
+      expect(action).not.toHaveProperty("substitution");
+      expect(action).not.toHaveProperty("authority");
+    }
+
+    // Reviewed sku_resolution has 52 accepted decisions, none with replacement/substitution.
+    const reviewedSkuArtifact = hoisted.store.latestArtifact("sku_resolution");
+    const reviewedDecisions = (reviewedSkuArtifact.payload.decisions ?? []) as SkuResolutionDecision[];
+    expect(reviewedDecisions).toHaveLength(52);
+    expect(reviewedDecisions.filter((d) => d.status === "accepted")).toHaveLength(52);
+    for (const d of reviewedDecisions) {
+      expect(d).not.toHaveProperty("replacementFor");
+      expect(d).not.toHaveProperty("substitutedSku");
+    }
+
+    // Approve sku_resolution through the UI generic approve button.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-sku_resolution"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-sku_resolution")).toHaveTextContent("approved")
+    );
+
+    // Remount for a clean workspace before configuration expansion.
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    // Create configuration_expansion draft.
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-configuration_expansion"));
+    });
+    expect(
+      await screen.findByTestId("line-review-required-configuration_expansion")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-configuration_expansion")).toBeNull();
+
+    // Draft summary matches current deterministic behavior: 52 customer lines,
+    // 24 added/expansion lines, 76 total lines, 24 requiring review.
+    const configDraft = hoisted.store.latestArtifact("configuration_expansion");
+    expect(configDraft.payload.payloadKind).toBe("configuration_expansion_draft");
+    const configSummary = configDraft.payload.summary as {
+      customerLineCount: number;
+      addedLineCount: number;
+      totalLineCount: number;
+      requiresReviewCount: number;
+    };
+    expect(configSummary.customerLineCount).toBe(52);
+    expect(configSummary.addedLineCount).toBe(24);
+    expect(configSummary.totalLineCount).toBe(76);
+    expect(configSummary.requiresReviewCount).toBe(24);
+
+    // Load config review panel via the UI button.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-load"));
+    });
+    expect(await screen.findByTestId("config-review-summary")).toBeInTheDocument();
+    expect(screen.getAllByTestId("config-review-line")).toHaveLength(76);
+    expect(screen.getAllByTestId("config-review-accept")).toHaveLength(24);
+    expect(
+      calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))
+    ).toHaveLength(1);
+
+    // Accept every expansion line in one click (local state only, no POST yet).
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-accept-all-expansion"));
+    });
+    expect(
+      calls.filter((c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url))
+    ).toHaveLength(0);
+
+    // Submit the complete decisions batch via the UI submit button.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-submit"));
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("config-review-summary")).toBeNull(),
+      { timeout: 3000 }
+    );
+
+    // Exactly one config review POST with 24 sanitized expansion-only decisions.
+    const configReviewPostCalls = calls.filter(
+      (c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url)
+    );
+    expect(configReviewPostCalls).toHaveLength(1);
+    const configBatchBody = configReviewPostCalls[0].body as {
+      decisions: Record<string, unknown>[];
+    };
+    expect(Array.isArray(configBatchBody.decisions)).toBe(true);
+    expect(configBatchBody.decisions).toHaveLength(24);
+    for (const d of configBatchBody.decisions) {
+      expect(d).not.toHaveProperty("tenantId");
+      expect(d).not.toHaveProperty("projectId");
+      expect(d).not.toHaveProperty("artifactId");
+      expect(d).not.toHaveProperty("decidedBy");
+      expect(d).not.toHaveProperty("decidedAt");
+      expect(d).not.toHaveProperty("pricing");
+      expect(d).not.toHaveProperty("catalogProfile");
+      expect(d).not.toHaveProperty("replacement");
+      expect(d).not.toHaveProperty("substitution");
+      expect(d).not.toHaveProperty("authority");
+      expect(d).not.toHaveProperty("evidence");
+    }
+
+    // Posted decisions target only expansion-origin lines, not customer-origin lines.
+    const draftLines = (configDraft.payload.lines ?? []) as ConfigurationExpansionDraftLine[];
+    const expansionLineIds = new Set(
+      draftLines.filter((l) => l.origin === "expansion").map((l) => l.lineId)
+    );
+    const customerLineIds = new Set(
+      draftLines.filter((l) => l.origin === "customer").map((l) => l.lineId)
+    );
+    const postedLineIds = configBatchBody.decisions.map(
+      (d) => (d as { lineId: string }).lineId
+    );
+    expect(new Set(postedLineIds)).toEqual(expansionLineIds);
+    for (const id of postedLineIds) {
+      expect(customerLineIds.has(id)).toBe(false);
+    }
+
+    // No active replacement/substitution fields in the sanitized POST body.
+    assertNoActiveReplacementSubstitutionFields(configBatchBody);
+
+    // Reviewed configuration_expansion artifact is present; approve control appears.
+    // Stop here: do not continue into pricing/export.
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+    expect(
+      await screen.findByTestId("approve-configuration_expansion")
+    ).toBeInTheDocument();
+    const reviewedConfig = hoisted.store.latestArtifact("configuration_expansion");
+    expect(reviewedConfig.payload.payloadKind).not.toBe("configuration_expansion_draft");
+
+    view.unmount();
+  });
 });
 
 describe("arbitrary Project Quick BoM app E2E static purity", () => {
