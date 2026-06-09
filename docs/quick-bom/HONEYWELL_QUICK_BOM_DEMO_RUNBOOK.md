@@ -1,15 +1,17 @@
 # Honeywell Quick BoM Demo Runbook
 
 Status: operator runbook for the Honeywell MVP Quick BoM demo (demo scope only).
-Refreshed by Prompt 138. Prior record: Refreshed by Prompt 136. Prior: Refreshed by
-Prompt 132.
+Refreshed by Prompt 141. Prior record: Refreshed by Prompt 138. Prior: Refreshed by
+Prompt 136. Prior: Refreshed by Prompt 132.
 
 Operator-facing runbook for the Honeywell Quick BoM demo. It defines what the
 generated Honeywell Mantle workbook is, the local operator command (Prompt 73), the
 authority boundaries, the manual workbook checklist, the app-level seeded demo proof
 (Prompt 81), the app-level arbitrary flow proof (Prompt 97), the full seven-line
 Honeywell app proof (Prompt 131), the Prompt 135 local Docker Postgres Project-state
-real-DB proof, and the Prompt 137 live-DB Quick BoM API route/action-chain proof. It is a demo runbook, not an architecture source of
+real-DB proof, the Prompt 137 live-DB Quick BoM API route/action-chain proof, the
+Prompt 139 live-DB seeded browser render smoke proof, and the Prompt 140 automated
+browser-driven UI/live DB workflow proof. It is a demo runbook, not an architecture source of
 truth;
 `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md` remains the source
 of truth and `docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md` is the execution tracker.
@@ -206,12 +208,16 @@ Project (Prompt 81), for a non-seeded arbitrary quick_bom Project by the Prompt 
 route/action chain E2E, and end-to-end through the UI panels by the Prompt 131
 seven-line app proof. Line-level SKU/config/pricing review UI now exists (P126-P131).
 A local Docker Postgres Project-state proof now exists (P135,
-`scripts/prove-project-real-db.ts`; see Section 9). Still follow-up work and not part
-of this demo slice: manual browser QA of the flow, browser-driven UI against a
-live/provisioned database (P135 proves Project-store DB behavior and P137 proves the
-Quick BoM API route/action-chain behavior, but browser-driven UI against a
-live/provisioned database remains open), full uploaded Honeywell BoQ through real SKU
-resolution, and production pricing authority. Broad app wiring must build the
+`scripts/prove-project-real-db.ts`; see Section 9), the Prompt 137 live-DB Quick BoM API
+route/action-chain proof exists (Section 10), and an automated browser-driven UI/live DB
+workflow proof now exists (P140,
+`scripts/prove-project-quick-bom-browser-workflow-real-db.ts`; see Section 12) - so
+automated browser-driven UI against a live/provisioned database is proven for the
+Honeywell Quick BoM workflow. Still follow-up work and not part of this demo slice:
+manual browser QA of the flow (the Prompt 140 proof is automated headless browser
+evidence, not human/manual QA), production deployment/provisioning verification, full
+uploaded Honeywell BoQ through real SKU resolution, and production pricing authority.
+Broad app wiring must build the
 canonical Project Quick BoM flow and must not shortcut through the legacy
 estimate/pipeline (E2) UI.
 
@@ -232,10 +238,11 @@ The script proves existing Project repository/service behavior against a real DB
 propagation. It is an operator proof/evidence command only; it does not change product
 behavior.
 
-This closes the Project-store local real-DB provisioning gap (B10). It does NOT prove
-manual browser QA, browser-driven UI against a live/provisioned database, full uploaded
-Honeywell BoQ through real SKU resolution, or production deployment readiness. Those
-remain open follow-ups (Section 8).
+This closes the Project-store local real-DB provisioning gap (B10). Browser-driven UI
+against a live/provisioned database is now separately proven by the Prompt 140 automated
+headless browser workflow (Section 12). Prompt 135 itself does NOT prove manual browser
+QA, full uploaded Honeywell BoQ through real SKU resolution, or production deployment
+readiness. Those remain open follow-ups (Section 8).
 
 ## 10. Prompt 137 live-DB Quick BoM API route/action chain proof
 
@@ -266,16 +273,73 @@ approval -> deterministic SAR pricing -> priced approval -> export package -> ex
 approval -> approved workbook download. It is an operator proof/evidence command only;
 it does not change product behavior.
 
-Prompt 137 closes the live-DB Quick BoM API route/action-chain proof gap. It does NOT
-close:
+Prompt 137 closes the live-DB Quick BoM API route/action-chain proof gap. Browser-driven
+UI against a live/provisioned DB is separately proven by the Prompt 140 automated
+headless browser workflow (Section 12). Prompt 137 does NOT close:
 - manual browser QA;
-- browser-driven UI against a live/provisioned DB;
 - production deployment readiness;
 - full real-catalog Honeywell SKU resolution (uses explicit honeywell_mvp_demo catalog
   profile/supplement and demo fixture authority, not full production Cisco catalog);
 - production Cisco pricing authority;
 - broad Cisco-general configuration authority.
 
-Manual browser QA, browser-driven UI against a live/provisioned database, full uploaded
+Manual browser QA, production deployment/provisioning verification, full uploaded
 Honeywell BoQ through real SKU resolution, and production pricing authority remain open
 follow-ups (Section 8).
+
+## 11. Prompt 139 live-DB seeded browser render smoke proof
+
+Prompt 139 added `scripts/prove-project-quick-bom-browser-real-db.ts` and ran it against
+live/provisioned local Postgres. It is an automated headless browser seeded-render smoke
+proof: it seeds the existing Honeywell demo Project fixture under the default dev tenant,
+opens `/projects/{id}/quick-bom` in a headless browser, confirms the workspace renders
+with the export review controls, and cleans up.
+
+It is **not** manual browser QA and **not** the full workflow proof. It does NOT close:
+- manual browser QA (remains not run/open);
+- production deployment/provisioning verification (remains open);
+- production Cisco pricing authority (remains open);
+- full real-catalog Honeywell SKU coverage (constrained by known local mock catalog gaps
+  / demo supplement opt-in);
+- broad/general Cisco intelligence (out of scope).
+
+## 12. Prompt 140 automated browser-driven UI/live DB workflow proof
+
+Prompt 140 added `scripts/prove-project-quick-bom-browser-workflow-real-db.ts` and its
+test `tests/scripts/prove-project-quick-bom-browser-workflow-real-db.test.ts`, and ran
+the proof against live/provisioned local Postgres. This is the automated browser-driven
+UI/live DB proof for the Honeywell Quick BoM workflow: it drives the existing UI controls
+end to end in a headless browser - create quick_bom Project through browser fetch ->
+navigate page -> upload the full seven-line Honeywell CSV through the real file input ->
+normalize -> tick the Honeywell demo catalog opt-in -> create sku_resolution -> load SKU
+review and accept all 7 suggestions -> approve sku_resolution -> create
+configuration_expansion -> load config review, accept 53 expansion lines, submit ->
+approve configuration_expansion -> create priced_boq -> load pricing review and assert 60
+lines / deterministic totals -> approve priced_boq -> create export_package -> approve
+export_package -> assert the approved export download link is visible -> assert persisted
+artifacts and clean up.
+
+Prompt 140 also fixed the default dev session user id to be UUID-shaped because
+`project_approvals.decided_by` is a UUID DB column; this was a real live-DB approval
+blocker surfaced by the browser workflow proof.
+
+Prompt 140 evidence result:
+- 7 normalized lines
+- 7 accepted SKU decisions
+- 60 configuration/priced/export rows
+- totalPriceSar 2185708.76
+- VAT 327856.31
+- totalIncVatSar 2513565.07
+- approved export download link visible
+- persisted artifacts asserted; cleanup ok
+
+This closes the browser-driven UI/live DB proof gap for the Honeywell Quick BoM workflow:
+an automated browser-driven UI/live DB proof now exists via the Prompt 140 automated
+headless browser workflow. It is automated headless browser evidence, not human/manual
+QA. It does NOT close:
+- manual browser QA (remains not run/open);
+- production deployment/provisioning verification (remains open);
+- production Cisco pricing authority (remains open);
+- full real-catalog Honeywell SKU coverage (constrained by known local mock catalog gaps
+  / demo supplement opt-in);
+- broad/general Cisco intelligence (out of scope).

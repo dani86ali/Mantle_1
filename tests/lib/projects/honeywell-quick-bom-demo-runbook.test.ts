@@ -4,9 +4,13 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Honeywell Quick BoM demo operator runbook
- * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 138.
+ * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md), refreshed by Prompt 141 (docs/test
+ * alignment for the Prompt 139/140 live-DB browser proofs).
  *
- * It asserts the runbook: records the Prompt 138 refresh (prior: Prompt 136, Prompt 132);
+ * It asserts the runbook: records the Prompt 141 refresh (prior: Prompt 138, 136, 132);
+ * documents the Prompt 139 live-DB seeded browser render smoke proof and the Prompt 140
+ * automated browser-driven UI/live DB workflow proof (script names, evidence facts, and
+ * the open manual-browser-QA / production-deployment gaps);
  * documents the Prompt 137 live-DB Quick BoM API route/action-chain proof (script name,
  * run command, proof facts, open boundaries); documents the Prompt 135 local Docker
  * Postgres Project-state real-DB proof (script name, run command, proof facts, B10
@@ -17,8 +21,8 @@ import { join } from "path";
  * boundaries; documents the Prompt 81 app-level E2E proof (the real GET route, POST
  * route/service, UI page, seeded fixture, on-disk workbook, export approval to
  * customer-deliverable ready, and no payload leak); documents the Prompt 97 arbitrary-flow
- * proof and its limitations (line-level review UI now exists per P126-P131, DB/browser QA
- * still open); documents the Prompt 131 full seven-line Honeywell app proof counts/totals;
+ * proof and its limitations (line-level review UI now exists per P126-P131, manual
+ * browser QA still open); documents the Prompt 131 full seven-line Honeywell app proof counts/totals;
  * and no longer says app-level testing is "not ready yet" or "comes later" as a blanket
  * statement. The doc is read from disk only; no runtime module is imported (a pure
  * documentation regression test).
@@ -45,7 +49,8 @@ describe("honeywell quick bom demo runbook - exists and is hygienic", () => {
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 138 refresh and keeps the prior Prompt 136 and Prompt 132 records", () => {
+  it("records the Prompt 141 refresh and keeps the prior Prompt 138, 136, and 132 records", () => {
+    expect(docTextLower).toContain("refreshed by prompt 141");
     expect(docTextLower).toContain("refreshed by prompt 138");
     expect(docTextLower).toContain("refreshed by prompt 136");
     expect(docTextLower).toContain("refreshed by prompt 132");
@@ -272,9 +277,11 @@ describe("honeywell quick bom demo runbook - Prompt 135 real-DB proof", () => {
     expect(docTextLower).toContain("closes the project-store local real-db provisioning gap");
   });
 
-  it("states that P135 does NOT prove browser-driven UI against a live/provisioned database", () => {
+  it("states browser-driven UI against a live/provisioned database is separately proven by Prompt 140, with manual browser QA still open", () => {
     expect(docTextLower).toContain("manual browser qa");
-    expect(docTextLower).toContain("browser-driven ui against a live/provisioned database");
+    expect(docTextLower).toContain(
+      "browser-driven ui against a live/provisioned database is now separately proven by the prompt 140"
+    );
     expect(docTextLower).toContain("remain open");
   });
 
@@ -319,7 +326,7 @@ describe("honeywell quick bom demo runbook - Prompt 137 live-DB Quick BoM API ro
     expect(docTextLower).toContain("closes the live-db quick bom api route/action-chain proof gap");
   });
 
-  it("keeps manual browser QA, browser-driven UI/live DB, production deployment, full real-catalog Honeywell SKU resolution, and production pricing authority open", () => {
+  it("states automated browser-driven UI/live DB proof exists, while manual browser QA, production deployment, full real-catalog Honeywell SKU resolution, and production pricing authority remain open", () => {
     expect(docTextLower).toContain("manual browser qa");
     expect(docTextLower).toContain("browser-driven ui");
     expect(docTextLower).toContain("production deployment");
@@ -365,13 +372,20 @@ describe("honeywell quick bom demo runbook - app-level status is accurate", () =
   });
 });
 
-describe("honeywell quick bom demo runbook - stale live-DB wording removed (Prompt 138)", () => {
+describe("honeywell quick bom demo runbook - stale live-DB wording removed (Prompt 138/141)", () => {
   const STALE_PHRASES = [
     "full app route/action chain against a live/provisioned database remains unproven",
     "full Next.js API/UI/browser route chain against a live/provisioned database",
     "full Next.js API/UI/browser route chain against live DB remains unproven",
     "full Next.js API/UI/browser route chain against a live DB",
     "full Next.js route chain against a live DB remains open",
+    // Prompt 141: stale browser-driven UI/live DB wording retired (automated headless
+    // browser workflow proof now exists, P140).
+    "browser-driven UI/live DB and production deployment remain open",
+    "browser-driven UI against live DB remains open",
+    "browser-driven UI against a live/provisioned DB remains open",
+    "browser-driven UI against a live/provisioned database remains open",
+    "full Next.js API/UI/browser route chain against live DB remains unproven",
   ];
 
   for (const phrase of STALE_PHRASES) {
@@ -382,11 +396,13 @@ describe("honeywell quick bom demo runbook - stale live-DB wording removed (Prom
 
   it("says Quick BoM API route/action-chain proof exists (P137)", () => {
     expect(docTextLower).toContain("live-db quick bom api route/action-chain proof gap");
-    expect(docTextLower).toContain("p137");
+    expect(docTextLower).toContain("prompt 137");
   });
 
-  it("says browser-driven UI against a live/provisioned DB remains open", () => {
+  it("says an automated browser-driven UI/live DB proof now exists via Prompt 140", () => {
     expect(docTextLower).toContain("browser-driven ui against a live/provisioned database");
+    expect(docTextLower).toContain("automated browser-driven ui/live db proof now exists");
+    expect(docTextLower).toContain("automated headless browser evidence, not human/manual qa");
   });
 
   it("says manual browser QA remains open", () => {
@@ -399,5 +415,61 @@ describe("honeywell quick bom demo runbook - stale live-DB wording removed (Prom
 
   it("says full real-catalog Honeywell SKU resolution remains open", () => {
     expect(docTextLower).toContain("full real-catalog honeywell sku resolution");
+  });
+});
+
+describe("honeywell quick bom demo runbook - Prompt 139 seeded browser render smoke proof (Section 11)", () => {
+  it("names the prove-project-quick-bom-browser-real-db script", () => {
+    expect(docText).toContain("scripts/prove-project-quick-bom-browser-real-db.ts");
+  });
+
+  it("describes the seeded headless browser render smoke scope", () => {
+    expect(docTextLower).toContain("automated headless browser seeded-render smoke proof");
+    expect(docTextLower).toContain("seeds the existing honeywell demo project fixture");
+    expect(docTextLower).toContain("confirms the workspace renders");
+  });
+
+  it("states it is not manual browser QA and not the full workflow proof", () => {
+    expect(docTextLower).toContain("not manual browser qa and not the full workflow proof");
+  });
+
+  it("keeps the Prompt 139 open gaps explicit", () => {
+    expect(docTextLower).toContain("manual browser qa (remains not run/open)");
+    expect(docTextLower).toContain("production deployment/provisioning verification (remains open)");
+    expect(docTextLower).toContain("broad/general cisco intelligence (out of scope)");
+  });
+});
+
+describe("honeywell quick bom demo runbook - Prompt 140 automated browser-driven UI/live DB workflow proof (Section 12)", () => {
+  it("names the prove-project-quick-bom-browser-workflow-real-db script and its test", () => {
+    expect(docText).toContain("scripts/prove-project-quick-bom-browser-workflow-real-db.ts");
+    expect(docText).toContain(
+      "tests/scripts/prove-project-quick-bom-browser-workflow-real-db.test.ts"
+    );
+  });
+
+  it("documents the Prompt 140 evidence counts and totals", () => {
+    expect(docTextLower).toContain("7 normalized lines");
+    expect(docTextLower).toContain("7 accepted sku decisions");
+    expect(docTextLower).toContain("60 configuration/priced/export rows");
+    expect(docText).toContain("totalPriceSar 2185708.76");
+    expect(docText).toContain("VAT 327856.31");
+    expect(docText).toContain("totalIncVatSar 2513565.07");
+    expect(docTextLower).toContain("approved export download link visible");
+  });
+
+  it("records the UUID dev-session fix surfaced by the browser workflow proof", () => {
+    expect(docTextLower).toContain("default dev session user id to be uuid-shaped");
+    expect(docText).toContain("project_approvals.decided_by");
+  });
+
+  it("states an automated browser-driven UI/live DB proof now exists, as automated headless browser evidence", () => {
+    expect(docTextLower).toContain("automated browser-driven ui/live db proof now exists");
+    expect(docTextLower).toContain("automated headless browser evidence, not human/manual qa");
+  });
+
+  it("keeps manual browser QA and production deployment open after Prompt 140", () => {
+    expect(docTextLower).toContain("manual browser qa (remains not run/open)");
+    expect(docTextLower).toContain("production deployment/provisioning verification (remains open)");
   });
 });

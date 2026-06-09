@@ -4,7 +4,13 @@ import { join } from "path";
 
 /**
  * Doc regression test for the Quick BoM demo-readiness backlog
- * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 138 (docs/test
+ * (docs/QUICK_BOM_DEMO_READINESS_BACKLOG.md), refreshed by Prompt 141 (docs/test
+ * alignment for the Prompt 139/140 live-DB browser proofs). Prompt 139 added
+ * scripts/prove-project-quick-bom-browser-real-db.ts (seeded live-DB headless browser
+ * render smoke proof, Section 5I); Prompt 140 added
+ * scripts/prove-project-quick-bom-browser-workflow-real-db.ts and proved the full
+ * Honeywell Quick BoM workflow through an automated headless browser against
+ * live/provisioned local Postgres (Section 5J). Prior: refreshed by Prompt 138 (docs/test
  * alignment cleanup, after Prompt 137 added
  * scripts/prove-project-quick-bom-route-real-db.ts and ran it against local Docker
  * Postgres (live-DB Quick BoM API route/action-chain proof, Section 5H). Prior:
@@ -28,11 +34,12 @@ import { join } from "path";
  * cleanup); asserts Prompt 135 real-DB proof facts; asserts B10 is no longer framed as
  * needs-verification or unverified; asserts B6 is no longer framed as open/later/post-MVP;
  * keeps the planning file as source of truth; preserves the P65-P82 seeded Honeywell
- * closure record, the P83-P98 app-readiness closure, and the P104-P138
- * UI/evidence/staleness/real-DB/docs hardening closure; keeps manual browser QA,
- * browser-driven UI/live DB, full Honeywell BoQ through real SKU resolution, production
- * deployment, production pricing authority, broad Cisco-general configuration authority,
- * and future suggestion steps as open; preserves the demo-only pricing boundary, the
+ * closure record, the P83-P98 app-readiness closure, and the P104-P141
+ * UI/evidence/staleness/real-DB/browser/docs hardening closure; records that an automated
+ * browser-driven UI/live DB proof now exists (P140), while keeping manual browser QA,
+ * full Honeywell BoQ through real SKU resolution, production deployment, production
+ * pricing authority, broad Cisco-general configuration authority, and future suggestion
+ * steps as open; preserves the demo-only pricing boundary, the
  * pricing/configuration authority separation, the no-runtime-AI rule, Batch 4 as a
  * decision record only, standalone optics, and deferred replacements with no silent
  * substitution; and stays ASCII-only.
@@ -151,6 +158,13 @@ const STALE_PHRASES = [
   "Real DB provisioning/migrations remain open",
   "a run against a provisioned real DB is still verification work",
   "Still unbuilt: production DB provisioning/migrations",
+  // Prompt 141: stale browser-driven UI/live DB wording retired (automated headless browser
+  // workflow proof now exists, P140).
+  "browser-driven UI/live DB and production deployment remain open",
+  "browser-driven UI against live DB remains open",
+  "browser-driven UI against a live/provisioned DB remains open",
+  "browser-driven UI against a live/provisioned database remains open",
+  "full Next.js API/UI/browser route chain against live DB remains unproven",
   // Prompt 138: stale live-DB wording retired (Quick BoM API route/action chain against real DB now exists, P137).
   "full app route/action chain against a live/provisioned database remains unproven",
   "full Next.js API/UI/browser route chain against live DB remains unproven (B10)",
@@ -174,7 +188,8 @@ describe("quick bom demo-readiness backlog - exists and stays an execution track
     expect(doc.length).toBeGreaterThan(0);
   });
 
-  it("records the Prompt 138 refresh and keeps earlier refresh records and planning file as source of truth", () => {
+  it("records the Prompt 141 refresh and keeps earlier refresh records and planning file as source of truth", () => {
+    expect(docFlat).toContain("refreshed by prompt 141");
     expect(docFlat).toContain("refreshed by prompt 138");
     expect(docFlat).toContain("refreshed by prompt 136");
     expect(docFlat).toContain("refreshed by prompt 134");
@@ -253,8 +268,8 @@ describe("quick bom demo-readiness backlog - P65-P132 slices complete", () => {
     }
   });
 
-  it("carries the closed P104-P138 UI/evidence/staleness/real-DB/docs hardening record", () => {
-    expect(docFlat).toContain("completed (p104-p138)");
+  it("carries the closed P104-P141 UI/evidence/staleness/real-DB/browser/docs hardening record", () => {
+    expect(docFlat).toContain("completed (p104-p141)");
     expect(docFlat).toContain("p104-p114");
     expect(docFlat).toContain("p126-p131");
     expect(docFlat).toContain("p132");
@@ -264,6 +279,9 @@ describe("quick bom demo-readiness backlog - P65-P132 slices complete", () => {
     expect(docFlat).toContain("p136");
     expect(docFlat).toContain("p137");
     expect(docFlat).toContain("p138");
+    expect(docFlat).toContain("p139");
+    expect(docFlat).toContain("p140");
+    expect(docFlat).toContain("p141");
   });
 
   it("names the Prompt 73 command, P74-P76 CCW evidence, and P77-P81 app pieces", () => {
@@ -331,7 +349,8 @@ describe("quick bom demo-readiness backlog - app-level proof is scoped honestly"
 
   it("states Project-store local real-DB proof exists, Quick BoM API route/action chain against real DB exists, and remaining open gaps clearly", () => {
     // P135 proves the Project-store layer; P137 proves the Quick BoM API route chain;
-    // browser-driven UI and production deployment remain open.
+    // an automated browser-driven UI/live DB proof exists via Prompt 140, while manual
+    // browser QA and production deployment remain open.
     expect(docFlat).toContain("project-store local real-db proof exists");
     expect(docFlat).toContain("quick bom api route/action chain against real db exists");
     expect(docFlat).toContain("browser-driven ui");
@@ -372,8 +391,10 @@ describe("quick bom demo-readiness backlog - Prompt 135 real-DB proof (B10 close
     expect(b10Row).toContain("scripts/prove-project-real-db.ts");
   });
 
-  it("B10 states browser-driven UI/live DB and production deployment remain open", () => {
+  it("B10 states automated browser-driven UI/live DB proof exists (P140) and production deployment remains open", () => {
     expect(b10Row.toLowerCase()).toContain("browser-driven ui");
+    expect(b10Row.toLowerCase()).toContain("prompt 140");
+    expect(b10Row.toLowerCase()).toContain("manual browser qa");
     expect(b10Row.toLowerCase()).toContain("production deployment");
     expect(b10Row.toLowerCase()).toContain("quick bom api route/action chain against real db exists");
   });
@@ -396,8 +417,8 @@ describe("quick bom demo-readiness backlog - Prompt 135 real-DB proof (B10 close
     expect(docFlat).toContain("export_package stale");
   });
 
-  it("backlog states browser-driven UI against live DB and production deployment remain open", () => {
-    expect(docFlat).toContain("browser-driven ui against a live db");
+  it("backlog states an automated browser-driven UI/live DB proof exists and production deployment remains open", () => {
+    expect(docFlat).toContain("automated browser-driven ui/live db proof exists");
     expect(docFlat).toContain("production deployment verification remain open");
   });
 
@@ -444,7 +465,7 @@ describe("quick bom demo-readiness backlog - Prompt 137 live-DB Quick BoM API ro
     expect(docFlat).toContain("closes the live-db quick bom api route/action-chain proof gap");
   });
 
-  it("keeps browser-driven UI/live DB, manual browser QA, production deployment, full real-catalog Honeywell SKU resolution, and production pricing authority open", () => {
+  it("states automated browser-driven UI/live DB proof exists, while manual browser QA, production deployment, full real-catalog Honeywell SKU resolution, and production pricing authority remain open", () => {
     expect(docFlat).toContain("manual browser qa");
     expect(docFlat).toContain("browser-driven ui");
     expect(docFlat).toContain("production deployment");
@@ -455,6 +476,48 @@ describe("quick bom demo-readiness backlog - Prompt 137 live-DB Quick BoM API ro
   it("states honeywell_mvp_demo catalog profile/supplement and demo fixture authority (not full catalog)", () => {
     expect(docFlat).toContain("honeywell_mvp_demo catalog profile");
     expect(docFlat).toContain("demo fixture authority");
+  });
+});
+
+describe("quick bom demo-readiness backlog - Prompt 139/140 live-DB browser proofs (Sections 5I/5J)", () => {
+  it("names the Prompt 139 seeded browser render smoke proof script", () => {
+    expect(doc).toContain("scripts/prove-project-quick-bom-browser-real-db.ts");
+    expect(docFlat).toContain("automated headless browser seeded-render smoke proof");
+  });
+
+  it("names the Prompt 140 browser workflow proof script and its test", () => {
+    expect(doc).toContain("scripts/prove-project-quick-bom-browser-workflow-real-db.ts");
+    expect(doc).toContain(
+      "tests/scripts/prove-project-quick-bom-browser-workflow-real-db.test.ts"
+    );
+  });
+
+  it("documents the Prompt 140 evidence counts and totals", () => {
+    expect(docFlat).toContain("7 normalized lines");
+    expect(docFlat).toContain("7 accepted sku decisions");
+    expect(docFlat).toContain("60 configuration/priced/export rows");
+    expect(doc).toContain("totalPriceSar 2185708.76");
+    expect(doc).toContain("VAT 327856.31");
+    expect(doc).toContain("totalIncVatSar 2513565.07");
+    expect(docFlat).toContain("approved export download link visible");
+  });
+
+  it("states an automated browser-driven UI/live DB proof exists via the automated headless browser workflow", () => {
+    expect(docFlat).toContain("automated browser-driven ui/live db proof now exists");
+    expect(docFlat).toContain("automated headless browser workflow");
+    expect(docFlat).toContain("automated headless browser evidence, not human/manual qa");
+  });
+
+  it("keeps manual browser QA and production deployment open after Prompt 140", () => {
+    expect(docFlat).toContain("manual browser qa (remains not run/open)");
+    expect(docFlat).toContain("production deployment/provisioning verification (remains open)");
+    expect(docFlat).toContain("broad/general cisco intelligence (out of scope)");
+  });
+
+  it("records the Prompt 139 fix-free seeded smoke scope and the Prompt 140 UUID dev-session fix", () => {
+    expect(docFlat).toContain("not manual browser qa and not the full workflow proof");
+    expect(docFlat).toContain("default dev session user id to be uuid-shaped");
+    expect(docFlat).toContain("project_approvals.decided_by");
   });
 });
 
@@ -544,8 +607,8 @@ describe("quick bom demo-readiness backlog - DB readiness evidence aligned (P100
     expect(docFlat).toContain("cleanup ok");
   });
 
-  it("states browser-driven UI against live DB and production deployment remain open", () => {
-    expect(docFlat).toContain("browser-driven ui against a live db");
+  it("states an automated browser-driven UI/live DB proof exists and production deployment remains open", () => {
+    expect(docFlat).toContain("automated browser-driven ui/live db proof exists");
     expect(docFlat).toContain("production deployment");
   });
 });
