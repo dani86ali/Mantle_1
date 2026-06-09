@@ -207,10 +207,11 @@ route/action chain E2E, and end-to-end through the UI panels by the Prompt 131
 seven-line app proof. Line-level SKU/config/pricing review UI now exists (P126-P131).
 A local Docker Postgres Project-state proof now exists (P135,
 `scripts/prove-project-real-db.ts`; see Section 9). Still follow-up work and not part
-of this demo slice: manual browser QA of the flow, full Next.js API/UI/browser route
-chain against a live/provisioned database (the Project-store proof exists but the full
-app route/action chain against a live/provisioned database remains unproven), full
-uploaded Honeywell BoQ through real SKU resolution, and production pricing authority. Broad app wiring must build the
+of this demo slice: manual browser QA of the flow, browser-driven UI against a
+live/provisioned database (P135 proves Project-store DB behavior and P137 proves the
+Quick BoM API route/action-chain behavior, but browser-driven UI against a
+live/provisioned database remains open), full uploaded Honeywell BoQ through real SKU
+resolution, and production pricing authority. Broad app wiring must build the
 canonical Project Quick BoM flow and must not shortcut through the legacy
 estimate/pipeline (E2) UI.
 
@@ -232,9 +233,9 @@ propagation. It is an operator proof/evidence command only; it does not change p
 behavior.
 
 This closes the Project-store local real-DB provisioning gap (B10). It does NOT prove
-manual browser QA, full Next.js API/UI/browser route chain against a live/provisioned
-database, full uploaded Honeywell BoQ through real SKU resolution, or production
-deployment readiness. Those remain open follow-ups (Section 8).
+manual browser QA, browser-driven UI against a live/provisioned database, full uploaded
+Honeywell BoQ through real SKU resolution, or production deployment readiness. Those
+remain open follow-ups (Section 8).
 
 ## 10. Prompt 137 live-DB Quick BoM API route/action chain proof
 
@@ -275,6 +276,6 @@ close:
 - production Cisco pricing authority;
 - broad Cisco-general configuration authority.
 
-Manual browser QA, full Next.js API/UI/browser route chain against a live/provisioned
-database (including browser-driven UI), full uploaded Honeywell BoQ through real SKU
-resolution, and production pricing authority remain open follow-ups (Section 8).
+Manual browser QA, browser-driven UI against a live/provisioned database, full uploaded
+Honeywell BoQ through real SKU resolution, and production pricing authority remain open
+follow-ups (Section 8).

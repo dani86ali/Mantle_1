@@ -272,9 +272,9 @@ describe("honeywell quick bom demo runbook - Prompt 135 real-DB proof", () => {
     expect(docTextLower).toContain("closes the project-store local real-db provisioning gap");
   });
 
-  it("states that manual browser QA and full Next.js route chain against live/provisioned database remain open", () => {
+  it("states that P135 does NOT prove browser-driven UI against a live/provisioned database", () => {
     expect(docTextLower).toContain("manual browser qa");
-    expect(docTextLower).toContain("full next.js api/ui/browser route chain against a live/provisioned database");
+    expect(docTextLower).toContain("browser-driven ui against a live/provisioned database");
     expect(docTextLower).toContain("remain open");
   });
 
@@ -362,5 +362,42 @@ describe("honeywell quick bom demo runbook - app-level status is accurate", () =
 
   it("keeps the boundary that app wiring must not shortcut through legacy E2", () => {
     expect(docTextLower).toContain("must not shortcut through the legacy");
+  });
+});
+
+describe("honeywell quick bom demo runbook - stale live-DB wording removed (Prompt 138)", () => {
+  const STALE_PHRASES = [
+    "full app route/action chain against a live/provisioned database remains unproven",
+    "full Next.js API/UI/browser route chain against a live/provisioned database",
+    "full Next.js API/UI/browser route chain against live DB remains unproven",
+    "full Next.js API/UI/browser route chain against a live DB",
+    "full Next.js route chain against a live DB remains open",
+  ];
+
+  for (const phrase of STALE_PHRASES) {
+    it(`no longer contains: ${phrase}`, () => {
+      expect(doc.includes(phrase)).toBe(false);
+    });
+  }
+
+  it("says Quick BoM API route/action-chain proof exists (P137)", () => {
+    expect(docTextLower).toContain("live-db quick bom api route/action-chain proof gap");
+    expect(docTextLower).toContain("p137");
+  });
+
+  it("says browser-driven UI against a live/provisioned DB remains open", () => {
+    expect(docTextLower).toContain("browser-driven ui against a live/provisioned database");
+  });
+
+  it("says manual browser QA remains open", () => {
+    expect(docTextLower).toContain("manual browser qa");
+  });
+
+  it("says production deployment remains open", () => {
+    expect(docTextLower).toContain("production deployment");
+  });
+
+  it("says full real-catalog Honeywell SKU resolution remains open", () => {
+    expect(docTextLower).toContain("full real-catalog honeywell sku resolution");
   });
 });

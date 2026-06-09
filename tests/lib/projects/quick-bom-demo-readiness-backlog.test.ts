@@ -151,9 +151,13 @@ const STALE_PHRASES = [
   "Real DB provisioning/migrations remain open",
   "a run against a provisioned real DB is still verification work",
   "Still unbuilt: production DB provisioning/migrations",
-  // Prompt 138: stale B3/B5 framing retired (Quick BoM API route/action chain against real DB now exists, P137). No new stale phrases retired this cleanup.
+  // Prompt 138: stale live-DB wording retired (Quick BoM API route/action chain against real DB now exists, P137).
+  "full app route/action chain against a live/provisioned database remains unproven",
   "full Next.js API/UI/browser route chain against live DB remains unproven (B10)",
   "full Next.js API/UI/browser route chain against live DB remains unproven",
+  "full Next.js API/UI/browser route chain against a live/provisioned database",
+  "full Next.js API/UI/browser route chain against a live DB",
+  "full Next.js route chain against a live DB remains open",
   // Prompt 134: stale staleness framing retired (B6 closed by Prompt 133).
   "planning only",
   "no caller in src",
@@ -392,8 +396,8 @@ describe("quick bom demo-readiness backlog - Prompt 135 real-DB proof (B10 close
     expect(docFlat).toContain("export_package stale");
   });
 
-  it("backlog states full Next.js API/UI/browser route chain against live DB remains open", () => {
-    expect(docFlat).toContain("full next.js api/ui/browser route chain against");
+  it("backlog states browser-driven UI against live DB and production deployment remain open", () => {
+    expect(docFlat).toContain("browser-driven ui against a live db");
     expect(docFlat).toContain("production deployment verification remain open");
   });
 
@@ -540,9 +544,8 @@ describe("quick bom demo-readiness backlog - DB readiness evidence aligned (P100
     expect(docFlat).toContain("cleanup ok");
   });
 
-  it("states full Next.js API/UI/browser route chain against live DB remains open", () => {
-    expect(docFlat).toContain("full next.js api/ui/browser route chain against");
-    expect(docFlat).toContain("live db");
+  it("states browser-driven UI against live DB and production deployment remain open", () => {
+    expect(docFlat).toContain("browser-driven ui against a live db");
     expect(docFlat).toContain("production deployment");
   });
 });
