@@ -27,7 +27,7 @@ function mkRequest(headers: Record<string, string> = {}): NextRequest {
   } as unknown as NextRequest;
 }
 
-describe("getSession — dev mode default", () => {
+describe("getSession - dev mode default", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -39,6 +39,16 @@ describe("getSession — dev mode default", () => {
     expect(session).toEqual(DEFAULT_DEV_SESSION);
     expect(session?.tenantId).toBe("00000000-0000-0000-0000-000000000001");
     expect(session?.role).toBe("engineer");
+  });
+
+  it("default dev session userId is UUID-shaped (not the old non-UUID placeholder)", () => {
+    // Project persistence columns such as project_approvals.decided_by are UUID DB
+    // columns; a non-UUID default-dev-session userId fails any default-session write
+    // against a real Postgres (it passed only because unit tests mock UUID user ids).
+    const UUID_RE =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    expect(DEFAULT_DEV_SESSION.userId).toMatch(UUID_RE);
+    expect(DEFAULT_DEV_SESSION.userId).not.toBe("dev-user");
   });
 
   it("honors X-Dev-Session header when provided", () => {
