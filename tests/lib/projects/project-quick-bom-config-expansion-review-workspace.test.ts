@@ -97,6 +97,101 @@ const BASE_ARTIFACT = {
   updatedAt: new Date("2026-06-01T10:30:00.000Z"),
 };
 
+// A reviewed (non-draft) artifact: no payloadKind marker; carries acceptedLines
+// (customer preserved + accepted expansion) and rejectedLines (rejected expansion).
+// Every line keeps full draft-line internals (originalCells/evidence paths) so the
+// reviewed projection's leak-safety can be proven.
+const REVIEWED_PAYLOAD = {
+  sourceNormalizedBoqArtifactId: "art-nb-7",
+  sourceNormalizedBoqArtifactVersion: 3,
+  sourceSkuResolutionArtifactId: "art-skur-3",
+  sourceSkuResolutionArtifactVersion: 2,
+  sourceConfigurationExpansionDraftArtifactId: "art-ce-draft-1",
+  sourceConfigurationExpansionDraftArtifactVersion: 4,
+  sourceFileIds: ["file-1"],
+  rulePackId: "honeywell-scope-rules",
+  rulePackVersion: "1.0.0",
+  rulePackStatus: "approved",
+  lineCount: 2,
+  acceptedLines: [
+    {
+      lineId: "line-cust-1",
+      origin: "customer",
+      sku: "C9300-48P-A",
+      description: "Customer switch",
+      quantity: 2,
+      sourceFileId: "file-1",
+      sourceRowNumber: 3,
+      originalCells: { A: "REVIEWED-CUST-ORIGINALCELLS-CANARY" },
+      evidence: [],
+    },
+    {
+      lineId: "line-exp-1",
+      origin: "expansion",
+      sku: "C9300-NM-4G",
+      description: "Network module",
+      quantity: 2,
+      parentLineId: "line-cust-1",
+      relationshipType: "default_selected",
+      quantityRule: "same_as_parent",
+      sourceRuleId: "rule-nm-4g",
+      includedItem: false,
+      approvalRequired: false,
+      approved: true,
+      originalCells: { A: "REVIEWED-EXP-ORIGINALCELLS-CANARY" },
+      evidence: [
+        {
+          sourceType: "ccw_estimate",
+          sourcePath: "REVIEWED-EVIDENCE-PATH-CANARY",
+          sheetName: "REVIEWED-EVIDENCE-SHEET-CANARY",
+          lineNumber: 7,
+          pageNumber: 2,
+          evidenceNote: "REVIEWED-EVIDENCE-NOTE-CANARY",
+        },
+      ],
+    },
+  ],
+  rejectedLines: [
+    {
+      lineId: "line-exp-2",
+      origin: "expansion",
+      sku: "PWR-C1-715WAC",
+      description: "Power supply",
+      quantity: 2,
+      parentLineId: "line-cust-1",
+      relationshipType: "default_selected",
+      sourceRuleId: "rule-pwr",
+      originalCells: { A: "REJECTED-ORIGINALCELLS-CANARY" },
+      evidence: [
+        {
+          sourceType: "ccw_estimate",
+          sourcePath: "REJECTED-EVIDENCE-PATH-CANARY",
+          sheetName: "REJECTED-EVIDENCE-SHEET-CANARY",
+          lineNumber: 9,
+          pageNumber: 3,
+          evidenceNote: "REJECTED-EVIDENCE-NOTE-CANARY",
+        },
+      ],
+    },
+  ],
+  summary: {
+    customerLineCount: 1,
+    acceptedExpansionLineCount: 1,
+    rejectedExpansionLineCount: 1,
+    totalAcceptedLineCount: 2,
+    reviewedExpansionLineCount: 2,
+  },
+};
+
+const REVIEWED_ARTIFACT = {
+  ...BASE_ARTIFACT,
+  id: "art-ce-reviewed-1",
+  status: "needs_review",
+  version: 5,
+  sourceArtifactIds: ["art-nb-7", "art-skur-3", "art-ce-draft-1"],
+  payload: REVIEWED_PAYLOAD,
+};
+
 beforeEach(() => {
   mockGetProject.mockReset().mockResolvedValue(BASE_PROJECT);
   mockGetArtifact.mockReset().mockResolvedValue(BASE_ARTIFACT);
@@ -128,32 +223,26 @@ describe("loadQuickBomConfigurationExpansionReviewWorkspace - error statuses", (
     expect(result.status).toBe("artifact_not_configuration_expansion");
   });
 
-  it("returns configuration_expansion_not_draft when payloadKind is absent (reviewed artifact)", async () => {
-    const reviewed = {
-      ...BASE_ARTIFACT,
-      payload: { ...DRAFT_PAYLOAD, payloadKind: undefined },
-    };
-    mockGetArtifact.mockResolvedValue(reviewed);
+  it("projects a reviewed (non-draft) artifact read-only instead of rejecting it", async () => {
+    mockGetArtifact.mockResolvedValue(REVIEWED_ARTIFACT);
     const result = await loadQuickBomConfigurationExpansionReviewWorkspace(TENANT, PROJECT_ID, ARTIFACT_ID);
-    expect(result.status).toBe("configuration_expansion_not_draft");
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.review.mode).toBe("reviewed");
   });
 
-  it("returns configuration_expansion_draft_not_reviewable when status is not needs_review", async () => {
+  it("returns configuration_expansion_draft_not_reviewable when a DRAFT status is not needs_review", async () => {
     mockGetArtifact.mockResolvedValue({ ...BASE_ARTIFACT, status: "generated" });
     const result = await loadQuickBomConfigurationExpansionReviewWorkspace(TENANT, PROJECT_ID, ARTIFACT_ID);
     expect(result.status).toBe("configuration_expansion_draft_not_reviewable");
   });
 
-  it("checks payloadKind (not_draft) before status (not_reviewable)", async () => {
-    // status = generated AND no payloadKind: should return not_draft, not not_reviewable
-    const artifact = {
-      ...BASE_ARTIFACT,
-      status: "generated",
-      payload: { ...DRAFT_PAYLOAD, payloadKind: undefined },
-    };
-    mockGetArtifact.mockResolvedValue(artifact);
+  it("reads a reviewed (non-draft) artifact regardless of status (incl. approved)", async () => {
+    mockGetArtifact.mockResolvedValue({ ...REVIEWED_ARTIFACT, status: "approved" });
     const result = await loadQuickBomConfigurationExpansionReviewWorkspace(TENANT, PROJECT_ID, ARTIFACT_ID);
-    expect(result.status).toBe("configuration_expansion_not_draft");
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.review.mode).toBe("reviewed");
   });
 
   it("returns invalid_configuration_expansion_draft_payload when the payload is malformed", async () => {
@@ -170,6 +259,9 @@ describe("loadQuickBomConfigurationExpansionReviewWorkspace - ok projection", ()
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
     const { review } = result;
+    expect(review.mode).toBe("draft");
+    const { payloadSummary, reviewSummary } = review;
+    if (!payloadSummary || !reviewSummary) throw new Error("expected draft summaries");
 
     expect(review.project.id).toBe(PROJECT_ID);
     expect(review.project.tenantId).toBe(TENANT);
@@ -181,14 +273,14 @@ describe("loadQuickBomConfigurationExpansionReviewWorkspace - ok projection", ()
     expect(review.artifact.type).toBe("configuration_expansion");
     expect(review.artifact.status).toBe("needs_review");
 
-    expect(review.payloadSummary.rulePackId).toBe("honeywell-scope-rules");
-    expect(review.payloadSummary.rulePackStatus).toBe("approved");
-    expect(review.payloadSummary.lineCount).toBe(2);
+    expect(payloadSummary.rulePackId).toBe("honeywell-scope-rules");
+    expect(payloadSummary.rulePackStatus).toBe("approved");
+    expect(payloadSummary.lineCount).toBe(2);
 
-    expect(review.reviewSummary.totalLineCount).toBe(2);
-    expect(review.reviewSummary.customerLineCount).toBe(1);
-    expect(review.reviewSummary.expansionLineCount).toBe(1);
-    expect(review.reviewSummary.requiresDecisionCount).toBe(1);
+    expect(reviewSummary.totalLineCount).toBe(2);
+    expect(reviewSummary.customerLineCount).toBe(1);
+    expect(reviewSummary.expansionLineCount).toBe(1);
+    expect(reviewSummary.requiresDecisionCount).toBe(1);
 
     expect(review.lines).toHaveLength(2);
   });
@@ -221,6 +313,7 @@ describe("loadQuickBomConfigurationExpansionReviewWorkspace - array copying", ()
   it("returned payloadSummary.sourceFileIds are a copy, not the payload array reference", async () => {
     const result = await loadQuickBomConfigurationExpansionReviewWorkspace(TENANT, PROJECT_ID, ARTIFACT_ID);
     if (result.status !== "ok") throw new Error("expected ok");
+    if (!result.review.payloadSummary) throw new Error("expected draft payloadSummary");
     expect(result.review.payloadSummary.sourceFileIds).not.toBe(DRAFT_PAYLOAD.sourceFileIds);
     expect(result.review.payloadSummary.sourceFileIds).toEqual(DRAFT_PAYLOAD.sourceFileIds);
   });
@@ -332,12 +425,87 @@ describe("loadQuickBomConfigurationExpansionReviewWorkspace - summary allowlist"
   it("projects only the allowed summary numeric fields, drops extras", async () => {
     const result = await loadQuickBomConfigurationExpansionReviewWorkspace(TENANT, PROJECT_ID, ARTIFACT_ID);
     if (result.status !== "ok") throw new Error("expected ok");
+    if (!result.review.payloadSummary) throw new Error("expected draft payloadSummary");
     const summary = result.review.payloadSummary.summary;
     expect(summary.customerLineCount).toBe(1);
     expect(summary.addedLineCount).toBe(1);
     expect(summary.totalLineCount).toBe(2);
     expect(summary.requiresReviewCount).toBe(1);
     expect(summary.includedItemCount).toBe(0);
+  });
+});
+
+describe("loadQuickBomConfigurationExpansionReviewWorkspace - reviewed (read-only) projection", () => {
+  beforeEach(() => {
+    mockGetArtifact.mockReset().mockResolvedValue(REVIEWED_ARTIFACT);
+  });
+
+  it("returns mode reviewed with no draft-only payloadSummary/reviewSummary", async () => {
+    const result = await loadQuickBomConfigurationExpansionReviewWorkspace(TENANT, PROJECT_ID, ARTIFACT_ID);
+    if (result.status !== "ok") throw new Error("expected ok");
+    expect(result.review.mode).toBe("reviewed");
+    expect(result.review.payloadSummary).toBeUndefined();
+    expect(result.review.reviewSummary).toBeUndefined();
+  });
+
+  it("attaches accepted/rejected decisions to expansion lines and none to customer lines", async () => {
+    const result = await loadQuickBomConfigurationExpansionReviewWorkspace(TENANT, PROJECT_ID, ARTIFACT_ID);
+    if (result.status !== "ok") throw new Error("expected ok");
+    const byId = new Map(result.review.lines.map((l) => [l.lineId, l]));
+    expect(byId.get("line-cust-1")?.origin).toBe("customer");
+    expect(byId.get("line-cust-1")?.decision).toBeUndefined();
+    expect(byId.get("line-exp-1")?.decision).toBe("accepted");
+    expect(byId.get("line-exp-2")?.decision).toBe("rejected");
+    // Accepted lines precede rejected lines in display order.
+    expect(result.review.lines.map((l) => l.lineId)).toEqual([
+      "line-cust-1",
+      "line-exp-1",
+      "line-exp-2",
+    ]);
+  });
+
+  it("counts reviewed roll-ups deterministically from the projected decisions", async () => {
+    const result = await loadQuickBomConfigurationExpansionReviewWorkspace(TENANT, PROJECT_ID, ARTIFACT_ID);
+    if (result.status !== "ok") throw new Error("expected ok");
+    const counts = result.review.reviewedSummary;
+    if (!counts) throw new Error("expected reviewedSummary");
+    expect(counts.customerLineCount).toBe(1);
+    expect(counts.acceptedExpansionLineCount).toBe(1);
+    expect(counts.rejectedExpansionLineCount).toBe(1);
+    expect(counts.totalAcceptedLineCount).toBe(2);
+    expect(counts.reviewedExpansionLineCount).toBe(2);
+  });
+
+  it("never leaks originalCells or evidence path/sheet/note from accepted OR rejected lines", async () => {
+    const result = await loadQuickBomConfigurationExpansionReviewWorkspace(TENANT, PROJECT_ID, ARTIFACT_ID);
+    if (result.status !== "ok") throw new Error("expected ok");
+    const json = JSON.stringify(result.review);
+    for (const canary of [
+      "REVIEWED-CUST-ORIGINALCELLS-CANARY",
+      "REVIEWED-EXP-ORIGINALCELLS-CANARY",
+      "REVIEWED-EVIDENCE-PATH-CANARY",
+      "REVIEWED-EVIDENCE-SHEET-CANARY",
+      "REVIEWED-EVIDENCE-NOTE-CANARY",
+      "REJECTED-ORIGINALCELLS-CANARY",
+      "REJECTED-EVIDENCE-PATH-CANARY",
+      "REJECTED-EVIDENCE-SHEET-CANARY",
+      "REJECTED-EVIDENCE-NOTE-CANARY",
+    ]) {
+      expect(json).not.toContain(canary);
+    }
+    // Evidence is still reduced to count + sourceTypes on accepted expansion lines.
+    const exp = result.review.lines.find((l) => l.lineId === "line-exp-1");
+    expect(exp?.evidenceCount).toBe(1);
+    expect(exp?.evidenceSourceTypes).toEqual(["ccw_estimate"]);
+  });
+
+  it("returns invalid_configuration_expansion_draft_payload when acceptedLines is absent", async () => {
+    mockGetArtifact.mockResolvedValue({
+      ...REVIEWED_ARTIFACT,
+      payload: { ...REVIEWED_PAYLOAD, acceptedLines: undefined },
+    });
+    const result = await loadQuickBomConfigurationExpansionReviewWorkspace(TENANT, PROJECT_ID, ARTIFACT_ID);
+    expect(result.status).toBe("invalid_configuration_expansion_draft_payload");
   });
 });
 

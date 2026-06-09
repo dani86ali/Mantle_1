@@ -100,6 +100,18 @@ export interface QuickBomConfigExpansionReviewWorkspaceCounts {
   includedItemCount: number;
 }
 
+/**
+ * Reviewed-mode roll-up counts, projected from a reviewed (non-draft) artifact's
+ * accepted/rejected lines. Surfaced read-only so approved decisions stay readable.
+ */
+export interface QuickBomConfigExpansionReviewReviewedCounts {
+  customerLineCount: number;
+  acceptedExpansionLineCount: number;
+  rejectedExpansionLineCount: number;
+  totalAcceptedLineCount: number;
+  reviewedExpansionLineCount: number;
+}
+
 /** One draft line projected to the fields the line-review UI shows. */
 export interface QuickBomConfigExpansionReviewLine {
   lineId: string;
@@ -124,14 +136,22 @@ export interface QuickBomConfigExpansionReviewLine {
   evidenceSourceTypes: string[];
   approvalRequired?: boolean;
   approved?: boolean;
+  /** Reviewed-mode only: the recorded human decision for this expansion line. */
+  decision?: "accepted" | "rejected";
 }
 
 /** The lean, serializable configuration-expansion line-review projection returned on `ok`. */
 export interface QuickBomConfigExpansionReviewWorkspace {
+  /** "draft" = editable line review; "reviewed" = read-only recorded decisions. */
+  mode: "draft" | "reviewed";
   project: QuickBomConfigExpansionReviewWorkspaceProject;
   artifact: QuickBomConfigExpansionReviewWorkspaceArtifact;
-  payloadSummary: QuickBomConfigExpansionReviewWorkspacePayload;
-  reviewSummary: QuickBomConfigExpansionReviewWorkspaceCounts;
+  /** Present in draft mode only. */
+  payloadSummary?: QuickBomConfigExpansionReviewWorkspacePayload;
+  /** Present in draft mode only. */
+  reviewSummary?: QuickBomConfigExpansionReviewWorkspaceCounts;
+  /** Present in reviewed mode only. */
+  reviewedSummary?: QuickBomConfigExpansionReviewReviewedCounts;
   lines: QuickBomConfigExpansionReviewLine[];
 }
 
@@ -407,6 +427,74 @@ function toPayloadSummary(
   };
 }
 
+/**
+ * Project ONE reviewed line through the SAME allowlist projector the draft path uses
+ * (so originalCells, evidence paths, and any extra payload keys are stripped), then
+ * attach the recorded decision to expansion lines only. Customer lines (preserved into
+ * the accepted set) never carry a decision. Returns null when the line is malformed.
+ */
+function toReviewedLine(
+  raw: unknown,
+  decision: "accepted" | "rejected"
+): QuickBomConfigExpansionReviewLine | null {
+  const line = toReviewLine(raw);
+  if (line === null) return null;
+  if (line.origin === "expansion") return { ...line, decision };
+  return line;
+}
+
+/**
+ * Allowlist-project a reviewed (non-draft) artifact's recorded lines: acceptedLines
+ * (customer lines preserved + accepted expansion lines) followed by rejectedLines
+ * (rejected expansion lines), each reduced via {@link toReviewLine}. Returns null when
+ * acceptedLines is missing/not an array or any line is structurally malformed.
+ */
+function parseReviewedPayload(
+  payload: Record<string, unknown>
+): QuickBomConfigExpansionReviewLine[] | null {
+  const { acceptedLines, rejectedLines } = payload;
+  if (!Array.isArray(acceptedLines)) return null;
+  const out: QuickBomConfigExpansionReviewLine[] = [];
+  for (const raw of acceptedLines) {
+    const line = toReviewedLine(raw, "accepted");
+    if (line === null) return null;
+    out.push(line);
+  }
+  if (Array.isArray(rejectedLines)) {
+    for (const raw of rejectedLines) {
+      const line = toReviewedLine(raw, "rejected");
+      if (line === null) return null;
+      out.push(line);
+    }
+  }
+  return out;
+}
+
+/** Count reviewed roll-up totals deterministically from the projected line decisions. */
+function toReviewedCounts(
+  lines: readonly QuickBomConfigExpansionReviewLine[]
+): QuickBomConfigExpansionReviewReviewedCounts {
+  let customerLineCount = 0;
+  let acceptedExpansionLineCount = 0;
+  let rejectedExpansionLineCount = 0;
+  for (const line of lines) {
+    if (line.origin === "customer") {
+      customerLineCount++;
+    } else if (line.decision === "rejected") {
+      rejectedExpansionLineCount++;
+    } else {
+      acceptedExpansionLineCount++;
+    }
+  }
+  return {
+    customerLineCount,
+    acceptedExpansionLineCount,
+    rejectedExpansionLineCount,
+    totalAcceptedLineCount: customerLineCount + acceptedExpansionLineCount,
+    reviewedExpansionLineCount: acceptedExpansionLineCount + rejectedExpansionLineCount,
+  };
+}
+
 /** Count review-state totals deterministically from the projected line origins. */
 function toReviewCounts(
   lines: readonly QuickBomConfigExpansionReviewLine[]
@@ -433,16 +521,19 @@ function toReviewCounts(
 
 /**
  * Load the read-only configuration-expansion line-review projection for one
- * `configuration_expansion` DRAFT artifact, tenant-scoped on every store call. Status
- * order mirrors the Prompt 91 review service: `not_found` when the Project is missing,
+ * `configuration_expansion` artifact, tenant-scoped on every store call. Status order
+ * mirrors the Prompt 91 review service: `not_found` when the Project is missing,
  * `wrong_mode` when it is not a Quick BoM project, `configuration_expansion_draft_not_found`
  * when the artifact is absent, `artifact_not_configuration_expansion` when it is the
- * wrong type, `configuration_expansion_not_draft` when it lacks the draft marker (a
- * reviewed artifact), `configuration_expansion_draft_not_reviewable` when its status is
- * not needs_review, `invalid_configuration_expansion_draft_payload` when the draft
+ * wrong type. A DRAFT artifact (draft marker present) yields the editable `mode: "draft"`
+ * review and requires `needs_review` (else `configuration_expansion_draft_not_reviewable`);
+ * a REVIEWED artifact (no draft marker, any status incl. approved) yields the read-only
+ * `mode: "reviewed"` projection of its recorded accept/reject decisions so approved
+ * decisions stay readable. `invalid_configuration_expansion_draft_payload` when either
  * payload is malformed, else `ok` with a lean, serializable review object. Never
  * persists and never exposes the full payload, originalCells, evidence paths/notes,
- * pricing, or the configuration-authority trace.
+ * pricing, or the configuration-authority trace - the reviewed path reuses the same
+ * leak-safe line projector as the draft path.
  */
 export async function loadQuickBomConfigurationExpansionReviewWorkspace(
   tenantId: string,
@@ -460,26 +551,44 @@ export async function loadQuickBomConfigurationExpansionReviewWorkspace(
   if (artifact.type !== "configuration_expansion") {
     return { status: "artifact_not_configuration_expansion" };
   }
-  if (artifact.payload.payloadKind !== DRAFT_PAYLOAD_KIND) {
-    return { status: "configuration_expansion_not_draft" };
-  }
-  if (artifact.status !== "needs_review") {
-    return { status: "configuration_expansion_draft_not_reviewable" };
+
+  // DRAFT artifact: the editable line review (must be needs_review).
+  if (artifact.payload.payloadKind === DRAFT_PAYLOAD_KIND) {
+    if (artifact.status !== "needs_review") {
+      return { status: "configuration_expansion_draft_not_reviewable" };
+    }
+    const payload = parseDraftPayload(artifact.payload);
+    if (payload === null) {
+      return { status: "invalid_configuration_expansion_draft_payload" };
+    }
+    return {
+      status: "ok",
+      review: {
+        mode: "draft",
+        project: toProjectSummary(project),
+        artifact: toArtifactSummary(artifact),
+        payloadSummary: toPayloadSummary(payload),
+        reviewSummary: toReviewCounts(payload.lines),
+        lines: payload.lines,
+      },
+    };
   }
 
-  const payload = parseDraftPayload(artifact.payload);
-  if (payload === null) {
+  // REVIEWED (non-draft) artifact: read-only recorded accept/reject decisions, in any
+  // status (needs_review after the review, then approved/rejected). The decisions stay
+  // readable after approval through the same lean, leak-safe projection.
+  const reviewedLines = parseReviewedPayload(artifact.payload);
+  if (reviewedLines === null) {
     return { status: "invalid_configuration_expansion_draft_payload" };
   }
-
   return {
     status: "ok",
     review: {
+      mode: "reviewed",
       project: toProjectSummary(project),
       artifact: toArtifactSummary(artifact),
-      payloadSummary: toPayloadSummary(payload),
-      reviewSummary: toReviewCounts(payload.lines),
-      lines: payload.lines,
+      reviewedSummary: toReviewedCounts(reviewedLines),
+      lines: reviewedLines,
     },
   };
 }

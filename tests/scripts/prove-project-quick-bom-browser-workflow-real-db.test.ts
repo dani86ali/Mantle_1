@@ -253,7 +253,7 @@ describe("prove-project-quick-bom-browser-workflow-real-db script hygiene", () =
       "approve-sku_resolution",
       "workflow-create-configuration_expansion",
       "config-review-load",
-      "config-review-accept-all-expansion",
+      "config-review-select-all",
       "config-review-submit",
       "approve-configuration_expansion",
       "workflow-create-priced_boq",
@@ -268,21 +268,21 @@ describe("prove-project-quick-bom-browser-workflow-real-db script hygiene", () =
     }
   });
 
-  it("drives the explicit single review controls, not the per-line/bulk accept paths", () => {
-    // The fixed UI uses one Submit for SKU review and a single batch button for config;
-    // the proof must click those.
+  it("drives the explicit checkbox review controls, not the per-line/bulk accept paths", () => {
+    // The fixed SKU UI uses selected-by-default checkboxes plus one Submit. The
+    // fixed config UI uses a select-all control that preserves explicit choices.
     expect(source.includes("sku-review-submit")).toBe(true);
-    expect(source.includes("config-review-accept-all-expansion")).toBe(true);
+    expect(source.includes("config-review-select-all")).toBe(true);
     expect(
       source.includes('clickTestId(cdp, sessionId, "sku-review-submit")')
     ).toBe(true);
     expect(
       source.includes(
-        'clickTestId(cdp, sessionId, "config-review-accept-all-expansion")'
+        'clickTestId(cdp, sessionId, "config-review-select-all")'
       )
     ).toBe(true);
-    // The old proof path is gone: no per-line sku accept loop and no same-SKU batch
-    // button, no bulk-click of the per-line config accept buttons.
+    // The old proof path is gone: no per-line sku accept loop, no old same-SKU
+    // batch button, no per-line config accept/reject loop, no stale config batch id.
     expect(source.includes('clickTestId(cdp, sessionId, "sku-review-accept")')).toBe(
       false
     );
@@ -290,6 +290,7 @@ describe("prove-project-quick-bom-browser-workflow-real-db script hygiene", () =
     expect(source.includes('clickAllTestId(cdp, sessionId, "config-review-accept")')).toBe(
       false
     );
+    expect(source.includes("config-review-accept-all-expansion")).toBe(false);
   });
 
   it("asserts deterministic priced totals and 60-line counts", () => {
