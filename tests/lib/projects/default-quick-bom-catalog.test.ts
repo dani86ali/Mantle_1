@@ -86,11 +86,12 @@ describe("module hygiene", () => {
     ]);
   });
 
-  it("imports only catalog-lookup and the Honeywell demo catalog fixture", () => {
+  it("imports only catalog-lookup, the Honeywell demo catalog fixture, and known SKU catalog", () => {
     const source = readFileSync(SOURCE_PATH, "utf8");
     const allowed = new Set([
       "@/lib/projects/catalog-lookup",
       "@/lib/projects/honeywell-demo-catalog-fixture",
+      "@/lib/projects/honeywell-known-sku-catalog",
     ]);
     const specifiers = importSpecifiers(source);
     for (const spec of specifiers) {
