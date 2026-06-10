@@ -21,6 +21,7 @@ const STATUS_BADGE: Record<string, string> = {
   approved: "bg-success-muted text-success",
   needs_review: "bg-accent-muted text-accent",
   generated: "bg-blue-muted text-blue",
+  available: "bg-blue-muted text-blue",
   rejected: "bg-destructive-muted text-destructive",
   stale: "bg-warning-muted text-warning",
   failed: "bg-destructive-muted text-destructive",

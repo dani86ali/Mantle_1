@@ -45,6 +45,11 @@ import type {
   QuickBomSpineArtifacts,
 } from "@/lib/projects/project-quick-bom-workspace";
 import type { QuickBomPricedBoqReviewWorkspace } from "@/lib/projects/project-quick-bom-pricing-review-workspace";
+import type {
+  QuickBomReadinessReport,
+  QuickBomReadinessStepId,
+} from "@/lib/projects/quick-bom-readiness";
+import type { ProjectStageId } from "@/types/project";
 import {
   APPROVE_BTN,
   REJECT_BTN,
@@ -190,6 +195,41 @@ const CREATE_ACTIONS: readonly CreateActionSpec[] = [
   { type: "priced_boq", source: "configuration_expansion", segment: "priced-boq", requireApprovedSource: true },
   { type: "export_package", source: "priced_boq", segment: "export-package", requireApprovedSource: true },
 ];
+
+/**
+ * Quick BoM stages that map 1:1 to a readiness spine step. The raw `project_stages`
+ * row can lag the artifact reality (QBM-LOG-002: a `normalized_boq` artifact exists
+ * and is non-stale, yet the `boq_format_validation` row is still `not_started`). For
+ * display only, when the raw row understates progress we surface the readiness step's
+ * derived status instead, so the panel never shows a stale `not started`.
+ */
+const STAGE_TO_READINESS_STEP: Partial<Record<ProjectStageId, QuickBomReadinessStepId>> = {
+  boq_format_validation: "normalized_boq",
+  sku_resolution: "sku_resolution",
+  configuration_expansion_review: "configuration_expansion",
+  boq_pricing_review: "priced_boq",
+  export_approval: "export_package",
+};
+
+/**
+ * Effective display status for one stage row. Read-only/display only: it never
+ * mutates a stage. The override fires solely when the raw row reads `not_started`
+ * while the matching readiness step (derived from real artifact state) shows the
+ * artifact present, so we can only upgrade a stale `not_started`, never downgrade a
+ * stage or imply a persisted approval that the readiness step did not already report.
+ */
+function effectiveStageStatus(
+  stage: { stageId: ProjectStageId; status: string },
+  readiness: QuickBomReadinessReport
+): string {
+  if (stage.status !== "not_started") return stage.status;
+  const stepId = STAGE_TO_READINESS_STEP[stage.stageId];
+  if (stepId === undefined) return stage.status;
+  const step = readiness.steps.find((s) => s.stepId === stepId);
+  if (step === undefined) return stage.status;
+  if (step.status === "not_started" || step.status === "blocked") return stage.status;
+  return step.status;
+}
 
 export default function ProjectQuickBomPage() {
   const params = useParams();
@@ -632,7 +672,7 @@ export default function ProjectQuickBomPage() {
               className="flex items-center justify-between gap-2 text-sm"
             >
               <span className="text-text-primary">{humanize(stage.stageId)}</span>
-              <StatusBadge status={stage.status} />
+              <StatusBadge status={effectiveStageStatus(stage, readiness)} />
             </li>
           ))}
         </ol>

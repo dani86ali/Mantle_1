@@ -343,6 +343,34 @@ describe("ProjectQuickBomPage - load and render", () => {
     expect(screen.queryByText(/PAYLOAD-LEAK-CANARY/)).toBeNull();
     expect(document.body.textContent ?? "").not.toContain(PAYLOAD_CANARY);
   });
+
+  it("shows a derived (non-stale) stage status when the raw boq_format_validation row lags the normalized_boq artifact (QBM-LOG-002)", async () => {
+    // Raw stage row is stale at not_started, but the normalized_boq artifact is
+    // present (generated, non-stale) and the readiness step reports `available`.
+    const ws = baseWorkspace();
+    (ws.stages as Record<string, unknown>[])[0].status = "not_started";
+    (spineOf(ws).normalized_boq as Record<string, unknown>).status = "generated";
+    const steps = readinessOf(ws).steps as Record<string, unknown>[];
+    steps[0].status = "available";
+
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: ws });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    const stageRow = screen
+      .getAllByTestId("stage-row")
+      .find((el) => /boq format validation/.test(el.textContent ?? ""));
+    expect(stageRow).toBeTruthy();
+    expect(stageRow!).toHaveTextContent("available");
+    expect(stageRow!).not.toHaveTextContent("not started");
+
+    // The artifact panel still reflects the actual artifact status.
+    expect(screen.getByTestId("spine-normalized_boq")).toHaveTextContent("generated");
+  });
 });
 
 describe("ProjectQuickBomPage - review gating", () => {
