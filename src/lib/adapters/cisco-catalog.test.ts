@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { isPlaceholderSku } from "./catalog-polish";
 
@@ -51,16 +51,45 @@ const CATALOG_PATH = join(
   "_mock-data",
   "catalog-responses.json"
 );
-const INVENTORY_PATH = join(
-  __dirname,
-  "..",
-  "..",
-  "..",
-  "..",
-  "bomatic_planning",
-  "parser_strategies",
-  "INVENTORY.md"
-);
+// Resolve the planning INVENTORY.md across checkout layouts (test-only).
+// Canonical location after the planning-docs cleanup is
+// bomatic_planning/reference/parser_strategies/INVENTORY.md, kept as a
+// sibling of the repo root. We probe, in order:
+//   1. BOMATIC_PLANNING_DIR - explicit override for checkouts where the
+//      planning tree lives outside the repo (e.g. isolated clones).
+//   2. the repo-relative sibling location (the default layout).
+// Within each root the canonical subpath is tried first, then the
+// pre-cleanup path so older local checkouts keep working. If nothing
+// resolves we throw listing every attempted absolute path.
+const INVENTORY_SUBPATHS = [
+  join("reference", "parser_strategies", "INVENTORY.md"),
+  join("parser_strategies", "INVENTORY.md"),
+];
+
+function resolveInventoryPath(): string {
+  const roots: string[] = [];
+  const override = process.env.BOMATIC_PLANNING_DIR;
+  if (override) roots.push(override);
+  roots.push(join(__dirname, "..", "..", "..", "..", "bomatic_planning"));
+
+  const attempted: string[] = [];
+  for (const root of roots) {
+    for (const subpath of INVENTORY_SUBPATHS) {
+      const candidate = join(root, subpath);
+      attempted.push(candidate);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+
+  throw new Error(
+    "INVENTORY.md not found. Tried:\n  " +
+      attempted.join("\n  ") +
+      "\nSet BOMATIC_PLANNING_DIR to the bomatic_planning directory if it " +
+      "lives outside the repo tree.",
+  );
+}
+
+const INVENTORY_PATH = resolveInventoryPath();
 
 const catalog: CatalogFile = JSON.parse(
   readFileSync(CATALOG_PATH, "utf-8")

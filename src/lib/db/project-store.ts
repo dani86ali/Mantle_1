@@ -13,9 +13,9 @@
  * updateProjectMode. Tenant scoping is enforced on every read; the canonical
  * tables duplicate tenant_id per row, but the TS child shapes do not surface it.
  */
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { withTenantDb } from "./index";
-import { projects, projectStages } from "./schema";
+import { projects, projectStages, projectArtifacts } from "./schema";
 import { materializeProjectStages } from "@/lib/projects/stages";
 import type {
   Project,
@@ -39,6 +39,35 @@ export interface CreateProjectInput {
   pricingConfig?: ProjectPricingConfig;
   /** Also materialize mode-inactive stages as `not_applicable`. (section 13) */
   includeNotApplicableStages?: boolean;
+}
+
+export type ProjectListStatus =
+  | "not_started"
+  | "in_progress"
+  | "needs_review"
+  | "approved"
+  | "rejected"
+  | "blocked";
+
+export interface ProjectListItem {
+  id: string;
+  tenantId: string;
+  name: string;
+  customerName?: string;
+  mode: ProjectMode;
+  status: ProjectListStatus;
+  activeStageId?: ProjectStageId;
+  activeStageStatus?: ProjectStageStatus;
+  stageCounts: {
+    total: number;
+    approved: number;
+    needsReview: number;
+    inProgress: number;
+    blocked: number;
+    rejected: number;
+  };
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Map a DB stage row to a ProjectStage; stageOrder -> order, tenantId dropped. */
@@ -77,6 +106,102 @@ function toProject(row: ProjectRow, stageRows: ProjectStageRow[]): Project {
     approvals: [],
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * Quick BoM list status/progress derive from *effective* gate completion, not
+ * the raw `project_stages` rows. The first Quick BoM gate (`boq_format_validation`)
+ * is satisfied by a present, non-stale `normalized_boq` artifact - which is
+ * intentionally NOT approval-gated (see quick-bom-readiness `SPINE`). So a project
+ * can have an approved downstream spine yet a `boq_format_validation` row still
+ * `not_started`. Treat that stage as effectively `approved` for the listing only,
+ * without mutating any stored row. Statuses that carry an explicit human signal
+ * (rejected/blocked/needs_review/already-approved) are preserved.
+ */
+const QUICK_BOM_OVERRIDABLE_STATUSES: ReadonlySet<ProjectStageStatus> =
+  new Set<ProjectStageStatus>(["not_started", "in_progress"]);
+
+/**
+ * Latest `normalized_boq` artifact present and not stale - the present_non_stale
+ * gate the readiness helper applies to the first Quick BoM step.
+ */
+function isNormalizedBoqGateMet(status: ProjectArtifactStatusValue | undefined): boolean {
+  if (status === undefined) return false;
+  const present = status !== "missing" && status !== "not_applicable";
+  return present && status !== "stale";
+}
+
+type ProjectArtifactStatusValue = typeof projectArtifacts.$inferSelect["status"];
+
+/**
+ * Project the listing's effective stages: for Quick BoM projects, fold the
+ * present/non-stale `normalized_boq` gate into `boq_format_validation`. RFP
+ * projects and all other stages pass through unchanged.
+ */
+function toEffectiveStages(
+  stages: readonly ProjectStage[],
+  mode: ProjectMode,
+  boqValidationGateMet: boolean
+): ProjectStage[] {
+  if (mode !== "quick_bom" || !boqValidationGateMet) return [...stages];
+  return stages.map((stage) =>
+    stage.stageId === "boq_format_validation" &&
+    QUICK_BOM_OVERRIDABLE_STATUSES.has(stage.status)
+      ? { ...stage, status: "approved" as const }
+      : stage
+  );
+}
+
+function deriveProjectListStatus(stages: readonly ProjectStage[]): ProjectListStatus {
+  const active = stages.filter((stage) => stage.status !== "not_applicable");
+  if (active.some((stage) => stage.status === "rejected")) return "rejected";
+  if (active.some((stage) => stage.status === "blocked")) return "blocked";
+  if (active.some((stage) => stage.status === "needs_review")) return "needs_review";
+  if (active.some((stage) => stage.status === "in_progress")) return "in_progress";
+  if (active.length > 0 && active.every((stage) => stage.status === "approved")) {
+    return "approved";
+  }
+  if (active.some((stage) => stage.status === "approved")) return "in_progress";
+  return "not_started";
+}
+
+function toProjectListItem(
+  row: ProjectRow,
+  stageRows: ProjectStageRow[],
+  boqValidationGateMet: boolean
+): ProjectListItem {
+  const rawStages = [...stageRows]
+    .sort((a, b) => a.stageOrder - b.stageOrder)
+    .map(toProjectStage);
+  const stages = toEffectiveStages(rawStages, row.mode as ProjectMode, boqValidationGateMet);
+  const active = stages.filter((stage) => stage.status !== "not_applicable");
+  const activeStage =
+    active.find((stage) => stage.status !== "approved") ?? active[active.length - 1];
+
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    name: row.name,
+    customerName: row.customerName ?? undefined,
+    mode: row.mode as ProjectMode,
+    status: deriveProjectListStatus(stages),
+    ...(activeStage !== undefined
+      ? {
+          activeStageId: activeStage.stageId,
+          activeStageStatus: activeStage.status,
+        }
+      : {}),
+    stageCounts: {
+      total: active.length,
+      approved: active.filter((stage) => stage.status === "approved").length,
+      needsReview: active.filter((stage) => stage.status === "needs_review").length,
+      inProgress: active.filter((stage) => stage.status === "in_progress").length,
+      blocked: active.filter((stage) => stage.status === "blocked").length,
+      rejected: active.filter((stage) => stage.status === "rejected").length,
+    },
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
@@ -152,5 +277,69 @@ export async function getProjectById(
       .orderBy(asc(projectStages.stageOrder));
 
     return toProject(projectRow, stageRows);
+  });
+}
+
+/**
+ * List lean Project summaries for a tenant, ordered by most recently updated.
+ * This is the Project-centered list surface used by Dashboard/Projects. It reads
+ * only canonical Project tables and never consults legacy estimate/bom_draft APIs.
+ */
+export async function listProjectSummaries(
+  tenantId: string
+): Promise<ProjectListItem[]> {
+  return withTenantDb(tenantId, async (tx) => {
+    const projectRows = await tx
+      .select()
+      .from(projects)
+      .where(eq(projects.tenantId, tenantId))
+      .orderBy(desc(projects.updatedAt));
+
+    if (projectRows.length === 0) return [];
+
+    const stageRows = await tx
+      .select()
+      .from(projectStages)
+      .where(eq(projectStages.tenantId, tenantId))
+      .orderBy(asc(projectStages.stageOrder));
+
+    const stagesByProject = new Map<string, ProjectStageRow[]>();
+    for (const stage of stageRows) {
+      const rows = stagesByProject.get(stage.projectId) ?? [];
+      rows.push(stage);
+      stagesByProject.set(stage.projectId, rows);
+    }
+
+    // Quick BoM list progress folds the present/non-stale `normalized_boq` gate
+    // into `boq_format_validation`. Load only status/version metadata (ordered by
+    // version ascending so the last row per project is the latest) - never the
+    // artifact payloads.
+    const normalizedBoqRows = await tx
+      .select({
+        projectId: projectArtifacts.projectId,
+        status: projectArtifacts.status,
+        version: projectArtifacts.version,
+      })
+      .from(projectArtifacts)
+      .where(
+        and(
+          eq(projectArtifacts.tenantId, tenantId),
+          eq(projectArtifacts.type, "normalized_boq")
+        )
+      )
+      .orderBy(asc(projectArtifacts.version));
+
+    const latestNormalizedBoqStatus = new Map<string, ProjectArtifactStatusValue>();
+    for (const artifact of normalizedBoqRows) {
+      latestNormalizedBoqStatus.set(artifact.projectId, artifact.status);
+    }
+
+    return projectRows.map((project) =>
+      toProjectListItem(
+        project,
+        stagesByProject.get(project.id) ?? [],
+        isNormalizedBoqGateMet(latestNormalizedBoqStatus.get(project.id))
+      )
+    );
   });
 }

@@ -13,12 +13,12 @@
  *   -> upload the full seven-line Honeywell CSV through the real file input
  *   -> click the upload+normalize button
  *   -> click create sku_resolution (default Quick BoM approved catalog, no profile)
- *   -> load SKU review once and accept all seven same-SKU suggestions through the
- *   single batch control (sku-review-accept-all-same-sku)
+ *   -> load SKU review once and submit decisions for all seven pre-selected same-SKU
+ *   rows through the single submit control (sku-review-submit)
  *   -> approve sku_resolution through the artifact approval control
  *   -> click create configuration_expansion
- *   -> load configuration review lines, accept every expansion line through the
- *   batch control (config-review-accept-all-expansion), submit
+ *   -> load configuration review lines (expansion rows selected/accepted by default),
+ *   keep them selected via the bulk control (config-review-select-all), submit
  *   -> approve configuration_expansion through the artifact approval control
  *   -> click create priced_boq
  *   -> load the priced review panel and assert 60 lines / deterministic totals
@@ -1126,8 +1126,9 @@ async function main(): Promise<void> {
     );
     stepsCompleted.push("create sku_resolution (default Quick BoM catalog)");
 
-    // 5) SKU review: load the panel ONCE, then accept all seven same-SKU
-    //    suggestions through the single explicit batch control (no per-line loop).
+    // 5) SKU review: load the panel ONCE, then record decisions for all seven
+    //    pre-selected same-SKU rows through the single explicit Submit control (no
+    //    per-line loop).
     assert(
       await waitForTestId(cdp, sessionId, "sku-review-load", 30000),
       "SKU review load control is present"
@@ -1137,42 +1138,42 @@ async function main(): Promise<void> {
       "clicked load SKU review lines"
     );
     assert(
-      await waitForTestId(cdp, sessionId, "sku-review-accept-all-same-sku", 60000),
-      "SKU review same-SKU batch control rendered"
+      await waitForTestId(cdp, sessionId, "sku-review-submit", 60000),
+      "SKU review submit control rendered"
     );
     assert(
-      !(await testIdDisabled(cdp, sessionId, "sku-review-accept-all-same-sku")),
-      "SKU review same-SKU batch control is enabled"
+      !(await testIdDisabled(cdp, sessionId, "sku-review-submit")),
+      "SKU review submit control is enabled"
     );
-    const skuBatchText = await evaluateSelectorText(
+    const skuSubmitText = await evaluateSelectorText(
       cdp,
       sessionId,
-      '[data-testid="sku-review-accept-all-same-sku"]'
+      '[data-testid="sku-review-submit"]'
     );
     assert(
-      skuBatchText.includes("(" + String(EXPECTED_SKU_LINE_COUNT) + ")"),
-      "SKU batch control text reports (" +
+      skuSubmitText.includes("(" + String(EXPECTED_SKU_LINE_COUNT) + " approve"),
+      "SKU submit control text reports (" +
         EXPECTED_SKU_LINE_COUNT +
-        ") eligible lines (got '" +
-        skuBatchText.trim() +
+        " approve ...) eligible lines (got '" +
+        skuSubmitText.trim() +
         "')"
     );
     assert(
-      await clickTestId(cdp, sessionId, "sku-review-accept-all-same-sku"),
-      "clicked accept all same-SKU suggestions"
+      await clickTestId(cdp, sessionId, "sku-review-submit"),
+      "clicked submit SKU review decisions"
     );
     assert(
       await waitForTestId(cdp, sessionId, "approve-sku_resolution", 90000),
-      "approve sku_resolution control appeared after the batch accept"
+      "approve sku_resolution control appeared after the review submit"
     );
     assert(
       !(await spineText(cdp, sessionId, "sku_resolution")).includes("needs review"),
-      "sku_resolution left needs_review after the batch accept"
+      "sku_resolution left needs_review after the review submit"
     );
-    // Derived from the proof expectation / batch count, not from repeated clicks.
+    // Derived from the proof expectation / submitted count, not from repeated clicks.
     skuAcceptedCount = EXPECTED_SKU_LINE_COUNT;
     assert(skuAcceptedCount === 7, "exactly seven SKU lines were accepted");
-    stepsCompleted.push("accept all seven SKU review lines (single batch control)");
+    stepsCompleted.push("submit all seven SKU review decisions (single submit control)");
 
     // 6) Approve the reviewed sku_resolution through the artifact approval control.
     assert(
@@ -1207,16 +1208,16 @@ async function main(): Promise<void> {
       "clicked load configuration expansion review lines"
     );
     assert(
-      await waitForTestId(cdp, sessionId, "config-review-accept-all-expansion", 60000),
-      "configuration expansion batch accept control rendered"
+      await waitForTestId(cdp, sessionId, "config-review-select-all", 60000),
+      "configuration expansion select-all control rendered"
     );
     assert(
-      !(await testIdDisabled(cdp, sessionId, "config-review-accept-all-expansion")),
-      "configuration expansion batch accept control is enabled"
+      !(await testIdDisabled(cdp, sessionId, "config-review-select-all")),
+      "configuration expansion select-all control is enabled"
     );
     assert(
-      await clickTestId(cdp, sessionId, "config-review-accept-all-expansion"),
-      "clicked accept all expansion lines"
+      await clickTestId(cdp, sessionId, "config-review-select-all"),
+      "clicked select all expansion lines (default-selected, accept)"
     );
     configAcceptClicks = 1;
     assert(

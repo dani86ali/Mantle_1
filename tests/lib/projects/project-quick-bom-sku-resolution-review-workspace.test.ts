@@ -469,7 +469,7 @@ describe("loadQuickBomSkuResolutionReviewWorkspace - Honeywell reject/defer guid
 
     expect(deferred.reviewGuidance).toEqual({
       action: "reject",
-      reasonCode: "honeywell_nb167337_non_benchmark_defer",
+      reasonCode: "authority_pack_non_priced_defer",
       note: expect.any(String),
     });
     expect(eligible.reviewGuidance).toBeUndefined();
@@ -514,13 +514,13 @@ describe("loadQuickBomSkuResolutionReviewWorkspace - static source purity", () =
       "@/lib/db/project-store",
       "@/lib/db/project-artifact-store",
       "@/types/project",
-      "@/lib/projects/honeywell-sku-review-guidance",
+      "@/lib/projects/sku-deferred-review-set",
     ]);
   });
 
   it("does not import artifact writers, approvals, AI, catalog, pricing, config-expansion, export, or engine modules", () => {
     // Forbid SPECIFIC dangerous siblings, not the broad "@/lib/projects/" prefix: the
-    // pure honeywell-sku-review-guidance helper is a legitimate sibling import (pinned
+    // pure sku-deferred-review-set helper is a legitimate sibling import (pinned
     // exactly by the imports test above). See the project_quick_bom_route_wrapper_purity
     // pattern: forbid modules, not the prefix the read model legitimately uses.
     for (const forbidden of [

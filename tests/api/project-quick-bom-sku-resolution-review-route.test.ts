@@ -403,6 +403,19 @@ describe("POST .../sku-resolution/review - result mapping", () => {
     expect((await res.json()).code).toBe("accepted_sku_not_suggested");
   });
 
+  it("maps accept_deferred_not_allowed to 409 with the exact code", async () => {
+    mockReview.mockResolvedValue({ status: "accept_deferred_not_allowed" });
+
+    const res = await POST(req(), PARAMS);
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("sku_resolution_accept_deferred_not_allowed");
+    expect(body.error).toBe(
+      "Deferred non-priced SKU resolution row cannot be accepted."
+    );
+  });
+
   it("maps duplicate_action to 400 with the exact error", async () => {
     mockReview.mockResolvedValue({ status: "duplicate_action" });
 

@@ -15,12 +15,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// Types
 
 interface CommandItem {
   id: string;
   label: string;
-  category: "Navigation" | "Actions" | "Recent Estimates";
+  category: "Navigation" | "Actions" | "Recent Projects";
   icon: React.ElementType;
   shortcut?: string;
   action: () => void;
@@ -31,7 +31,7 @@ interface CommandPaletteProps {
   onClose: () => void;
 }
 
-// ─── Hook: global Ctrl+K listener ───────────────────────────────────────────
+// Hook: global Ctrl+K listener
 
 export function useCommandPalette() {
   const [open, setOpen] = useState(false);
@@ -50,7 +50,7 @@ export function useCommandPalette() {
   return { open, setOpen, onClose: () => setOpen(false) };
 }
 
-// ─── Component ──────────────────────────────────────────────────────────────
+// Component
 
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const router = useRouter();
@@ -72,12 +72,12 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         action: () => router.push("/dashboard"),
       },
       {
-        id: "nav-estimates",
-        label: "Estimates",
+        id: "nav-projects",
+        label: "Projects",
         category: "Navigation",
         icon: FileStack,
-        shortcut: "G E",
-        action: () => router.push("/estimates"),
+        shortcut: "G P",
+        action: () => router.push("/projects"),
       },
       {
         id: "nav-catalog",
@@ -96,22 +96,22 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         action: () => router.push("/admin"),
       },
       {
-        id: "nav-new-estimate",
-        label: "New Estimate",
+        id: "nav-new-quick-bom",
+        label: "New Quick BoM",
         category: "Navigation",
         icon: PlusCircle,
         shortcut: "G N",
-        action: () => router.push("/estimate/new"),
+        action: () => router.push("/projects/quick-bom/new"),
       },
 
       // Actions
       {
-        id: "action-create-estimate",
-        label: "Create New Estimate",
+        id: "action-create-quick-bom",
+        label: "Create Quick BoM Project",
         category: "Actions",
         icon: PlusCircle,
         shortcut: "Ctrl+N",
-        action: () => router.push("/estimate/new"),
+        action: () => router.push("/projects/quick-bom/new"),
       },
       {
         id: "action-search-catalog",
@@ -126,31 +126,31 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         category: "Actions",
         icon: Download,
         action: () => {
-          /* placeholder — wire to export logic */
+          /* placeholder - wire to export logic */
         },
       },
 
-      // Recent Estimates
+      // Recent Projects
       {
         id: "recent-1",
-        label: "OG164161387AE \u2014 NTT Data",
-        category: "Recent Estimates",
+        label: "Quick BoM Project - NTT Data",
+        category: "Recent Projects",
         icon: FileText,
-        action: () => router.push("/estimates"),
+        action: () => router.push("/projects"),
       },
       {
         id: "recent-2",
-        label: "PQ164161394TX \u2014 CDW",
-        category: "Recent Estimates",
+        label: "Campus Refresh - CDW",
+        category: "Recent Projects",
         icon: FileText,
-        action: () => router.push("/estimates"),
+        action: () => router.push("/projects"),
       },
       {
         id: "recent-3",
-        label: "RZ164161402JM \u2014 Insight Direct",
-        category: "Recent Estimates",
+        label: "Export Review - Insight Direct",
+        category: "Recent Projects",
         icon: FileText,
-        action: () => router.push("/estimates"),
+        action: () => router.push("/projects"),
       },
     ],
     [router]

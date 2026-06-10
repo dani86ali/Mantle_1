@@ -20,7 +20,8 @@
  * project), sku_resolution_not_found -> 404, artifact_not_sku_resolution -> 409
  * (artifact when known), sku_resolution_not_reviewable -> 409 (with artifact),
  * invalid_sku_resolution_payload -> 409, review_action_not_reviewable -> 409,
- * accepted_sku_not_suggested -> 409, duplicate_action -> 400,
+ * accepted_sku_not_suggested -> 409, accept_deferred_not_allowed -> 409,
+ * duplicate_action -> 400,
  * action_target_not_found -> 404, ok -> 200 with { artifact, payloadSummary,
  * reviewSummary }. An unexpected service error maps to a controlled 500 that never
  * exposes the thrown error. Imports only Next.js server primitives, requireAuth, the
@@ -202,6 +203,15 @@ export async function POST(
         {
           code: "accepted_sku_not_suggested",
           error: "Accepted SKU must match an existing suggestion.",
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "accept_deferred_not_allowed") {
+      return NextResponse.json(
+        {
+          code: "sku_resolution_accept_deferred_not_allowed",
+          error: "Deferred non-priced SKU resolution row cannot be accepted.",
         },
         { status: 409 }
       );

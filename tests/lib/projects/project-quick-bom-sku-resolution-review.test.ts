@@ -411,6 +411,10 @@ describe("reviewProjectQuickBomSkuResolutionLines - known lower-level error tran
       "Rejected SKU resolution cannot include acceptedSku.",
       { status: "invalid_actions", reason: "reject_has_accepted_sku" },
     ],
+    [
+      "Deferred non-priced SKU resolution row cannot be accepted.",
+      { status: "accept_deferred_not_allowed" },
+    ],
     ["Duplicate SKU resolution action for decision.", { status: "duplicate_action" }],
     ["SKU resolution action target was not found.", { status: "action_target_not_found" }],
   ];

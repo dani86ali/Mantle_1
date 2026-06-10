@@ -142,6 +142,7 @@ export type ReviewProjectQuickBomSkuResolutionLinesResult =
   | { status: "invalid_sku_resolution_payload" }
   | { status: "review_action_not_reviewable" }
   | { status: "accepted_sku_not_suggested" }
+  | { status: "accept_deferred_not_allowed" }
   | { status: "duplicate_action" }
   | { status: "action_target_not_found" }
   | {
@@ -164,6 +165,8 @@ const DECISION_NOT_REVIEWABLE_MESSAGE = "SKU resolution decision is not reviewab
 const ACCEPTED_SKU_REQUIRED_MESSAGE = "acceptedSku is required.";
 const ACCEPTED_SKU_NO_MATCH_MESSAGE = "Accepted SKU must match an existing suggestion.";
 const REJECT_HAS_ACCEPTED_SKU_MESSAGE = "Rejected SKU resolution cannot include acceptedSku.";
+const ACCEPT_DEFERRED_NOT_ALLOWED_MESSAGE =
+  "Deferred non-priced SKU resolution row cannot be accepted.";
 const DUPLICATE_ACTION_MESSAGE = "Duplicate SKU resolution action for decision.";
 const MISSING_TARGET_MESSAGE = "SKU resolution action target was not found.";
 
@@ -282,6 +285,9 @@ function translateReviewError(
   }
   if (message === REJECT_HAS_ACCEPTED_SKU_MESSAGE) {
     return { status: "invalid_actions", reason: "reject_has_accepted_sku" };
+  }
+  if (message === ACCEPT_DEFERRED_NOT_ALLOWED_MESSAGE) {
+    return { status: "accept_deferred_not_allowed" };
   }
   if (message === DUPLICATE_ACTION_MESSAGE) return { status: "duplicate_action" };
   if (message === MISSING_TARGET_MESSAGE) return { status: "action_target_not_found" };
