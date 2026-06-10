@@ -218,7 +218,8 @@ describe("POST /api/projects/quick-bom - result mapping", () => {
   });
 
   it("maps a service duplicate_project_name result to 400 with the service code and error (QBM-LOG-001)", async () => {
-    const message = "A Quick BoM project with this name already exists.";
+    const message =
+      "Duplicate Project Name. Test #1 already exists in your projects.";
     mockCreate.mockResolvedValue({
       status: "invalid_input",
       code: "duplicate_project_name",

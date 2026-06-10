@@ -138,9 +138,26 @@ describe("createQuickBomProject - duplicate name guard (QBM-LOG-001)", () => {
     if (result.status !== "invalid_input") throw new Error("unreachable");
     expect(result.code).toBe("duplicate_project_name");
     expect(result.error).toBe(
-      "A Quick BoM project with this name already exists."
+      "Duplicate Project Name. Honeywell Refresh already exists in your projects."
     );
     expect(mockCreateProject).not.toHaveBeenCalled();
+  });
+
+  it("names the trimmed (not collapsed) entered name in the duplicate message", async () => {
+    mockNameExists.mockResolvedValue(true);
+
+    // Leading/trailing whitespace is trimmed for display; internal whitespace is
+    // preserved verbatim. (Comparison normalization collapses runs - that lives
+    // in the store, not in this user-facing message.)
+    const result = await createQuickBomProject(
+      validInput({ name: "  Acme   Core  " })
+    );
+
+    expect(result.status).toBe("invalid_input");
+    if (result.status !== "invalid_input") throw new Error("unreachable");
+    expect(result.error).toBe(
+      "Duplicate Project Name. Acme   Core already exists in your projects."
+    );
   });
 
   it("checks the duplicate guard with the input tenant and the trimmed name", async () => {

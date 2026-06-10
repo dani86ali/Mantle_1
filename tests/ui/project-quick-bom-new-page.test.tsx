@@ -245,7 +245,8 @@ describe("NewProjectQuickBomPage - controlled errors", () => {
         return jsonResponse(
           {
             code: "duplicate_project_name",
-            error: "A Quick BoM project with this name already exists.",
+            error:
+              "Duplicate Project Name. Test #1 already exists in your projects.",
           },
           400
         );
@@ -261,7 +262,7 @@ describe("NewProjectQuickBomPage - controlled errors", () => {
     });
 
     expect(await screen.findByTestId("form-error")).toHaveTextContent(
-      "A Quick BoM project with this name already exists."
+      "Duplicate Project Name. Test #1 already exists in your projects."
     );
     expect(calls.some((c) => c.url.includes("/quick-bom/files"))).toBe(false);
     expect(calls.some((c) => c.url.includes("/normalize"))).toBe(false);

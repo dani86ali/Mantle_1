@@ -130,7 +130,9 @@ export async function createQuickBomProject(
     return {
       status: "invalid_input",
       code: "duplicate_project_name",
-      error: "A Quick BoM project with this name already exists.",
+      // Message surfaces the trimmed name the user entered (internal whitespace
+      // preserved); comparison normalization lives in the store, not here.
+      error: `Duplicate Project Name. ${name} already exists in your projects.`,
     };
   }
 
