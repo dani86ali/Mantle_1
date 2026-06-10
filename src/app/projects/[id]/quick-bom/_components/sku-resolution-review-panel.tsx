@@ -35,6 +35,7 @@ import type {
 } from "@/lib/projects/project-quick-bom-sku-resolution-review-workspace";
 import { APPROVE_BTN, Card, StatusBadge, bodyMessage } from "./quick-bom-review-ui";
 import { SkuResolutionReviewReadOnly } from "./sku-resolution-review-readonly";
+import { SkuRelatedConfiguredNote } from "./sku-related-configured-note";
 
 const SKU_REVIEW_ERROR = "Unable to load or update the SKU line review.";
 
@@ -300,6 +301,7 @@ export function SkuResolutionReviewPanel({
                           {line.reviewGuidance.note}
                         </p>
                       )}
+                      <SkuRelatedConfiguredNote items={line.relatedConfiguredItems} />
                     </li>
                   );
                 })}

@@ -14,6 +14,7 @@ import {
   fireEvent,
   act,
   waitFor,
+  within,
 } from "@testing-library/react";
 
 import ProjectQuickBomPage from "@/app/projects/[id]/quick-bom/page";
@@ -1844,6 +1845,170 @@ describe("ProjectQuickBomPage - SKU line review panel", () => {
     expect(body).not.toContain(SKU_REVIEW_CANARY);
     // PAYLOAD_CANARY from the base workspace payload should also not appear
     expect(body).not.toContain(PAYLOAD_CANARY);
+  });
+});
+
+describe("ProjectQuickBomPage - SKU review related configured item clarity (QBM-LOG-003)", () => {
+  const RELATED_NOTE =
+    "Defer: not a priced authority-pack product row; reject before pricing/export.";
+
+  // A deferred historical row (with a known related configured item) plus an eligible
+  // same-SKU parent row. The deferred row stays unselectable; the related configured
+  // item is read-only guidance, never another checkbox.
+  function relatedSkuReview(): Record<string, unknown> {
+    return skuReviewOkResponse({
+      reviewSummary: { totalLineCount: 2, needsReviewCount: 2, acceptedCount: 0, rejectedCount: 0, unresolvedCount: 0 },
+      lines: [
+        {
+          sourceFileId: "file-1", sourceRowNumber: 2, originalLineNumber: "L-002",
+          originalSku: "C9300X-48HX-A", status: "needs_review",
+          suggestions: [{ suggestedSku: "C9300X-48HX-A", source: "exact" }],
+        },
+        {
+          sourceFileId: "file-1", sourceRowNumber: 3, originalLineNumber: "L-003",
+          originalSku: "CON-L1NBX-C9300XY4", status: "needs_review",
+          suggestions: [{ suggestedSku: "CON-L1NBX-C9300XY4", source: "exact" }],
+          reviewGuidance: {
+            action: "reject",
+            reasonCode: "authority_pack_non_priced_defer",
+            note: RELATED_NOTE,
+          },
+          relatedConfiguredItems: [
+            { parentSku: "C9300X-48HX-A", relatedConfiguredSku: "CON-L1NCD-C9300XY4" },
+          ],
+        },
+      ],
+    });
+  }
+
+  it("shows the deferred row clarity text, related configured SKU, and parent SKU without an extra checkbox", async () => {
+    stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(relatedSkuReview());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    // The deferred row is disabled/unchecked; only the eligible parent row is enabled.
+    const checkboxes = screen.getAllByTestId("sku-review-checkbox") as HTMLInputElement[];
+    expect(checkboxes).toHaveLength(2);
+    const byRow = (n: number) => checkboxes.find((c) => c.dataset.row === String(n))!;
+    expect(byRow(2).disabled).toBe(false);
+    expect(byRow(2).checked).toBe(true);
+    expect(byRow(3).disabled).toBe(true);
+    expect(byRow(3).checked).toBe(false);
+
+    // The related configured item is read-only guidance: NOT another checkbox.
+    const related = screen.getByTestId("sku-review-related-configured");
+    expect(related).toHaveTextContent("Excluded before pricing.");
+    expect(related).toHaveTextContent("No silent substitution.");
+    expect(related).toHaveTextContent(
+      "Related configured item may appear under parent C9300X-48HX-A: CON-L1NCD-C9300XY4"
+    );
+    expect(within(related).queryByTestId("sku-review-checkbox")).toBeNull();
+
+    // No "replaced by" / "replacement" wording anywhere in the visible UI.
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain("replaced by");
+    expect(body.toLowerCase()).not.toContain("replacement");
+  });
+
+  it("submits the deferred row as reject with its defer note, never the related configured SKU", async () => {
+    const calls = stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(relatedSkuReview());
+      }
+      if (SKU_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(skuReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-submit"));
+    });
+    await waitFor(() =>
+      expect(calls.some((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")).toBe(true)
+    );
+
+    const post = calls.find((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")!;
+    const actions = (post.body as { actions: Record<string, unknown>[] }).actions;
+    const deferred = actions.find((a) => a.sourceRowNumber === 3)!;
+    expect(deferred.decision).toBe("reject");
+    expect(deferred.note).toBe(RELATED_NOTE);
+    expect("acceptedSku" in deferred).toBe(false);
+    // The related configured SKU and parent never enter any action payload field.
+    const serialized = JSON.stringify(post.body);
+    expect(serialized).not.toContain("CON-L1NCD-C9300XY4");
+    for (const a of actions) {
+      for (const forbidden of ["relatedConfiguredSku", "relatedConfiguredItems", "parentSku"]) {
+        expect(forbidden in a, forbidden).toBe(false);
+      }
+    }
+  });
+
+  it("keeps the related configured guidance readable in the read-only view after approval", async () => {
+    const approvedReview = skuReviewOkResponse({
+      artifact: {
+        id: SKU_ARTIFACT_ID, projectId: PROJECT_ID, stageId: "sku_resolution",
+        type: "sku_resolution", status: "approved", version: 3,
+        sourceFileIds: [], sourceArtifactIds: [],
+        createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-01T10:00:00.000Z",
+      },
+      reviewSummary: { totalLineCount: 1, needsReviewCount: 0, acceptedCount: 0, rejectedCount: 1, unresolvedCount: 0 },
+      lines: [
+        {
+          sourceFileId: "file-1", sourceRowNumber: 3, originalLineNumber: "L-003",
+          originalSku: "CON-L1NBX-C9300XY4", status: "rejected", note: "deferred",
+          suggestions: [{ suggestedSku: "CON-L1NBX-C9300XY4", source: "exact" }],
+          relatedConfiguredItems: [
+            { parentSku: "C9300X-48HX-A", relatedConfiguredSku: "CON-L1NCD-C9300XY4" },
+          ],
+        },
+      ],
+    });
+    stubFetch((url, init) => {
+      const ws = baseWorkspace();
+      (spineOf(ws).sku_resolution as Record<string, unknown>).status = "approved";
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(approvedReview);
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: ws });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-readonly");
+
+    // Read-only: no review controls, but the relationship guidance still renders.
+    expect(screen.queryByTestId("sku-review-submit")).toBeNull();
+    expect(screen.queryByTestId("sku-review-checkbox")).toBeNull();
+    const related = screen.getByTestId("sku-review-related-configured");
+    expect(related).toHaveTextContent("Excluded before pricing.");
+    expect(related).toHaveTextContent("No silent substitution.");
+    expect(related).toHaveTextContent(
+      "Related configured item may appear under parent C9300X-48HX-A: CON-L1NCD-C9300XY4"
+    );
   });
 });
 

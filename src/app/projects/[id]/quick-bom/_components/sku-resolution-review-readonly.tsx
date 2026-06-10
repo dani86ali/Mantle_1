@@ -10,6 +10,7 @@
 
 import type { QuickBomSkuResolutionReviewLine } from "@/lib/projects/project-quick-bom-sku-resolution-review-workspace";
 import { StatusBadge } from "./quick-bom-review-ui";
+import { SkuRelatedConfiguredNote } from "./sku-related-configured-note";
 
 interface SkuResolutionReviewReadOnlyProps {
   lines: QuickBomSkuResolutionReviewLine[];
@@ -46,6 +47,7 @@ export function SkuResolutionReviewReadOnly({
           {line.note !== undefined && (
             <p className="mt-0.5 text-xs text-text-secondary">Note: {line.note}</p>
           )}
+          <SkuRelatedConfiguredNote items={line.relatedConfiguredItems} />
         </li>
       ))}
     </ol>
