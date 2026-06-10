@@ -217,6 +217,25 @@ describe("POST /api/projects/quick-bom - result mapping", () => {
     expect(body.error).toBe("Project name is required.");
   });
 
+  it("maps a service duplicate_project_name result to 400 with the service code and error (QBM-LOG-001)", async () => {
+    const message =
+      "Duplicate Project Name. Test #1 already exists in your projects.";
+    mockCreate.mockResolvedValue({
+      status: "invalid_input",
+      code: "duplicate_project_name",
+      error: message,
+    });
+
+    const res = await POST(req(validBody()));
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("duplicate_project_name");
+    expect(body.error).toBe(message);
+    // No internal details beyond the controlled code/error are exposed.
+    expect(Object.keys(body).sort()).toEqual(["code", "error"]);
+  });
+
   it("maps a service invalid_pricing_config result to 400 with the service code and error", async () => {
     const guardMessage =
       "Margin ratePercent must be a finite number from 0 up to, but not including, 100.";

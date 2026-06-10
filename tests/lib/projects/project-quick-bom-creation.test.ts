@@ -6,9 +6,15 @@ import type { Project, ProjectStage } from "@/types/project";
 // Mock only the Project store (createProject); the pricing helper stays REAL so
 // the "full SAR pricingConfig from createProjectPricingConfig" assertion is a
 // true integration check (it proves the SAR/VAT-15/rounding-2 defaults).
-const { mockCreateProject } = vi.hoisted(() => ({ mockCreateProject: vi.fn() }));
+const { mockCreateProject, mockNameExists } = vi.hoisted(() => ({
+  mockCreateProject: vi.fn(),
+  mockNameExists: vi.fn(),
+}));
 
-vi.mock("@/lib/db/project-store", () => ({ createProject: mockCreateProject }));
+vi.mock("@/lib/db/project-store", () => ({
+  createProject: mockCreateProject,
+  quickBomProjectNameExists: mockNameExists,
+}));
 
 import {
   createQuickBomProject,
@@ -79,6 +85,7 @@ function makeReturnedProject(overrides: Partial<Project> = {}): Project {
 
 beforeEach(() => {
   mockCreateProject.mockReset().mockResolvedValue(makeReturnedProject());
+  mockNameExists.mockReset().mockResolvedValue(false);
 });
 
 describe("createQuickBomProject - input validation", () => {
@@ -117,6 +124,64 @@ describe("createQuickBomProject - input validation", () => {
     if (result.status !== "invalid_input") throw new Error("unreachable");
     expect(result.code).toBe("invalid_pricing_config");
     expect(result.error).toBe(expectedMessage);
+    expect(mockCreateProject).not.toHaveBeenCalled();
+  });
+});
+
+describe("createQuickBomProject - duplicate name guard (QBM-LOG-001)", () => {
+  it("returns invalid_input duplicate_project_name and never calls createProject when a duplicate Quick BoM name exists", async () => {
+    mockNameExists.mockResolvedValue(true);
+
+    const result = await createQuickBomProject(validInput());
+
+    expect(result.status).toBe("invalid_input");
+    if (result.status !== "invalid_input") throw new Error("unreachable");
+    expect(result.code).toBe("duplicate_project_name");
+    expect(result.error).toBe(
+      "Duplicate Project Name. Honeywell Refresh already exists in your projects."
+    );
+    expect(mockCreateProject).not.toHaveBeenCalled();
+  });
+
+  it("names the trimmed (not collapsed) entered name in the duplicate message", async () => {
+    mockNameExists.mockResolvedValue(true);
+
+    // Leading/trailing whitespace is trimmed for display; internal whitespace is
+    // preserved verbatim. (Comparison normalization collapses runs - that lives
+    // in the store, not in this user-facing message.)
+    const result = await createQuickBomProject(
+      validInput({ name: "  Acme   Core  " })
+    );
+
+    expect(result.status).toBe("invalid_input");
+    if (result.status !== "invalid_input") throw new Error("unreachable");
+    expect(result.error).toBe(
+      "Duplicate Project Name. Acme   Core already exists in your projects."
+    );
+  });
+
+  it("checks the duplicate guard with the input tenant and the trimmed name", async () => {
+    await createQuickBomProject(
+      validInput({ name: "  Honeywell Refresh  " })
+    );
+
+    expect(mockNameExists).toHaveBeenCalledWith(TENANT, "Honeywell Refresh");
+  });
+
+  it("creates the project when no duplicate name exists", async () => {
+    mockNameExists.mockResolvedValue(false);
+
+    const result = await createQuickBomProject(validInput());
+
+    expect(result.status).toBe("ok");
+    expect(mockCreateProject).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not consult the duplicate guard when the name is blank", async () => {
+    const result = await createQuickBomProject(validInput({ name: "   " }));
+
+    expect(result.status).toBe("invalid_input");
+    expect(mockNameExists).not.toHaveBeenCalled();
     expect(mockCreateProject).not.toHaveBeenCalled();
   });
 });
