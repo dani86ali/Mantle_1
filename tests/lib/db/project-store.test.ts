@@ -32,6 +32,14 @@ interface StoredStage {
   createdAt: Date;
   updatedAt: Date;
 }
+interface StoredArtifact {
+  id: string;
+  projectId: string;
+  tenantId: string;
+  type: string;
+  status: string;
+  version: number;
+}
 
 const { store, mockDb, withTenantDb } = vi.hoisted(() => {
   let counter = 0;
@@ -40,6 +48,7 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
   const store = {
     projects: [] as StoredProject[],
     stages: [] as StoredStage[],
+    artifacts: [] as StoredArtifact[],
     projectInserts: [] as Record<string, unknown>[],
   };
 
@@ -48,6 +57,9 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
     tenant_id: "tenantId",
     project_id: "projectId",
     stage_order: "stageOrder",
+    type: "type",
+    version: "version",
+    status: "status",
     created_at: "createdAt",
     updated_at: "updatedAt",
   };
@@ -106,12 +118,17 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
             where(pred: Pred) {
               const conds = flatten(pred);
               const pickSource = (orderCol?: string) => {
+                // A `type` predicate is unique to the project_artifacts query.
+                const isArtifacts = conds.some((c) => c.name === "type");
                 const isStages =
                   conds.some((c) => c.name === "project_id") ||
                   orderCol === "stage_order";
-                return (isStages
+                const source = isArtifacts
+                  ? store.artifacts
+                  : isStages
                   ? store.stages
-                  : store.projects) as unknown as Array<Record<string, unknown>>;
+                  : store.projects;
+                return source as unknown as Array<Record<string, unknown>>;
               };
               const filterRows = (source: Array<Record<string, unknown>>) =>
                 source.filter((row) =>
@@ -203,6 +220,7 @@ const QUICK_BOM_ONLY = [
 beforeEach(() => {
   store.projects.length = 0;
   store.stages.length = 0;
+  store.artifacts.length = 0;
   store.projectInserts.length = 0;
   withTenantDb.mockClear();
 });
@@ -477,6 +495,23 @@ describe("listProjectSummaries", () => {
     });
   }
 
+  function seedArtifact(input: {
+    projectId: string;
+    type: string;
+    status: string;
+    version?: number;
+    tenantId?: string;
+  }): void {
+    store.artifacts.push({
+      id: `art-${input.projectId}-${input.type}-${input.version ?? 1}`,
+      projectId: input.projectId,
+      tenantId: input.tenantId ?? TENANT,
+      type: input.type,
+      status: input.status,
+      version: input.version ?? 1,
+    });
+  }
+
   it("opens a tenant-scoped read and returns newest Projects first", async () => {
     seedProject({
       id: "old",
@@ -566,6 +601,135 @@ describe("listProjectSummaries", () => {
 
     expect(rows[0].status).toBe("approved");
     expect(rows[0].activeStageId).toBe("export_approval");
+  });
+
+  it("counts boq_format_validation complete via a present non-stale normalized_boq (QBM-LOG-002A)", async () => {
+    // Real-DB shape: the four downstream Quick BoM stages are approved, but the
+    // raw boq_format_validation stage row is still not_started while a
+    // normalized_boq artifact exists with status `generated`.
+    seedProject({ id: "qbm-done", name: "Completed Quick BoM", mode: "quick_bom" });
+    seedStage({
+      projectId: "qbm-done",
+      stageId: "boq_format_validation",
+      stageOrder: 20,
+      status: "not_started",
+    });
+    seedStage({
+      projectId: "qbm-done",
+      stageId: "sku_resolution",
+      stageOrder: 30,
+      status: "approved",
+    });
+    seedStage({
+      projectId: "qbm-done",
+      stageId: "configuration_expansion_review",
+      stageOrder: 35,
+      status: "approved",
+    });
+    seedStage({
+      projectId: "qbm-done",
+      stageId: "boq_pricing_review",
+      stageOrder: 70,
+      status: "approved",
+    });
+    seedStage({
+      projectId: "qbm-done",
+      stageId: "export_approval",
+      stageOrder: 90,
+      status: "approved",
+    });
+    seedArtifact({ projectId: "qbm-done", type: "normalized_boq", status: "generated" });
+
+    const rows = await listProjectSummaries(TENANT);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: "qbm-done",
+      status: "approved",
+      activeStageId: "export_approval",
+      activeStageStatus: "approved",
+      stageCounts: {
+        total: 5,
+        approved: 5,
+        needsReview: 0,
+        inProgress: 0,
+        blocked: 0,
+        rejected: 0,
+      },
+    });
+  });
+
+  it("folds the normalized_boq gate but still surfaces a downstream needs_review", async () => {
+    // Gate met (artifact generated) must not mask an explicit downstream signal.
+    seedProject({ id: "qbm-review", name: "Mid Review Quick BoM", mode: "quick_bom" });
+    seedStage({
+      projectId: "qbm-review",
+      stageId: "boq_format_validation",
+      stageOrder: 20,
+      status: "not_started",
+    });
+    seedStage({
+      projectId: "qbm-review",
+      stageId: "sku_resolution",
+      stageOrder: 30,
+      status: "needs_review",
+    });
+    seedArtifact({ projectId: "qbm-review", type: "normalized_boq", status: "generated" });
+
+    const rows = await listProjectSummaries(TENANT);
+
+    expect(rows[0].status).toBe("needs_review");
+    expect(rows[0].activeStageId).toBe("sku_resolution");
+    // boq_format_validation still counts as approved via the folded gate.
+    expect(rows[0].stageCounts.approved).toBe(1);
+    expect(rows[0].stageCounts.needsReview).toBe(1);
+  });
+
+  it("does not fold the normalized_boq gate when the artifact is stale", async () => {
+    seedProject({ id: "qbm-stale", name: "Stale Quick BoM", mode: "quick_bom" });
+    seedStage({
+      projectId: "qbm-stale",
+      stageId: "boq_format_validation",
+      stageOrder: 20,
+      status: "not_started",
+    });
+    seedStage({
+      projectId: "qbm-stale",
+      stageId: "export_approval",
+      stageOrder: 90,
+      status: "approved",
+    });
+    // Latest version is stale; an older generated version must not rescue it.
+    seedArtifact({ projectId: "qbm-stale", type: "normalized_boq", status: "generated", version: 1 });
+    seedArtifact({ projectId: "qbm-stale", type: "normalized_boq", status: "stale", version: 2 });
+
+    const rows = await listProjectSummaries(TENANT);
+
+    expect(rows[0].status).toBe("in_progress");
+    expect(rows[0].stageCounts.approved).toBe(1);
+    expect(rows[0].activeStageId).toBe("boq_format_validation");
+  });
+
+  it("leaves RFP projects unaffected by normalized_boq folding", async () => {
+    seedProject({ id: "rfp-1", name: "RFP", mode: "rfp" });
+    seedStage({
+      projectId: "rfp-1",
+      stageId: "intake_package_review",
+      stageOrder: 10,
+      status: "not_started",
+    });
+    seedStage({
+      projectId: "rfp-1",
+      stageId: "export_approval",
+      stageOrder: 90,
+      status: "approved",
+    });
+    seedArtifact({ projectId: "rfp-1", type: "normalized_boq", status: "generated" });
+
+    const rows = await listProjectSummaries(TENANT);
+
+    expect(rows[0].status).toBe("in_progress");
+    expect(rows[0].activeStageId).toBe("intake_package_review");
   });
 });
 

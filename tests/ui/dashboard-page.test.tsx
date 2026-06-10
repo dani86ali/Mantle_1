@@ -99,6 +99,39 @@ describe("DashboardPage", () => {
     expect(calls.some((url) => url.includes("/api/estimates"))).toBe(false);
   });
 
+  it("renders an approved Quick BoM as Approved, 5/5, and completed activity (QBM-LOG-002A)", async () => {
+    stubFetch([
+      project({
+        id: "proj-qbm",
+        name: "Alpha Quick BoM",
+        mode: "quick_bom",
+        status: "approved",
+        activeStageId: "export_approval",
+        activeStageStatus: "approved",
+        stageCounts: {
+          total: 5,
+          approved: 5,
+          needsReview: 0,
+          inProgress: 0,
+          blocked: 0,
+          rejected: 0,
+        },
+      }),
+    ]);
+
+    const { container } = render(<DashboardPage />);
+
+    expect(await screen.findAllByText("Alpha Quick BoM")).not.toHaveLength(0);
+    // Status badge + progress count reflect a completed deliverable. ("Approved"
+    // also labels the stats card, so assert at least one occurrence.)
+    expect(screen.getAllByText("Approved").length).toBeGreaterThan(0);
+    expect(screen.getByText("5/5")).toBeInTheDocument();
+    // Activity feed renders "completed", never a running/spinning state.
+    expect(screen.getByText("completed")).toBeInTheDocument();
+    expect(screen.queryByText("running")).not.toBeInTheDocument();
+    expect(container.querySelector(".animate-spin")).toBeNull();
+  });
+
   it("renders a Project-centered empty state", async () => {
     stubFetch([]);
 
