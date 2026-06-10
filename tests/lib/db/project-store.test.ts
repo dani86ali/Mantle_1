@@ -57,6 +57,8 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
     tenant_id: "tenantId",
     project_id: "projectId",
     stage_order: "stageOrder",
+    name: "name",
+    mode: "mode",
     type: "type",
     version: "version",
     status: "status",
@@ -189,6 +191,7 @@ import {
   createProject,
   getProjectById,
   listProjectSummaries,
+  quickBomProjectNameExists,
 } from "@/lib/db/project-store";
 import type { CreateProjectInput } from "@/lib/db/project-store";
 
@@ -730,6 +733,63 @@ describe("listProjectSummaries", () => {
 
     expect(rows[0].status).toBe("in_progress");
     expect(rows[0].activeStageId).toBe("intake_package_review");
+  });
+});
+
+describe("quickBomProjectNameExists (QBM-LOG-001)", () => {
+  function seedProject(overrides: Partial<StoredProject>): void {
+    const now = new Date("2026-05-21T08:00:00Z");
+    store.projects.push({
+      id: `proj-${store.projects.length + 1}`,
+      tenantId: TENANT,
+      name: "Quick BoM Project",
+      customerName: null,
+      mode: "quick_bom",
+      pricingConfig: null,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    });
+  }
+
+  it("opens a tenant-scoped read for the requested tenant", async () => {
+    await quickBomProjectNameExists(TENANT, "Anything");
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("returns true for an exact name match", async () => {
+    seedProject({ name: "Honeywell Refresh" });
+    expect(await quickBomProjectNameExists(TENANT, "Honeywell Refresh")).toBe(
+      true
+    );
+  });
+
+  it("normalizes trim, internal whitespace, and case when comparing", async () => {
+    seedProject({ name: "Honeywell Refresh" });
+    expect(
+      await quickBomProjectNameExists(TENANT, "  honeywell   refresh ")
+    ).toBe(true);
+  });
+
+  it("returns false when no Quick BoM project has that name", async () => {
+    seedProject({ name: "Honeywell Refresh" });
+    expect(await quickBomProjectNameExists(TENANT, "STC Core")).toBe(false);
+  });
+
+  it("is scoped to the tenant - a same-name project in another tenant does not match", async () => {
+    seedProject({ name: "Shared Name", tenantId: OTHER_TENANT });
+    expect(await quickBomProjectNameExists(TENANT, "Shared Name")).toBe(false);
+  });
+
+  it("is scoped to mode quick_bom - an RFP project with the same name does not match", async () => {
+    seedProject({ name: "Shared Name", mode: "rfp" });
+    expect(await quickBomProjectNameExists(TENANT, "Shared Name")).toBe(false);
+  });
+
+  it("treats a blank/whitespace name as not existing and does not open a read", async () => {
+    seedProject({ name: "Honeywell Refresh" });
+    expect(await quickBomProjectNameExists(TENANT, "   ")).toBe(false);
+    expect(withTenantDb).not.toHaveBeenCalled();
   });
 });
 

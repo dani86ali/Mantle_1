@@ -15,7 +15,7 @@
  * priced BoQ, and export stay out of this module, keeping pricing authority and
  * configuration authority separate (section 9, section 11A).
  */
-import { createProject } from "@/lib/db/project-store";
+import { createProject, quickBomProjectNameExists } from "@/lib/db/project-store";
 import { createProjectPricingConfig } from "@/lib/projects/pricing";
 import type { CreateProjectPricingConfigInput } from "@/lib/projects/pricing";
 import type {
@@ -90,7 +90,9 @@ function toStageSummary(stage: ProjectStage): ProjectStageSummary {
  * only. The input object is never mutated. A blank/missing name, or a pricing
  * config the helper rejects, returns invalid_input; the helper owns the
  * margin/markup/VAT/rounding validation and createProject is not called when it
- * fails.
+ * fails. A duplicate Quick BoM name within the tenant (normalized trim + internal
+ * whitespace + case, mode-scoped) also returns invalid_input code
+ * duplicate_project_name without calling createProject (QBM-LOG-001).
  */
 export async function createQuickBomProject(
   input: CreateQuickBomProjectInput
@@ -117,6 +119,18 @@ export async function createQuickBomProject(
       status: "invalid_input",
       code: "invalid_pricing_config",
       error: error instanceof Error ? error.message : "Invalid pricing config.",
+    };
+  }
+
+  // Readability guard (QBM-LOG-001): reject a duplicate Quick BoM project name
+  // within the same tenant. Comparison normalizes trim + internal whitespace +
+  // case via the Project store; scoped to mode quick_bom so RFP/legacy estimate
+  // names are unaffected. createProject is not called when a duplicate exists.
+  if (await quickBomProjectNameExists(input.tenantId, name)) {
+    return {
+      status: "invalid_input",
+      code: "duplicate_project_name",
+      error: "A Quick BoM project with this name already exists.",
     };
   }
 

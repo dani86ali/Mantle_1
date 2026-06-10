@@ -239,6 +239,35 @@ describe("NewProjectQuickBomPage - controlled errors", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it("shows the duplicate-name error and does not upload or normalize when create is rejected (QBM-LOG-001)", async () => {
+    const calls = stubFetch((url, init) => {
+      if (url.endsWith("/api/projects/quick-bom") && init?.method === "POST") {
+        return jsonResponse(
+          {
+            code: "duplicate_project_name",
+            error: "A Quick BoM project with this name already exists.",
+          },
+          400
+        );
+      }
+      return jsonResponse({}, 404);
+    });
+    render(<NewProjectQuickBomPage />);
+
+    fillForm();
+    selectFile();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("submit"));
+    });
+
+    expect(await screen.findByTestId("form-error")).toHaveTextContent(
+      "A Quick BoM project with this name already exists."
+    );
+    expect(calls.some((c) => c.url.includes("/quick-bom/files"))).toBe(false);
+    expect(calls.some((c) => c.url.includes("/normalize"))).toBe(false);
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("shows the upload error and does not normalize when upload fails", async () => {
     const calls = stubFetch((url, init) => {
       if (url.endsWith("/api/projects/quick-bom") && init?.method === "POST") {

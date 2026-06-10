@@ -9,6 +9,10 @@
  * its tenant. Files, evidence, artifacts, approvals, stale propagation, and
  * mutation are NOT handled here yet - the aggregate returns empty child arrays.
  *
+ * QBM-LOG-001 adds one narrow tenant-scoped read, {@link quickBomProjectNameExists},
+ * used by the Quick BoM creation guard. It reads only the canonical `projects`
+ * table (no artifacts/files/approvals/payloads) and is scoped to mode quick_bom.
+ *
  * Project.mode is immutable after creation (section 2): this module exposes no
  * updateProjectMode. Tenant scoping is enforced on every read; the canonical
  * tables duplicate tenant_id per row, but the TS child shapes do not surface it.
@@ -341,5 +345,42 @@ export async function listProjectSummaries(
         isNormalizedBoqGateMet(latestNormalizedBoqStatus.get(project.id))
       )
     );
+  });
+}
+
+/**
+ * Normalize a Project name for duplicate comparison: trim, collapse internal
+ * whitespace runs to a single space, and lowercase. This is a readability guard
+ * only - the Project id remains the durable identifier (QBM-LOG-001).
+ */
+function normalizeProjectName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * Whether a Quick BoM Project with the same normalized name already exists for
+ * this tenant. Scoped to mode `quick_bom`, so RFP/legacy estimate names are never
+ * considered. Reads only the canonical `projects` table (name/mode) within the
+ * tenant - never artifacts, files, approvals, or payloads. A blank/whitespace
+ * name normalizes to empty and is reported as not existing (the creation service
+ * already rejects blank names before this read).
+ */
+export async function quickBomProjectNameExists(
+  tenantId: string,
+  name: string
+): Promise<boolean> {
+  const target = normalizeProjectName(name);
+  if (target === "") return false;
+
+  return withTenantDb(tenantId, async (tx) => {
+    const rows = await tx
+      .select({ name: projects.name })
+      .from(projects)
+      .where(
+        and(eq(projects.tenantId, tenantId), eq(projects.mode, "quick_bom"))
+      )
+      .orderBy(asc(projects.createdAt));
+
+    return rows.some((row) => normalizeProjectName(row.name) === target);
   });
 }
