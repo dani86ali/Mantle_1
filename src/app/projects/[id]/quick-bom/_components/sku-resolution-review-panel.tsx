@@ -7,17 +7,19 @@
  * null until the engineer clicks "Load SKU review lines" (the main workspace stays
  * payload-free).
  *
- * Review uses a checkbox/table flow, not per-line Accept/Reject buttons. Every
- * `needs_review` row gets exactly one checkbox:
- *  - Eligible priced same-SKU rows (one suggestion equal to the original SKU, no
- *    reject/defer guidance) are selectable and checked by default - submitting accepts
- *    that exact same SKU (never a substitution).
- *  - Deferred/non-priced rows (carrying reject/defer guidance) and any other
- *    non-same-SKU row are unselectable (disabled, unchecked) and impossible to approve;
- *    submitting rejects them.
+ * Review is split into two presentation sections, not per-line Accept/Reject buttons:
+ *  - "Included downstream": eligible priced same-SKU rows (one suggestion equal to the
+ *    original SKU, no reject/defer guidance) plus already-accepted rows. Eligible rows
+ *    render a checkbox, checked by default - submitting accepts that exact same SKU
+ *    (never a substitution).
+ *  - "Excluded before pricing": deferred/non-priced rows and any other non-same-SKU
+ *    row. These render NO checkbox (not even a disabled one) and are impossible to
+ *    approve; submitting rejects them with their internal note carried in the payload
+ *    but never shown in the UI.
+ * The split is presentation only; the submit decision still keys off isApprovableLine.
  * One "Submit review decisions" action records an explicit decision for EVERY review
- * row in a single POST: checked -> accept (the same SKU), unchecked -> reject. Nothing
- * is auto-accepted, replaced, or substituted.
+ * row in a single POST: included+checked -> accept (the same SKU), everything else ->
+ * reject. Nothing is auto-accepted, replaced, or substituted.
  *
  * A successful POST mints a NEW sku_resolution version (new artifact id). When the
  * minted artifact still needs_review the panel auto-refreshes against the returned id;
@@ -63,6 +65,16 @@ function isApprovableLine(line: QuickBomSkuResolutionReviewLine): boolean {
 /** A row carries an explicit deferred/non-priced reject recommendation. */
 function isDeferredLine(line: QuickBomSkuResolutionReviewLine): boolean {
   return line.status === "needs_review" && line.reviewGuidance?.action === "reject";
+}
+
+/**
+ * Display-only categorization: a line is "included downstream" when it is already
+ * accepted or is an eligible same-SKU row (the only rows this panel can approve). Every
+ * other line is "excluded before pricing". Pure presentation - it never feeds the submit
+ * payload, which is still driven by {@link isApprovableLine}.
+ */
+function isIncludedLine(line: QuickBomSkuResolutionReviewLine): boolean {
+  return line.status === "accepted" || isApprovableLine(line);
 }
 
 interface SkuResolutionReviewPanelProps {
@@ -208,13 +220,21 @@ export function SkuResolutionReviewPanel({
         (line) => isApprovableLine(line) && selected[lineKey(line)]
       ).length
     : 0;
+  // Structural include/exclude split, total-covering across every line. A line goes
+  // downstream when it is already accepted or is an eligible same-SKU row; everything
+  // else (deferred, different-SKU, ambiguous, rejected, unresolved) is excluded before
+  // pricing. This is presentation only - it never changes the submit decision payload.
+  const includedLines = skuReview ? skuReview.lines.filter(isIncludedLine) : [];
+  const excludedLines = skuReview
+    ? skuReview.lines.filter((line) => !isIncludedLine(line))
+    : [];
 
   return (
     <Card title="SKU line review">
       <p className="mt-2 text-xs text-text-secondary">
-        Review every line in one pass: eligible same-SKU rows are pre-selected for
-        approval; deferred non-priced rows cannot be approved. Submitting records an
-        explicit accept/reject decision for every reviewed line.
+        Review every line in one pass: rows with a catalog match are pre-selected to go
+        downstream; rows not in the active pricing catalog are excluded before pricing.
+        Submitting records an explicit decision for every reviewed line.
       </p>
       <button
         type="button"
@@ -237,10 +257,8 @@ export function SkuResolutionReviewPanel({
         <div className="mt-3 space-y-3">
           <p data-testid="sku-review-summary" className="text-xs text-text-secondary">
             {skuReview.reviewSummary.totalLineCount} lines:{" "}
-            {skuReview.reviewSummary.needsReviewCount} need review,{" "}
-            {skuReview.reviewSummary.acceptedCount} accepted,{" "}
-            {skuReview.reviewSummary.rejectedCount} rejected,{" "}
-            {skuReview.reviewSummary.unresolvedCount} unresolved
+            {includedLines.length} included downstream,{" "}
+            {excludedLines.length} excluded before pricing
           </p>
           {!reviewable ? (
             <SkuResolutionReviewReadOnly lines={skuReview.lines} />
@@ -253,59 +271,83 @@ export function SkuResolutionReviewPanel({
                 onClick={() => onSubmitReview(skuReview)}
                 className={APPROVE_BTN}
               >
-                Submit review decisions ({approveCount} approve / {reviewRowCount - approveCount} reject)
+                Submit review decisions ({approveCount} included /{" "}
+                {reviewRowCount - approveCount} excluded)
               </button>
-              <ol className="space-y-2">
-                {skuReview.lines.map((line) => {
-                  const needsReview = line.status === "needs_review";
-                  const approvable = isApprovableLine(line);
-                  const key = lineKey(line);
-                  return (
+              <section data-testid="sku-review-included" className="space-y-1">
+                <h3 className="text-xs font-semibold text-text-primary">
+                  Included downstream ({includedLines.length})
+                </h3>
+                <ol className="space-y-2">
+                  {includedLines.map((line) => {
+                    const approvable = isApprovableLine(line);
+                    const key = lineKey(line);
+                    const matchSku = approvable
+                      ? line.suggestions[0].suggestedSku
+                      : line.acceptedSku;
+                    return (
+                      <li
+                        key={key}
+                        data-testid="sku-review-line"
+                        className="rounded-button border border-[var(--border)] p-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="flex items-center gap-2">
+                            {approvable && (
+                              <input
+                                type="checkbox"
+                                data-testid="sku-review-checkbox"
+                                data-row={line.sourceRowNumber}
+                                checked={Boolean(selected[key])}
+                                disabled={skuReviewBusy}
+                                onChange={() => toggleLine(line)}
+                              />
+                            )}
+                            <span className="text-sm font-medium text-text-primary">
+                              {line.originalSku}
+                            </span>
+                          </label>
+                          <StatusBadge status={line.status} />
+                        </div>
+                        <p className="mt-0.5 text-xs text-text-tertiary">
+                          Source row {line.sourceRowNumber}
+                        </p>
+                        {matchSku !== undefined && (
+                          <p className="mt-0.5 text-xs text-text-secondary">
+                            Catalog match: {matchSku}
+                          </p>
+                        )}
+                        <SkuRelatedConfiguredNote items={line.relatedConfiguredItems} />
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+              <section data-testid="sku-review-excluded" className="space-y-1">
+                <h3 className="text-xs font-semibold text-text-primary">
+                  Excluded before pricing ({excludedLines.length})
+                </h3>
+                <ol className="space-y-2">
+                  {excludedLines.map((line) => (
                     <li
-                      key={key}
+                      key={lineKey(line)}
                       data-testid="sku-review-line"
                       className="rounded-button border border-[var(--border)] p-2"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <label className="flex items-center gap-2">
-                          {needsReview && (
-                            <input
-                              type="checkbox"
-                              data-testid="sku-review-checkbox"
-                              data-row={line.sourceRowNumber}
-                              checked={approvable ? Boolean(selected[key]) : false}
-                              disabled={skuReviewBusy || !approvable}
-                              onChange={() => toggleLine(line)}
-                            />
-                          )}
-                          <span className="text-sm font-medium text-text-primary">
-                            {line.originalSku}
-                          </span>
-                        </label>
-                        <StatusBadge status={line.status} />
-                      </div>
+                      <span className="text-sm font-medium text-text-primary">
+                        {line.originalSku}
+                      </span>
                       <p className="mt-0.5 text-xs text-text-tertiary">
                         Source row {line.sourceRowNumber}
                       </p>
                       <p className="mt-0.5 text-xs text-text-secondary">
-                        Suggestions:{" "}
-                        {line.suggestions.length === 0
-                          ? "none"
-                          : line.suggestions.map((s) => s.suggestedSku).join(", ")}
+                        {line.originalSku} is not available in the active pricing catalog.
                       </p>
-                      {line.reviewGuidance?.action === "reject" && (
-                        <p
-                          data-testid="sku-review-guidance"
-                          className="mt-0.5 text-xs text-warning"
-                        >
-                          {line.reviewGuidance.note}
-                        </p>
-                      )}
                       <SkuRelatedConfiguredNote items={line.relatedConfiguredItems} />
                     </li>
-                  );
-                })}
-              </ol>
+                  ))}
+                </ol>
+              </section>
             </>
           )}
         </div>

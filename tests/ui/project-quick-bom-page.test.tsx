@@ -1177,8 +1177,8 @@ describe("ProjectQuickBomPage - SKU line review panel", () => {
 
     const summary = await screen.findByTestId("sku-review-summary");
     expect(summary).toHaveTextContent("2 lines");
-    expect(summary).toHaveTextContent("1 need review");
-    expect(summary).toHaveTextContent("1 accepted");
+    expect(summary).toHaveTextContent("1 included downstream");
+    expect(summary).toHaveTextContent("1 excluded before pricing");
 
     const lines = screen.getAllByTestId("sku-review-line");
     expect(lines).toHaveLength(2);
@@ -1459,23 +1459,23 @@ describe("ProjectQuickBomPage - SKU line review panel", () => {
     });
     await screen.findByTestId("sku-review-summary");
 
-    // Four needs_review rows render a checkbox; the accepted row (row 5) does not.
+    // Only eligible same-SKU rows render a checkbox; ineligible needs_review rows (3, 4)
+    // and the accepted row (5) render none.
     const checkboxes = screen.getAllByTestId("sku-review-checkbox") as HTMLInputElement[];
-    expect(checkboxes).toHaveLength(4);
+    expect(checkboxes).toHaveLength(2);
     const byRow = (n: number) => checkboxes.find((c) => c.dataset.row === String(n))!;
-    // Eligible same-SKU rows: enabled and checked by default.
+    // Eligible same-SKU rows: enabled and checked by default, in the included section.
     for (const n of [2, 6]) {
       expect(byRow(n).disabled).toBe(false);
       expect(byRow(n).checked).toBe(true);
     }
-    // Ineligible needs_review rows: disabled and unchecked (impossible to approve).
+    // Ineligible needs_review rows have no checkbox at all (no disabled box either).
     for (const n of [3, 4]) {
-      expect(byRow(n).disabled).toBe(true);
-      expect(byRow(n).checked).toBe(false);
+      expect(checkboxes.find((c) => c.dataset.row === String(n))).toBeUndefined();
     }
 
-    // The single submit reflects 2 approve / 2 reject.
-    expect(screen.getByTestId("sku-review-submit")).toHaveTextContent("(2 approve / 2 reject)");
+    // The single submit reflects 2 included / 2 excluded.
+    expect(screen.getByTestId("sku-review-submit")).toHaveTextContent("(2 included / 2 excluded)");
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("sku-review-submit"));
@@ -1613,7 +1613,7 @@ describe("ProjectQuickBomPage - SKU line review panel", () => {
     });
   }
 
-  it("makes deferred non-priced rows unselectable and shows a visible defer note", async () => {
+  it("renders deferred non-priced rows in the excluded section with no checkbox and no internal note", async () => {
     stubFetch((url, init) => {
       if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
         return jsonResponse(guidedSkuReview());
@@ -1631,24 +1631,31 @@ describe("ProjectQuickBomPage - SKU line review panel", () => {
 
     const checkboxes = screen.getAllByTestId("sku-review-checkbox") as HTMLInputElement[];
     const byRow = (n: number) => checkboxes.find((c) => c.dataset.row === String(n))!;
-    // Eligible rows (2, 5) are pre-selected; deferred rows (3, 4) are disabled+unchecked.
+    // Eligible rows (2, 5) are pre-selected in the included section.
     for (const n of [2, 5]) {
       expect(byRow(n).disabled).toBe(false);
       expect(byRow(n).checked).toBe(true);
     }
+    // Deferred rows (3, 4) have no checkbox at all (not even a disabled one).
     for (const n of [3, 4]) {
-      expect(byRow(n).disabled).toBe(true);
-      expect(byRow(n).checked).toBe(false);
+      expect(checkboxes.find((c) => c.dataset.row === String(n))).toBeUndefined();
     }
-    expect(screen.getByTestId("sku-review-submit")).toHaveTextContent("(2 approve / 2 reject)");
+    expect(screen.getByTestId("sku-review-submit")).toHaveTextContent("(2 included / 2 excluded)");
 
-    // A short visible reason renders on each deferred line.
-    const reasons = screen.getAllByTestId("sku-review-guidance");
-    expect(reasons).toHaveLength(2);
-    expect(reasons[0]).toHaveTextContent(GUIDANCE_NOTE);
+    // No internal defer guidance is ever shown; the excluded section carries
+    // user-facing pricing-catalog wording instead.
+    expect(screen.queryByTestId("sku-review-guidance")).toBeNull();
+    const excluded = screen.getByTestId("sku-review-excluded");
+    expect(excluded).toHaveTextContent(
+      "SC9300UK9-1712 is not available in the active pricing catalog."
+    );
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(GUIDANCE_NOTE);
+    expect(body).not.toContain("authority-pack");
+    expect(body).not.toContain("Defer:");
   });
 
-  it("a deferred row can never be checked, even via a direct click", async () => {
+  it("deferred rows render no checkbox in the excluded section", async () => {
     stubFetch((url, init) => {
       if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
         return jsonResponse(guidedSkuReview());
@@ -1664,13 +1671,9 @@ describe("ProjectQuickBomPage - SKU line review panel", () => {
     });
     await screen.findByTestId("sku-review-summary");
 
-    const checkboxes = screen.getAllByTestId("sku-review-checkbox") as HTMLInputElement[];
-    const deferred = checkboxes.find((c) => c.dataset.row === "3")!;
-    await act(async () => {
-      fireEvent.click(deferred);
-    });
-    // A disabled checkbox stays unchecked: it cannot be approved.
-    expect(deferred.checked).toBe(false);
+    // The excluded section has no selectable controls: deferred rows cannot be approved.
+    const excluded = screen.getByTestId("sku-review-excluded");
+    expect(within(excluded).queryByTestId("sku-review-checkbox")).toBeNull();
   });
 
   it("submitting rejects deferred rows (with their note) and accepts only eligible rows", async () => {
@@ -1897,19 +1900,18 @@ describe("ProjectQuickBomPage - SKU review related configured item clarity (QBM-
     });
     await screen.findByTestId("sku-review-summary");
 
-    // The deferred row is disabled/unchecked; only the eligible parent row is enabled.
+    // Only the eligible parent row (2) renders a checkbox; the deferred row (3) has none.
     const checkboxes = screen.getAllByTestId("sku-review-checkbox") as HTMLInputElement[];
-    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes).toHaveLength(1);
     const byRow = (n: number) => checkboxes.find((c) => c.dataset.row === String(n))!;
     expect(byRow(2).disabled).toBe(false);
     expect(byRow(2).checked).toBe(true);
-    expect(byRow(3).disabled).toBe(true);
-    expect(byRow(3).checked).toBe(false);
+    expect(checkboxes.find((c) => c.dataset.row === "3")).toBeUndefined();
 
     // The related configured item is read-only guidance: NOT another checkbox.
     const related = screen.getByTestId("sku-review-related-configured");
     expect(related).toHaveTextContent("Excluded before pricing.");
-    expect(related).toHaveTextContent("No silent substitution.");
+    expect(related).not.toHaveTextContent("No silent substitution.");
     expect(related).toHaveTextContent(
       "Related configured item may appear under parent C9300X-48HX-A: CON-L1NCD-C9300XY4"
     );
@@ -2005,10 +2007,112 @@ describe("ProjectQuickBomPage - SKU review related configured item clarity (QBM-
     expect(screen.queryByTestId("sku-review-checkbox")).toBeNull();
     const related = screen.getByTestId("sku-review-related-configured");
     expect(related).toHaveTextContent("Excluded before pricing.");
-    expect(related).toHaveTextContent("No silent substitution.");
+    expect(related).not.toHaveTextContent("No silent substitution.");
     expect(related).toHaveTextContent(
       "Related configured item may appear under parent C9300X-48HX-A: CON-L1NCD-C9300XY4"
     );
+  });
+
+  it("splits editable review into included/excluded sections with clear, non-internal wording", async () => {
+    stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(relatedSkuReview());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    // Two distinct sections, with counts.
+    const included = screen.getByTestId("sku-review-included");
+    const excluded = screen.getByTestId("sku-review-excluded");
+    expect(included).toHaveTextContent("Included downstream (1)");
+    expect(excluded).toHaveTextContent("Excluded before pricing (1)");
+
+    // Included row: eligible same-SKU row keeps a checked checkbox and clear wording.
+    const includedCheckbox = within(included).getByTestId(
+      "sku-review-checkbox"
+    ) as HTMLInputElement;
+    expect(includedCheckbox.checked).toBe(true);
+    expect(included).toHaveTextContent("Catalog match: C9300X-48HX-A");
+
+    // Excluded row: no checkbox, no needs-review badge, no "Suggestions:", clear text.
+    expect(within(excluded).queryByTestId("sku-review-checkbox")).toBeNull();
+    expect(excluded).not.toHaveTextContent("needs review");
+    expect(excluded).not.toHaveTextContent("Suggestions:");
+    expect(excluded).toHaveTextContent(
+      "CON-L1NBX-C9300XY4 is not available in the active pricing catalog."
+    );
+    expect(excluded).toHaveTextContent(
+      "Related configured item may appear under parent C9300X-48HX-A: CON-L1NCD-C9300XY4"
+    );
+
+    // The visible body never exposes internal or substitution wording.
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain("authority-pack");
+    expect(body).not.toContain("Defer:");
+    expect(body).not.toContain("replaced by");
+    expect(body.toLowerCase()).not.toContain("replacement");
+  });
+
+  it("read-only view hides the internal defer note for rejected rows, showing exclusion wording instead", async () => {
+    const internalNote =
+      "Defer: not a priced authority-pack product row; reject before pricing/export.";
+    const approvedReview = skuReviewOkResponse({
+      artifact: {
+        id: SKU_ARTIFACT_ID, projectId: PROJECT_ID, stageId: "sku_resolution",
+        type: "sku_resolution", status: "approved", version: 3,
+        sourceFileIds: [], sourceArtifactIds: [],
+        createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-01T10:00:00.000Z",
+      },
+      reviewSummary: { totalLineCount: 1, needsReviewCount: 0, acceptedCount: 0, rejectedCount: 1, unresolvedCount: 0 },
+      lines: [
+        {
+          sourceFileId: "file-1", sourceRowNumber: 3, originalLineNumber: "L-003",
+          // The persisted reject note IS the internal defer string; it must not leak.
+          originalSku: "CON-L1NBX-C9300XY4", status: "rejected", note: internalNote,
+          suggestions: [{ suggestedSku: "CON-L1NBX-C9300XY4", source: "exact" }],
+          relatedConfiguredItems: [
+            { parentSku: "C9300X-48HX-A", relatedConfiguredSku: "CON-L1NCD-C9300XY4" },
+          ],
+        },
+      ],
+    });
+    stubFetch((url, init) => {
+      const ws = baseWorkspace();
+      (spineOf(ws).sku_resolution as Record<string, unknown>).status = "approved";
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(approvedReview);
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: ws });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-readonly");
+
+    // Readable exclusion wording + related guidance render.
+    expect(screen.getByTestId("sku-review-readonly-excluded")).toHaveTextContent(
+      "CON-L1NBX-C9300XY4 is not available in the active pricing catalog."
+    );
+    expect(screen.getByTestId("sku-review-related-configured")).toHaveTextContent(
+      "Related configured item may appear under parent C9300X-48HX-A: CON-L1NCD-C9300XY4"
+    );
+    // The internal defer/authority-pack note never reaches the DOM.
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(internalNote);
+    expect(body).not.toContain("authority-pack");
+    expect(body).not.toContain("Defer:");
   });
 });
 

@@ -1449,7 +1449,7 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
 
     // One submit accepts every eligible same-SKU line in a single POST.
     const submitBtn = screen.getByTestId("sku-review-submit");
-    expect(submitBtn).toHaveTextContent("(7 approve / 0 reject)");
+    expect(submitBtn).toHaveTextContent("(7 included / 0 excluded)");
     await act(async () => {
       fireEvent.click(submitBtn);
     });
@@ -1817,7 +1817,7 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
     expect(checkboxes).toHaveLength(4);
     expect(checkboxes.filter((c) => !c.disabled && c.checked)).toHaveLength(4);
     const submitBtn = screen.getByTestId("sku-review-submit");
-    expect(submitBtn).toHaveTextContent("(4 approve / 0 reject)");
+    expect(submitBtn).toHaveTextContent("(4 included / 0 excluded)");
     await act(async () => {
       fireEvent.click(submitBtn);
     });
@@ -2120,16 +2120,20 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
     );
     expect(deferredDecisions).toHaveLength(16);
 
-    // Default selection: 36 eligible rows are enabled+checked; 16 deferred rows are
-    // disabled+unchecked (impossible to approve through the checkbox UI).
+    // Default selection: only the 36 eligible rows render a checkbox, all enabled+checked.
+    // The 16 deferred/excluded rows render NO checkbox at all (not even a disabled one).
     const checkboxes = screen.getAllByTestId("sku-review-checkbox") as HTMLInputElement[];
-    expect(checkboxes).toHaveLength(52);
+    expect(checkboxes).toHaveLength(36);
     expect(checkboxes.filter((c) => !c.disabled && c.checked)).toHaveLength(36);
-    expect(checkboxes.filter((c) => c.disabled && !c.checked)).toHaveLength(16);
+
+    // The excluded section is present and reports its 16-row count in the rendered copy.
+    expect(screen.getByTestId("sku-review-excluded")).toHaveTextContent(
+      "Excluded before pricing (16)"
+    );
 
     // One submit records an explicit decision for every reviewed line.
     const submitBtn = screen.getByTestId("sku-review-submit");
-    expect(submitBtn).toHaveTextContent("(36 approve / 16 reject)");
+    expect(submitBtn).toHaveTextContent("(36 included / 16 excluded)");
     await act(async () => {
       fireEvent.click(submitBtn);
     });

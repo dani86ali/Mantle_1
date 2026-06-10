@@ -22,7 +22,6 @@ export function SkuRelatedConfiguredNote({ items }: SkuRelatedConfiguredNoteProp
       className="mt-0.5 text-xs text-text-secondary"
     >
       <p>Excluded before pricing.</p>
-      <p>No silent substitution.</p>
       {items.map((item) => (
         <p
           key={`${item.parentSku}::${item.relatedConfiguredSku}`}
