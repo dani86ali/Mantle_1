@@ -8,7 +8,7 @@ import { MockModeBanner } from "@/components/shared/MockModeBanner";
 
 export const metadata: Metadata = {
   title: "BOMatic",
-  description: "AI-powered Cisco presales automation",
+  description: "Project-centered presales workflow and Quick BoM review",
 };
 
 export default function RootLayout({

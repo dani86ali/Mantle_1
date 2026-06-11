@@ -14,11 +14,12 @@
  */
 import {
   lookupCatalogSku,
-  LOCAL_CATALOG_SOURCE,
   type CatalogLookupIndex,
   type CatalogLookupMatch,
   type CatalogLookupResult,
+  type CatalogLookupSource,
 } from "@/lib/projects/catalog-lookup";
+import { getDefaultQuickBomCatalogLookupIndex } from "@/lib/projects/default-quick-bom-catalog";
 import type {
   CanonicalBoqLine,
   SkuResolutionDecision,
@@ -46,7 +47,7 @@ export interface SkuResolutionDraftSummary {
   ambiguousCount: number;
   /** Matched lines whose catalog entry has a zero/negative list price. */
   zeroPriceSuggestionCount: number;
-  catalogSource: typeof LOCAL_CATALOG_SOURCE;
+  catalogSource: CatalogLookupSource;
 }
 
 /** The draft outcome: one decision per input line plus deterministic counts. */
@@ -59,7 +60,7 @@ export interface SkuResolutionDraft {
 export interface BuildSkuResolutionDraftInput {
   /** Customer BoQ lines; order and duplicates are preserved exactly. */
   lines: readonly CanonicalBoqLine[];
-  /** Defaults to the committed local mock catalog when omitted. */
+  /** Defaults to the canonical default Quick BoM approved catalog when omitted. */
   catalogIndex?: CatalogLookupIndex;
 }
 
@@ -125,7 +126,8 @@ export function buildSkuResolutionDecisionForLine(
 /**
  * Convert canonical BoQ lines into draft SKU resolution decisions plus a
  * deterministic summary. Looks each line up (exact, then normalized) against the
- * provided or local mock catalog, preserving input order and duplicates. Creates
+ * provided catalog, or the canonical default Quick BoM approved catalog when none
+ * is supplied, preserving input order and duplicates. Creates
  * no artifact, accepts no SKU, prices nothing, and does not mutate its input.
  */
 export function buildSkuResolutionDraft(
@@ -139,8 +141,11 @@ export function buildSkuResolutionDraft(
   let ambiguousCount = 0;
   let zeroPriceSuggestionCount = 0;
 
+  const index: CatalogLookupIndex =
+    input.catalogIndex ?? getDefaultQuickBomCatalogLookupIndex();
+
   for (const line of input.lines) {
-    const result = lookupCatalogSku(line.sku, input.catalogIndex);
+    const result = lookupCatalogSku(line.sku, index);
     const decision = buildSkuResolutionDecisionForLine(line, result);
     decisions.push(decision);
 
@@ -168,7 +173,7 @@ export function buildSkuResolutionDraft(
     normalizedSuggestionCount,
     ambiguousCount,
     zeroPriceSuggestionCount,
-    catalogSource: LOCAL_CATALOG_SOURCE,
+    catalogSource: index.catalogSource,
   };
 
   return { decisions, summary };

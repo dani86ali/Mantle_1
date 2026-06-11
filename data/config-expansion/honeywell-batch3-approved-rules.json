@@ -1,0 +1,536 @@
+{
+  "rulePackId": "honeywell-batch3-approved-rules",
+  "name": "Honeywell MVP Batch 3 Approved Runtime Configuration Expansion Rules (Non-Term Hardware / Accessories)",
+  "version": "1.0.0",
+  "status": "approved",
+  "approvalRequired": false,
+  "sourceScope": "Honeywell MVP / Batch 3",
+  "createdDate": "2026-06-05",
+  "derivedFrom": {
+    "candidateRulePackId": "honeywell-candidate-rules-v2",
+    "candidateRulePackVersion": "0.2.0-candidate",
+    "candidateRulePackStatus": "candidate",
+    "approvalPacketId": "honeywell-batch3-approval-packet",
+    "batch1ApprovedPackId": "honeywell-batch1-approved-rules",
+    "batch2ApprovedPackId": "honeywell-batch2-approved-rules",
+    "batchStrategyDoc": "docs/config-expansion/HONEYWELL_RULE_APPROVAL_BATCH_STRATEGY.md",
+    "sequencingNote": "Per the Batch 3 approval packet's sequencing authority, Batch 3 here is the non-term hardware/accessory child-line scope: the default-selected wireless mounting/bracket/single-pack accessories under CW9178I-CFG, and the default-selected and bundled zero-price non-term hardware accessories under the C9300X-48HX-A and C9300L-24P-4X-A switches (SSD placeholders, stacking/power cables, uplink network module, rack rubber feet/screws/cable guides, fan modules, and the stacking kit/module/cable). This intentionally differs from the older HONEYWELL_RULE_APPROVAL_BATCH_STRATEGY.md labeling of Batch 3 as replacement candidates; that strategy doc is unchanged, and replacement candidates plus optics remain deferred and out of scope.",
+    "note": "Authored as a NEW artifact from the explicit human/business Batch 3 approval. The source candidate packs and the review/approval packet files are unchanged and remain candidate/pending; the approved Batch 1 and Batch 2 packs are unchanged. No candidate, review, or prior approved pack status was flipped or mutated to author this approved pack."
+  },
+  "approval": {
+    "decision": "I approve Batch 3 for Honeywell MVP: approve questions 1-6, including FAN-T2 x3 and C9300L-STACK-A x2 quantity multipliers, and confirm questions 7-8 remain deferred/out of scope. This is Honeywell MVP only, not broad Cisco-general approval, and it does not approve optics, replacement candidates, pricing authority, or silent SKU substitution.",
+    "batch": "batch-3",
+    "scope": "honeywell_mvp_batch_3",
+    "approvedQuestions": [1, 2, 3, 4, 5, 6],
+    "deferredQuestions": [7, 8],
+    "approvedDecisions": [
+      "Wireless non-term accessories under CW9178I-CFG (AIR-AP-BRACKET-2, AIR-AP-T-RAIL-F, CW9178-SINGLE) as advisory engineer-review options.",
+      "C9300X-48HX-A bundled zero-price rack hardware (C9K-ACC-RBFT, C9K-ACC-SCR-4, CAB-GUIDE-1RU).",
+      "C9300X-48HX-A default-selected hardware options (C9300-SSD-NONE, STACK-T1-50CM, CAB-SPWR-30CM, C9300X-NM-8Y) as advisory engineer-review options.",
+      "C9300L-24P-4X-A bundled zero-price rack/stacking hardware (FAN-T2 at 3 per parent, C9K-ACC-RBFT, C9K-ACC-SCR-4, CAB-GUIDE-1RU, C9300L-STACK-A at 2 per parent, STACK-T3A-50CM).",
+      "C9300L-24P-4X-A default-selected hardware options (C9300L-SSD-NONE, C9300L-STACK-KIT2) as advisory engineer-review options.",
+      "FAN-T2 fixed_per_parent x3 and C9300L-STACK-A fixed_per_parent x2 quantity multipliers confirmed at engineer review."
+    ],
+    "caveats": [
+      "Honeywell MVP only.",
+      "This is not broad Cisco-general approval.",
+      "Default-selected lines are advisory engineer-review options, not silently forced universal Cisco defaults.",
+      "Optics remain deferred and are not approved.",
+      "Replacement candidates remain deferred and are not approved.",
+      "No silent SKU substitution is approved.",
+      "No pricing authority is encoded.",
+      "Questions 7-8 remain deferred / out of scope.",
+      "Batch 1 and Batch 2 are separate approved packs and are unchanged."
+    ]
+  },
+  "notes": "PARTIAL approved runtime rule pack: only the Honeywell MVP Batch 3 non-term hardware/accessory configuration-expansion decisions are active. This is not broad Cisco-general approval and does not approve all 53 candidate child lines. Batch 1 (deterministic model-safety lines) and Batch 2 (term/support/software lines) are SEPARATE approved packs (honeywell-batch1-approved-rules, honeywell-batch2-approved-rules) and are unchanged by this pack. Optics remain deferred; replacement candidates remain deferred; no silent SKU substitution is approved. Default-selected lines are advisory engineer-review options, not silently forced universal Cisco defaults. No pricing authority is encoded here; what to add/default/offer is configuration authority, while pricing is resolved separately from the catalog/price source at runtime, so the two stay strictly separate. The source candidate packs (honeywell-candidate-rules.json, honeywell-candidate-rules-v2.json) and the review/approval packet files (including honeywell-batch3-approval-packet.json) remain unchanged and candidate/pending; this approved pack is a new, separate artifact.",
+  "createdFromEvidence": [
+    {
+      "sourceType": "ccw_export",
+      "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+      "title": "Current Cisco CCW estimate export (Honeywell scope)."
+    },
+    {
+      "sourceType": "install_guide",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178I Series Wi-Fi 7Access PointHardware Installation.pdf",
+      "title": "Cisco Wireless 9178I Series hardware installation guide."
+    },
+    {
+      "sourceType": "ordering_guide",
+      "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+      "title": "Cisco Catalyst 9300 Series ordering guide."
+    }
+  ],
+  "parentRules": [
+    {
+      "ruleId": "honeywell-batch3-cw9178i-cfg",
+      "parentSku": "CW9178I-CFG",
+      "parentDescription": "Cisco Wireless 9178I(W7,4 radio,3 band 4x4,UWB), Global",
+      "approved": true,
+      "approvalRequired": false,
+      "evidenceScope": "reusable_logic",
+      "reviewNotes": "Approved for Honeywell MVP Batch 3: only the default-selected wireless mounting/bracket/single-pack hardware accessories (AIR-AP-BRACKET-2, AIR-AP-T-RAIL-F, CW9178-SINGLE) are in scope. These are advisory engineer-review options, not silently forced universal Cisco defaults. The Batch 1 wireless-license lines and the Batch 2 support attach stay in their separate approved packs; optics and replacement candidates remain deferred and are intentionally not included here.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 2,
+          "evidenceNote": "CCW Line Number 1.0; Item Name CW9178I-CFG; Group Name Default; Quantity 12; top-level configured line in the current Honeywell-scope CCW estimate."
+        }
+      ],
+      "childLines": [
+        {
+          "sku": "AIR-AP-BRACKET-2",
+          "description": "802.11 AP Universal Mounting Bracket",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch3-cw9178i-cfg",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "reusable_logic",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3 as an advisory engineer-review option (default-selected in the current Honeywell CCW), not a silently forced universal Cisco default. Evidence includes reusable ordering/install-guide logic.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 4,
+              "evidenceNote": "CCW Line Number 1.1; Item Name AIR-AP-BRACKET-2; Included Item No; Service Duration (Months) N/A; Quantity 12."
+            },
+            {
+              "sourceType": "install_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178I Series Wi-Fi 7Access PointHardware Installation.pdf",
+              "pageNumber": 19,
+              "evidenceNote": "AIR-AP-BRACKET-2 universal mounting bracket referenced on this page."
+            }
+          ]
+        },
+        {
+          "sku": "AIR-AP-T-RAIL-F",
+          "description": "Flush Mount for APs & Cellular Gateways-Recessed",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch3-cw9178i-cfg",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "reusable_logic",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3 as an advisory engineer-review option (default-selected in the current Honeywell CCW), not a silently forced universal Cisco default. Evidence includes reusable ordering/install-guide logic.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 5,
+              "evidenceNote": "CCW Line Number 1.2; Item Name AIR-AP-T-RAIL-F; Included Item No; Service Duration (Months) N/A; Quantity 12."
+            },
+            {
+              "sourceType": "install_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Wireless 9178I Series Wi-Fi 7Access PointHardware Installation.pdf",
+              "pageNumber": 20,
+              "evidenceNote": "AIR-AP-T-RAIL flush/recessed mount referenced on this page."
+            }
+          ]
+        },
+        {
+          "sku": "CW9178-SINGLE",
+          "description": "SINGLE PACK OPTION",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch3-cw9178i-cfg",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3 as an advisory engineer-review option (default-selected in the current Honeywell CCW), not a silently forced universal Cisco default. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 6,
+              "evidenceNote": "CCW Line Number 1.3; Item Name CW9178-SINGLE; Included Item No; Service Duration (Months) N/A; Quantity 12."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-batch3-c9300x-48hx-a",
+      "parentSku": "C9300X-48HX-A",
+      "parentDescription": "Catalyst 9300 48-port mGig UPoE+, Network Advantage",
+      "approved": true,
+      "approvalRequired": false,
+      "evidenceScope": "reusable_logic",
+      "reviewNotes": "Approved for Honeywell MVP Batch 3: only the non-term hardware/accessory children (default-selected SSD placeholder, stacking/power cables, uplink network module, and bundled zero-price rack hardware) are in scope. Default-selected lines are advisory engineer-review options, not silently forced universal Cisco defaults. The Batch 1 power-supply/cord lines and the Batch 2 term/support/software lines stay in their separate approved packs; optics and replacement candidates remain deferred and are intentionally not included here.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 13,
+          "evidenceNote": "CCW Line Number 3.0; Item Name C9300X-48HX-A; Group Name Default; Quantity 7; top-level configured line in the current Honeywell-scope CCW estimate."
+        }
+      ],
+      "childLines": [
+        {
+          "sku": "C9300-SSD-NONE",
+          "description": "No SSD Card Selected",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch3-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3 as an advisory engineer-review option (default-selected no-SSD placeholder in the current Honeywell CCW), not a silently forced universal Cisco default. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 27,
+              "evidenceNote": "CCW Line Number 3.9; Item Name C9300-SSD-NONE; Included Item No; Service Duration (Months) N/A; Quantity 7. Configurator no-SSD placeholder line."
+            }
+          ]
+        },
+        {
+          "sku": "STACK-T1-50CM",
+          "description": "50CM Type 1 Stacking Cable",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch3-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "reusable_logic",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3 as an advisory engineer-review option (default-selected in the current Honeywell CCW), not a silently forced universal Cisco default. Evidence includes reusable ordering/install-guide logic.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 28,
+              "evidenceNote": "CCW Line Number 3.10; Item Name STACK-T1-50CM; Included Item No; Service Duration (Months) N/A; Quantity 7."
+            },
+            {
+              "sourceType": "ordering_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+              "pageNumber": 29,
+              "evidenceNote": "STACK-T1-50CM stacking cable referenced on this page."
+            }
+          ]
+        },
+        {
+          "sku": "CAB-SPWR-30CM",
+          "description": "Catalyst Stack Power Cable 30 CM",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch3-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3 as an advisory engineer-review option (default-selected in the current Honeywell CCW), not a silently forced universal Cisco default. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 29,
+              "evidenceNote": "CCW Line Number 3.11; Item Name CAB-SPWR-30CM; Included Item No; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "C9K-ACC-RBFT",
+          "description": "RUBBER FEET FOR TABLE TOP SETUP 9200 and 93xx",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch3-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3: bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 30,
+              "evidenceNote": "CCW Line Number 3.12; Item Name C9K-ACC-RBFT; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "C9K-ACC-SCR-4",
+          "description": "12-24 and 10-32 SCREWS FOR RACK INSTALLATION, QTY 4",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch3-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3: bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 31,
+              "evidenceNote": "CCW Line Number 3.13; Item Name C9K-ACC-SCR-4; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "CAB-GUIDE-1RU",
+          "description": "1RU CABLE MANAGEMENT GUIDES 9200 and 9300",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch3-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3: bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 32,
+              "evidenceNote": "CCW Line Number 3.14; Item Name CAB-GUIDE-1RU; Included Item Yes; Service Duration (Months) N/A; Quantity 7."
+            }
+          ]
+        },
+        {
+          "sku": "C9300X-NM-8Y",
+          "description": "Catalyst 9300 8 x 10G/25G Network Module SFP+/SFP28",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch3-c9300x-48hx-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "reusable_logic",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3 as an advisory engineer-review option (default-selected uplink network module in the current Honeywell CCW), not a silently forced universal Cisco default. Evidence includes reusable ordering/install-guide logic.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 33,
+              "evidenceNote": "CCW Line Number 3.15; Item Name C9300X-NM-8Y; Included Item No; Service Duration (Months) N/A; Quantity 7."
+            },
+            {
+              "sourceType": "ordering_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+              "pageNumber": 28,
+              "evidenceNote": "C9300X-NM-8Y uplink network module referenced on this page."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "honeywell-batch3-c9300l-24p-4x-a",
+      "parentSku": "C9300L-24P-4X-A",
+      "parentDescription": "Catalyst 9300L 24p PoE, Network Advantage ,4x10G Uplink",
+      "approved": true,
+      "approvalRequired": false,
+      "evidenceScope": "reusable_logic",
+      "reviewNotes": "Approved for Honeywell MVP Batch 3: only the non-term hardware/accessory children (fan modules, default-selected SSD placeholder, bundled zero-price rack hardware, and the stacking kit/module/cable) are in scope. Default-selected lines are advisory engineer-review options, not silently forced universal Cisco defaults; the FAN-T2 (3 per parent) and C9300L-STACK-A (2 per parent) fixed_per_parent multipliers were confirmed at engineer review for Honeywell MVP. The Batch 1 power-supply/cord lines and the Batch 2 term/support/software lines stay in their separate approved packs; optics and replacement candidates remain deferred and are intentionally not included here.",
+      "evidence": [
+        {
+          "sourceType": "ccw_export",
+          "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+          "sheetName": "EstimateDetails_NB167337237YA",
+          "lineNumber": 37,
+          "evidenceNote": "CCW Line Number 4.0; Item Name C9300L-24P-4X-A; Group Name Default; Quantity 6; top-level configured line in the current Honeywell-scope CCW estimate."
+        }
+      ],
+      "childLines": [
+        {
+          "sku": "FAN-T2",
+          "description": "Cisco Type 2 Fan Module",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "fixed_per_parent",
+          "quantityValue": 3,
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch3-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3: bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Quantity is a fixed_per_parent multiplier of 3 per parent (not same_as_parent), confirmed at engineer review for Honeywell MVP. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 49,
+              "evidenceNote": "CCW Line Number 4.7; Item Name FAN-T2; Included Item Yes; Service Duration (Months) N/A; Quantity 18. Quantity 18 equals 3 fan modules per switch (parent quantity 6); fixed_per_parent multiplier 3."
+            }
+          ]
+        },
+        {
+          "sku": "C9300L-SSD-NONE",
+          "description": "No SSD Card Selected",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch3-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3 as an advisory engineer-review option (default-selected no-SSD placeholder in the current Honeywell CCW), not a silently forced universal Cisco default. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 53,
+              "evidenceNote": "CCW Line Number 4.11; Item Name C9300L-SSD-NONE; Included Item No; Service Duration (Months) N/A; Quantity 6. Configurator no-SSD placeholder line."
+            }
+          ]
+        },
+        {
+          "sku": "C9K-ACC-RBFT",
+          "description": "RUBBER FEET FOR TABLE TOP SETUP 9200 and 93xx",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch3-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3: bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 54,
+              "evidenceNote": "CCW Line Number 4.12; Item Name C9K-ACC-RBFT; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "C9K-ACC-SCR-4",
+          "description": "12-24 and 10-32 SCREWS FOR RACK INSTALLATION, QTY 4",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch3-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3: bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 55,
+              "evidenceNote": "CCW Line Number 4.13; Item Name C9K-ACC-SCR-4; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "CAB-GUIDE-1RU",
+          "description": "1RU CABLE MANAGEMENT GUIDES 9200 and 9300",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch3-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3: bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 56,
+              "evidenceNote": "CCW Line Number 4.14; Item Name CAB-GUIDE-1RU; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        },
+        {
+          "sku": "C9300L-STACK-KIT2",
+          "description": "Cisco Catalyst 9300L and 9300LM Stacking Kit",
+          "relationshipType": "default_selected",
+          "quantityRule": "same_as_parent",
+          "includedItem": false,
+          "sourceRuleId": "honeywell-batch3-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "reusable_logic",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3 as an advisory engineer-review option (default-selected in the current Honeywell CCW), not a silently forced universal Cisco default. Evidence includes reusable ordering/install-guide logic.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 57,
+              "evidenceNote": "CCW Line Number 4.15; Item Name C9300L-STACK-KIT2; Included Item No; Service Duration (Months) N/A; Quantity 6."
+            },
+            {
+              "sourceType": "ordering_guide",
+              "sourcePath": "C:/Pre-Sales/catalogues/Cisco Catalyst 9300 Series_ordering guide.pdf",
+              "pageNumber": 29,
+              "evidenceNote": "C9300L-STACK-KIT2 stacking kit referenced on this page."
+            }
+          ]
+        },
+        {
+          "sku": "C9300L-STACK-A",
+          "description": "Catalyst 9300L & 9300LM Stack Module",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "fixed_per_parent",
+          "quantityValue": 2,
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch3-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3: bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Quantity is a fixed_per_parent multiplier of 2 per parent (not same_as_parent), confirmed at engineer review for Honeywell MVP. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 58,
+              "evidenceNote": "CCW Line Number 4.16; Item Name C9300L-STACK-A; Included Item Yes; Service Duration (Months) N/A; Quantity 12. Quantity 12 equals 2 stack modules per switch (parent quantity 6); fixed_per_parent multiplier 2."
+            }
+          ]
+        },
+        {
+          "sku": "STACK-T3A-50CM",
+          "description": "C9300L & C9300LM 50CM Type 3A Stacking Cable",
+          "relationshipType": "included_zero_price",
+          "quantityRule": "same_as_parent",
+          "includedItem": true,
+          "sourceRuleId": "honeywell-batch3-c9300l-24p-4x-a",
+          "approved": true,
+          "approvalRequired": false,
+          "evidenceScope": "quote_observed",
+          "reviewNotes": "Approved for Honeywell MVP Batch 3: bundled, included zero-price hardware accessory in the current Honeywell CCW configuration. Evidence is current-CCW quote-observed.",
+          "evidence": [
+            {
+              "sourceType": "ccw_export",
+              "sourcePath": "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              "sheetName": "EstimateDetails_NB167337237YA",
+              "lineNumber": 59,
+              "evidenceNote": "CCW Line Number 4.17; Item Name STACK-T3A-50CM; Included Item Yes; Service Duration (Months) N/A; Quantity 6."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

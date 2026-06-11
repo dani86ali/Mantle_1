@@ -14,7 +14,7 @@
  * it - {@link toProjectFile} projects it out and maps DB nulls to undefined.
  */
 import { and, asc, eq } from "drizzle-orm";
-import { db } from "./index";
+import { withTenantDb } from "./index";
 import { projectFiles } from "./schema";
 import { materializeProjectFileRecord } from "@/lib/projects/files";
 import type { ProjectFile, ProjectFileRole } from "@/types/project";
@@ -72,8 +72,10 @@ export async function createProjectFileRecord(
   input: CreateProjectFileRecordInput
 ): Promise<ProjectFile> {
   const record = materializeProjectFileRecord(input);
-  const [row] = await db.insert(projectFiles).values(record).returning();
-  return toProjectFile(row);
+  return withTenantDb(input.tenantId, async (tx) => {
+    const [row] = await tx.insert(projectFiles).values(record).returning();
+    return toProjectFile(row);
+  });
 }
 
 /**
@@ -84,17 +86,19 @@ export async function listProjectFiles(
   tenantId: string,
   projectId: string
 ): Promise<ProjectFile[]> {
-  const rows = await db
-    .select()
-    .from(projectFiles)
-    .where(
-      and(
-        eq(projectFiles.tenantId, tenantId),
-        eq(projectFiles.projectId, projectId)
+  return withTenantDb(tenantId, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(projectFiles)
+      .where(
+        and(
+          eq(projectFiles.tenantId, tenantId),
+          eq(projectFiles.projectId, projectId)
+        )
       )
-    )
-    .orderBy(asc(projectFiles.uploadedAt), asc(projectFiles.fileName));
-  return rows.map(toProjectFile);
+      .orderBy(asc(projectFiles.uploadedAt), asc(projectFiles.fileName));
+    return rows.map(toProjectFile);
+  });
 }
 
 /**
@@ -106,18 +110,20 @@ export async function getProjectFileById(
   projectId: string,
   fileId: string
 ): Promise<ProjectFile | null> {
-  const [row] = await db
-    .select()
-    .from(projectFiles)
-    .where(
-      and(
-        eq(projectFiles.tenantId, tenantId),
-        eq(projectFiles.projectId, projectId),
-        eq(projectFiles.id, fileId)
+  return withTenantDb(tenantId, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(projectFiles)
+      .where(
+        and(
+          eq(projectFiles.tenantId, tenantId),
+          eq(projectFiles.projectId, projectId),
+          eq(projectFiles.id, fileId)
+        )
       )
-    )
-    .limit(1);
-  return row ? toProjectFile(row) : null;
+      .limit(1);
+    return row ? toProjectFile(row) : null;
+  });
 }
 
 /**
@@ -129,16 +135,18 @@ export async function correctProjectFileRole(
   input: CorrectProjectFileRoleInput
 ): Promise<ProjectFile | null> {
   const { tenantId, projectId, fileId, fileRole, roleCorrectedBy } = input;
-  const [row] = await db
-    .update(projectFiles)
-    .set({ fileRole, roleCorrectedBy })
-    .where(
-      and(
-        eq(projectFiles.tenantId, tenantId),
-        eq(projectFiles.projectId, projectId),
-        eq(projectFiles.id, fileId)
+  return withTenantDb(tenantId, async (tx) => {
+    const [row] = await tx
+      .update(projectFiles)
+      .set({ fileRole, roleCorrectedBy })
+      .where(
+        and(
+          eq(projectFiles.tenantId, tenantId),
+          eq(projectFiles.projectId, projectId),
+          eq(projectFiles.id, fileId)
+        )
       )
-    )
-    .returning();
-  return row ? toProjectFile(row) : null;
+      .returning();
+    return row ? toProjectFile(row) : null;
+  });
 }

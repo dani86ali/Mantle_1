@@ -270,7 +270,13 @@ async function main(): Promise<void> {
     ]);
   }
 
-  const outPath = join(process.cwd(), "docs", "DEMO_TEST_TRACKER.xlsx");
+  const outPath = join(
+    process.cwd(),
+    "docs",
+    "archive",
+    "superseded",
+    "DEMO_TEST_TRACKER.xlsx"
+  );
   await wb.xlsx.writeFile(outPath);
   console.log(`Wrote ${outPath} (${TESTS.length} tests).`);
 }

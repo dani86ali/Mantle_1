@@ -1,0 +1,951 @@
+{
+  "fixtureId": "honeywell-mvp-demo-pricing-fixture",
+  "scope": "honeywell_mvp_demo_only",
+  "status": "approved_demo_fixture",
+  "demoFixtureAuthority": true,
+  "productionPricingAuthority": false,
+  "runtimeAiPricing": false,
+  "runtimeCatalogLookup": false,
+  "replacementAuthority": false,
+  "silentSkuSubstitution": false,
+  "currency": "SAR",
+  "skuCount": 50,
+  "sourceEvidence": {
+    "primarySourceType": "ccw_estimate",
+    "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+    "sheetName": "EstimateDetails_NB167337237YA",
+    "derivationNote": "extended_list_price_divided_by_quantity",
+    "note": "Temporary Honeywell MVP demo pricing/category evidence only. Prices are the effective per-unit list price derived from the configured CCW estimate as Extended ListPrice / Quantity (capturing term/effective unit pricing). This is demo fixture authority, not production Cisco pricing authority."
+  },
+  "standaloneOptics": [
+    "SFP-10G-LR-S=",
+    "SFP-10/25G-LR-S="
+  ],
+  "unitListPriceSarBySku": {
+    "CW9178I-CFG": {
+      "currency": "SAR",
+      "unitListPriceSar": 15192.64
+    },
+    "CON-ROB-CW9178IC": {
+      "currency": "SAR",
+      "unitListPriceSar": 603.75
+    },
+    "AIR-AP-BRACKET-2": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "AIR-AP-T-RAIL-F": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CW9178-SINGLE": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CISCO-NETWORK-SUB": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "LIC-CW-A": {
+      "currency": "SAR",
+      "unitListPriceSar": 2811.96
+    },
+    "LIC-SPACES-ADV": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "SVS-L0SPT-CN": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "C9300X-48HX-A": {
+      "currency": "SAR",
+      "unitListPriceSar": 90681.4
+    },
+    "CON-L1NCD-C9300XY4": {
+      "currency": "SAR",
+      "unitListPriceSar": 27246.39
+    },
+    "C9300-DNA-A-48": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CON-L1SWT-C93A48": {
+      "currency": "SAR",
+      "unitListPriceSar": 2872.14
+    },
+    "C9300-DNA-A-48-3Y": {
+      "currency": "SAR",
+      "unitListPriceSar": 17388.63
+    },
+    "TE-EMBEDDED-T": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "TE-EMBEDDED-T-3Y": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "D-DNAS-EXT-S-T": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "D-DNAS-EXT-S-3Y": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "C9300-NW-A-48": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "SC9300UK9-1715": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "TE-C9K-SW": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "PWR-C1-1100WAC-P": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "PWR-C1-1100WAC-P/2": {
+      "currency": "SAR",
+      "unitListPriceSar": 9061.44
+    },
+    "C9300-SSD-NONE": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "STACK-T1-50CM": {
+      "currency": "SAR",
+      "unitListPriceSar": 476.91
+    },
+    "CAB-SPWR-30CM": {
+      "currency": "SAR",
+      "unitListPriceSar": 453.09
+    },
+    "C9K-ACC-RBFT": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "C9K-ACC-SCR-4": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CAB-GUIDE-1RU": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "C9300X-NM-8Y": {
+      "currency": "SAR",
+      "unitListPriceSar": 12161.45
+    },
+    "NETWORK-PNP-LIC": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CAB-C15-CBN": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "C9300L-24P-4X-A": {
+      "currency": "SAR",
+      "unitListPriceSar": 38301.9
+    },
+    "CON-L1NCD-C93024PX": {
+      "currency": "SAR",
+      "unitListPriceSar": 11514.39
+    },
+    "C9300L-DNA-A-24": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CON-L1SWT-C93LA24": {
+      "currency": "SAR",
+      "unitListPriceSar": 1526.64
+    },
+    "C9300L-DNA-A-24-3Y": {
+      "currency": "SAR",
+      "unitListPriceSar": 9270.86
+    },
+    "S9300LUK9-1718": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "C9300L-NW-A-24": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "FAN-T2": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "PWR-C1-715WAC-P": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "PWR-C1-715WAC-P/2": {
+      "currency": "SAR",
+      "unitListPriceSar": 5961.48
+    },
+    "C9300L-SSD-NONE": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "C9300L-STACK-KIT2": {
+      "currency": "SAR",
+      "unitListPriceSar": 6223.84
+    },
+    "C9300L-STACK-A": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "STACK-T3A-50CM": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "SFP-10G-LR-S=": {
+      "currency": "SAR",
+      "unitListPriceSar": 9538.39
+    },
+    "SFP-10/25G-LR-S=": {
+      "currency": "SAR",
+      "unitListPriceSar": 10492.22
+    },
+    "CP-7841-K9=": {
+      "currency": "SAR",
+      "unitListPriceSar": 2257.98
+    },
+    "CON-L1NBD-P7PK94P1": {
+      "currency": "SAR",
+      "unitListPriceSar": 146.63
+    }
+  },
+  "priceSourceEvidenceBySku": {
+    "CW9178I-CFG": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 2,
+      "ccwLineNumber": "1.0",
+      "sourceQuantity": 12,
+      "rawListPrice": 15192.64,
+      "rawExtendedListPrice": 182311.68,
+      "rawSellingPrice": 182311.68,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CON-ROB-CW9178IC": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 3,
+      "ccwLineNumber": "1.0.1",
+      "sourceQuantity": 12,
+      "rawListPrice": 603.75,
+      "rawExtendedListPrice": 7245,
+      "rawSellingPrice": 7245,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "AIR-AP-BRACKET-2": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 4,
+      "ccwLineNumber": "1.1",
+      "sourceQuantity": 12,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "AIR-AP-T-RAIL-F": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 5,
+      "ccwLineNumber": "1.2",
+      "sourceQuantity": 12,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CW9178-SINGLE": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 6,
+      "ccwLineNumber": "1.3",
+      "sourceQuantity": 12,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CISCO-NETWORK-SUB": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 8,
+      "ccwLineNumber": "2.0",
+      "sourceQuantity": 1,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "LIC-CW-A": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 9,
+      "ccwLineNumber": "2.1",
+      "sourceQuantity": 12,
+      "rawListPrice": 78.11,
+      "rawExtendedListPrice": 33743.52,
+      "rawSellingPrice": 33743.52,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "LIC-SPACES-ADV": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 10,
+      "ccwLineNumber": "2.2",
+      "sourceQuantity": 12,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "SVS-L0SPT-CN": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 11,
+      "ccwLineNumber": "2.3",
+      "sourceQuantity": 1,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300X-48HX-A": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 13,
+      "ccwLineNumber": "3.0",
+      "sourceQuantity": 7,
+      "rawListPrice": 90681.4,
+      "rawExtendedListPrice": 634769.8,
+      "rawSellingPrice": 634769.8,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CON-L1NCD-C9300XY4": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 14,
+      "ccwLineNumber": "3.0.1",
+      "sourceQuantity": 7,
+      "rawListPrice": 27246.39,
+      "rawExtendedListPrice": 190724.73,
+      "rawSellingPrice": 190724.73,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300-DNA-A-48": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 15,
+      "ccwLineNumber": "3.1",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CON-L1SWT-C93A48": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 16,
+      "ccwLineNumber": "3.1.0.1",
+      "sourceQuantity": 7,
+      "rawListPrice": 2872.14,
+      "rawExtendedListPrice": 20104.98,
+      "rawSellingPrice": 20104.98,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300-DNA-A-48-3Y": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 17,
+      "ccwLineNumber": "3.1.1",
+      "sourceQuantity": 7,
+      "rawListPrice": 17388.63,
+      "rawExtendedListPrice": 121720.41,
+      "rawSellingPrice": 121720.41,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "TE-EMBEDDED-T": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 18,
+      "ccwLineNumber": "3.2",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "TE-EMBEDDED-T-3Y": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 19,
+      "ccwLineNumber": "3.2.1",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "D-DNAS-EXT-S-T": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 20,
+      "ccwLineNumber": "3.3",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "D-DNAS-EXT-S-3Y": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 21,
+      "ccwLineNumber": "3.3.1",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300-NW-A-48": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 22,
+      "ccwLineNumber": "3.4",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "SC9300UK9-1715": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 23,
+      "ccwLineNumber": "3.5",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "TE-C9K-SW": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 24,
+      "ccwLineNumber": "3.6",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "PWR-C1-1100WAC-P": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 25,
+      "ccwLineNumber": "3.7",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "PWR-C1-1100WAC-P/2": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 26,
+      "ccwLineNumber": "3.8",
+      "sourceQuantity": 7,
+      "rawListPrice": 9061.44,
+      "rawExtendedListPrice": 63430.08,
+      "rawSellingPrice": 63430.08,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300-SSD-NONE": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 27,
+      "ccwLineNumber": "3.9",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "STACK-T1-50CM": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 28,
+      "ccwLineNumber": "3.10",
+      "sourceQuantity": 7,
+      "rawListPrice": 476.91,
+      "rawExtendedListPrice": 3338.37,
+      "rawSellingPrice": 3338.37,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CAB-SPWR-30CM": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 29,
+      "ccwLineNumber": "3.11",
+      "sourceQuantity": 7,
+      "rawListPrice": 453.09,
+      "rawExtendedListPrice": 3171.63,
+      "rawSellingPrice": 3171.63,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9K-ACC-RBFT": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 30,
+      "ccwLineNumber": "3.12",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9K-ACC-SCR-4": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 31,
+      "ccwLineNumber": "3.13",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CAB-GUIDE-1RU": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 32,
+      "ccwLineNumber": "3.14",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300X-NM-8Y": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 33,
+      "ccwLineNumber": "3.15",
+      "sourceQuantity": 7,
+      "rawListPrice": 12161.45,
+      "rawExtendedListPrice": 85130.15,
+      "rawSellingPrice": 85130.15,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "NETWORK-PNP-LIC": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 34,
+      "ccwLineNumber": "3.16",
+      "sourceQuantity": 7,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CAB-C15-CBN": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 35,
+      "ccwLineNumber": "3.17",
+      "sourceQuantity": 14,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300L-24P-4X-A": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 37,
+      "ccwLineNumber": "4.0",
+      "sourceQuantity": 6,
+      "rawListPrice": 38301.9,
+      "rawExtendedListPrice": 229811.4,
+      "rawSellingPrice": 229811.4,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CON-L1NCD-C93024PX": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 38,
+      "ccwLineNumber": "4.0.1",
+      "sourceQuantity": 6,
+      "rawListPrice": 11514.39,
+      "rawExtendedListPrice": 69086.34,
+      "rawSellingPrice": 69086.34,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300L-DNA-A-24": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 39,
+      "ccwLineNumber": "4.1",
+      "sourceQuantity": 6,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CON-L1SWT-C93LA24": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 40,
+      "ccwLineNumber": "4.1.0.1",
+      "sourceQuantity": 6,
+      "rawListPrice": 1526.64,
+      "rawExtendedListPrice": 9159.84,
+      "rawSellingPrice": 9159.84,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300L-DNA-A-24-3Y": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 41,
+      "ccwLineNumber": "4.1.1",
+      "sourceQuantity": 6,
+      "rawListPrice": 9270.86,
+      "rawExtendedListPrice": 55625.16,
+      "rawSellingPrice": 55625.16,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "S9300LUK9-1718": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 46,
+      "ccwLineNumber": "4.4",
+      "sourceQuantity": 6,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300L-NW-A-24": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 47,
+      "ccwLineNumber": "4.5",
+      "sourceQuantity": 6,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "FAN-T2": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 49,
+      "ccwLineNumber": "4.7",
+      "sourceQuantity": 18,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "PWR-C1-715WAC-P": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 50,
+      "ccwLineNumber": "4.8",
+      "sourceQuantity": 6,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "PWR-C1-715WAC-P/2": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 51,
+      "ccwLineNumber": "4.9",
+      "sourceQuantity": 6,
+      "rawListPrice": 5961.48,
+      "rawExtendedListPrice": 35768.88,
+      "rawSellingPrice": 35768.88,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300L-SSD-NONE": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 53,
+      "ccwLineNumber": "4.11",
+      "sourceQuantity": 6,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300L-STACK-KIT2": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 57,
+      "ccwLineNumber": "4.15",
+      "sourceQuantity": 6,
+      "rawListPrice": 6223.84,
+      "rawExtendedListPrice": 37343.04,
+      "rawSellingPrice": 37343.04,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "C9300L-STACK-A": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 58,
+      "ccwLineNumber": "4.16",
+      "sourceQuantity": 12,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "STACK-T3A-50CM": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 59,
+      "ccwLineNumber": "4.17",
+      "sourceQuantity": 6,
+      "rawListPrice": 0,
+      "rawExtendedListPrice": 0,
+      "rawSellingPrice": 0,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "SFP-10G-LR-S=": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 62,
+      "ccwLineNumber": "5.0",
+      "sourceQuantity": 12,
+      "rawListPrice": 9538.39,
+      "rawExtendedListPrice": 114460.68,
+      "rawSellingPrice": 114460.68,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "SFP-10/25G-LR-S=": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 64,
+      "ccwLineNumber": "6.0",
+      "sourceQuantity": 14,
+      "rawListPrice": 10492.22,
+      "rawExtendedListPrice": 146891.08,
+      "rawSellingPrice": 146891.08,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CP-7841-K9=": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 66,
+      "ccwLineNumber": "7.0",
+      "sourceQuantity": 59,
+      "rawListPrice": 2257.98,
+      "rawExtendedListPrice": 133220.82,
+      "rawSellingPrice": 133220.82,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    },
+    "CON-L1NBD-P7PK94P1": {
+      "sourceType": "ccw_estimate",
+      "workbookPath": "C:\\Pre-Sales\\Benchmarck_Files\\Estimate_NB167337237YA.xlsx",
+      "sheetName": "EstimateDetails_NB167337237YA",
+      "worksheetRowNumber": 67,
+      "ccwLineNumber": "7.0.1",
+      "sourceQuantity": 59,
+      "rawListPrice": 146.63,
+      "rawExtendedListPrice": 8651.17,
+      "rawSellingPrice": 8651.17,
+      "derivationNote": "extended_list_price_divided_by_quantity"
+    }
+  },
+  "categoryByAcceptedSku": {
+    "CW9178I-CFG": "product",
+    "CON-ROB-CW9178IC": "service",
+    "AIR-AP-BRACKET-2": "product",
+    "AIR-AP-T-RAIL-F": "product",
+    "CW9178-SINGLE": "product",
+    "CISCO-NETWORK-SUB": "subscription",
+    "LIC-CW-A": "subscription",
+    "LIC-SPACES-ADV": "subscription",
+    "SVS-L0SPT-CN": "service",
+    "C9300X-48HX-A": "product",
+    "CON-L1NCD-C9300XY4": "service",
+    "C9300-DNA-A-48": "subscription",
+    "CON-L1SWT-C93A48": "service",
+    "C9300-DNA-A-48-3Y": "subscription",
+    "TE-EMBEDDED-T": "subscription",
+    "TE-EMBEDDED-T-3Y": "subscription",
+    "D-DNAS-EXT-S-T": "subscription",
+    "D-DNAS-EXT-S-3Y": "subscription",
+    "C9300-NW-A-48": "subscription",
+    "SC9300UK9-1715": "subscription",
+    "TE-C9K-SW": "subscription",
+    "PWR-C1-1100WAC-P": "product",
+    "PWR-C1-1100WAC-P/2": "product",
+    "C9300-SSD-NONE": "product",
+    "STACK-T1-50CM": "product",
+    "CAB-SPWR-30CM": "product",
+    "C9K-ACC-RBFT": "product",
+    "C9K-ACC-SCR-4": "product",
+    "CAB-GUIDE-1RU": "product",
+    "C9300X-NM-8Y": "product",
+    "NETWORK-PNP-LIC": "subscription",
+    "CAB-C15-CBN": "product",
+    "C9300L-24P-4X-A": "product",
+    "CON-L1NCD-C93024PX": "service",
+    "C9300L-DNA-A-24": "subscription",
+    "CON-L1SWT-C93LA24": "service",
+    "C9300L-DNA-A-24-3Y": "subscription",
+    "S9300LUK9-1718": "subscription",
+    "C9300L-NW-A-24": "subscription",
+    "FAN-T2": "product",
+    "PWR-C1-715WAC-P": "product",
+    "PWR-C1-715WAC-P/2": "product",
+    "C9300L-SSD-NONE": "product",
+    "C9300L-STACK-KIT2": "product",
+    "C9300L-STACK-A": "product",
+    "STACK-T3A-50CM": "product",
+    "SFP-10G-LR-S=": "product",
+    "SFP-10/25G-LR-S=": "product",
+    "CP-7841-K9=": "product",
+    "CON-L1NBD-P7PK94P1": "service"
+  },
+  "mantleRowOrderSkuSequence": [
+    "CW9178I-CFG",
+    "CON-ROB-CW9178IC",
+    "AIR-AP-BRACKET-2",
+    "AIR-AP-T-RAIL-F",
+    "CW9178-SINGLE",
+    "CISCO-NETWORK-SUB",
+    "LIC-CW-A",
+    "LIC-SPACES-ADV",
+    "SVS-L0SPT-CN",
+    "C9300X-48HX-A",
+    "CON-L1NCD-C9300XY4",
+    "C9300-DNA-A-48",
+    "CON-L1SWT-C93A48",
+    "C9300-DNA-A-48-3Y",
+    "TE-EMBEDDED-T",
+    "TE-EMBEDDED-T-3Y",
+    "D-DNAS-EXT-S-T",
+    "D-DNAS-EXT-S-3Y",
+    "C9300-NW-A-48",
+    "SC9300UK9-1715",
+    "TE-C9K-SW",
+    "PWR-C1-1100WAC-P",
+    "PWR-C1-1100WAC-P/2",
+    "C9300-SSD-NONE",
+    "STACK-T1-50CM",
+    "CAB-SPWR-30CM",
+    "C9K-ACC-RBFT",
+    "C9K-ACC-SCR-4",
+    "CAB-GUIDE-1RU",
+    "C9300X-NM-8Y",
+    "NETWORK-PNP-LIC",
+    "CAB-C15-CBN",
+    "C9300L-24P-4X-A",
+    "CON-L1NCD-C93024PX",
+    "C9300L-DNA-A-24",
+    "CON-L1SWT-C93LA24",
+    "C9300L-DNA-A-24-3Y",
+    "TE-EMBEDDED-T",
+    "TE-EMBEDDED-T-3Y",
+    "D-DNAS-EXT-S-T",
+    "D-DNAS-EXT-S-3Y",
+    "S9300LUK9-1718",
+    "C9300L-NW-A-24",
+    "TE-C9K-SW",
+    "FAN-T2",
+    "PWR-C1-715WAC-P",
+    "PWR-C1-715WAC-P/2",
+    "CAB-C15-CBN",
+    "C9300L-SSD-NONE",
+    "C9K-ACC-RBFT",
+    "C9K-ACC-SCR-4",
+    "CAB-GUIDE-1RU",
+    "C9300L-STACK-KIT2",
+    "C9300L-STACK-A",
+    "STACK-T3A-50CM",
+    "NETWORK-PNP-LIC",
+    "SFP-10G-LR-S=",
+    "SFP-10/25G-LR-S=",
+    "CP-7841-K9=",
+    "CON-L1NBD-P7PK94P1"
+  ],
+  "knownLimitations": [
+    "Temporary demo fixture: pricing/category evidence is sourced from one configured CCW estimate (Estimate_NB167337237YA.xlsx) approved for Honeywell MVP demo and regression use only; it is not permanent or broad Cisco pricing authority.",
+    "Scope-bound: values cover only the 50 Honeywell MVP target SKUs (all unique configuration-expansion parent/child SKUs plus the two standalone customer BoQ optics SFP-10G-LR-S= and SFP-10/25G-LR-S=). Other SKUs are out of scope.",
+    "unitListPriceSar is the effective per-unit list price derived as Extended ListPrice / Quantity, deliberately capturing term/effective unit pricing from the estimate; it carries no discount, margin, markup, VAT, FX, or sell-price authority.",
+    "Production pricing must come from an approved Cisco API/CCW/catalog pricing integration or a separately approved pricing source; this fixture must be replaced then.",
+    "No replacement authority and no silent SKU substitution: the optics are standalone customer BoQ lines (priced only because the customer provided them with deterministic CCW evidence), never auto-added expansion children.",
+    "Configuration authority stays separate from pricing authority: this fixture supplies only per-SKU SAR list price, Mantle total-bucket category, and the Mantle export presentation row order, not expansion rules.",
+    "mantleRowOrderSkuSequence is export presentation/order evidence only (the 60-row CCW item-row order from Estimate_NB167337237YA.xlsx, including duplicate SKU occurrences); it carries no pricing, configuration, replacement, or SKU-substitution authority and never re-resolves SKUs."
+  ]
+}

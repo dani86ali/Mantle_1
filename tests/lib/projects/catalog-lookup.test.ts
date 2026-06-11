@@ -187,6 +187,36 @@ describe("buildCatalogLookupIndex", () => {
     buildCatalogLookupIndex(input);
     expect(input).toEqual(snapshot);
   });
+
+  it("defaults catalogSource to LOCAL_CATALOG_SOURCE when no source arg given", () => {
+    const index = buildCatalogLookupIndex(catalog(item()));
+    expect(index.catalogSource).toBe(LOCAL_CATALOG_SOURCE);
+  });
+
+  it("carries an explicit source when one is supplied", () => {
+    const index = buildCatalogLookupIndex(catalog(item()), "some_explicit_source");
+    expect(index.catalogSource).toBe("some_explicit_source");
+  });
+
+  it("exact match reports the explicit index source", () => {
+    const index = buildCatalogLookupIndex(catalog(item({ sku: "A-1" })), "test_source_a");
+    const result = lookupCatalogSku("A-1", index);
+    expect(result.status).toBe("matched");
+    if (result.status === "matched") {
+      expect(result.match.catalogSource).toBe("test_source_a");
+      expect(result.match.source).toBe("exact");
+    }
+  });
+
+  it("normalized match reports the explicit index source", () => {
+    const index = buildCatalogLookupIndex(catalog(item({ sku: "C9300-48P-E" })), "test_source_b");
+    const result = lookupCatalogSku("c9300 48p e", index);
+    expect(result.status).toBe("matched");
+    if (result.status === "matched") {
+      expect(result.match.catalogSource).toBe("test_source_b");
+      expect(result.match.source).toBe("normalized");
+    }
+  });
 });
 
 describe("local mock catalog smoke test", () => {

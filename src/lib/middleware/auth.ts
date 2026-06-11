@@ -22,7 +22,11 @@ export interface AuthSession {
  * In development, supports a dev header for testing.
  */
 export const DEFAULT_DEV_SESSION: AuthSession = {
-  userId: "dev-user",
+  // Deterministic, UUID-shaped dev user id. Project persistence columns such as
+  // project_approvals.decided_by are UUID DB columns, so a non-UUID placeholder
+  // (the former "dev-user") makes any default-dev-session write fail at the DB
+  // against a real Postgres. The tenant id is unchanged.
+  userId: "00000000-0000-0000-0000-0000000d0000",
   tenantId: "00000000-0000-0000-0000-000000000001",
   email: "dev@bomatic.ai",
   name: "Dev User",
@@ -48,7 +52,7 @@ export function getSession(request: NextRequest): AuthSession | null {
   }
 
   // Production: read from NextAuth.js session
-  // This is a skeleton — wire up NextAuth.js + Cognito in production
+  // This is a skeleton - wire up NextAuth.js + Cognito in production
   const sessionToken = request.cookies?.get("next-auth.session-token")?.value;
   if (!sessionToken) {
     return null;

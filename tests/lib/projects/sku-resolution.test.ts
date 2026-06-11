@@ -13,6 +13,7 @@ import {
   type CatalogLookupMatch,
   type CatalogLookupResult,
 } from "@/lib/projects/catalog-lookup";
+import { DEFAULT_QUICK_BOM_CATALOG_SOURCE } from "@/lib/projects/default-quick-bom-catalog";
 import type { CanonicalBoqLine } from "@/types/project";
 
 function makeLine(overrides: Partial<CanonicalBoqLine> = {}): CanonicalBoqLine {
@@ -261,6 +262,55 @@ describe("buildSkuResolutionDraft", () => {
     const snapshot = structuredClone(lines);
     buildSkuResolutionDraft({ lines, catalogIndex: index });
     expect(lines).toEqual(snapshot);
+  });
+
+  it("summary reports the explicit index catalogSource when one is provided", () => {
+    const explicitIndex = buildCatalogLookupIndex(
+      catalogOf(catItem({ sku: "C9300-48P-E" })),
+      "explicit_test_source"
+    );
+    const { summary } = buildSkuResolutionDraft({
+      lines: [makeLine({ sku: "C9300-48P-E" })],
+      catalogIndex: explicitIndex,
+    });
+    expect(summary.catalogSource).toBe("explicit_test_source");
+  });
+
+  it("summary reports the default Quick BoM catalog source when no catalogIndex is provided", () => {
+    const { summary } = buildSkuResolutionDraft({
+      lines: [makeLine({ sku: "C9300-48P-E" })],
+    });
+    expect(summary.catalogSource).toBe(DEFAULT_QUICK_BOM_CATALOG_SOURCE);
+    expect(summary.catalogSource).toBe("default_quick_bom_approved_catalog");
+  });
+
+  it("default draft resolves known Honeywell SKUs missing from the local mock catalog", () => {
+    const honeywellSkus = ["C9300X-48HX-A", "C9300L-24P-4X-A", "CW9178I-CFG"] as const;
+    const lines = honeywellSkus.map((sku, index): CanonicalBoqLine => ({
+      sourceFormat: "format_1_line_item",
+      sourceFileId: "default-honeywell-subset",
+      sourceRowNumber: index + 2,
+      originalLineNumber: String(index + 1),
+      sku,
+      description: sku,
+      quantity: 1,
+      originalCells: {},
+    }));
+    const { decisions } = buildSkuResolutionDraft({ lines });
+    for (let i = 0; i < decisions.length; i++) {
+      const decision = decisions[i];
+      expect(decision.status).toBe("needs_review");
+      expect(decision.suggestions).toHaveLength(1);
+      expect(decision.suggestions[0].source).toBe("exact");
+      expect(decision.suggestions[0].suggestedSku).toBe(honeywellSkus[i]);
+      // SKU recognition only - never a pricing/config/replacement field.
+      expect(decision).not.toHaveProperty("listPrice");
+      expect(decision).not.toHaveProperty("unitPrice");
+      expect(decision).not.toHaveProperty("parentSku");
+      expect(decision).not.toHaveProperty("children");
+      expect(decision).not.toHaveProperty("replacementFor");
+      expect(decision).not.toHaveProperty("substitutedSku");
+    }
   });
 });
 

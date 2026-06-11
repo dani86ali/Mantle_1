@@ -10,10 +10,12 @@ import {
 import type { PricedBoqDraftLine, PricedBoqDraftSummary } from "@/lib/projects/priced-boq";
 import type { PricedBoqArtifactPayload } from "@/lib/projects/priced-boq-artifact";
 
-/** A priced draft line with sane defaults (unitList 100, unitNet 80 -> 20% disc). */
+// Default priced line models an accepted priced EXPANDED-BoM line: it carries no
+// sourceFormat and no decisionStatus (those come from the old normalized_boq /
+// sku_resolution pricing path, not from buildPricedExpandedBoqDraft).
+/** A priced expanded-BoM line with sane defaults (unitList 100, unitNet 80 -> 20% disc). */
 function pricedLine(overrides: Partial<PricedBoqDraftLine> = {}): PricedBoqDraftLine {
   return {
-    sourceFormat: "format_1_line_item",
     sourceFileId: "file-1",
     sourceRowNumber: 1,
     originalLineNumber: "1",
@@ -23,7 +25,6 @@ function pricedLine(overrides: Partial<PricedBoqDraftLine> = {}): PricedBoqDraft
     originalCells: { A: "1", B: "Item one" },
     status: "priced",
     acceptedSku: "ACC-1",
-    decisionStatus: "accepted",
     amounts: {
       currency: "SAR",
       quantity: 2,
@@ -41,10 +42,9 @@ function pricedLine(overrides: Partial<PricedBoqDraftLine> = {}): PricedBoqDraft
   };
 }
 
-/** A retained unpriced draft line of the given status. */
+/** A retained unpriced expanded-BoM line of the given status (no sourceFormat). */
 function unpricedLine(overrides: Partial<PricedBoqDraftLine> = {}): PricedBoqDraftLine {
   return {
-    sourceFormat: "format_1_line_item",
     sourceFileId: "file-1",
     sourceRowNumber: 1,
     originalLineNumber: "1",
@@ -56,6 +56,23 @@ function unpricedLine(overrides: Partial<PricedBoqDraftLine> = {}): PricedBoqDra
     warning: "No SKU resolution decision exists for this BoQ line.",
     ...overrides,
   };
+}
+
+/**
+ * An accepted expansion CHILD priced line as buildPricedExpandedBoqDraft emits it:
+ * nested under a customer line via parentLineNumber, priced by its own orderable
+ * SKU (originalSku === acceptedSku), no sourceFormat.
+ */
+function expandedChild(overrides: Partial<PricedBoqDraftLine> = {}): PricedBoqDraftLine {
+  return pricedLine({
+    sourceRowNumber: 2,
+    originalLineNumber: "1.1",
+    parentLineNumber: "1",
+    originalSku: "CHILD-1",
+    acceptedSku: "CHILD-1",
+    description: "Child one",
+    ...overrides,
+  });
 }
 
 /** Derive a summary from lines, with explicit totals so VAT copy-through is testable. */
@@ -86,11 +103,16 @@ function summaryFor(
   };
 }
 
+// Models the accepted priced EXPANDED BoM: pricing ran on an accepted
+// configuration_expansion artifact's acceptedLines, so the payload carries that
+// artifact's id/version as required provenance (not the old pre-expansion shape).
 function payload(
   lines: PricedBoqDraftLine[],
   totalsOverrides: Partial<PricedBoqDraftSummary["totals"]> = {}
 ): PricedBoqArtifactPayload {
   return {
+    sourceConfigurationExpansionArtifactId: "ce-1",
+    sourceConfigurationExpansionArtifactVersion: 1,
     sourceNormalizedBoqArtifactId: "nb-1",
     sourceNormalizedBoqArtifactVersion: 1,
     sourceSkuResolutionArtifactId: "sk-1",
@@ -450,6 +472,121 @@ describe("buildMantlePriceEstimateModel - category metadata", () => {
   });
 });
 
+describe("buildMantlePriceEstimateModel - accepted priced expanded BoM", () => {
+  // The priced_boq payload is produced by pricing an accepted configuration_expansion
+  // artifact's acceptedLines: rows are preserved customer lines plus accepted
+  // expansion children, in customer-then-children order, with no sourceFormat.
+
+  it("builds rows from priced expanded-BoM lines that omit sourceFormat", () => {
+    const customer = pricedLine({ acceptedSku: "P1", originalSku: "P1" });
+    const child = expandedChild({ acceptedSku: "C1", originalSku: "C1" });
+    expect("sourceFormat" in customer).toBe(false);
+    expect("sourceFormat" in child).toBe(false);
+    const model = buildMantlePriceEstimateModel({ payload: payload([customer, child]) });
+    expect(model.rows).toHaveLength(2);
+    expect(model.rows.map((r) => r.partNumber)).toEqual(["P1", "C1"]);
+  });
+
+  it("keeps a customer line followed by its accepted expansion children in order", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, originalLineNumber: "1", acceptedSku: "P1", originalSku: "P1" }),
+        expandedChild({ acceptedSku: "C1", originalSku: "C1", parentLineNumber: "1" }),
+        expandedChild({ sourceRowNumber: 3, acceptedSku: "C2", originalSku: "C2", parentLineNumber: "1" }),
+        pricedLine({ sourceRowNumber: 4, originalLineNumber: "2", acceptedSku: "P2", originalSku: "P2" }),
+      ]),
+    });
+    expect(model.rows.map((r) => r.partNumber)).toEqual(["P1", "C1", "C2", "P2"]);
+    // parentLineNumber trace is copied for the children, absent for the parents.
+    expect(model.rows.map((r) => r.parentLineNumber)).toEqual([undefined, "1", "1", undefined]);
+    expect("parentLineNumber" in model.rows[0]).toBe(false);
+    expect("parentLineNumber" in model.rows[3]).toBe(false);
+  });
+
+  it("prices an expansion child by the orderable SKU already on its priced line", () => {
+    // The mapper reads the amounts already on the priced line - it never re-resolves
+    // the SKU or re-prices. partNumber is the child's own orderable acceptedSku.
+    const child = expandedChild({
+      acceptedSku: "CHILD-SVC",
+      originalSku: "CHILD-SVC",
+      amounts: {
+        currency: "SAR",
+        quantity: 3,
+        unitListPriceSar: 50,
+        extendedListPriceSar: 150,
+        unitSellPriceSar: 45,
+        extendedSellPriceSar: 135,
+        pricingMode: "markup",
+        ratePercent: 10,
+        vatRatePercent: 15,
+        vatAmountSar: 20.25,
+        totalIncVatSar: 155.25,
+      },
+    });
+    const model = buildMantlePriceEstimateModel({ payload: payload([child]) });
+    const row = model.rows[0];
+    expect(row.status).toBe("priced");
+    expect(row.partNumber).toBe("CHILD-SVC");
+    expect(row.unitListPriceSar).toBe(50);
+    expect(row.unitNetPriceSar).toBe(45);
+    expect(row.extendedNetPriceSar).toBe(135);
+  });
+
+  it("resolves expansion-child categories only from the explicit map, never inferred", () => {
+    // CHILD-SVC is a service/support-style expansion child, but the priced line
+    // carries no relationshipType for the model to infer from. With no map entry it
+    // must default to product (+ one warning) - proving category comes only from the map.
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "P1", originalSku: "P1" }),
+        expandedChild({ acceptedSku: "CHILD-SVC", originalSku: "CHILD-SVC" }),
+      ]),
+      categoryByAcceptedSku: { P1: "product" },
+    });
+    expect(model.rows.map((r) => r.category)).toEqual(["product", "product"]);
+    expect(model.rows.map((r) => r.categoryWasDefaulted)).toEqual([false, true]);
+    expect(model.warnings).toHaveLength(1);
+  });
+
+  it("honors an explicit subscription category for an expansion child", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([expandedChild({ acceptedSku: "SUB-1", originalSku: "SUB-1" })]),
+      categoryByAcceptedSku: { "SUB-1": "subscription" },
+    });
+    expect(model.rows[0].category).toBe("subscription");
+    expect(model.rows[0].categoryWasDefaulted).toBe(false);
+    expect(model.warnings).toEqual([]);
+  });
+
+  it("keeps an unpriced expansion child in place with null price cells", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "P1", originalSku: "P1" }),
+        // An expansion child with no SAR price is retained missing_price, in place.
+        expandedChild({
+          sourceRowNumber: 2,
+          status: "missing_price",
+          acceptedSku: "C-NOPRICE",
+          originalSku: "C-NOPRICE",
+          amounts: undefined,
+          warning: "Accepted SKU has no SAR unit price.",
+        }),
+        pricedLine({ sourceRowNumber: 3, acceptedSku: "P2", originalSku: "P2" }),
+      ]),
+    });
+    expect(model.rows.map((r) => r.status)).toEqual(["priced", "missing_price", "priced"]);
+    const mid = model.rows[1];
+    expect(mid.partNumber).toBe("C-NOPRICE");
+    expect(mid.parentLineNumber).toBe("1");
+    expect(mid.unitListPriceSar).toBeNull();
+    expect(mid.unitNetPriceSar).toBeNull();
+    expect(mid.extendedNetPriceSar).toBeNull();
+    expect(mid.discountPercent).toBeNull();
+    expect(mid.category).toBeNull();
+    expect(mid.warning).toBe("Accepted SKU has no SAR unit price.");
+  });
+});
+
 describe("buildMantlePriceEstimateModel - metadata, defaults & purity", () => {
   it("preserves source metadata on each row", () => {
     const model = buildMantlePriceEstimateModel({
@@ -500,6 +637,112 @@ describe("buildMantlePriceEstimateModel - metadata, defaults & purity", () => {
     buildMantlePriceEstimateModel({ payload: pay, categoryByAcceptedSku });
     expect(pay).toEqual(paySnapshot);
     expect(categoryByAcceptedSku).toEqual(mapSnapshot);
+  });
+});
+
+describe("buildMantlePriceEstimateModel - optional export row ordering", () => {
+  it("preserves payload line order when no rowOrderSkuSequence is supplied", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "A" }),
+        pricedLine({ sourceRowNumber: 2, acceptedSku: "B" }),
+        pricedLine({ sourceRowNumber: 3, acceptedSku: "C" }),
+      ]),
+    });
+    expect(model.rows.map((r) => r.partNumber)).toEqual(["A", "B", "C"]);
+  });
+
+  it("re-orders rows by the supplied SKU occurrence sequence", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "A" }),
+        pricedLine({ sourceRowNumber: 2, acceptedSku: "B" }),
+        pricedLine({ sourceRowNumber: 3, acceptedSku: "C" }),
+      ]),
+      rowOrderSkuSequence: ["C", "A", "B"],
+    });
+    expect(model.rows.map((r) => r.partNumber)).toEqual(["C", "A", "B"]);
+  });
+
+  it("maps duplicate SKUs by occurrence order: first row -> first position, second -> second", () => {
+    // Two DUP rows with distinguishable source rows; the sequence places the second
+    // section's DUP (CCW position 1) before the first section's DUP (CCW position 4).
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 10, acceptedSku: "DUP" }), // 1st generated DUP
+        pricedLine({ sourceRowNumber: 11, acceptedSku: "X" }),
+        pricedLine({ sourceRowNumber: 12, acceptedSku: "DUP" }), // 2nd generated DUP
+      ]),
+      // Occurrence positions for DUP are indices 0 and 2; X is index 1.
+      rowOrderSkuSequence: ["DUP", "X", "DUP"],
+    });
+    // First generated DUP took the earlier (index 0) position, second took index 2.
+    expect(model.rows.map((r) => r.partNumber)).toEqual(["DUP", "X", "DUP"]);
+    expect(model.rows.map((r) => r.sourceRowNumber)).toEqual([10, 11, 12]);
+  });
+
+  it("keeps rows with no remaining sequence position after the ordered rows, in original order", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "KNOWN-1" }),
+        pricedLine({ sourceRowNumber: 2, acceptedSku: "UNLISTED-A" }),
+        pricedLine({ sourceRowNumber: 3, acceptedSku: "KNOWN-2" }),
+        // A second KNOWN-1 with only one sequence position falls to the tail.
+        pricedLine({ sourceRowNumber: 4, acceptedSku: "KNOWN-1" }),
+        pricedLine({ sourceRowNumber: 5, acceptedSku: "UNLISTED-B" }),
+      ]),
+      rowOrderSkuSequence: ["KNOWN-2", "KNOWN-1"],
+    });
+    // Ordered rows first (by sequence), then the leftover rows in original relative order.
+    expect(model.rows.map((r) => r.partNumber)).toEqual([
+      "KNOWN-2",
+      "KNOWN-1",
+      "UNLISTED-A",
+      "KNOWN-1",
+      "UNLISTED-B",
+    ]);
+    expect(model.rows.map((r) => r.sourceRowNumber)).toEqual([3, 1, 2, 4, 5]);
+  });
+
+  it("does not change totals, the category split, or warnings when re-ordering", () => {
+    const lines = [
+      pricedLine({ sourceRowNumber: 1, acceptedSku: "HW" }), // 160 product
+      pricedLine({ sourceRowNumber: 2, acceptedSku: "SVC" }), // 160 service
+      pricedLine({ sourceRowNumber: 3, acceptedSku: "SUB" }), // 160 subscription
+    ];
+    const categoryByAcceptedSku: Record<string, MantleLineCategory> = {
+      HW: "product",
+      SVC: "service",
+      SUB: "subscription",
+    };
+    const unordered = buildMantlePriceEstimateModel({ payload: payload(lines), categoryByAcceptedSku });
+    const ordered = buildMantlePriceEstimateModel({
+      payload: payload(lines),
+      categoryByAcceptedSku,
+      rowOrderSkuSequence: ["SUB", "HW", "SVC"],
+    });
+    expect(ordered.rows.map((r) => r.partNumber)).toEqual(["SUB", "HW", "SVC"]);
+    expect(ordered.totals).toEqual(unordered.totals);
+    expect(ordered.warnings).toEqual(unordered.warnings);
+    // Each row keeps its own resolved category through the re-order.
+    const categoryBySku = new Map(ordered.rows.map((r) => [r.partNumber, r.category]));
+    expect(categoryBySku.get("HW")).toBe("product");
+    expect(categoryBySku.get("SVC")).toBe("service");
+    expect(categoryBySku.get("SUB")).toBe("subscription");
+  });
+
+  it("does not mutate the payload, its lines, or the rowOrderSkuSequence", () => {
+    const lines = [
+      pricedLine({ sourceRowNumber: 1, acceptedSku: "A" }),
+      pricedLine({ sourceRowNumber: 2, acceptedSku: "B" }),
+    ];
+    const pay = payload(lines);
+    const sequence = ["B", "A"];
+    const paySnapshot = structuredClone(pay);
+    const sequenceSnapshot = [...sequence];
+    buildMantlePriceEstimateModel({ payload: pay, rowOrderSkuSequence: sequence });
+    expect(pay).toEqual(paySnapshot);
+    expect(sequence).toEqual(sequenceSnapshot);
   });
 });
 

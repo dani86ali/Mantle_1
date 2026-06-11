@@ -3,7 +3,15 @@
  * a deterministic "Mantle Price Estimate" row model for a later ExcelJS template
  * writer to consume. Source of truth:
  * C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md (10. Priced Output
- * Contract - Mantle is the structural template).
+ * Contract - Mantle is the structural template; 11A.3, 19 task 8k).
+ *
+ * The priced_boq payload is the accepted priced EXPANDED BoM: it was produced by
+ * pricing the accepted configuration_expansion artifact's acceptedLines, so each
+ * row is either a preserved customer line or an accepted expansion child line, in
+ * customer-then-children order. These rows carry no sourceFormat (that is a
+ * normalized_boq field), and a child line is already priced by the orderable SKU
+ * on its own priced line - this mapper never re-resolves SKUs or re-prices. The
+ * optional parentLineNumber is copied through as trace metadata only.
  *
  * PURE: type-only imports from the priced-BoQ helper and artifact service; no
  * runtime imports at all (no exceljs, DB store, catalog/SKU service, approvals,
@@ -39,6 +47,8 @@ export interface MantlePriceEstimateRow {
   sourceSheetName?: string;
   sourceRowNumber: number;
   originalLineNumber: string;
+  /** Parent customer line number for an accepted expansion child; trace only, not written to the workbook yet. */
+  parentLineNumber?: string;
   originalSku: string;
   acceptedSku?: string;
   status: PricedBoqLineStatus;
@@ -89,6 +99,13 @@ export interface BuildMantlePriceEstimateModelInput {
   payload: PricedBoqArtifactPayload;
   /** Explicit Mantle line category per accepted SKU. Absent -> defaults to product. */
   categoryByAcceptedSku?: Readonly<Record<string, MantleLineCategory>>;
+  /**
+   * Optional EXPORT PRESENTATION row order: a SKU occurrence sequence (duplicates
+   * allowed) that re-orders the mapped rows for the workbook only. Absent -> payload
+   * line order is preserved exactly. This is presentation/order ONLY: it changes no
+   * pricing, no totals, no category, and never re-resolves or substitutes a SKU.
+   */
+  rowOrderSkuSequence?: readonly string[];
 }
 
 /** Round a number to 2 decimals, matching the priced_boq currency convention. */
@@ -122,6 +139,7 @@ function mapRow(
     ...(line.sourceSheetName !== undefined ? { sourceSheetName: line.sourceSheetName } : {}),
     sourceRowNumber: line.sourceRowNumber,
     originalLineNumber: line.originalLineNumber,
+    ...(line.parentLineNumber !== undefined ? { parentLineNumber: line.parentLineNumber } : {}),
     originalSku: line.originalSku,
     ...(line.acceptedSku !== undefined ? { acceptedSku: line.acceptedSku } : {}),
     status: line.status,
@@ -162,8 +180,49 @@ function mapRow(
 }
 
 /**
+ * Re-order mapped rows by an export-presentation SKU occurrence sequence, returning a
+ * fresh array (never mutating the input rows or the sequence). Each row is matched to
+ * the next unused sequence position for its partNumber, so duplicate SKUs map in
+ * occurrence order: the first generated CAB-C15-CBN row takes the first CAB-C15-CBN
+ * sequence position, the second takes the second. Rows whose partNumber has no
+ * remaining sequence position stay after the ordered rows in their original relative
+ * order. This is presentation-only: it copies no values and changes no amounts.
+ */
+function orderRowsBySkuSequence(
+  rows: MantlePriceEstimateRow[],
+  sequence: readonly string[]
+): MantlePriceEstimateRow[] {
+  const positionsBySku = new Map<string, number[]>();
+  sequence.forEach((sku, index) => {
+    const positions = positionsBySku.get(sku);
+    if (positions === undefined) positionsBySku.set(sku, [index]);
+    else positions.push(index);
+  });
+
+  const usedCountBySku = new Map<string, number>();
+  const ordered: Array<{ position: number; row: MantlePriceEstimateRow }> = [];
+  const remainder: MantlePriceEstimateRow[] = [];
+
+  for (const row of rows) {
+    const positions = positionsBySku.get(row.partNumber);
+    const used = usedCountBySku.get(row.partNumber) ?? 0;
+    if (positions !== undefined && used < positions.length) {
+      ordered.push({ position: positions[used], row });
+      usedCountBySku.set(row.partNumber, used + 1);
+    } else {
+      remainder.push(row);
+    }
+  }
+
+  ordered.sort((a, b) => a.position - b.position);
+  return [...ordered.map((entry) => entry.row), ...remainder];
+}
+
+/**
  * Build the Mantle Price Estimate model from a priced_boq payload. Emits one row
- * per payload line in original order (including unpriced rows). totalPriceSar sums
+ * per payload line in original order (including unpriced rows), unless an explicit
+ * rowOrderSkuSequence is supplied, in which case rows are re-ordered for presentation
+ * only (totals and per-row values are unchanged). totalPriceSar sums
  * the priced rows' extended net price; the product/service/subscription split uses
  * the explicit category map, defaulting unmapped priced rows to product and adding
  * exactly one warning. VAT amounts and counts are copied from the payload summary,
@@ -172,9 +231,13 @@ function mapRow(
 export function buildMantlePriceEstimateModel(
   input: BuildMantlePriceEstimateModelInput
 ): MantlePriceEstimateModel {
-  const { payload, categoryByAcceptedSku } = input;
+  const { payload, categoryByAcceptedSku, rowOrderSkuSequence } = input;
 
-  const rows = payload.lines.map((line) => mapRow(line, categoryByAcceptedSku));
+  const mappedRows = payload.lines.map((line) => mapRow(line, categoryByAcceptedSku));
+  const rows =
+    rowOrderSkuSequence !== undefined
+      ? orderRowsBySkuSequence(mappedRows, rowOrderSkuSequence)
+      : mappedRows;
 
   let totalPriceSar = 0;
   let productTotalSar = 0;

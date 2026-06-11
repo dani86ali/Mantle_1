@@ -1,6 +1,6 @@
 /** E3 boilerplate KB — tenant-configurable text blocks for deterministic
  *  proposal sections. Pure functions, no AI calls (per First Commandment).
- *  Outline source: docs/Network_PreSales_Playbook_Final_Consolidated.md §6.1/6.3/6.4
+ *  Outline source: docs/reference/hld/Network_PreSales_Playbook_Final_Consolidated.md §6.1/6.3/6.4
  */
 
 import { z } from 'zod';

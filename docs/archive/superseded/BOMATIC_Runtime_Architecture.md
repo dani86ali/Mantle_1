@@ -1,5 +1,12 @@
 # BOMATIC — Runtime Architecture
 
+> Superseded for current MVP implementation guidance.
+>
+> This document is retained as historical/future-scope architecture reference.
+> Where it conflicts with the Project-centered Quick BoM/RFP architecture, use
+> `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md`,
+> `docs/README.md`, current code, and current tests.
+
 **Version:** 2.0 (replaces Hub-Spoke Architecture v1.0)
 **Date:** 2026-05-09
 **Change:** Complete redesign. Old version treated everything as Claude API calls. New version is hybrid: 65% deterministic code, 26% AI-with-validation, 9% pure AI.

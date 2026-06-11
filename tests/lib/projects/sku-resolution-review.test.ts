@@ -196,6 +196,50 @@ describe("applySkuResolutionReviewAction - reject", () => {
   });
 });
 
+describe("applySkuResolutionReviewAction - deferred non-priced accept guard", () => {
+  // A deferred/non-priced row from the deferred review set, deliberately carrying a
+  // same-SKU suggestion so it would otherwise pass the suggestion-match check.
+  const DEFERRED_SKU = "SC9300UK9-1712";
+  function deferredDecision(): SkuResolutionDecision {
+    return makeDecision({
+      originalSku: DEFERRED_SKU,
+      suggestions: [makeSuggestion({ suggestedSku: DEFERRED_SKU })],
+    });
+  }
+
+  it("refuses to accept a deferred row even when the acceptedSku matches a suggestion", () => {
+    expect(() =>
+      applySkuResolutionReviewAction(
+        deferredDecision(),
+        acceptAction({ acceptedSku: DEFERRED_SKU })
+      )
+    ).toThrow("Deferred non-priced SKU resolution row cannot be accepted.");
+  });
+
+  it("still allows rejecting a deferred row (only accept is guarded)", () => {
+    const result = applySkuResolutionReviewAction(deferredDecision(), rejectAction());
+    expect(result.status).toBe("rejected");
+    expect("acceptedSku" in result).toBe(false);
+  });
+
+  it("blocks a deferred accept inside a batch before any decision is applied", () => {
+    const decisions = [
+      makeDecision({ sourceFileId: "f", sourceRowNumber: 1 }),
+      makeDecision({
+        sourceFileId: "f",
+        sourceRowNumber: 2,
+        originalSku: DEFERRED_SKU,
+        suggestions: [makeSuggestion({ suggestedSku: DEFERRED_SKU })],
+      }),
+    ];
+    expect(() =>
+      applySkuResolutionReviewActions(decisions, [
+        acceptAction({ sourceFileId: "f", sourceRowNumber: 2, acceptedSku: DEFERRED_SKU }),
+      ])
+    ).toThrow("Deferred non-priced SKU resolution row cannot be accepted.");
+  });
+});
+
 describe("applySkuResolutionReviewAction - reviewability guard", () => {
   it("throws not-reviewable for accepted, rejected, and unresolved decisions", () => {
     for (const status of ["accepted", "rejected", "unresolved"] as SkuResolutionStatus[]) {

@@ -32,8 +32,14 @@ describe("getDirectDownstreamArtifactTypes", () => {
     ]);
     expect(getDirectDownstreamArtifactTypes("normalized_boq")).toEqual([
       "sku_resolution",
-      "priced_boq",
       "hld_design_delta",
+    ]);
+    // Configuration expansion now sits between SKU resolution and pricing.
+    expect(getDirectDownstreamArtifactTypes("sku_resolution")).toEqual([
+      "configuration_expansion",
+    ]);
+    expect(getDirectDownstreamArtifactTypes("configuration_expansion")).toEqual([
+      "priced_boq",
     ]);
     expect(getDirectDownstreamArtifactTypes("technical_proposal")).toEqual([
       "export_package",
@@ -49,10 +55,23 @@ describe("getDirectDownstreamArtifactTypes", () => {
 describe("getTransitiveDownstreamArtifactTypes", () => {
   it("returns unique downstream types in deterministic BFS order", () => {
     // Locked to breadth-first discovery order, not canonical-union order.
+    // normalized_boq -> {sku_resolution, hld_design_delta}; sku_resolution ->
+    // configuration_expansion -> priced_boq, so configuration_expansion is
+    // discovered before priced_boq.
     expect(getTransitiveDownstreamArtifactTypes("normalized_boq")).toEqual([
       "sku_resolution",
-      "priced_boq",
       "hld_design_delta",
+      "configuration_expansion",
+      "technical_proposal",
+      "priced_boq",
+      "export_package",
+    ]);
+  });
+
+  it("routes sku_resolution through configuration_expansion before pricing", () => {
+    expect(getTransitiveDownstreamArtifactTypes("sku_resolution")).toEqual([
+      "configuration_expansion",
+      "priced_boq",
       "technical_proposal",
       "export_package",
     ]);
@@ -71,6 +90,14 @@ describe("isArtifactTypeDownstreamOf", () => {
     expect(isArtifactTypeDownstreamOf("normalized_boq", "export_package")).toBe(
       true
     );
+    // normalized_boq is transitively upstream of configuration_expansion, which
+    // is itself upstream of priced_boq.
+    expect(
+      isArtifactTypeDownstreamOf("normalized_boq", "configuration_expansion")
+    ).toBe(true);
+    expect(
+      isArtifactTypeDownstreamOf("configuration_expansion", "priced_boq")
+    ).toBe(true);
     expect(
       isArtifactTypeDownstreamOf("input_package", "compliance_matrix")
     ).toBe(true);
@@ -273,20 +300,44 @@ describe("planStaleArtifactUpdates", () => {
       artifacts: [
         changed,
         artifact({ id: "sku", type: "sku_resolution", version: 1 }),
+        artifact({ id: "cfg", type: "configuration_expansion", version: 1 }),
         artifact({ id: "pbq", type: "priced_boq", version: 1 }),
         artifact({ id: "hld", type: "hld_design_delta", version: 1 }),
         artifact({ id: "tp", type: "technical_proposal", version: 1 }),
         artifact({ id: "exp", type: "export_package", version: 1 }),
       ],
     });
-    // Deterministic BFS order of downstream types.
+    // Deterministic BFS order of downstream types: configuration_expansion is
+    // discovered after hld_design_delta and before priced_boq.
     expect(plan.map((u) => u.type)).toEqual([
       "sku_resolution",
-      "priced_boq",
       "hld_design_delta",
+      "configuration_expansion",
       "technical_proposal",
+      "priced_boq",
       "export_package",
     ]);
+  });
+
+  it("a change to sku_resolution marks configuration_expansion and downstream priced_boq/export stale", () => {
+    const changed = artifact({ id: "sku-1", type: "sku_resolution", version: 1 });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "cfg", type: "configuration_expansion", version: 1 }),
+        artifact({ id: "pbq", type: "priced_boq", version: 1 }),
+        artifact({ id: "exp", type: "export_package", version: 1 }),
+        // normalized_boq is upstream of sku_resolution and must not be planned.
+        artifact({ id: "nbq", type: "normalized_boq", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "configuration_expansion",
+      "priced_boq",
+      "export_package",
+    ]);
+    expect(plan.every((u) => u.nextStatus === "stale")).toBe(true);
   });
 
   it("a change to technical_proposal only marks export_package downstream", () => {

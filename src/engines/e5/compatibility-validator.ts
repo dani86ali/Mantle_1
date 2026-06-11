@@ -3,7 +3,7 @@
  *
  * Pure function. Walks a {@link SizingResult} + {@link TopologyPattern} and
  * checks rule violations from docs/BOMATIC_Device_Specs.json (stacking_rules,
- * psu_rules) plus docs/shahid-cisco-ground-truth.md ground-truth examples.
+ * psu_rules) plus docs/reference/hld/shahid-cisco-ground-truth.md ground-truth examples.
  *
  * Returns errors (hard failures — design would not work) and warnings
  * (advisories — suboptimal but functional). Never throws.

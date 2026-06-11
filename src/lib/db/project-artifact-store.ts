@@ -3,10 +3,13 @@
  * Source of truth: C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md
  * Canonical shape: src/types/project.ts. Versioning: src/lib/projects/artifacts.ts.
  *
- * Scope (Prompt 12) is intentionally minimal: insert a new versioned artifact
- * row and read artifacts back, tenant/project scoped. It does NOT wire BoQ
- * loading, resolve SKUs, price, export, run approvals, propagate staleness, or
- * update prior artifact statuses (later prompts); prior rows are never mutated.
+ * Scope is intentionally minimal: insert a new versioned artifact row and read
+ * artifacts back, tenant/project scoped. It does NOT wire BoQ loading, resolve
+ * SKUs, price, export, or run approvals (later prompts). It DOES, on create,
+ * propagate staleness to the latest downstream artifact versions per the pure
+ * planner (Prompt 133): immutable history is preserved - the new row and every
+ * non-latest/upstream/unrelated row are never mutated, and a propagated update
+ * touches only status (-> "stale") and updatedAt, never content.
  *
  * Versioning is per (projectId, type): the next version is computed by passing
  * the existing same-tenant/project/type rows to the pure materializer, so
@@ -16,9 +19,10 @@
  * {@link toProjectArtifact} projects it out and maps DB nulls/odd JSONB safely.
  */
 import { and, asc, eq } from "drizzle-orm";
-import { db } from "./index";
+import { withTenantDb } from "./index";
 import { projectArtifacts } from "./schema";
 import { materializeProjectArtifactVersion } from "@/lib/projects/artifacts";
+import { planStaleArtifactUpdates } from "@/lib/projects/staleness";
 import type {
   ProjectArtifact,
   ProjectArtifactStatus,
@@ -78,43 +82,94 @@ function toProjectArtifact(row: ProjectArtifactRow): ProjectArtifact {
 /**
  * Create the next version of a Project artifact: load the existing
  * same-tenant/project/type rows, compute the next version through the pure
- * materializer, insert exactly one new row, return it (without tenantId). Never
- * updates prior rows; never marks downstream artifacts stale.
+ * materializer, insert exactly one new row, then - in the same tenant-scoped
+ * transaction - apply the pure planner's downstream stale updates to the latest
+ * eligible version of each downstream type. Returns the new row (without
+ * tenantId). The new row and all upstream/non-latest/unrelated rows stay
+ * immutable; a stale update writes only status and updatedAt.
  */
 export async function createProjectArtifactVersion(
   input: CreateProjectArtifactVersionInput
 ): Promise<ProjectArtifact> {
-  const existing = await db
-    .select()
-    .from(projectArtifacts)
-    .where(
-      and(
-        eq(projectArtifacts.tenantId, input.tenantId),
-        eq(projectArtifacts.projectId, input.projectId),
-        eq(projectArtifacts.type, input.type)
-      )
-    );
+  return withTenantDb(input.tenantId, async (tx) => {
+    const existing = await tx
+      .select()
+      .from(projectArtifacts)
+      .where(
+        and(
+          eq(projectArtifacts.tenantId, input.tenantId),
+          eq(projectArtifacts.projectId, input.projectId),
+          eq(projectArtifacts.type, input.type)
+        )
+      );
 
-  const record = materializeProjectArtifactVersion({
-    projectId: input.projectId,
-    tenantId: input.tenantId,
-    stageId: input.stageId,
-    type: input.type,
-    status: input.status,
-    payload: input.payload,
-    filePath: input.filePath,
-    sourceFileIds: input.sourceFileIds,
-    sourceArtifactIds: input.sourceArtifactIds,
-    existingArtifacts: existing.map((row) => ({
-      projectId: row.projectId,
-      type: row.type as ProjectArtifactType,
-      version: row.version,
-      status: row.status as ProjectArtifactStatus,
-    })),
+    const record = materializeProjectArtifactVersion({
+      projectId: input.projectId,
+      tenantId: input.tenantId,
+      stageId: input.stageId,
+      type: input.type,
+      status: input.status,
+      payload: input.payload,
+      filePath: input.filePath,
+      sourceFileIds: input.sourceFileIds,
+      sourceArtifactIds: input.sourceArtifactIds,
+      existingArtifacts: existing.map((row) => ({
+        projectId: row.projectId,
+        type: row.type as ProjectArtifactType,
+        version: row.version,
+        status: row.status as ProjectArtifactStatus,
+      })),
+    });
+
+    const [row] = await tx.insert(projectArtifacts).values(record).returning();
+
+    // Propagate staleness: plan against every tenant/project-scoped artifact
+    // (the new row included; the planner excludes it by id), then apply the
+    // status-only updates the planner returns - one per latest eligible
+    // downstream type. Immutable history is preserved by the planner's
+    // latest-version + eligibility rules; we never re-derive them here.
+    const candidates = await tx
+      .select()
+      .from(projectArtifacts)
+      .where(
+        and(
+          eq(projectArtifacts.tenantId, input.tenantId),
+          eq(projectArtifacts.projectId, input.projectId)
+        )
+      );
+
+    const updates = planStaleArtifactUpdates({
+      changedArtifact: {
+        id: row.id,
+        projectId: row.projectId,
+        type: row.type as ProjectArtifactType,
+        version: row.version,
+        status: row.status as ProjectArtifactStatus,
+      },
+      artifacts: candidates.map((c) => ({
+        id: c.id,
+        projectId: c.projectId,
+        type: c.type as ProjectArtifactType,
+        version: c.version,
+        status: c.status as ProjectArtifactStatus,
+      })),
+    });
+
+    for (const update of updates) {
+      await tx
+        .update(projectArtifacts)
+        .set({ status: update.nextStatus, updatedAt: update.updatedAt })
+        .where(
+          and(
+            eq(projectArtifacts.tenantId, input.tenantId),
+            eq(projectArtifacts.projectId, input.projectId),
+            eq(projectArtifacts.id, update.artifactId)
+          )
+        );
+    }
+
+    return toProjectArtifact(row);
   });
-
-  const [row] = await db.insert(projectArtifacts).values(record).returning();
-  return toProjectArtifact(row);
 }
 
 /**
@@ -125,17 +180,19 @@ export async function listProjectArtifacts(
   tenantId: string,
   projectId: string
 ): Promise<ProjectArtifact[]> {
-  const rows = await db
-    .select()
-    .from(projectArtifacts)
-    .where(
-      and(
-        eq(projectArtifacts.tenantId, tenantId),
-        eq(projectArtifacts.projectId, projectId)
+  return withTenantDb(tenantId, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(projectArtifacts)
+      .where(
+        and(
+          eq(projectArtifacts.tenantId, tenantId),
+          eq(projectArtifacts.projectId, projectId)
+        )
       )
-    )
-    .orderBy(asc(projectArtifacts.type), asc(projectArtifacts.version));
-  return rows.map(toProjectArtifact);
+      .orderBy(asc(projectArtifacts.type), asc(projectArtifacts.version));
+    return rows.map(toProjectArtifact);
+  });
 }
 
 /**
@@ -147,18 +204,20 @@ export async function listProjectArtifactsByType(
   projectId: string,
   type: ProjectArtifactType
 ): Promise<ProjectArtifact[]> {
-  const rows = await db
-    .select()
-    .from(projectArtifacts)
-    .where(
-      and(
-        eq(projectArtifacts.tenantId, tenantId),
-        eq(projectArtifacts.projectId, projectId),
-        eq(projectArtifacts.type, type)
+  return withTenantDb(tenantId, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(projectArtifacts)
+      .where(
+        and(
+          eq(projectArtifacts.tenantId, tenantId),
+          eq(projectArtifacts.projectId, projectId),
+          eq(projectArtifacts.type, type)
+        )
       )
-    )
-    .orderBy(asc(projectArtifacts.version));
-  return rows.map(toProjectArtifact);
+      .orderBy(asc(projectArtifacts.version));
+    return rows.map(toProjectArtifact);
+  });
 }
 
 /**
@@ -185,16 +244,18 @@ export async function getProjectArtifactById(
   projectId: string,
   artifactId: string
 ): Promise<ProjectArtifact | null> {
-  const [row] = await db
-    .select()
-    .from(projectArtifacts)
-    .where(
-      and(
-        eq(projectArtifacts.tenantId, tenantId),
-        eq(projectArtifacts.projectId, projectId),
-        eq(projectArtifacts.id, artifactId)
+  return withTenantDb(tenantId, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(projectArtifacts)
+      .where(
+        and(
+          eq(projectArtifacts.tenantId, tenantId),
+          eq(projectArtifacts.projectId, projectId),
+          eq(projectArtifacts.id, artifactId)
+        )
       )
-    )
-    .limit(1);
-  return row ? toProjectArtifact(row) : null;
+      .limit(1);
+    return row ? toProjectArtifact(row) : null;
+  });
 }

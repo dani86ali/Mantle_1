@@ -1,5 +1,5 @@
 /** E3 margin analyzer — gross margin, attach rate, FX, discount.
- *  Source: docs/Network_PreSales_Playbook_Final_Consolidated.md §7.1–7.4
+ *  Source: docs/reference/hld/Network_PreSales_Playbook_Final_Consolidated.md §7.1-7.4
  *  and §4.5 (non-pegged MENA currencies). Pure, Zod-validated.
  */
 

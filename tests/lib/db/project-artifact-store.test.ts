@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// ─── In-memory fake db ─────────────────────────────────────────────────────
+// --- In-memory fake db ------------------------------------------------------
 // Mirrors only the chained calls project-artifact-store uses against ONE table
 // (project_artifacts), so routing is trivial - every query targets
 // store.artifacts:
@@ -30,7 +30,7 @@ interface StoredArtifact {
   updatedAt: Date;
 }
 
-const { store, mockDb } = vi.hoisted(() => {
+const { store, mockDb, withTenantDb } = vi.hoisted(() => {
   let counter = 0;
   const genId = (prefix: string) => `${prefix}-${++counter}`;
 
@@ -100,6 +100,25 @@ const { store, mockDb } = vi.hoisted(() => {
         },
       };
     },
+    update(_table: unknown) {
+      return {
+        set(values: Record<string, unknown>) {
+          return {
+            async where(pred: Pred) {
+              const conds = flatten(pred);
+              const updated: StoredArtifact[] = [];
+              for (const row of store.artifacts) {
+                if (matches(row as unknown as Record<string, unknown>, conds)) {
+                  Object.assign(row, values);
+                  updated.push(row);
+                }
+              }
+              return updated;
+            },
+          };
+        },
+      };
+    },
     select() {
       return {
         from(_table: unknown) {
@@ -141,10 +160,17 @@ const { store, mockDb } = vi.hoisted(() => {
     },
   };
 
-  return { store, mockDb };
+  // Records the tenant id each repository function opens its tenant-scoped
+  // transaction with, then runs the callback against the in-memory mockDb (the
+  // real helper would set app.tenant_id transaction-locally first).
+  const withTenantDb = vi.fn(
+    async (_tenantId: string, cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)
+  );
+
+  return { store, mockDb, withTenantDb };
 });
 
-vi.mock("@/lib/db/index", () => ({ db: mockDb }));
+vi.mock("@/lib/db/index", () => ({ db: mockDb, withTenantDb }));
 vi.mock("drizzle-orm", async () => {
   const actual = await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
   return {
@@ -195,6 +221,7 @@ function seedArtifact(overrides: Partial<StoredArtifact> = {}): StoredArtifact {
 beforeEach(() => {
   store.artifacts.length = 0;
   store.artifactInserts.length = 0;
+  withTenantDb.mockClear();
 });
 
 describe("createProjectArtifactVersion", () => {
@@ -305,6 +332,157 @@ describe("createProjectArtifactVersion", () => {
     expect(createInput).toEqual(snapshot);
     expect(sourceFileIds).toEqual(["file-a"]);
     expect(sourceArtifactIds).toEqual(["art-up"]);
+  });
+});
+
+describe("createProjectArtifactVersion downstream staleness", () => {
+  const stageFor: Record<string, string> = {
+    normalized_boq: "boq_format_validation",
+    sku_resolution: "sku_resolution",
+    configuration_expansion: "configuration_expansion_review",
+    priced_boq: "boq_pricing_review",
+    export_package: "export_approval",
+  };
+
+  function create(type: string) {
+    return createProjectArtifactVersion({
+      projectId: PROJECT,
+      tenantId: TENANT,
+      stageId: stageFor[type] as CreateProjectArtifactVersionInput["stageId"],
+      type: type as CreateProjectArtifactVersionInput["type"],
+    });
+  }
+
+  function statusOf(id: string): string | undefined {
+    return store.artifacts.find((a) => a.id === id)?.status;
+  }
+
+  it("marks latest sku_resolution, configuration_expansion, priced_boq, export_package stale on a new normalized_boq", async () => {
+    seedArtifact({ id: "sr", type: "sku_resolution", version: 1, status: "approved" });
+    seedArtifact({ id: "ce", type: "configuration_expansion", version: 1, status: "generated" });
+    seedArtifact({ id: "pb", type: "priced_boq", version: 1, status: "needs_review" });
+    seedArtifact({ id: "ep", type: "export_package", version: 1, status: "rejected" });
+
+    await create("normalized_boq");
+
+    expect(statusOf("sr")).toBe("stale");
+    expect(statusOf("ce")).toBe("stale");
+    expect(statusOf("pb")).toBe("stale");
+    expect(statusOf("ep")).toBe("stale");
+  });
+
+  it("marks downstream of sku_resolution stale but not normalized_boq", async () => {
+    seedArtifact({ id: "nb", type: "normalized_boq", version: 1, status: "approved" });
+    seedArtifact({ id: "sr", type: "sku_resolution", version: 1, status: "approved" });
+    seedArtifact({ id: "ce", type: "configuration_expansion", version: 1, status: "approved" });
+    seedArtifact({ id: "pb", type: "priced_boq", version: 1, status: "approved" });
+    seedArtifact({ id: "ep", type: "export_package", version: 1, status: "approved" });
+
+    await create("sku_resolution");
+
+    expect(statusOf("nb")).toBe("approved");
+    expect(statusOf("ce")).toBe("stale");
+    expect(statusOf("pb")).toBe("stale");
+    expect(statusOf("ep")).toBe("stale");
+  });
+
+  it("marks priced_boq and export_package stale on a new configuration_expansion", async () => {
+    seedArtifact({ id: "sr", type: "sku_resolution", version: 1, status: "approved" });
+    seedArtifact({ id: "pb", type: "priced_boq", version: 1, status: "approved" });
+    seedArtifact({ id: "ep", type: "export_package", version: 1, status: "approved" });
+
+    await create("configuration_expansion");
+
+    expect(statusOf("sr")).toBe("approved");
+    expect(statusOf("pb")).toBe("stale");
+    expect(statusOf("ep")).toBe("stale");
+  });
+
+  it("marks export_package stale on a new priced_boq", async () => {
+    seedArtifact({ id: "ce", type: "configuration_expansion", version: 1, status: "approved" });
+    seedArtifact({ id: "ep", type: "export_package", version: 1, status: "approved" });
+
+    await create("priced_boq");
+
+    expect(statusOf("ce")).toBe("approved");
+    expect(statusOf("ep")).toBe("stale");
+  });
+
+  it("does not mark the newly inserted artifact stale", async () => {
+    const created = await create("priced_boq");
+    expect(statusOf(created.id)).toBe("generated");
+  });
+
+  it("does not mutate older downstream versions when a newer version exists", async () => {
+    seedArtifact({ id: "ep-v1", type: "export_package", version: 1, status: "approved" });
+    seedArtifact({ id: "ep-v2", type: "export_package", version: 2, status: "approved" });
+
+    await create("priced_boq");
+
+    expect(statusOf("ep-v1")).toBe("approved");
+    expect(statusOf("ep-v2")).toBe("stale");
+  });
+
+  it("does not mutate artifacts from another tenant or project", async () => {
+    seedArtifact({ id: "ep-mine", type: "export_package", version: 1, status: "approved" });
+    seedArtifact({ id: "ep-other-tenant", type: "export_package", version: 1, status: "approved", tenantId: OTHER_TENANT });
+    seedArtifact({ id: "ep-other-project", type: "export_package", version: 1, status: "approved", projectId: OTHER_PROJECT });
+
+    await create("priced_boq");
+
+    expect(statusOf("ep-mine")).toBe("stale");
+    expect(statusOf("ep-other-tenant")).toBe("approved");
+    expect(statusOf("ep-other-project")).toBe("approved");
+  });
+
+  it("does not mutate downstream latest artifacts whose status is missing, stale, or not_applicable", async () => {
+    seedArtifact({ id: "ce", type: "configuration_expansion", version: 1, status: "missing" });
+    seedArtifact({ id: "pb", type: "priced_boq", version: 1, status: "stale" });
+    seedArtifact({ id: "ep", type: "export_package", version: 1, status: "not_applicable" });
+
+    await create("normalized_boq");
+
+    expect(statusOf("ce")).toBe("missing");
+    expect(statusOf("pb")).toBe("stale");
+    expect(statusOf("ep")).toBe("not_applicable");
+  });
+
+  it("preserves non-status fields on stale-marked artifacts", async () => {
+    const createdAt = new Date("2026-05-21T08:00:00.000Z");
+    seedArtifact({
+      id: "ep",
+      type: "export_package",
+      version: 3,
+      status: "approved",
+      payload: { docs: 4 },
+      filePath: "s3://bucket/export.zip",
+      sourceFileIds: ["file-z"],
+      sourceArtifactIds: ["art-tp"],
+      stageId: "export_approval",
+      createdAt,
+    });
+
+    await create("priced_boq");
+
+    const ep = store.artifacts.find((a) => a.id === "ep")!;
+    expect(ep.status).toBe("stale");
+    expect(ep.version).toBe(3);
+    expect(ep.payload).toEqual({ docs: 4 });
+    expect(ep.filePath).toBe("s3://bucket/export.zip");
+    expect(ep.sourceFileIds).toEqual(["file-z"]);
+    expect(ep.sourceArtifactIds).toEqual(["art-tp"]);
+    expect(ep.stageId).toBe("export_approval");
+    expect(ep.type).toBe("export_package");
+    expect(ep.createdAt).toBe(createdAt);
+  });
+
+  it("opens exactly one tenant-scoped transaction for the input tenant", async () => {
+    seedArtifact({ id: "ep", type: "export_package", version: 1, status: "approved" });
+
+    await create("priced_boq");
+
+    expect(withTenantDb).toHaveBeenCalledTimes(1);
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
   });
 });
 
@@ -440,6 +618,33 @@ describe("getProjectArtifactById", () => {
     expect(await getProjectArtifactById(OTHER_TENANT, PROJECT, "a-1")).toBeNull();
     expect(await getProjectArtifactById(TENANT, OTHER_PROJECT, "a-1")).toBeNull();
     expect(await getProjectArtifactById(TENANT, PROJECT, "missing")).toBeNull();
+  });
+});
+
+describe("tenant-scoped execution", () => {
+  it("createProjectArtifactVersion opens a tenant-scoped transaction for the input tenant", async () => {
+    await createProjectArtifactVersion({
+      projectId: PROJECT,
+      tenantId: TENANT,
+      stageId: "boq_pricing_review",
+      type: "priced_boq",
+    });
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("listProjectArtifacts opens a tenant-scoped transaction for the requested tenant", async () => {
+    await listProjectArtifacts(TENANT, PROJECT);
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("getProjectArtifactById opens a tenant-scoped transaction for the requested tenant", async () => {
+    await getProjectArtifactById(TENANT, PROJECT, "art-x");
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it("getLatestProjectArtifactVersion opens a tenant-scoped transaction for the requested tenant", async () => {
+    await getLatestProjectArtifactVersion(TENANT, PROJECT, "priced_boq");
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
   });
 });
 

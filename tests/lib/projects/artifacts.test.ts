@@ -26,14 +26,23 @@ function existing(
 }
 
 describe("getArtifactTypesForStage", () => {
-  it("returns the Prompt 3 stage metadata", () => {
+  it("returns the stage metadata", () => {
+    // Pricing review now consumes the accepted configuration_expansion and
+    // produces priced_boq (section 11A.3).
     expect(getArtifactTypesForStage("boq_pricing_review")).toEqual([
-      "normalized_boq",
-      "sku_resolution",
+      "configuration_expansion",
       "priced_boq",
     ]);
     expect(getArtifactTypesForStage("intake_package_review")).toEqual([
       "input_package",
+    ]);
+  });
+
+  it("returns the configuration_expansion_review stage metadata", () => {
+    expect(getArtifactTypesForStage("configuration_expansion_review")).toEqual([
+      "normalized_boq",
+      "sku_resolution",
+      "configuration_expansion",
     ]);
   });
 });

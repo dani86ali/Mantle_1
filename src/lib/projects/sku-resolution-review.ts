@@ -7,13 +7,16 @@
  * This is line-level SKU review (accept/reject of `needs_review` rows), NOT
  * Project stage/artifact approval. A human actor (`decidedBy`) is always
  * required; nothing is ever auto-accepted. Accepting requires the chosen SKU to
- * match one of the row's existing suggestions. It does NO catalog lookup, never
- * decides unresolved rows, creates no artifact version, and touches no DB,
- * artifact store, approvals, staleness, engines, AI, pricing, or API/UI. Pure:
- * returns fresh decisions and never mutates its input decisions, actions, or
- * suggestion arrays.
+ * match one of the row's existing suggestions, and a deferred/non-priced row can
+ * NEVER be accepted - a deterministic guard that holds even when such a row carries a
+ * same-SKU suggestion, so a crafted direct API accept is refused server-side. It does
+ * NO catalog lookup, never decides unresolved rows, creates no artifact version, and
+ * touches no DB, artifact store, approvals, staleness, engines, AI, pricing, or
+ * API/UI. Pure: returns fresh decisions and never mutates its input decisions,
+ * actions, or suggestion arrays.
  */
 import type { SkuResolutionDecision } from "@/types/project";
+import { isDeferredReviewSku } from "@/lib/projects/sku-deferred-review-set";
 
 /** Fields common to both review actions. */
 interface SkuResolutionReviewActionBase {
@@ -58,6 +61,8 @@ const NOT_REVIEWABLE = "SKU resolution decision is not reviewable.";
 const ACCEPTED_SKU_REQUIRED = "acceptedSku is required.";
 const ACCEPTED_SKU_NO_MATCH = "Accepted SKU must match an existing suggestion.";
 const REJECT_HAS_ACCEPTED_SKU = "Rejected SKU resolution cannot include acceptedSku.";
+const ACCEPT_DEFERRED_NOT_ALLOWED =
+  "Deferred non-priced SKU resolution row cannot be accepted.";
 const DUPLICATE_ACTION = "Duplicate SKU resolution action for decision.";
 const MISSING_TARGET = "SKU resolution action target was not found.";
 
@@ -121,6 +126,13 @@ export function applySkuResolutionReviewAction(
   };
 
   if (action.decision === "accept") {
+    // Server-side guard: a deferred/non-priced row can never be accepted, even when it
+    // carries a same-SKU suggestion that would otherwise pass the suggestion-match
+    // check. This is keyed on the row's own originalSku, so a crafted direct API accept
+    // is refused regardless of the action's acceptedSku.
+    if (isDeferredReviewSku(decision.originalSku)) {
+      throw new Error(ACCEPT_DEFERRED_NOT_ALLOWED);
+    }
     if (isBlank(action.acceptedSku)) throw new Error(ACCEPTED_SKU_REQUIRED);
     const matches = decision.suggestions.some(
       (suggestion) => suggestion.suggestedSku === action.acceptedSku

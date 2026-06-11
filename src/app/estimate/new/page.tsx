@@ -94,6 +94,13 @@ export default function NewEstimatePage() {
           {step === 1 && (
             <ModeSelect
               onSelect={(mode) => {
+                // Quick BoM is owned by the canonical Project spine, not the
+                // legacy estimate/intake pipeline. Divert before the wizard
+                // can upload a BoQ to /api/intake and route to /estimates/[id].
+                if (mode === "quick_bom") {
+                  router.push("/projects/quick-bom/new");
+                  return;
+                }
                 update({ mode });
                 setStep(2);
               }}

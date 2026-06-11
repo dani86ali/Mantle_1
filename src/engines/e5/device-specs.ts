@@ -2,7 +2,7 @@
  * E5 — Device specification lookup tables.
  *
  * Embedded constants extracted from docs/BOMATIC_Device_Specs.json plus the
- * topology decision-tree reference models from docs/Design_Patterns.md §6.
+ * topology decision-tree reference models from docs/reference/hld/Design_Patterns.md §6.
  *
  * Only the fields needed for sizing are kept — full spec rows live in the JSON.
  * No runtime file reads: sizing must be deterministic and synchronous.

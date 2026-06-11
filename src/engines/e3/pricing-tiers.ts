@@ -1,5 +1,5 @@
 /** E3 Good/Better/Best pricing tier generator.
- *  Source: docs/Network_PreSales_Playbook_Final_Consolidated.md §7.5.
+ *  Source: docs/reference/hld/Network_PreSales_Playbook_Final_Consolidated.md §7.5.
  *  Pure functions, Zod-validated inputs (no AI, no I/O).
  */
 

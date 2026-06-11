@@ -3,26 +3,26 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// Types
 
 interface KeyboardShortcutsProps {
   open: boolean;
   onClose: () => void;
 }
 
-// ─── Data ───────────────────────────────────────────────────────────────────
+// Data
 
 const SHORTCUTS = [
   { keys: "Ctrl+K", description: "Command palette" },
-  { keys: "Ctrl+N", description: "New estimate" },
-  { keys: "Ctrl+E", description: "Estimates list" },
+  { keys: "Ctrl+N", description: "New Quick BoM project" },
+  { keys: "Ctrl+P", description: "Projects list" },
   { keys: "?", description: "This help" },
   { keys: "Esc", description: "Close panel / modal" },
   { keys: "Enter", description: "Send message (in chat)" },
   { keys: "Shift+Enter", description: "New line (in chat)" },
 ];
 
-// ─── Component ──────────────────────────────────────────────────────────────
+// Component
 
 export function KeyboardShortcuts({ open, onClose }: KeyboardShortcutsProps) {
   // Close on Escape
@@ -94,7 +94,7 @@ export function KeyboardShortcuts({ open, onClose }: KeyboardShortcutsProps) {
   );
 }
 
-// ─── Kbd helper ─────────────────────────────────────────────────────────────
+// Kbd helper
 
 function Kbd({ keys }: { keys: string }) {
   const parts = keys.split("+");
@@ -120,7 +120,7 @@ function Kbd({ keys }: { keys: string }) {
   );
 }
 
-// ─── Hook: global ? key listener ────────────────────────────────────────────
+// Hook: global ? key listener
 
 export function useKeyboardShortcutsModal() {
   const [open, setOpen] = useState(false);
