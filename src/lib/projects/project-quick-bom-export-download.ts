@@ -97,9 +97,23 @@ export type LoadProjectQuickBomExportDownloadResult =
       artifact: QuickBomExportDownloadArtifactSummary;
     };
 
-/** Replace any character outside [A-Za-z0-9._-] with "_" for a safe ASCII filename. */
-function safeFilenameSegment(value: string): string {
-  return value.replace(/[^A-Za-z0-9._-]/g, "_");
+/** Maximum length of the sanitized customer/project label inside the download filename. */
+const MAX_LABEL_LENGTH = 48;
+
+/**
+ * Sanitize a customer/project label into a short, professional, ASCII-safe filename token:
+ * trim, replace every non-alphanumeric run with a single "-", collapse duplicate "-", trim
+ * leading/trailing "-", cap at {@link MAX_LABEL_LENGTH}, and fall back to "Project" when the
+ * result is empty. Deterministic and derived only from server-side Project metadata.
+ */
+function sanitizeLabel(value: string): string {
+  const collapsed = value
+    .trim()
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const capped = collapsed.slice(0, MAX_LABEL_LENGTH).replace(/-+$/g, "");
+  return capped === "" ? "Project" : capped;
 }
 
 /** Lean wrong-mode project projection; tenantId is never surfaced. */
@@ -133,14 +147,15 @@ function toArtifactSummary(
 }
 
 /**
- * Build a safe ASCII download filename from the Project + artifact identity only. It uses
- * the customer name (falling back to the project name) plus the artifact version and id,
- * each sanitized; it never derives from caller input and never exposes the stored path.
+ * Build a short, professional, ASCII-safe download filename from the Project + artifact
+ * identity only: `BOMATIC-Quick-BoM-<label>-v<version>.xlsx`, where `<label>` is the
+ * sanitized customer name (falling back to the project name, then "Project") and `<version>`
+ * is the stored artifact version. It never includes the artifact id, never derives from
+ * caller input, and never exposes the stored path.
  */
 function buildDownloadFilename(project: Project, artifact: ProjectArtifact): string {
-  const label = safeFilenameSegment(project.customerName ?? project.name);
-  const id = safeFilenameSegment(artifact.id);
-  return `quick-bom-export-${label}-v${artifact.version}-${id}.xlsx`;
+  const label = sanitizeLabel(project.customerName ?? project.name ?? "Project");
+  return `BOMATIC-Quick-BoM-${label}-v${artifact.version}.xlsx`;
 }
 
 /** True when a thrown filesystem error is a missing-path ENOENT. */

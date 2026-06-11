@@ -37,7 +37,7 @@ const XLSX_MIME =
 
 // "PK\x03\x04" zip magic plus a few payload bytes so the round-trip is observable.
 const BYTES = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x11, 0x22, 0x33]);
-const FILENAME = "quick-bom-export-Honeywell-v1-art-ep-1.xlsx";
+const FILENAME = "BOMATIC-Quick-BoM-Honeywell-v1.xlsx";
 
 const ARTIFACT_SUMMARY = {
   id: ARTIFACT_ID,

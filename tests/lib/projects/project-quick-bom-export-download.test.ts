@@ -333,21 +333,22 @@ describe("loadProjectQuickBomExportDownload - ok result", () => {
 });
 
 describe("loadProjectQuickBomExportDownload - filename derivation", () => {
-  it("derives a safe filename from the customer name plus artifact version and id", async () => {
+  it("derives a short professional filename from the customer name and artifact version, with no artifact id", async () => {
     const result = await loadProjectQuickBomExportDownload(input());
 
     if (result.status !== "ok") throw new Error("unreachable");
-    expect(result.filename).toBe("quick-bom-export-Honeywell-v1-art-ep-1.xlsx");
+    expect(result.filename).toBe("BOMATIC-Quick-BoM-Honeywell-v1.xlsx");
+    expect(result.filename).not.toContain(ARTIFACT_ID);
   });
 
-  it("sanitizes unsafe characters in the customer name and artifact id", async () => {
+  it("collapses unsafe characters in the customer name to single hyphens", async () => {
     getProjectMock.mockResolvedValue(makeProject({ customerName: "Ac/me*Co?" }));
-    getArtifactMock.mockResolvedValue(makeArtifact({ id: "art ep:1", version: 5 }));
+    getArtifactMock.mockResolvedValue(makeArtifact({ version: 5 }));
 
     const result = await loadProjectQuickBomExportDownload(input());
 
     if (result.status !== "ok") throw new Error("unreachable");
-    expect(result.filename).toBe("quick-bom-export-Ac_me_Co_-v5-art_ep_1.xlsx");
+    expect(result.filename).toBe("BOMATIC-Quick-BoM-Ac-me-Co-v5.xlsx");
   });
 
   it("falls back to the sanitized project name when there is no customer name", async () => {
@@ -358,10 +359,37 @@ describe("loadProjectQuickBomExportDownload - filename derivation", () => {
     const result = await loadProjectQuickBomExportDownload(input());
 
     if (result.status !== "ok") throw new Error("unreachable");
-    expect(result.filename).toBe("quick-bom-export-Big_Project_-v1-art-ep-1.xlsx");
+    expect(result.filename).toBe("BOMATIC-Quick-BoM-Big-Project-v1.xlsx");
   });
 
-  it("derives the filename from the stored artifact id, not the requested artifactId param", async () => {
+  it("falls back to Project when the label sanitizes to empty", async () => {
+    getProjectMock.mockResolvedValue(
+      makeProject({ customerName: "***", name: "///" })
+    );
+
+    const result = await loadProjectQuickBomExportDownload(input());
+
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.filename).toBe("BOMATIC-Quick-BoM-Project-v1.xlsx");
+  });
+
+  it("caps a long label and trims trailing separators left by truncation", async () => {
+    getProjectMock.mockResolvedValue(
+      makeProject({ customerName: "A".repeat(40) + " " + "B".repeat(40) })
+    );
+
+    const result = await loadProjectQuickBomExportDownload(input());
+
+    if (result.status !== "ok") throw new Error("unreachable");
+    const label = result.filename
+      .replace(/^BOMATIC-Quick-BoM-/, "")
+      .replace(/-v1\.xlsx$/, "");
+    expect(label.length).toBeLessThanOrEqual(48);
+    expect(label.endsWith("-")).toBe(false);
+    expect(label.startsWith("-")).toBe(false);
+  });
+
+  it("never includes the stored artifact id or the requested artifactId param in the filename", async () => {
     getArtifactMock.mockResolvedValue(makeArtifact({ id: "stored-art-id" }));
 
     const result = await loadProjectQuickBomExportDownload(
@@ -369,7 +397,8 @@ describe("loadProjectQuickBomExportDownload - filename derivation", () => {
     );
 
     if (result.status !== "ok") throw new Error("unreachable");
-    expect(result.filename).toContain("stored-art-id");
+    expect(result.filename).toBe("BOMATIC-Quick-BoM-Honeywell-v1.xlsx");
+    expect(result.filename).not.toContain("stored-art-id");
     expect(result.filename).not.toContain("requested-art-id");
     // The requested id is still the load key.
     expect(getArtifactMock).toHaveBeenCalledWith(TENANT, PROJECT, "requested-art-id");
