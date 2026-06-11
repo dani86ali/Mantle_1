@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Read-only RFP extraction evidence inspection page (Milestone 1).
+ * Read-only RFP inspection page (Milestone 1 evidence + Milestone 2
+ * requirements baseline).
  *
  * GETs the lean evidence list from /api/projects/[id]/rfp/evidence (optional
  * sourceFileId / inputPackageArtifactId / kind query filters) and renders
@@ -12,8 +13,21 @@
  * that the detail API returned. Every fetch is a default GET: the page
  * writes nothing, runs no extraction, reads no file bytes, and decides
  * nothing - it only displays what the read-only inspection APIs return.
- * Types come via `import type` from the inspection read model, erased at
+ * Types come via `import type` from the inspection read models, erased at
  * compile time, so no server or DB code reaches the client.
+ *
+ * Requirements baseline (Milestone 2): on mount the page also GETs the lean
+ * requirements_baseline artifact list from
+ * /api/projects/[id]/rfp/requirements-baseline - identifiers, ISO dates,
+ * counts, requirement ids, and source ids only, never requirement text.
+ * Clicking Inspect on one artifact GETs
+ * /api/projects/[id]/rfp/artifacts/[artifactId]/requirements-baseline and
+ * only the baseline detail panel renders the sanitized reviewable payload:
+ * requirement text plus locator-only evidence references (identifiers,
+ * counts, positions - never raw evidence text, never table rows, never a
+ * tenant id, never a storage path, never an arbitrary payload key). The page
+ * stays read-only end to end: every fetch is a default GET and the page
+ * approves nothing, writes nothing, and decides nothing.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -23,6 +37,11 @@ import type {
   RfpEvidenceInspectionProjectSummary,
   RfpEvidenceListItemSummary,
 } from "@/lib/projects/project-rfp-evidence-inspection";
+import type {
+  RfpRequirementsBaselineInspectionArtifactSummary,
+  RfpRequirementsBaselineInspectionBaseline,
+  RfpRequirementsBaselineInspectionListItem,
+} from "@/lib/projects/project-rfp-requirements-baseline-inspection";
 
 type EvidenceKind = RfpEvidenceListItemSummary["kind"];
 type KindFilter = "all" | EvidenceKind;
@@ -47,9 +66,39 @@ interface EvidenceFilters {
   kind: KindFilter;
 }
 
+/** Lean list response of GET /api/projects/[id]/rfp/requirements-baseline. */
+interface BaselineListResponse {
+  artifactCount: number;
+  artifacts: RfpRequirementsBaselineInspectionListItem[];
+}
+
+/**
+ * Detail response of
+ * GET /api/projects/[id]/rfp/artifacts/[artifactId]/requirements-baseline.
+ */
+interface BaselineDetailResponse {
+  artifact?: RfpRequirementsBaselineInspectionArtifactSummary;
+  baseline?: RfpRequirementsBaselineInspectionBaseline;
+}
+
+/** Loaded baseline detail: the artifact summary plus sanitized payload. */
+interface BaselineDetail {
+  artifact: RfpRequirementsBaselineInspectionArtifactSummary;
+  baseline: RfpRequirementsBaselineInspectionBaseline;
+}
+
+type BaselineRequirement =
+  RfpRequirementsBaselineInspectionBaseline["requirements"][number];
+type BaselineEvidenceReference =
+  BaselineRequirement["evidenceReferences"][number];
+
 /** Exact UI copy required for the list/detail failure states. */
 const LIST_ERROR = "Unable to load RFP evidence.";
 const DETAIL_ERROR = "Unable to load evidence detail.";
+
+/** Exact UI copy required for the baseline list/detail failure states. */
+const BASELINE_LIST_ERROR = "Unable to load requirements baseline.";
+const BASELINE_DETAIL_ERROR = "Unable to load requirements baseline detail.";
 
 const EMPTY_FILTERS: EvidenceFilters = {
   sourceFileId: "",
@@ -98,6 +147,16 @@ function summaryLine(item: RfpEvidenceListItemSummary): string {
   return `chunk ${s.chunkIndex + 1}/${s.chunkCount} | ${s.charCount} chars${doc}`;
 }
 
+/** One-line locator summary for one evidence reference; never content. */
+function referenceLine(ref: BaselineEvidenceReference): string {
+  if (ref.evidenceKind === "rfp_document_table") {
+    const page = ref.pageNumber !== undefined ? ` | page ${ref.pageNumber}` : "";
+    const sheet = ref.sheetName !== undefined ? ` | sheet ${ref.sheetName}` : "";
+    return `table ${ref.tableId}${page}${sheet} | ${ref.rowCount} rows x ${ref.columnCount} cols`;
+  }
+  return `chunk ${ref.chunkIndex + 1}/${ref.chunkCount} | ${ref.charCount} chars`;
+}
+
 export default function ProjectRfpEvidencePage() {
   const params = useParams();
   const id = params.id as string;
@@ -113,6 +172,14 @@ export default function ProjectRfpEvidencePage() {
   const [detail, setDetail] = useState<RfpEvidenceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+
+  const [baselineList, setBaselineList] = useState<BaselineListResponse | null>(null);
+  const [baselineLoading, setBaselineLoading] = useState(true);
+  const [baselineError, setBaselineError] = useState<string | null>(null);
+
+  const [baselineDetail, setBaselineDetail] = useState<BaselineDetail | null>(null);
+  const [baselineDetailLoading, setBaselineDetailLoading] = useState(false);
+  const [baselineDetailError, setBaselineDetailError] = useState<string | null>(null);
 
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
@@ -160,6 +227,60 @@ export default function ProjectRfpEvidencePage() {
         setDetailError(DETAIL_ERROR);
       } finally {
         setDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  const loadBaselineList = useCallback(async (): Promise<void> => {
+    setBaselineLoading(true);
+    setBaselineError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/requirements-baseline`);
+      const body = (await res.json().catch(() => null)) as BaselineListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
+        setBaselineList(null);
+        setBaselineError(BASELINE_LIST_ERROR);
+        return;
+      }
+      setBaselineList(body);
+    } catch {
+      setBaselineList(null);
+      setBaselineError(BASELINE_LIST_ERROR);
+    } finally {
+      setBaselineLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadBaselineList();
+  }, [loadBaselineList]);
+
+  // Baseline payload content is fetched only here, on an explicit Inspect.
+  const loadBaselineDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setBaselineDetail(null);
+      setBaselineDetailError(null);
+      setBaselineDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/requirements-baseline`
+        );
+        const body = (await res.json().catch(() => null)) as BaselineDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.baseline === undefined
+        ) {
+          setBaselineDetailError(BASELINE_DETAIL_ERROR);
+          return;
+        }
+        setBaselineDetail({ artifact: body.artifact, baseline: body.baseline });
+      } catch {
+        setBaselineDetailError(BASELINE_DETAIL_ERROR);
+      } finally {
+        setBaselineDetailLoading(false);
       }
     },
     [id]
@@ -375,6 +496,149 @@ export default function ProjectRfpEvidencePage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-sm font-semibold text-text-primary">Requirements baseline</h2>
+        {baselineError && (
+          <div data-testid="baseline-error" className={`mt-2 ${ERROR_BOX}`}>
+            {baselineError}
+          </div>
+        )}
+        {baselineLoading && (
+          <p data-testid="baseline-loading" className="mt-1 text-sm text-text-tertiary">
+            Loading requirements baseline...
+          </p>
+        )}
+        {baselineList && (
+          <>
+            <p data-testid="baseline-count" className="mt-1 text-xs text-text-secondary">
+              Baseline artifacts: {baselineList.artifactCount}
+            </p>
+            {baselineList.artifacts.length === 0 ? (
+              <p data-testid="baseline-empty" className="mt-2 text-sm text-text-tertiary">
+                No requirements baseline artifacts yet.
+              </p>
+            ) : (
+              <ol className="mt-2 space-y-1">
+                {baselineList.artifacts.map((item) => (
+                  <li
+                    key={item.id}
+                    data-testid="baseline-row"
+                    className="flex items-start justify-between gap-2 rounded-button border border-[var(--border)] p-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-text-primary">
+                        <span className="font-mono">{item.id}</span> | version {item.version} |{" "}
+                        {item.status}
+                      </p>
+                      <p className="text-xs text-text-secondary">
+                        requirements: {item.payloadSummary.requirementCount} | evidence refs:{" "}
+                        {item.payloadSummary.evidenceCount}
+                      </p>
+                      <p className="text-xs text-text-secondary">
+                        requirement ids:{" "}
+                        <span className="font-mono">
+                          {item.payloadSummary.requirementIds.join(", ")}
+                        </span>
+                      </p>
+                      <p className="text-xs text-text-tertiary">
+                        source artifacts:{" "}
+                        <span className="font-mono">{item.sourceArtifactIds.join(", ")}</span> |
+                        source files:{" "}
+                        <span className="font-mono">{item.sourceFileIds.join(", ")}</span>
+                      </p>
+                      <p className="text-xs text-text-tertiary">
+                        created {item.createdAt} | updated {item.updatedAt}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      data-testid={`baseline-inspect-${item.id}`}
+                      disabled={baselineDetailLoading}
+                      onClick={() => void loadBaselineDetail(item.id)}
+                      className={ACTION_BTN}
+                    >
+                      Inspect
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-sm font-semibold text-text-primary">
+          Requirements baseline detail
+        </h2>
+        {baselineDetailError && (
+          <div data-testid="baseline-detail-error" className={`mt-2 ${ERROR_BOX}`}>
+            {baselineDetailError}
+          </div>
+        )}
+        {baselineDetailLoading && (
+          <p data-testid="baseline-detail-loading" className="mt-1 text-sm text-text-tertiary">
+            Loading requirements baseline detail...
+          </p>
+        )}
+        {!baselineDetail && !baselineDetailLoading && !baselineDetailError && (
+          <p data-testid="baseline-detail-empty" className="mt-1 text-xs text-text-tertiary">
+            Click Inspect on a baseline artifact to view its reviewable requirements.
+          </p>
+        )}
+        {baselineDetail && (
+          <div
+            data-testid="baseline-detail-panel"
+            className="mt-2 rounded-card border border-[var(--border)] p-3"
+          >
+            <p data-testid="baseline-detail-meta" className="text-xs text-text-secondary">
+              <span className="font-mono">{baselineDetail.artifact.id}</span> | version{" "}
+              {baselineDetail.artifact.version} | {baselineDetail.artifact.status} | created by{" "}
+              {baselineDetail.baseline.createdBy} | created {baselineDetail.baseline.createdAt} |
+              requirements: {baselineDetail.baseline.requirementCount} | evidence refs:{" "}
+              {baselineDetail.baseline.evidenceCount}
+            </p>
+            <ol className="mt-2 space-y-2">
+              {baselineDetail.baseline.requirements.map((req) => (
+                <li
+                  key={req.id}
+                  data-testid="baseline-detail-requirement"
+                  className="rounded-button border border-[var(--border)] p-2"
+                >
+                  <p className="text-xs font-medium text-text-primary">
+                    <span className="font-mono">{req.id}</span> | {req.category} | {req.priority}
+                    {req.title !== undefined ? ` | ${req.title}` : ""}
+                  </p>
+                  <p
+                    data-testid="baseline-detail-requirement-text"
+                    className="mt-1 whitespace-pre-wrap text-xs text-text-primary"
+                  >
+                    {req.text}
+                  </p>
+                  {req.notes !== undefined && (
+                    <p className="mt-1 text-xs text-text-secondary">Notes: {req.notes}</p>
+                  )}
+                  <ul className="mt-1 space-y-0.5">
+                    {req.evidenceReferences.map((ref, refIndex) => (
+                      <li
+                        key={refIndex}
+                        data-testid="baseline-detail-reference"
+                        className="text-xs text-text-tertiary"
+                      >
+                        <span className="font-mono">{ref.evidenceId}</span> |{" "}
+                        {kindLabel(ref.evidenceKind)} | {referenceLine(ref)} | file{" "}
+                        <span className="font-mono">{ref.sourceFileId}</span> | package{" "}
+                        <span className="font-mono">{ref.inputPackageArtifactId}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ol>
           </div>
         )}
       </section>
