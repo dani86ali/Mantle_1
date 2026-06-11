@@ -1,14 +1,17 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // Mock auth, the configured-executor factory, and the generation orchestrator
 // so the route's auth gate, tenant/project/requestedBy authority, body
 // sanitization, executor-availability gate, and result mapping are tested
 // independent of the DB and of any drafting implementation. The real
 // orchestrator module is never loaded here (it would pull the DB stores into
-// the test); the real factory module IS loaded once via vi.importActual,
-// which is safe because its only import is a compile-time-erased type.
+// the test); the real factory module IS loaded via vi.importActual in the
+// factory describe below, which is safe because the factory only builds the
+// drafting executor (it never invokes it, so no network is reached) and
+// reads exactly the approved environment variables, which that describe
+// saves and restores around every test.
 const { mockRequireAuth, mockGetExecutor, mockGenerate } = vi.hoisted(() => ({
   mockRequireAuth: vi.fn(),
   mockGetExecutor: vi.fn(),
@@ -529,15 +532,83 @@ describe(".../rfp/requirements-baseline/generate - route surface", () => {
 });
 
 describe("configured drafting executor factory (real module)", () => {
-  it("returns null until live provider wiring is approved", async () => {
-    const actual = await vi.importActual<{
+  const FACTORY_ENV_KEYS = [
+    "ANTHROPIC_API_KEY",
+    "BOMATIC_RFP_REQUIREMENTS_CANDIDATE_DRAFTING_MODEL",
+    "BOMATIC_RFP_REQUIREMENTS_CANDIDATE_DRAFTING_MAX_TOKENS",
+  ];
+  let savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    savedEnv = {};
+    for (const key of FACTORY_ENV_KEYS) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of FACTORY_ENV_KEYS) {
+      const value = savedEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  async function loadRealFactory() {
+    return vi.importActual<{
       getConfiguredRfpRequirementCandidateDraftingExecutor: () => unknown;
     }>("@/lib/projects/project-rfp-requirements-candidate-drafting-executor");
+  }
+
+  it("returns null when ANTHROPIC_API_KEY is missing", async () => {
+    const factory = await loadRealFactory();
 
     expect(
-      actual.getConfiguredRfpRequirementCandidateDraftingExecutor()
+      factory.getConfiguredRfpRequirementCandidateDraftingExecutor()
     ).toBeNull();
   });
+
+  it("returns null when ANTHROPIC_API_KEY is blank", async () => {
+    process.env.ANTHROPIC_API_KEY = "   ";
+    const factory = await loadRealFactory();
+
+    expect(
+      factory.getConfiguredRfpRequirementCandidateDraftingExecutor()
+    ).toBeNull();
+  });
+
+  it("returns an executor function without invoking it when ANTHROPIC_API_KEY is set", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
+    const factory = await loadRealFactory();
+
+    const executor =
+      factory.getConfiguredRfpRequirementCandidateDraftingExecutor();
+
+    expect(typeof executor).toBe("function");
+  });
+
+  it.each([
+    ["a valid integer", "2048"],
+    ["a non-integer", "12.5"],
+    ["a non-numeric", "lots"],
+    ["zero", "0"],
+    ["a negative integer", "-5"],
+  ])(
+    "returns an executor function with a model override and %s max-tokens override, still without invoking it",
+    async (_label, rawMaxTokens) => {
+      process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
+      process.env.BOMATIC_RFP_REQUIREMENTS_CANDIDATE_DRAFTING_MODEL =
+        "model-override-1";
+      process.env.BOMATIC_RFP_REQUIREMENTS_CANDIDATE_DRAFTING_MAX_TOKENS =
+        rawMaxTokens;
+      const factory = await loadRealFactory();
+
+      expect(
+        typeof factory.getConfiguredRfpRequirementCandidateDraftingExecutor()
+      ).toBe("function");
+    }
+  );
 });
 
 describe("route and factory module purity (static source check)", () => {
@@ -622,24 +693,28 @@ describe("route and factory module purity (static source check)", () => {
     }
   });
 
-  it("factory has exactly one import, the executor type from the drafting contract", () => {
+  it("factory imports only the executor type from the drafting contract and the Anthropic adapter factory", () => {
     const importLines = factorySource
       .split("\n")
       .filter((line) => /^\s*import\b/.test(line));
-    expect(importLines).toHaveLength(1);
+    expect(importLines).toHaveLength(2);
     expect(importLines[0]).toMatch(/^import type \{/);
+    expect(importLines[1]).toMatch(/^import \{/);
     const froms = Array.from(
       factorySource.matchAll(/from\s+"([^"]+)"/g),
       (m) => m[1]
     );
     expect(froms).toEqual([
       "@/lib/projects/project-rfp-requirements-candidate-drafting",
+      "@/lib/projects/project-rfp-requirements-candidate-drafting-anthropic",
     ]);
+    expect(factorySource).toContain(
+      "createAnthropicRfpRequirementCandidateDraftingExecutor"
+    );
   });
 
-  it("factory stays free of environment reads, network calls, and provider, legacy AI, DB, or engine modules", () => {
+  it("factory reads only the approved configuration variables and stays free of network calls and provider, legacy AI, DB, or engine modules", () => {
     for (const forbidden of [
-      "process.env",
       "fetch(",
       "require(",
       "@anthropic-ai",
@@ -654,6 +729,22 @@ describe("route and factory module purity (static source check)", () => {
       'from "@/engines',
     ]) {
       expect(factorySource).not.toContain(forbidden);
+    }
+    // Every environment read is dot-access on an approved variable; bracket
+    // access is forbidden so the dot-access scan below is complete.
+    expect(factorySource).not.toContain("process.env[");
+    const envReads = Array.from(
+      factorySource.matchAll(/process\.env\.([A-Za-z0-9_]+)/g),
+      (m) => m[1]
+    );
+    expect(envReads.length).toBeGreaterThan(0);
+    const approved = [
+      "ANTHROPIC_API_KEY",
+      "BOMATIC_RFP_REQUIREMENTS_CANDIDATE_DRAFTING_MODEL",
+      "BOMATIC_RFP_REQUIREMENTS_CANDIDATE_DRAFTING_MAX_TOKENS",
+    ];
+    for (const name of envReads) {
+      expect(approved).toContain(name);
     }
   });
 
