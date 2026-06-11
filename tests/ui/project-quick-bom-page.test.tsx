@@ -2335,10 +2335,9 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     });
 
     const summary = await screen.findByTestId("config-review-summary");
-    expect(summary).toHaveTextContent("3 lines");
-    expect(summary).toHaveTextContent("1 customer");
-    expect(summary).toHaveTextContent("2 expansion");
-    expect(summary).toHaveTextContent("2 require decision");
+    expect(summary).toHaveTextContent("2 selected for downstream, 0 excluded");
+    expect(summary).toHaveTextContent("2 expansion lines");
+    expect(summary).toHaveTextContent("1 customer lines read-only");
 
     const lines = screen.getAllByTestId("config-review-line");
     expect(lines).toHaveLength(3);
@@ -2608,7 +2607,7 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     expect(document.body.textContent ?? "").not.toContain(secret);
   });
 
-  it("batch button marks all expansion lines accepted, leaves customer lines read-only, enables submit, and does not POST until Submit", async () => {
+  it("selects every expansion line by default, leaves customer lines read-only, enables submit, and does not POST until Submit", async () => {
     const calls = stubFetch((url, init) => {
       if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
         return jsonResponse(cfgReviewOkResponse());
@@ -2630,15 +2629,13 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     // Defaults are explicit-on-submit, so Submit is enabled from the start.
     expect(submit).not.toBeDisabled();
 
-    // "Select all" keeps every expansion line selected; no POST happens yet.
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("config-review-select-all"));
-    });
+    // No POST happens before Submit.
     expect(
       calls.some((c) => CFG_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")
     ).toBe(false);
 
-    // The customer line never gains a checkbox (read-only) - still 2 boxes, both checked.
+    // The customer line never gains a checkbox (read-only) - 2 expansion boxes, both
+    // checked by default.
     const boxes = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
     expect(boxes).toHaveLength(2);
     expect(boxes.every((b) => b.checked)).toBe(true);
@@ -2659,7 +2656,7 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     );
   });
 
-  it("does not render an unsafe Deselect all bulk action", async () => {
+  it("does not render any bulk select/deselect action in the editable config review", async () => {
     stubFetch((url, init) => {
       if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
         return jsonResponse(cfgReviewOkResponse());
@@ -2677,11 +2674,11 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
     await screen.findByTestId("config-review-summary");
 
-    expect(screen.getByTestId("config-review-select-all")).toBeInTheDocument();
+    expect(screen.queryByTestId("config-review-select-all")).toBeNull();
     expect(screen.queryByTestId("config-review-deselect-all")).toBeNull();
   });
 
-  it("Select all does NOT overwrite an explicit deselection; the reject and its note survive submit", async () => {
+  it("deselecting then re-checking a row flips its decision; summary and submit follow the explicit choice", async () => {
     vi.spyOn(window, "prompt").mockReturnValue("Not needed for this site");
     const calls = stubFetch((url, init) => {
       if (CFG_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
@@ -2700,18 +2697,32 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     await act(async () => { fireEvent.click(screen.getByTestId("config-review-load")); });
     await screen.findByTestId("config-review-summary");
 
-    // Explicitly deselect the second expansion line (reject + note)...
+    // Both expansion lines start selected for downstream.
+    expect(screen.getByTestId("config-review-summary")).toHaveTextContent(
+      "2 selected for downstream, 0 excluded"
+    );
+
+    // Deselect the second expansion line (reject + note) - summary updates.
     const boxes = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
     await act(async () => { fireEvent.click(boxes[1]); });
     expect(boxes[1].checked).toBe(false);
+    expect(screen.getByTestId("config-review-summary")).toHaveTextContent(
+      "1 selected for downstream, 1 excluded"
+    );
 
-    // ...then a bulk "Select all" must NOT silently re-include that explicit reject.
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("config-review-select-all"));
-    });
-    const after = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
-    expect(after[0].checked).toBe(true); // exp-1 still selected
-    expect(after[1].checked).toBe(false); // exp-2 stays explicitly deselected
+    // Re-check that same row to include it downstream again - summary returns to all selected.
+    const afterDeselect = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
+    await act(async () => { fireEvent.click(afterDeselect[1]); });
+    expect(
+      (screen.getAllByTestId("config-review-checkbox")[1] as HTMLInputElement).checked
+    ).toBe(true);
+    expect(screen.getByTestId("config-review-summary")).toHaveTextContent(
+      "2 selected for downstream, 0 excluded"
+    );
+
+    // Deselect once more, then submit: one decision per expansion line, none for customer.
+    const finalBoxes = screen.getAllByTestId("config-review-checkbox") as HTMLInputElement[];
+    await act(async () => { fireEvent.click(finalBoxes[1]); });
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("config-review-submit"));
@@ -2723,11 +2734,11 @@ describe("ProjectQuickBomPage - configuration expansion line review panel", () =
     const post = calls.find((c) => CFG_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST");
     const body = post!.body as { decisions: Record<string, unknown>[] };
     expect(body.decisions).toHaveLength(2);
+    expect(body.decisions.some((d) => d.lineId === "line-cust-1")).toBe(false);
     const exp1 = body.decisions.find((d) => d.lineId === "line-exp-1")!;
     const exp2 = body.decisions.find((d) => d.lineId === "line-exp-2")!;
     expect(exp1.action).toBe("accept");
     expect("note" in exp1).toBe(false);
-    // The explicit deselect survived the bulk action and carries its note.
     expect(exp2.action).toBe("reject");
     expect(exp2.note).toBe("Not needed for this site");
   });
