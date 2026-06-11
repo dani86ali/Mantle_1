@@ -16,6 +16,7 @@ const BASELINE_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/requirements-baseline
 const BASELINE_ARTIFACT_ID = "art-rb-1";
 const BASELINE_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${BASELINE_ARTIFACT_ID}/requirements-baseline`;
 const REVIEW_URL = `${BASELINE_DETAIL_URL}/review`;
+const GENERATE_URL = `${BASELINE_LIST_URL}/generate`;
 
 // Persisted-content canaries. Both are smuggled into the lean list response
 // (which the read model would never carry) AND returned by the detail stubs.
@@ -31,6 +32,10 @@ const RAW_TABLE_ROW_CANARY = "RAW-TABLE-ROW-CANARY";
 const STORAGE_PATH_CANARY = "STORAGE-PATH-CANARY";
 const TENANT_ID_CANARY = "TENANT-ID-CANARY";
 const SMUGGLED_KEY_CANARY = "SMUGGLED-KEY-CANARY";
+
+// Generate-response canary: the page must ignore the generate POST response
+// body entirely, so nothing from it may ever reach the DOM.
+const GENERATE_RESPONSE_CANARY = "GENERATE-RESPONSE-CANARY";
 
 function projectContext(): Record<string, unknown> {
   return {
@@ -310,6 +315,34 @@ function baselineReviewSuccessResponse(
   };
 }
 
+/**
+ * Success (201) response of the generate POST, mirroring the real route
+ * contract plus smuggled keys: the page must not render anything from it
+ * and must not auto-inspect the created artifact.
+ */
+function generateSuccessResponse(): Record<string, unknown> {
+  return {
+    artifact: { ...baselineArtifactSummary(), tenantId: TENANT_ID_CANARY },
+    payloadSummary: {
+      payloadKind: "rfp_requirements_baseline",
+      createdBy: "user-1",
+      createdAt: "2026-06-10T12:00:00.000Z",
+      requirementCount: 2,
+      evidenceCount: 2,
+      requirementIds: ["RFP-REQ-001", "RFP-REQ-002"],
+      // Never present in the real payload summary; planted to prove the
+      // page renders nothing from the generate response.
+      requirementTexts: [GENERATE_RESPONSE_CANARY],
+    },
+    candidateSummary: {
+      candidateCount: 2,
+      evidenceCount: 2,
+      sourceFileIds: ["file-rfp-1", "file-rfp-2"],
+      sourceArtifactIds: ["art-ip-1"],
+    },
+  };
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -321,6 +354,7 @@ interface Recorded {
   url: string;
   method: string;
   body: unknown;
+  contentType: string | null;
 }
 
 // Stub fetch with a handler and capture every call for method/url assertions.
@@ -333,10 +367,12 @@ function stubFetch(
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       const rawBody = init?.body;
+      const rawHeaders = (init?.headers ?? {}) as Record<string, string>;
       calls.push({
         url,
         method: init?.method ?? "GET",
         body: typeof rawBody === "string" ? JSON.parse(rawBody) : (rawBody ?? null),
+        contentType: rawHeaders["Content-Type"] ?? null,
       });
       return Promise.resolve(handler(url, init));
     })
@@ -345,11 +381,15 @@ function stubFetch(
 }
 
 // Default: evidence list (with or without query), both evidence detail
-// endpoints, the baseline list/detail endpoints, and the baseline review
-// POST all succeed. The review branch echoes the posted decision back as the
-// post-decision artifactStatus, like the real route.
+// endpoints, the baseline list/detail endpoints, and the baseline review and
+// generate POSTs all succeed. The review branch echoes the posted decision
+// back as the post-decision artifactStatus, like the real route; the
+// generate branch answers 201 like the real route.
 function stubDefault(): Recorded[] {
   return stubFetch((url, init) => {
+    if (url === GENERATE_URL && init?.method === "POST") {
+      return jsonResponse(generateSuccessResponse(), 201);
+    }
     if (url === REVIEW_URL) {
       const raw = typeof init?.body === "string" ? init.body : "{}";
       const decision =
@@ -1042,6 +1082,290 @@ describe("ProjectRfpEvidencePage - requirements baseline review", () => {
   });
 });
 
+describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
+  it("renders a checkbox per evidence row and tracks the selected count as rows toggle", async () => {
+    stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("evidence-select-ev-text-1");
+
+    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
+      "Selected evidence: 0"
+    );
+    expect(screen.getByTestId("evidence-select-ev-text-1")).not.toBeChecked();
+    expect(screen.getByTestId("evidence-select-ev-table-1")).not.toBeChecked();
+
+    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    expect(screen.getByTestId("evidence-select-ev-text-1")).toBeChecked();
+    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
+      "Selected evidence: 1"
+    );
+
+    fireEvent.click(screen.getByTestId("evidence-select-ev-table-1"));
+    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
+      "Selected evidence: 2"
+    );
+
+    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    expect(screen.getByTestId("evidence-select-ev-text-1")).not.toBeChecked();
+    expect(screen.getByTestId("evidence-select-ev-table-1")).toBeChecked();
+    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
+      "Selected evidence: 1"
+    );
+  });
+
+  it("disables Generate with zero selected ids and enables it once a row is selected", async () => {
+    stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("evidence-select-ev-text-1");
+
+    expect(screen.getByTestId("generate-baseline")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    expect(screen.getByTestId("generate-baseline")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    expect(screen.getByTestId("generate-baseline")).toBeDisabled();
+  });
+
+  it("Generate POSTs application/json with exactly { evidenceIds } for the selected rows and nothing else", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("evidence-select-ev-text-1");
+
+    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    fireEvent.click(screen.getByTestId("evidence-select-ev-table-1"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("generate-baseline"));
+    });
+
+    const posts = calls.filter((c) => c.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(posts[0].url).toBe(GENERATE_URL);
+    expect(posts[0].contentType).toBe("application/json");
+    expect(Object.keys(posts[0].body as Record<string, unknown>)).toEqual([
+      "evidenceIds",
+    ]);
+    expect(posts[0].body).toEqual({ evidenceIds: ["ev-text-1", "ev-table-1"] });
+
+    // No decoy authority/content/decision field rides along.
+    const serialized = JSON.stringify(posts[0].body);
+    for (const banned of [
+      TEXT_BODY_CANARY,
+      TABLE_CELL_CANARY,
+      TENANT_ID_CANARY,
+      "tenant",
+      "project",
+      "status",
+      "payload",
+      "artifact",
+      "decision",
+      "approv",
+      "requestedBy",
+      "createdBy",
+      "rows",
+    ]) {
+      expect(serialized).not.toContain(banned);
+    }
+  });
+
+  it("successful generation shows the exact success copy, clears the selection, and reloads only the baseline list", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("evidence-select-ev-text-1");
+
+    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    fireEvent.click(screen.getByTestId("evidence-select-ev-table-1"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("generate-baseline"));
+    });
+
+    const success = await screen.findByTestId("generate-success");
+    expect(success.textContent).toBe("Requirements baseline draft generated.");
+    expect(screen.queryByTestId("generate-error")).toBeNull();
+
+    // Selection is cleared, so the button drops back to disabled.
+    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
+      "Selected evidence: 0"
+    );
+    expect(screen.getByTestId("evidence-select-ev-text-1")).not.toBeChecked();
+    expect(screen.getByTestId("evidence-select-ev-table-1")).not.toBeChecked();
+    expect(screen.getByTestId("generate-baseline")).toBeDisabled();
+
+    // Only the baseline list reloads: no evidence list reload, no evidence
+    // detail fetch, no auto-inspection of the created artifact, no review.
+    expect(calls.filter((c) => c.url === BASELINE_LIST_URL)).toHaveLength(2);
+    expect(
+      calls.filter((c) => c.method === "GET" && c.url.startsWith(LIST_URL))
+    ).toHaveLength(1);
+    expect(calls.some((c) => c.url === BASELINE_DETAIL_URL)).toBe(false);
+    expect(calls.some((c) => c.url === REVIEW_URL)).toBe(false);
+    expect(calls.some((c) => c.url === `${LIST_URL}/ev-text-1`)).toBe(false);
+    expect(calls.some((c) => c.url === `${LIST_URL}/ev-table-1`)).toBe(false);
+
+    // Nothing from the generate response body ever renders.
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(GENERATE_RESPONSE_CANARY);
+    expect(body).not.toContain(TENANT_ID_CANARY);
+  });
+
+  it('renders exactly "Unable to generate requirements baseline." on a non-ok response, keeping the selection and not reloading the baseline list', async () => {
+    const secret = "generate-internal-code-detail";
+    const calls = stubFetch((url, init) => {
+      if (url === GENERATE_URL && init?.method === "POST") {
+        return jsonResponse(
+          { code: "rfp_requirements_candidate_drafting_unavailable", error: secret },
+          503
+        );
+      }
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("evidence-select-ev-text-1");
+
+    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    fireEvent.click(screen.getByTestId("evidence-select-ev-table-1"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("generate-baseline"));
+    });
+
+    const err = await screen.findByTestId("generate-error");
+    expect(err.textContent).toBe("Unable to generate requirements baseline.");
+    expect(screen.queryByTestId("generate-success")).toBeNull();
+
+    // The selection survives the failure so the engineer can retry.
+    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
+      "Selected evidence: 2"
+    );
+    expect(screen.getByTestId("evidence-select-ev-text-1")).toBeChecked();
+    expect(screen.getByTestId("evidence-select-ev-table-1")).toBeChecked();
+    expect(screen.getByTestId("generate-baseline")).toBeEnabled();
+
+    expect(calls.filter((c) => c.url === BASELINE_LIST_URL)).toHaveLength(1);
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(secret);
+    expect(body).not.toContain("rfp_requirements_candidate_drafting_unavailable");
+  });
+
+  it("renders the exact generate error when the POST throws, without leaking the thrown detail", async () => {
+    const secret = "generate-boom-stack-detail";
+    const calls = stubFetch((url, init) => {
+      if (url === GENERATE_URL && init?.method === "POST") {
+        throw new Error(secret);
+      }
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("evidence-select-ev-text-1");
+
+    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("generate-baseline"));
+    });
+
+    const err = await screen.findByTestId("generate-error");
+    expect(err.textContent).toBe("Unable to generate requirements baseline.");
+    expect(screen.queryByTestId("generate-success")).toBeNull();
+    expect(screen.getByTestId("evidence-select-ev-text-1")).toBeChecked();
+    expect(calls.filter((c) => c.url === BASELINE_LIST_URL)).toHaveLength(1);
+    expect(document.body.textContent ?? "").not.toContain(secret);
+  });
+
+  it("disables the Generate button while the generate POST is pending", async () => {
+    let resolveGenerate: (value: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url === GENERATE_URL && init?.method === "POST") {
+          return new Promise<Response>((r) => { resolveGenerate = r; });
+        }
+        if (url === BASELINE_LIST_URL) {
+          return Promise.resolve(jsonResponse(baselineListResponse()));
+        }
+        return Promise.resolve(jsonResponse(listResponse()));
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("evidence-select-ev-text-1");
+
+    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    expect(screen.getByTestId("generate-baseline")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("generate-baseline"));
+    await waitFor(() =>
+      expect(screen.getByTestId("generate-baseline")).toBeDisabled()
+    );
+    // Still pending: the selection has not been cleared yet.
+    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
+      "Selected evidence: 1"
+    );
+
+    await act(async () => {
+      resolveGenerate(jsonResponse(generateSuccessResponse(), 201));
+    });
+    expect(await screen.findByTestId("generate-success")).toBeInTheDocument();
+    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
+      "Selected evidence: 0"
+    );
+  });
+
+  it("drops selections for evidence rows no longer present after a filtered reload", async () => {
+    let listCallCount = 0;
+    const calls = stubFetch((url, init) => {
+      if (url === GENERATE_URL && init?.method === "POST") {
+        return jsonResponse(generateSuccessResponse(), 201);
+      }
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url.startsWith(LIST_URL)) {
+        listCallCount += 1;
+        if (listCallCount > 1) {
+          return jsonResponse({
+            project: projectContext(),
+            filters: {},
+            evidenceCount: 1,
+            textChunkCount: 0,
+            tableEvidenceCount: 1,
+            evidence: [tableListItem()],
+          });
+        }
+        return jsonResponse(listResponse());
+      }
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("evidence-select-ev-text-1");
+
+    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    fireEvent.click(screen.getByTestId("evidence-select-ev-table-1"));
+    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
+      "Selected evidence: 2"
+    );
+
+    fireEvent.change(screen.getByTestId("filter-kind"), {
+      target: { value: "rfp_document_table" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("filter-apply"));
+    });
+
+    // The text row left the list, so its selection is dropped; the still
+    // visible table row stays selected.
+    expect(screen.queryByTestId("evidence-select-ev-text-1")).toBeNull();
+    expect(screen.getByTestId("evidence-select-ev-table-1")).toBeChecked();
+    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
+      "Selected evidence: 1"
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("generate-baseline"));
+    });
+    const posts = calls.filter((c) => c.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toEqual({ evidenceIds: ["ev-table-1"] });
+  });
+});
+
 describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
   it("issues only default-GET fetches to the four inspection endpoints and never calls write or other RFP endpoints", async () => {
     const calls = stubDefault();
@@ -1073,6 +1397,7 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       expect(call.method).toBe("GET");
       expect(call.body).toBeNull();
       expect(call.url).not.toMatch(/\/review/);
+      expect(call.url).not.toMatch(/\/generate/);
       expect(call.url).not.toMatch(/upload/);
       expect(call.url).not.toMatch(/input-package/);
       expect(call.url).not.toMatch(/\/approvals/);
@@ -1134,6 +1459,54 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
         expect(call.method).toBe("GET");
         expect(call.body).toBeNull();
       }
+      expect(call.method).not.toBe("PUT");
+      expect(call.method).not.toBe("PATCH");
+      expect(call.method).not.toBe("DELETE");
+      expect(call.url).not.toMatch(/upload|input-package|\/approvals|\/extract|\/files|\/export/);
+    }
+  });
+
+  it("performs exactly two POSTs - generate then review - across the full explicit write flow", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("evidence-select-ev-text-1");
+
+    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("generate-baseline"));
+    });
+    await screen.findByTestId("generate-success");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`));
+    });
+    await screen.findByTestId("baseline-detail-panel");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("baseline-review-approve"));
+    });
+    await screen.findByTestId("baseline-review-success");
+
+    // Generate and review are the page's only two write endpoints, each
+    // POSTed exactly once with its own minimal body.
+    const nonGets = calls.filter((c) => c.method !== "GET");
+    expect(nonGets).toHaveLength(2);
+    expect(nonGets[0].method).toBe("POST");
+    expect(nonGets[0].url).toBe(GENERATE_URL);
+    expect(nonGets[0].body).toEqual({ evidenceIds: ["ev-text-1"] });
+    expect(nonGets[1].method).toBe("POST");
+    expect(nonGets[1].url).toBe(REVIEW_URL);
+    expect(nonGets[1].body).toEqual({ decision: "approved" });
+
+    const allowedExact = new Set([
+      LIST_URL,
+      BASELINE_LIST_URL,
+      BASELINE_DETAIL_URL,
+      REVIEW_URL,
+      GENERATE_URL,
+    ]);
+    for (const call of calls) {
+      const ok = allowedExact.has(call.url) || call.url.startsWith(`${LIST_URL}?`);
+      expect(ok, `unexpected fetch url: ${call.url}`).toBe(true);
       expect(call.method).not.toBe("PUT");
       expect(call.method).not.toBe("PATCH");
       expect(call.method).not.toBe("DELETE");
@@ -1213,20 +1586,28 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
       "@anthropic-ai",
       "anthropic",
       "openai",
+      "provider",
     ]) {
       expect(source).not.toContain(forbidden);
     }
   });
 
-  it("permits exactly one POST - the requirements baseline review fetch - and no other review path", () => {
-    expect((source.match(/"POST"/g) ?? []).length).toBe(1);
-    expect((source.match(/method:/g) ?? []).length).toBe(1);
-    // Every /review occurrence is the requirements-baseline review endpoint;
-    // no arbitrary review or approvals path appears anywhere in the page.
+  it("permits exactly two POSTs - the baseline generate fetch and the review fetch - and no other write path", () => {
+    expect((source.match(/"POST"/g) ?? []).length).toBe(2);
+    expect((source.match(/method:/g) ?? []).length).toBe(2);
+    // Every /review occurrence is the requirements-baseline review endpoint
+    // and every /generate occurrence is the requirements-baseline generate
+    // endpoint; no arbitrary review, approvals, or generation path appears
+    // anywhere in the page.
     const reviewMentions = source.match(/\/review/g) ?? [];
     const baselineReviewMentions = source.match(/requirements-baseline\/review/g) ?? [];
     expect(baselineReviewMentions.length).toBeGreaterThanOrEqual(1);
     expect(reviewMentions.length).toBe(baselineReviewMentions.length);
+    const generateMentions = source.match(/\/generate/g) ?? [];
+    const baselineGenerateMentions =
+      source.match(/requirements-baseline\/generate/g) ?? [];
+    expect(baselineGenerateMentions.length).toBeGreaterThanOrEqual(1);
+    expect(generateMentions.length).toBe(baselineGenerateMentions.length);
   });
 
   it("keeps the page and this test file ASCII-only", () => {

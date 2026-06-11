@@ -31,7 +31,7 @@
  * Requirements baseline review (Milestone 2): when the loaded baseline
  * detail has a reviewable status (needs_review or generated) the detail
  * panel shows an optional note plus Approve and Reject buttons. A click
- * sends exactly one POST - the page's only write - to
+ * sends exactly one POST to
  * /api/projects/[id]/rfp/artifacts/[artifactId]/requirements-baseline/review
  * with { decision } plus a trimmed nonblank note only; it never sends a
  * tenant, project, version, decidedBy, status, payload, requirement, or
@@ -39,7 +39,26 @@
  * artifactStatus from the response, shows fixed success copy, and reloads
  * the read-only baseline list; on failure it shows fixed error copy and
  * keeps the loaded detail. The POST records one human decision and nothing
- * else: no auto-approval, no extraction, no generation, no other write.
+ * else: no auto-approval, no extraction, no other side effect.
+ *
+ * Requirements baseline generation (Milestone 2): every evidence list row
+ * carries a selection checkbox that stores only the evidence id - selection
+ * works from the lean list alone and never fetches detail content. A compact
+ * control under the requirements baseline heading shows the selected count
+ * and a Generate button, disabled while zero ids are selected or while a
+ * generation is in flight. Clicking Generate sends one POST to
+ * /api/projects/[id]/rfp/requirements-baseline/generate whose JSON body is
+ * exactly { evidenceIds } - never raw evidence text, table rows, tenant or
+ * project or user authority, status, payload, artifact, or approval fields.
+ * The server drafts candidate requirements from those persisted evidence
+ * rows and stores ONE needs_review draft; nothing generates on mount, the
+ * created draft is never auto-inspected, and nothing is auto-approved - the
+ * draft still goes through the human review above. On success the control
+ * shows fixed success copy, clears the selection, and reloads the read-only
+ * baseline list; on failure it shows fixed error copy, keeps the selection,
+ * and reloads nothing. Whenever the evidence list reloads, the selection is
+ * pruned to ids still present in the current list. Generation and review
+ * are the page's only two writes, each on its own endpoint.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -127,6 +146,10 @@ const BASELINE_DETAIL_ERROR = "Unable to load requirements baseline detail.";
 
 /** Exact UI copy required for the baseline review failure state. */
 const BASELINE_REVIEW_ERROR = "Unable to review requirements baseline.";
+
+/** Exact UI copy required for the baseline generation outcome states. */
+const GENERATE_SUCCESS = "Requirements baseline draft generated.";
+const GENERATE_ERROR = "Unable to generate requirements baseline.";
 
 const EMPTY_FILTERS: EvidenceFilters = {
   sourceFileId: "",
@@ -221,6 +244,11 @@ export default function ProjectRfpEvidencePage() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
 
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([]);
+  const [generatePending, setGeneratePending] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [generateSuccess, setGenerateSuccess] = useState<string | null>(null);
+
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -230,12 +258,21 @@ export default function ProjectRfpEvidencePage() {
         const body = (await res.json().catch(() => null)) as EvidenceListResponse | null;
         if (!res.ok || body === null || !body.project || !Array.isArray(body.evidence)) {
           setData(null);
+          setSelectedEvidenceIds([]);
           setListError(LIST_ERROR);
           return;
         }
         setData(body);
+        // Selection tracks the visible list only: a reload (filtered or not)
+        // drops ids for evidence rows no longer present.
+        setSelectedEvidenceIds((prev) =>
+          prev.filter((selectedId) =>
+            body.evidence.some((item) => item.id === selectedId)
+          )
+        );
       } catch {
         setData(null);
+        setSelectedEvidenceIds([]);
         setListError(LIST_ERROR);
       } finally {
         setListLoading(false);
@@ -296,6 +333,50 @@ export default function ProjectRfpEvidencePage() {
     void loadBaselineList();
   }, [loadBaselineList]);
 
+  function toggleEvidenceSelection(evidenceId: string): void {
+    setSelectedEvidenceIds((prev) =>
+      prev.includes(evidenceId)
+        ? prev.filter((selectedId) => selectedId !== evidenceId)
+        : [...prev, evidenceId]
+    );
+  }
+
+  // The page's generation write: ask the server to draft ONE reviewable
+  // needs_review requirements_baseline artifact from the selected persisted
+  // evidence rows. The body carries only the selected evidence ids - never
+  // raw content, tenant/project/user authority, status, payload, artifact,
+  // or approval fields; the route derives all authority server-side. Success
+  // clears the selection and reloads the read-only baseline list; the new
+  // draft is never auto-inspected or auto-approved. Failure keeps the
+  // selection and reloads nothing.
+  const submitGenerate = useCallback(async (): Promise<void> => {
+    if (selectedEvidenceIds.length === 0 || generatePending) return;
+    setGeneratePending(true);
+    setGenerateError(null);
+    setGenerateSuccess(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${id}/rfp/requirements-baseline/generate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ evidenceIds: selectedEvidenceIds }),
+        }
+      );
+      if (!res.ok) {
+        setGenerateError(GENERATE_ERROR);
+        return;
+      }
+      setGenerateSuccess(GENERATE_SUCCESS);
+      setSelectedEvidenceIds([]);
+      void loadBaselineList();
+    } catch {
+      setGenerateError(GENERATE_ERROR);
+    } finally {
+      setGeneratePending(false);
+    }
+  }, [generatePending, id, loadBaselineList, selectedEvidenceIds]);
+
   // Baseline payload content is fetched only here, on an explicit Inspect.
   const loadBaselineDetail = useCallback(
     async (artifactId: string): Promise<void> => {
@@ -329,7 +410,7 @@ export default function ProjectRfpEvidencePage() {
     [id]
   );
 
-  // The page's single write: record one human approve/reject decision for
+  // The page's review write: record one human approve/reject decision for
   // the exact inspected requirements_baseline artifact. The body carries only
   // decision plus a trimmed nonblank note - never a tenant, project, version,
   // decidedBy, status, payload, requirement, or evidence field; the route
@@ -500,7 +581,15 @@ export default function ProjectRfpEvidencePage() {
                   data-testid="evidence-row"
                   className="flex items-start justify-between gap-2 rounded-button border border-[var(--border)] p-2"
                 >
-                  <div className="min-w-0">
+                  <input
+                    type="checkbox"
+                    data-testid={`evidence-select-${item.id}`}
+                    aria-label={`Select evidence ${item.id}`}
+                    checked={selectedEvidenceIds.includes(item.id)}
+                    onChange={() => toggleEvidenceSelection(item.id)}
+                    className="mt-1"
+                  />
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-text-primary">
                       <span className="font-mono">{item.id}</span> | {kindLabel(item.kind)}
                     </p>
@@ -601,6 +690,33 @@ export default function ProjectRfpEvidencePage() {
 
       <section>
         <h2 className="text-sm font-semibold text-text-primary">Requirements baseline</h2>
+        <div
+          data-testid="generate-control"
+          className="mt-2 flex flex-wrap items-center gap-2 rounded-card border border-[var(--border)] p-3"
+        >
+          <p data-testid="generate-selected-count" className="text-xs text-text-secondary">
+            Selected evidence: {selectedEvidenceIds.length}
+          </p>
+          <button
+            type="button"
+            data-testid="generate-baseline"
+            disabled={selectedEvidenceIds.length === 0 || generatePending}
+            onClick={() => void submitGenerate()}
+            className={ACTION_BTN}
+          >
+            Generate draft
+          </button>
+        </div>
+        {generateError && (
+          <div data-testid="generate-error" className={`mt-2 ${ERROR_BOX}`}>
+            {generateError}
+          </div>
+        )}
+        {generateSuccess && (
+          <p data-testid="generate-success" className="mt-2 text-xs text-text-secondary">
+            {generateSuccess}
+          </p>
+        )}
         {baselineError && (
           <div data-testid="baseline-error" className={`mt-2 ${ERROR_BOX}`}>
             {baselineError}
