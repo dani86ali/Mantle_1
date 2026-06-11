@@ -19,6 +19,7 @@ interface StoredProject {
   customerName: string | null;
   mode: string;
   pricingConfig: unknown;
+  archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,18 +63,34 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
     type: "type",
     version: "version",
     status: "status",
+    archived_at: "archivedAt",
     created_at: "createdAt",
     updated_at: "updatedAt",
   };
 
-  type Cond = { name: string; val: unknown };
+  type Cond =
+    | { op: "eq"; name: string; val: unknown }
+    | { op: "isNull"; name: string }
+    | { op: "isNotNull"; name: string };
   type Pred =
     | { type: "and"; conds: Pred[] }
-    | { type: "eq"; col: { name: string }; val: unknown };
+    | { type: "eq"; col: { name: string }; val: unknown }
+    | { type: "isNull"; col: { name: string } }
+    | { type: "isNotNull"; col: { name: string } };
 
   const flatten = (pred: Pred): Cond[] => {
     if (pred.type === "and") return pred.conds.flatMap(flatten);
-    return [{ name: pred.col.name, val: pred.val }];
+    if (pred.type === "isNull") return [{ op: "isNull", name: pred.col.name }];
+    if (pred.type === "isNotNull") return [{ op: "isNotNull", name: pred.col.name }];
+    return [{ op: "eq", name: pred.col.name, val: pred.val }];
+  };
+
+  const rowMatches = (row: Record<string, unknown>, c: Cond): boolean => {
+    const field = colMap[c.name];
+    const v = row[field];
+    if (c.op === "isNull") return v === null || v === undefined;
+    if (c.op === "isNotNull") return v !== null && v !== undefined;
+    return v === c.val;
   };
 
   const insertApi = {
@@ -99,6 +116,7 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
                 customerName: (v.customerName as string) ?? null,
                 mode: v.mode as string,
                 pricingConfig: v.pricingConfig ?? null,
+                archivedAt: (v.archivedAt as Date) ?? null,
                 createdAt: (v.createdAt as Date) ?? now,
                 updatedAt: (v.updatedAt as Date) ?? now,
               };
@@ -113,6 +131,30 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
 
   const mockDb: any = {
     ...insertApi,
+    // Only project rows are updated by the store (archive/restore). The set values
+    // are applied to every project row matching the where predicate.
+    update(_table: unknown) {
+      return {
+        set(values: Record<string, unknown>) {
+          return {
+            where(pred: Pred) {
+              const conds = flatten(pred);
+              return {
+                async returning() {
+                  const matched = store.projects.filter((row) =>
+                    conds.every((c) =>
+                      rowMatches(row as unknown as Record<string, unknown>, c)
+                    )
+                  );
+                  for (const row of matched) Object.assign(row, values);
+                  return matched.map((row) => ({ id: row.id }));
+                },
+              };
+            },
+          };
+        },
+      };
+    },
     select() {
       return {
         from(_table: unknown) {
@@ -133,9 +175,7 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
                 return source as unknown as Array<Record<string, unknown>>;
               };
               const filterRows = (source: Array<Record<string, unknown>>) =>
-                source.filter((row) =>
-                  conds.every((c) => row[colMap[c.name]] === c.val)
-                );
+                source.filter((row) => conds.every((c) => rowMatches(row, c)));
               return {
                 async limit(n: number) {
                   const filtered = filterRows(pickSource());
@@ -180,6 +220,8 @@ vi.mock("drizzle-orm", async () => {
   return {
     ...actual,
     eq: (col: { name: string }, val: unknown) => ({ type: "eq", col, val }),
+    isNull: (col: { name: string }) => ({ type: "isNull", col }),
+    isNotNull: (col: { name: string }) => ({ type: "isNotNull", col }),
     and: (...conds: unknown[]) => ({ type: "and", conds }),
     asc: (col: { name: string }) => ({ type: "asc", direction: "asc", col }),
     desc: (col: { name: string }) => ({ type: "desc", direction: "desc", col }),
@@ -192,6 +234,8 @@ import {
   getProjectById,
   listProjectSummaries,
   quickBomProjectNameExists,
+  archiveProject,
+  restoreProject,
 } from "@/lib/db/project-store";
 import type { CreateProjectInput } from "@/lib/db/project-store";
 
@@ -370,6 +414,7 @@ describe("getProjectById", () => {
       customerName: null,
       mode: "rfp",
       pricingConfig: null,
+      archivedAt: null,
       createdAt: now,
       updatedAt: now,
       ...overrides,
@@ -470,6 +515,7 @@ describe("listProjectSummaries", () => {
       customerName: "STC",
       mode: "quick_bom",
       pricingConfig: null,
+      archivedAt: null,
       createdAt: now,
       updatedAt: now,
       ...overrides,
@@ -746,6 +792,7 @@ describe("quickBomProjectNameExists (QBM-LOG-001)", () => {
       customerName: null,
       mode: "quick_bom",
       pricingConfig: null,
+      archivedAt: null,
       createdAt: now,
       updatedAt: now,
       ...overrides,
@@ -790,6 +837,160 @@ describe("quickBomProjectNameExists (QBM-LOG-001)", () => {
     seedProject({ name: "Honeywell Refresh" });
     expect(await quickBomProjectNameExists(TENANT, "   ")).toBe(false);
     expect(withTenantDb).not.toHaveBeenCalled();
+  });
+});
+
+describe("archive filtering and archive/restore (QBM-LOG-006)", () => {
+  const ARCHIVED_AT = new Date("2026-05-25T12:00:00Z");
+
+  function seed(overrides: Partial<StoredProject>): StoredProject {
+    const now = new Date("2026-05-21T08:00:00Z");
+    const row: StoredProject = {
+      id: `proj-${store.projects.length + 1}`,
+      tenantId: TENANT,
+      name: "Quick BoM Project",
+      customerName: null,
+      mode: "quick_bom",
+      pricingConfig: null,
+      archivedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    };
+    store.projects.push(row);
+    return row;
+  }
+
+  describe("listProjectSummaries archive filter", () => {
+    it("defaults to active-only and excludes archived projects", async () => {
+      seed({ id: "active-1", name: "Active" });
+      seed({ id: "archived-1", name: "Archived", archivedAt: ARCHIVED_AT });
+
+      const rows = await listProjectSummaries(TENANT);
+
+      expect(rows.map((r) => r.id)).toEqual(["active-1"]);
+      expect(rows[0].archivedAt).toBeUndefined();
+    });
+
+    it("returns only archived projects with their archivedAt for archive=archived", async () => {
+      seed({ id: "active-1", name: "Active" });
+      seed({ id: "archived-1", name: "Archived", archivedAt: ARCHIVED_AT });
+
+      const rows = await listProjectSummaries(TENANT, { archive: "archived" });
+
+      expect(rows.map((r) => r.id)).toEqual(["archived-1"]);
+      expect(rows[0].archivedAt).toBe(ARCHIVED_AT.toISOString());
+    });
+
+    it("returns both active and archived projects for archive=all", async () => {
+      seed({ id: "active-1", name: "Active" });
+      seed({ id: "archived-1", name: "Archived", archivedAt: ARCHIVED_AT });
+
+      const rows = await listProjectSummaries(TENANT, { archive: "all" });
+
+      expect(rows.map((r) => r.id).sort()).toEqual(["active-1", "archived-1"]);
+    });
+  });
+
+  describe("getProjectById includeArchived", () => {
+    it("excludes archived projects by default (returns null)", async () => {
+      seed({ id: "archived-1", name: "Archived", archivedAt: ARCHIVED_AT });
+
+      expect(await getProjectById(TENANT, "archived-1")).toBeNull();
+    });
+
+    it("returns an archived project with includeArchived true and surfaces archivedAt", async () => {
+      seed({ id: "archived-1", name: "Archived", archivedAt: ARCHIVED_AT });
+
+      const project = await getProjectById(TENANT, "archived-1", {
+        includeArchived: true,
+      });
+
+      expect(project).not.toBeNull();
+      expect(project!.id).toBe("archived-1");
+      expect(project!.archivedAt).toEqual(ARCHIVED_AT);
+    });
+
+    it("still returns active projects with includeArchived true and no archivedAt", async () => {
+      seed({ id: "active-1", name: "Active" });
+
+      const project = await getProjectById(TENANT, "active-1", {
+        includeArchived: true,
+      });
+
+      expect(project!.archivedAt).toBeUndefined();
+    });
+  });
+
+  describe("archiveProject", () => {
+    it("archives an active project and returns true, stamping archived_at", async () => {
+      const row = seed({ id: "active-1", name: "Active" });
+
+      expect(await archiveProject(TENANT, "active-1")).toBe(true);
+      expect(row.archivedAt).toBeInstanceOf(Date);
+    });
+
+    it("is idempotent: returns true for an already-archived project", async () => {
+      seed({ id: "archived-1", name: "Archived", archivedAt: ARCHIVED_AT });
+
+      expect(await archiveProject(TENANT, "archived-1")).toBe(true);
+    });
+
+    it("returns false for a wrong tenant", async () => {
+      seed({ id: "active-1", name: "Active" });
+
+      expect(await archiveProject(OTHER_TENANT, "active-1")).toBe(false);
+    });
+
+    it("returns false for a missing project", async () => {
+      expect(await archiveProject(TENANT, "nope")).toBe(false);
+    });
+
+    it("opens a tenant-scoped transaction", async () => {
+      seed({ id: "active-1", name: "Active" });
+      await archiveProject(TENANT, "active-1");
+      expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+    });
+  });
+
+  describe("restoreProject", () => {
+    it("restores an archived project and returns true, clearing archived_at", async () => {
+      const row = seed({ id: "archived-1", name: "Archived", archivedAt: ARCHIVED_AT });
+
+      expect(await restoreProject(TENANT, "archived-1")).toBe(true);
+      expect(row.archivedAt).toBeNull();
+    });
+
+    it("is idempotent: returns true for an already-active project", async () => {
+      seed({ id: "active-1", name: "Active" });
+
+      expect(await restoreProject(TENANT, "active-1")).toBe(true);
+    });
+
+    it("returns false for a wrong tenant", async () => {
+      seed({ id: "archived-1", name: "Archived", archivedAt: ARCHIVED_AT });
+
+      expect(await restoreProject(OTHER_TENANT, "archived-1")).toBe(false);
+    });
+
+    it("returns false for a missing project", async () => {
+      expect(await restoreProject(TENANT, "nope")).toBe(false);
+    });
+  });
+
+  describe("quickBomProjectNameExists ignores archived", () => {
+    it("does not match an archived Quick BoM project with the same name", async () => {
+      seed({ id: "archived-1", name: "Honeywell Refresh", archivedAt: ARCHIVED_AT });
+
+      expect(await quickBomProjectNameExists(TENANT, "Honeywell Refresh")).toBe(false);
+    });
+
+    it("matches only the active Quick BoM project when an archived twin exists", async () => {
+      seed({ id: "archived-1", name: "Shared Name", archivedAt: ARCHIVED_AT });
+      seed({ id: "active-1", name: "Shared Name" });
+
+      expect(await quickBomProjectNameExists(TENANT, "Shared Name")).toBe(true);
+    });
   });
 });
 

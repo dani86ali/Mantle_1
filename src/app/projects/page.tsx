@@ -6,19 +6,14 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  FileStack,
   Plus,
   Search,
   SearchX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  type ProjectRow,
-  modeLabel,
-  projectLink,
-  projectProgress,
-  statusLabel,
-} from "@/app/dashboard/helpers";
+import type { ProjectRow } from "@/app/dashboard/helpers";
+import { modeLabel, statusLabel } from "@/app/dashboard/helpers";
+import { ProjectTable, type ProjectsView } from "./_components/project-table";
 import type { ProjectListStatus } from "@/lib/db/project-store";
 import type { ProjectMode } from "@/types/project";
 
@@ -34,16 +29,21 @@ const ALL_STATUSES: Array<"All" | ProjectListStatus> = [
 ];
 const ALL_MODES: Array<"All" | ProjectMode> = ["All", "quick_bom", "rfp"];
 
-function useProjects() {
+function useProjects(view: ProjectsView, reloadKey: number) {
   const [data, setData] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(false);
     (async () => {
       try {
-        const res = await fetch("/api/projects");
+        // Active view reads the default active-only list; the Archived view asks
+        // for archived rows explicitly. Dashboard never passes the param.
+        const url = view === "archived" ? "/api/projects?archived=only" : "/api/projects";
+        const res = await fetch(url);
         if (!res.ok) throw new Error("project list failed");
         const json = (await res.json()) as { projects?: ProjectRow[] };
         if (cancelled) return;
@@ -57,17 +57,52 @@ function useProjects() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [view, reloadKey]);
 
   return { data, loading, error };
 }
 
 export default function ProjectsPage() {
-  const { data: projects, loading, error } = useProjects();
+  const [view, setView] = useState<ProjectsView>("active");
+  const [reloadKey, setReloadKey] = useState(0);
+  const { data: projects, loading, error } = useProjects(view, reloadKey);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | ProjectListStatus>("All");
   const [modeFilter, setModeFilter] = useState<"All" | ProjectMode>("All");
   const [page, setPage] = useState(1);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Archive (POST) / restore (DELETE) one Project, then reload the current list.
+  // A failed action surfaces a controlled message and leaves the list untouched.
+  async function runAction(id: string, action: "archive" | "restore"): Promise<void> {
+    setActionError(null);
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/projects/${id}/archive`, {
+        method: action === "archive" ? "POST" : "DELETE",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setActionError(
+          body?.error ??
+            (action === "archive"
+              ? "Unable to archive this Project."
+              : "Unable to restore this Project.")
+        );
+        return;
+      }
+      setReloadKey((k) => k + 1);
+    } catch {
+      setActionError(
+        action === "archive"
+          ? "Unable to archive this Project."
+          : "Unable to restore this Project."
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const filtered = useMemo(() => {
     let rows = projects;
@@ -109,6 +144,50 @@ export default function ProjectsPage() {
             New Quick BoM Project
           </Link>
         </div>
+
+        <div className="mt-6 inline-flex rounded-button border border-[var(--border)] p-0.5">
+          <button
+            type="button"
+            data-testid="view-active"
+            onClick={() => {
+              setView("active");
+              setPage(1);
+            }}
+            className={cn(
+              "rounded-button px-3 py-1.5 text-sm font-medium transition",
+              view === "active"
+                ? "bg-accent text-text-primary"
+                : "text-text-secondary hover:bg-bg-elevated"
+            )}
+          >
+            Active Projects
+          </button>
+          <button
+            type="button"
+            data-testid="view-archived"
+            onClick={() => {
+              setView("archived");
+              setPage(1);
+            }}
+            className={cn(
+              "rounded-button px-3 py-1.5 text-sm font-medium transition",
+              view === "archived"
+                ? "bg-accent text-text-primary"
+                : "text-text-secondary hover:bg-bg-elevated"
+            )}
+          >
+            Archived Projects
+          </button>
+        </div>
+
+        {actionError && (
+          <div
+            data-testid="action-error"
+            className="mt-4 rounded-card border border-destructive/30 bg-destructive-muted p-3 text-sm text-destructive"
+          >
+            {actionError}
+          </div>
+        )}
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <div className="relative min-w-[240px] flex-1">
@@ -171,7 +250,12 @@ export default function ProjectsPage() {
               <p className="mt-1 text-sm">Try a different search or filter.</p>
             </div>
           ) : (
-            <ProjectTable rows={pageRows} />
+            <ProjectTable
+              rows={pageRows}
+              view={view}
+              busyId={busyId}
+              onAction={runAction}
+            />
           )}
 
           {!loading && filtered.length > 0 && (
@@ -207,70 +291,6 @@ export default function ProjectsPage() {
   );
 }
 
-function ProjectTable({ rows }: { rows: ProjectRow[] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 z-10 border-b border-[var(--border)] bg-bg-card">
-          <tr>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">Project</th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">Customer</th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">Mode</th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">Status</th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">Stages</th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">Updated</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[var(--border)]">
-          {rows.map((row) => {
-            const progress = projectProgress(row);
-            const pct =
-              progress.total === 0 ? 0 : Math.round((progress.completed / progress.total) * 100);
-            return (
-              <tr key={row.id} className="transition-colors hover:bg-[var(--bg-elevated)]">
-                <td className="whitespace-nowrap px-4 py-3">
-                  <Link href={projectLink(row)} className="font-medium text-accent hover:underline">
-                    {row.name}
-                  </Link>
-                  <p className="font-mono text-[11px] text-text-tertiary">{row.id}</p>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-text-primary">
-                  {row.customerName ?? "No customer"}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-text-secondary">
-                  {modeLabel(row.mode)}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium", statusTone(row.status))}>
-                    {statusLabel(row.status)}
-                  </span>
-                </td>
-                <td className="min-w-[170px] px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 flex-1 rounded-full bg-bg-elevated">
-                      <div className="h-2 rounded-full bg-accent" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="font-mono text-xs text-text-tertiary">
-                      {progress.completed}/{progress.total}
-                    </span>
-                  </div>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-text-secondary">
-                  {new Date(row.updatedAt).toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function FilterSelect({
   label,
   value,
@@ -299,12 +319,4 @@ function FilterSelect({
       <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
     </label>
   );
-}
-
-function statusTone(status: ProjectListStatus): string {
-  if (status === "approved") return "bg-success-muted text-success";
-  if (status === "needs_review") return "bg-warning-muted text-warning";
-  if (status === "blocked" || status === "rejected") return "bg-destructive-muted text-destructive";
-  if (status === "not_started") return "bg-[var(--border)] text-text-tertiary";
-  return "bg-blue-muted text-blue";
 }

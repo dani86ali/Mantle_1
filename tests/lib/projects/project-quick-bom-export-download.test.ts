@@ -113,7 +113,9 @@ describe("loadProjectQuickBomExportDownload - project verification", () => {
     const result = await loadProjectQuickBomExportDownload(input());
 
     expect(result).toEqual({ status: "not_found" });
-    expect(getProjectMock).toHaveBeenCalledWith(TENANT, PROJECT);
+    expect(getProjectMock).toHaveBeenCalledWith(TENANT, PROJECT, {
+      includeArchived: true,
+    });
     expect(getArtifactMock).not.toHaveBeenCalled();
     expect(statMock).not.toHaveBeenCalled();
     expect(readFileMock).not.toHaveBeenCalled();

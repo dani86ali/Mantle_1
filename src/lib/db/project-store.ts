@@ -17,7 +17,7 @@
  * updateProjectMode. Tenant scoping is enforced on every read; the canonical
  * tables duplicate tenant_id per row, but the TS child shapes do not surface it.
  */
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, isNotNull } from "drizzle-orm";
 import { withTenantDb } from "./index";
 import { projects, projectStages, projectArtifacts } from "./schema";
 import { materializeProjectStages } from "@/lib/projects/stages";
@@ -70,9 +70,17 @@ export interface ProjectListItem {
     blocked: number;
     rejected: number;
   };
+  /** Soft archive timestamp ISO string (QBM-LOG-006); absent when active. */
+  archivedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
+
+/**
+ * Archive filter for the Project list surface (QBM-LOG-006). `active` (default)
+ * returns only non-archived Projects, `archived` only archived, `all` both.
+ */
+export type ProjectArchiveFilter = "active" | "archived" | "all";
 
 /** Map a DB stage row to a ProjectStage; stageOrder -> order, tenantId dropped. */
 function toProjectStage(row: ProjectStageRow): ProjectStage {
@@ -108,6 +116,7 @@ function toProject(row: ProjectRow, stageRows: ProjectStageRow[]): Project {
       .map(toProjectStage),
     artifacts: [],
     approvals: [],
+    ...(row.archivedAt != null ? { archivedAt: row.archivedAt } : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -204,6 +213,7 @@ function toProjectListItem(
       blocked: active.filter((stage) => stage.status === "blocked").length,
       rejected: active.filter((stage) => stage.status === "rejected").length,
     },
+    ...(row.archivedAt != null ? { archivedAt: row.archivedAt.toISOString() } : {}),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -259,13 +269,21 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
  */
 export async function getProjectById(
   tenantId: string,
-  projectId: string
+  projectId: string,
+  options: { includeArchived?: boolean } = {}
 ): Promise<Project | null> {
   return withTenantDb(tenantId, async (tx) => {
+    const conditions = [
+      eq(projects.id, projectId),
+      eq(projects.tenantId, tenantId),
+    ];
+    // Default loaders exclude archived Projects; only read-only inspection
+    // loaders opt in via { includeArchived: true } (QBM-LOG-006).
+    if (!options.includeArchived) conditions.push(isNull(projects.archivedAt));
     const [projectRow] = await tx
       .select()
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)))
+      .where(and(...conditions))
       .limit(1);
     if (!projectRow) return null;
 
@@ -290,13 +308,27 @@ export async function getProjectById(
  * only canonical Project tables and never consults legacy estimate/bom_draft APIs.
  */
 export async function listProjectSummaries(
-  tenantId: string
+  tenantId: string,
+  options: { archive?: ProjectArchiveFilter } = {}
 ): Promise<ProjectListItem[]> {
+  const archive = options.archive ?? "active";
   return withTenantDb(tenantId, async (tx) => {
+    // Default surface is active-only; SQL-level archive filtering with isNull/
+    // isNotNull (QBM-LOG-006) so archived rows never load on active surfaces.
+    const archiveCondition =
+      archive === "active"
+        ? isNull(projects.archivedAt)
+        : archive === "archived"
+        ? isNotNull(projects.archivedAt)
+        : undefined;
     const projectRows = await tx
       .select()
       .from(projects)
-      .where(eq(projects.tenantId, tenantId))
+      .where(
+        archiveCondition === undefined
+          ? eq(projects.tenantId, tenantId)
+          : and(eq(projects.tenantId, tenantId), archiveCondition)
+      )
       .orderBy(desc(projects.updatedAt));
 
     if (projectRows.length === 0) return [];
@@ -377,10 +409,60 @@ export async function quickBomProjectNameExists(
       .select({ name: projects.name })
       .from(projects)
       .where(
-        and(eq(projects.tenantId, tenantId), eq(projects.mode, "quick_bom"))
+        and(
+          eq(projects.tenantId, tenantId),
+          eq(projects.mode, "quick_bom"),
+          // Archived Quick BoM projects do not occupy a name (QBM-LOG-006): a
+          // restored project must be able to collide only with active names.
+          isNull(projects.archivedAt)
+        )
       )
       .orderBy(asc(projects.createdAt));
 
     return rows.some((row) => normalizeProjectName(row.name) === target);
+  });
+}
+
+/**
+ * Soft-archive a Project (QBM-LOG-006), tenant-scoped. Non-destructive: stamps
+ * `archived_at` so the Project drops off active surfaces while remaining readable
+ * and restorable. Idempotent: returns true whenever the tenant/project exists,
+ * whether it was active or already archived (it may re-stamp `archived_at`).
+ * Returns false for a wrong tenant or a missing project. No hard delete.
+ */
+export async function archiveProject(
+  tenantId: string,
+  projectId: string
+): Promise<boolean> {
+  return withTenantDb(tenantId, async (tx) => {
+    const now = new Date();
+    const rows = await tx
+      .update(projects)
+      .set({ archivedAt: now, updatedAt: now })
+      .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)))
+      .returning({ id: projects.id });
+    return rows.length > 0;
+  });
+}
+
+/**
+ * Restore an archived Project (QBM-LOG-006), tenant-scoped. Clears `archived_at`
+ * so the Project returns to active surfaces. Idempotent: returns true whenever the
+ * tenant/project exists, whether it was archived or already active (clearing an
+ * already-null `archived_at` is acceptable). Returns false for a wrong tenant or a
+ * missing project. The duplicate-name guard for Quick BoM restores lives at the
+ * route layer; the store stays a pure state transition.
+ */
+export async function restoreProject(
+  tenantId: string,
+  projectId: string
+): Promise<boolean> {
+  return withTenantDb(tenantId, async (tx) => {
+    const rows = await tx
+      .update(projects)
+      .set({ archivedAt: null, updatedAt: new Date() })
+      .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)))
+      .returning({ id: projects.id });
+    return rows.length > 0;
   });
 }

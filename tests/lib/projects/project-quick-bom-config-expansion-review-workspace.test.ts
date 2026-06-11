@@ -297,7 +297,9 @@ describe("loadQuickBomConfigurationExpansionReviewWorkspace - ok projection", ()
 
   it("scopes both store calls to the passed tenantId", async () => {
     await loadQuickBomConfigurationExpansionReviewWorkspace(TENANT, PROJECT_ID, ARTIFACT_ID);
-    expect(mockGetProject).toHaveBeenCalledWith(TENANT, PROJECT_ID);
+    expect(mockGetProject).toHaveBeenCalledWith(TENANT, PROJECT_ID, {
+      includeArchived: true,
+    });
     expect(mockGetArtifact).toHaveBeenCalledWith(TENANT, PROJECT_ID, ARTIFACT_ID);
   });
 });

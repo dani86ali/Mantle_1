@@ -48,8 +48,14 @@ const PROJECTS = [
   },
 ];
 
-function req(): NextRequest {
-  return { headers: { get: () => null } } as unknown as NextRequest;
+function req(archived?: string): NextRequest {
+  const searchParams = new URLSearchParams(
+    archived !== undefined ? { archived } : {}
+  );
+  return {
+    headers: { get: () => null },
+    nextUrl: { searchParams },
+  } as unknown as NextRequest;
 }
 
 beforeEach(() => {
@@ -79,8 +85,27 @@ describe("GET /api/projects - tenant scoped Project list", () => {
 
     expect(res.status).toBe(200);
     expect(mockListProjectSummaries).toHaveBeenCalledTimes(1);
-    expect(mockListProjectSummaries).toHaveBeenCalledWith(SESSION.tenantId);
+    expect(mockListProjectSummaries).toHaveBeenCalledWith(SESSION.tenantId, {
+      archive: "active",
+    });
     await expect(res.json()).resolves.toEqual({ projects: PROJECTS });
+  });
+
+  it("requests archived projects when ?archived=only is present", async () => {
+    const res = await GET(req("only"));
+
+    expect(res.status).toBe(200);
+    expect(mockListProjectSummaries).toHaveBeenCalledWith(SESSION.tenantId, {
+      archive: "archived",
+    });
+  });
+
+  it("falls back to active for any other archived value", async () => {
+    await GET(req("yes"));
+
+    expect(mockListProjectSummaries).toHaveBeenCalledWith(SESSION.tenantId, {
+      archive: "active",
+    });
   });
 
   it("maps store failures to a controlled 500 without exposing thrown details", async () => {

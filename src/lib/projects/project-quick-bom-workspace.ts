@@ -26,6 +26,8 @@ export interface ProjectSummary {
   customerName?: string;
   mode: ProjectMode;
   pricingConfig?: ProjectPricingConfig;
+  /** Soft archive timestamp (QBM-LOG-006); absent when active. Read-only signal. */
+  archivedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -271,6 +273,9 @@ function toProjectSummary(project: Project): ProjectSummary {
     ...(project.pricingConfig !== undefined
       ? { pricingConfig: { ...project.pricingConfig } }
       : {}),
+    ...(project.archivedAt !== undefined
+      ? { archivedAt: iso(project.archivedAt) }
+      : {}),
     createdAt: iso(project.createdAt),
     updatedAt: iso(project.updatedAt),
   };
@@ -348,7 +353,8 @@ export async function loadProjectQuickBomWorkspace(
   tenantId: string,
   projectId: string
 ): Promise<ProjectQuickBomWorkspaceResult> {
-  const project = await getProjectById(tenantId, projectId);
+  // Read-only inspection loader: archived Projects stay openable (QBM-LOG-006).
+  const project = await getProjectById(tenantId, projectId, { includeArchived: true });
   if (project === null) return { status: "not_found" };
   if (project.mode !== "quick_bom") {
     return { status: "wrong_mode", project: toProjectSummary(project) };
