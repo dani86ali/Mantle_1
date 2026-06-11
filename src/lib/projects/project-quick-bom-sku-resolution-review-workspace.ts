@@ -36,6 +36,7 @@ import type {
   SkuResolutionSuggestion,
 } from "@/types/project";
 import { getDeferredSkuReviewGuidance } from "@/lib/projects/sku-deferred-review-set";
+import { getRelatedConfiguredItemsDisplay } from "@/lib/projects/sku-related-configured-display";
 
 /** Lean project summary for the review header; tenant-scoped projection. */
 export interface QuickBomSkuResolutionReviewWorkspaceProject {
@@ -102,6 +103,19 @@ export interface QuickBomSkuResolutionReviewLineGuidance {
   note: string;
 }
 
+/**
+ * DISPLAY-ONLY relationship guidance for a deferred line: a related configured item and
+ * the parent SKU under which it may later appear IF the configuration-expansion stage
+ * approves it. This is NOT a substitution and carries NO authority: it never decides,
+ * prices, or accepts anything, never appears in a review action payload, and never
+ * changes the deferred row's reject/defer decision. The original customer row stays
+ * excluded before pricing.
+ */
+export interface QuickBomSkuResolutionReviewLineRelatedConfigured {
+  parentSku: string;
+  relatedConfiguredSku: string;
+}
+
 /** One BoQ line's current resolution state, projected for line-level review. */
 export interface QuickBomSkuResolutionReviewLine {
   sourceFileId: string;
@@ -116,6 +130,12 @@ export interface QuickBomSkuResolutionReviewLine {
   note?: string;
   /** Present only on `needs_review` lines in the deferred/non-priced guidance set. */
   reviewGuidance?: QuickBomSkuResolutionReviewLineGuidance;
+  /**
+   * DISPLAY-ONLY: known related configured item(s) for this line's original SKU,
+   * regardless of decision status, so the review screen can show that the excluded row
+   * is not silently replaced. Read-only guidance; never an action, decision, or price.
+   */
+  relatedConfiguredItems?: QuickBomSkuResolutionReviewLineRelatedConfigured[];
 }
 
 /** The lean, serializable SKU line-review projection returned on `ok`. */
@@ -232,6 +252,10 @@ function toReviewLine(raw: unknown): QuickBomSkuResolutionReviewLine | null {
   // survive.
   const guidance =
     status === "needs_review" ? getDeferredSkuReviewGuidance(originalSku) : null;
+  // Display-only related configured item(s) for this original SKU. Projected field-by-
+  // field so only parentSku/relatedConfiguredSku survive - never a price, action, or
+  // authority flag. Status-independent: the read-only decision view still shows it.
+  const relatedConfigured = getRelatedConfiguredItemsDisplay(originalSku);
   return {
     sourceFileId,
     sourceRowNumber,
@@ -250,6 +274,14 @@ function toReviewLine(raw: unknown): QuickBomSkuResolutionReviewLine | null {
             reasonCode: guidance.reasonCode,
             note: guidance.note,
           },
+        }
+      : {}),
+    ...(relatedConfigured.length > 0
+      ? {
+          relatedConfiguredItems: relatedConfigured.map((item) => ({
+            parentSku: item.parentSku,
+            relatedConfiguredSku: item.relatedConfiguredSku,
+          })),
         }
       : {}),
   };

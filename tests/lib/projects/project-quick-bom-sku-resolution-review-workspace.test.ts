@@ -485,15 +485,134 @@ describe("loadQuickBomSkuResolutionReviewWorkspace - Honeywell reject/defer guid
     expect(guidance).toBeDefined();
     expect(Object.keys(guidance ?? {}).sort()).toEqual(["action", "note", "reasonCode"].sort());
     const serialized = JSON.stringify(result.review);
+    // The reject/defer guidance itself stays free of substitution wording and never
+    // names an unrelated current SKU. The related configured item (SC9300UK9-1715) is
+    // allowed to appear ONLY inside the display-only relatedConfiguredItems field,
+    // asserted separately below - it must not leak as a replacement/substitution.
     for (const forbidden of [
       "replacement",
       "currentSku",
       "substitut",
       "C9300-DNA-A-48-3Y",
-      "SC9300UK9-1715",
     ]) {
       expect(serialized.includes(forbidden), forbidden).toBe(false);
     }
+
+    // The deferred line's related configured item is display-only: exactly
+    // {parentSku, relatedConfiguredSku}, no price/action/decision/authority. The
+    // related SKU appears only there, never as an acceptedSku or a suggestion.
+    const deferredLine = result.review.lines[0];
+    expect(deferredLine.relatedConfiguredItems).toEqual([
+      { parentSku: "C9300X-48HX-A", relatedConfiguredSku: "SC9300UK9-1715" },
+    ]);
+    for (const item of deferredLine.relatedConfiguredItems ?? []) {
+      expect(Object.keys(item).sort()).toEqual(["parentSku", "relatedConfiguredSku"].sort());
+    }
+    expect("acceptedSku" in deferredLine).toBe(false);
+    expect(
+      deferredLine.suggestions.some((s) => s.suggestedSku === "SC9300UK9-1715")
+    ).toBe(false);
+    // The eligible (non-deferred) line projects no related configured guidance.
+    expect(result.review.lines[1].relatedConfiguredItems).toBeUndefined();
+  });
+});
+
+describe("loadQuickBomSkuResolutionReviewWorkspace - related configured item display (QBM-LOG-003)", () => {
+  function relatedPayload(): Record<string, unknown> {
+    return {
+      sourceNormalizedBoqArtifactId: "art-nb-7",
+      sourceNormalizedBoqArtifactVersion: 5,
+      sourceFileIds: ["file-1"],
+      lineCount: 4,
+      summary: { totalLines: 4 },
+      decisions: [
+        {
+          // Deferred historical row WITH a known related configured item.
+          sourceFileId: "file-1",
+          sourceRowNumber: 6,
+          originalLineNumber: "L-1",
+          originalSku: "CON-L1NBX-C9300XY4",
+          status: "needs_review",
+          suggestions: [{ suggestedSku: "CON-L1NBX-C9300XY4", source: "exact" }],
+        },
+        {
+          // Deferred historical row already REJECTED (post-approval): guidance persists.
+          sourceFileId: "file-1",
+          sourceRowNumber: 7,
+          originalLineNumber: "L-2",
+          originalSku: "SC9300UK9-1712",
+          status: "rejected",
+          note: "deferred",
+          suggestions: [{ suggestedSku: "SC9300UK9-1712", source: "exact" }],
+        },
+        {
+          // Eligible parent SKU: must NOT project related configured guidance.
+          sourceFileId: "file-1",
+          sourceRowNumber: 8,
+          originalLineNumber: "L-3",
+          originalSku: "C9300X-48HX-A",
+          status: "needs_review",
+          suggestions: [{ suggestedSku: "C9300X-48HX-A", source: "exact" }],
+        },
+        {
+          // Eligible accessory SKU: must NOT project related configured guidance.
+          sourceFileId: "file-1",
+          sourceRowNumber: 9,
+          originalLineNumber: "L-4",
+          originalSku: "PWR-C1-1100WAC-P",
+          status: "needs_review",
+          suggestions: [{ suggestedSku: "PWR-C1-1100WAC-P", source: "exact" }],
+        },
+      ],
+    };
+  }
+
+  it("projects display-only relatedConfiguredItems on deferred rows, not on eligible rows", async () => {
+    getArtifactMock.mockResolvedValue(makeArtifact({ payload: relatedPayload() }));
+    const result = await loadQuickBomSkuResolutionReviewWorkspace(TENANT, PROJECT, ARTIFACT_ID);
+    if (result.status !== "ok") throw new Error("expected ok");
+    const [deferred, rejected, parent, accessory] = result.review.lines;
+
+    expect(deferred.relatedConfiguredItems).toEqual([
+      { parentSku: "C9300X-48HX-A", relatedConfiguredSku: "CON-L1NCD-C9300XY4" },
+    ]);
+    // Status-independent: a rejected deferred row still carries the guidance so the
+    // read-only post-approval view can render it.
+    expect(rejected.relatedConfiguredItems).toEqual([
+      { parentSku: "C9300X-48HX-A", relatedConfiguredSku: "SC9300UK9-1715" },
+    ]);
+    expect(parent.relatedConfiguredItems).toBeUndefined();
+    expect(accessory.relatedConfiguredItems).toBeUndefined();
+  });
+
+  it("keeps the relatedConfiguredItems projection display-only: no price/action/decision/authority", async () => {
+    getArtifactMock.mockResolvedValue(makeArtifact({ payload: relatedPayload() }));
+    const result = await loadQuickBomSkuResolutionReviewWorkspace(TENANT, PROJECT, ARTIFACT_ID);
+    if (result.status !== "ok") throw new Error("expected ok");
+    const deferred = result.review.lines[0];
+    for (const item of deferred.relatedConfiguredItems ?? []) {
+      // Exactly two keys: a display relationship, never a decision/price/authority.
+      expect(Object.keys(item).sort()).toEqual(["parentSku", "relatedConfiguredSku"].sort());
+      for (const forbidden of [
+        "price",
+        "unitPrice",
+        "action",
+        "decision",
+        "acceptedSku",
+        "authority",
+        "replacement",
+        "replacementSku",
+        "substitute",
+        "substitutionSku",
+        "ruleId",
+        "configExpansion",
+      ]) {
+        expect(forbidden in item, forbidden).toBe(false);
+      }
+    }
+    // The related SKU never appears as an accepted SKU or a suggestion (no substitution).
+    expect("acceptedSku" in deferred).toBe(false);
+    expect(deferred.suggestions.every((s) => s.suggestedSku === "CON-L1NBX-C9300XY4")).toBe(true);
   });
 });
 
@@ -515,6 +634,7 @@ describe("loadQuickBomSkuResolutionReviewWorkspace - static source purity", () =
       "@/lib/db/project-artifact-store",
       "@/types/project",
       "@/lib/projects/sku-deferred-review-set",
+      "@/lib/projects/sku-related-configured-display",
     ]);
   });
 
