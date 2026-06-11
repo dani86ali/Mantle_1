@@ -9,12 +9,12 @@
  *
  *   - mode="draft" (the configuration_expansion DRAFT artifact): the engineer reviews
  *     every expansion line as a checkbox row. Expansion rows are SELECTED (= accept) by
- *     default; deselecting a row marks it reject (with an optional note). One Submit
- *     action records the complete batch of explicit decisions - exactly one per
- *     expansion line, in draft order, none for customer lines. Customer lines are
- *     read-only. A "Select all" bulk action re-selects expansion rows but NEVER
- *     overwrites a row the engineer explicitly deselected, so a bulk click cannot wipe
- *     out deliberate exclusions. A successful POST mints a NEW reviewed (non-draft)
+ *     default; deselecting a row marks it reject (with an optional note), and re-checking
+ *     that same row includes it downstream again. One Submit action records the complete
+ *     batch of explicit decisions - exactly one per expansion line, in draft order, none
+ *     for customer lines. Customer lines are read-only. There is no bulk select action:
+ *     each row is an independent, explicit include/exclude choice. A successful POST mints
+ *     a NEW reviewed (non-draft)
  *     artifact, so the panel clears and the parent workspace is refreshed (via
  *     onReviewSubmitted); the artifact is never marked approved client-side.
  *
@@ -24,8 +24,8 @@
  *     submit - stage approval stays on the separate generic Approve/Reject control.
  *
  * The submitted batch carries each decision sanitized to lineId/action/note; the body
- * carries only { decisions: [...] }. The per-row `explicit` flag is client-side only
- * and is never sent.
+ * carries only { decisions: [...] }. Selected rows submit accept, deselected rows
+ * submit reject; there is no client-side `explicit` flag.
  */
 
 import { useCallback, useState } from "react";
@@ -46,11 +46,9 @@ const CONFIG_REVIEW_ERROR =
 
 type ReviewMode = "draft" | "reviewed";
 
-/** One expansion-line selection: selected (= accept) plus whether the engineer set it. */
+/** One expansion-line selection: selected (= accept downstream) plus an optional note. */
 interface LineSelection {
   selected: boolean;
-  /** True once the engineer toggles this row; protects it from a bulk "Select all". */
-  explicit: boolean;
   note?: string;
 }
 
@@ -108,7 +106,7 @@ export function ConfigurationExpansionReviewPanel({
         const initial: Record<string, LineSelection> = {};
         for (const line of review.lines) {
           if (line.origin === "expansion") {
-            initial[line.lineId] = { selected: true, explicit: false };
+            initial[line.lineId] = { selected: true };
           }
         }
         setSelections(initial);
@@ -126,8 +124,8 @@ export function ConfigurationExpansionReviewPanel({
   // POST one complete configuration-expansion review batch: exactly one explicit
   // decision per expansion line, in draft order, and none for customer lines. Each
   // expansion line is selected (=> accept) or deselected (=> reject, with its note).
-  // The body carries only { decisions: [...] } sanitized to lineId/action/note - the
-  // client-side `explicit` flag is never sent. A successful POST mints a NEW reviewed
+  // The body carries only { decisions: [...] } sanitized to lineId/action/note; there
+  // is no client-side `explicit` flag. A successful POST mints a NEW reviewed
   // (non-draft) artifact, so we clear the panel and refresh the main workspace; the
   // artifact is never marked approved client-side.
   const submitConfigReview = useCallback(async (): Promise<void> => {
@@ -136,7 +134,7 @@ export function ConfigurationExpansionReviewPanel({
       (line) => line.origin === "expansion"
     );
     const decisions = expansionLines.map((line) => {
-      const selection = selections[line.lineId] ?? { selected: true, explicit: false };
+      const selection = selections[line.lineId] ?? { selected: true };
       if (selection.selected) {
         return { lineId: line.lineId, action: "accept" as const };
       }
@@ -172,10 +170,9 @@ export function ConfigurationExpansionReviewPanel({
     }
   }, [projectId, artifactId, configReview, selections, onReviewSubmitted]);
 
-  // Toggle one expansion line. Deselecting marks it reject and prompts for an optional
-  // note (read OUTSIDE the state updater so a StrictMode double-invoke never double-
-  // prompts); re-selecting clears any note. Either way the row becomes `explicit` so a
-  // later "Select all" cannot silently override the engineer's deliberate choice.
+  // Toggle one expansion line. Deselecting excludes it downstream and prompts for an
+  // optional note (read OUTSIDE the state updater so a StrictMode double-invoke never
+  // double-prompts); re-selecting includes it downstream again and clears any note.
   function onToggleLine(line: QuickBomConfigExpansionReviewLine): void {
     const current = selections[line.lineId];
     const nextSelected = !(current?.selected ?? true);
@@ -183,42 +180,27 @@ export function ConfigurationExpansionReviewPanel({
       const note = promptNote();
       setSelections((prev) => ({
         ...prev,
-        [line.lineId]: { selected: false, explicit: true, ...(note !== undefined ? { note } : {}) },
+        [line.lineId]: { selected: false, ...(note !== undefined ? { note } : {}) },
       }));
       return;
     }
     setSelections((prev) => ({
       ...prev,
-      [line.lineId]: { selected: true, explicit: true },
+      [line.lineId]: { selected: true },
     }));
-  }
-
-  // Bulk re-select every expansion line EXCEPT rows the engineer explicitly deselected
-  // via its own checkbox. This is the safety invariant: a bulk action must not overwrite
-  // an explicit per-line reject. `explicit` is set only by onToggleLine, so an
-  // individually unchecked row is preserved.
-  function onSelectAllExpansionLines(
-    review: QuickBomConfigExpansionReviewWorkspace
-  ): void {
-    setSelections((prev) => {
-      const next = { ...prev };
-      for (const line of review.lines) {
-        if (line.origin !== "expansion") continue;
-        const current = next[line.lineId];
-        if (current && current.explicit && !current.selected) continue; // keep explicit reject
-        next[line.lineId] = { selected: true, explicit: current?.explicit ?? false };
-      }
-      return next;
-    });
   }
 
   const expansionLines = configReview
     ? configReview.lines.filter((line) => line.origin === "expansion")
     : [];
+  const selectedExpansionCount = expansionLines.filter(
+    (line) => selections[line.lineId]?.selected ?? true
+  ).length;
+  const excludedExpansionCount = expansionLines.length - selectedExpansionCount;
 
   const intro = reviewed
     ? "Recorded configuration expansion decisions (read-only). Accepted lines are in the BoM; rejected lines were excluded."
-    : "Expansion lines are selected (accepted) by default. Deselect any line to exclude it. Customer lines are read-only. One Submit records every decision.";
+    : "Expansion lines are selected by default. Uncheck a line to exclude it from downstream pricing and export; re-check that same row to include it again. Customer lines are read-only. One Submit records every decision.";
 
   return (
     <Card
@@ -256,25 +238,11 @@ export function ConfigurationExpansionReviewPanel({
                 `${configReview.reviewedSummary?.customerLineCount ?? 0} customer, ` +
                 `${configReview.reviewedSummary?.acceptedExpansionLineCount ?? 0} expansion), ` +
                 `${configReview.reviewedSummary?.rejectedExpansionLineCount ?? 0} rejected`
-              : `${configReview.reviewSummary?.totalLineCount ?? 0} lines: ` +
-                `${configReview.reviewSummary?.customerLineCount ?? 0} customer, ` +
-                `${configReview.reviewSummary?.expansionLineCount ?? 0} expansion, ` +
-                `${configReview.reviewSummary?.requiresDecisionCount ?? 0} require decision, ` +
-                `${configReview.reviewSummary?.includedItemCount ?? 0} included items`}
+              : `${selectedExpansionCount} selected for downstream, ` +
+                `${excludedExpansionCount} excluded ` +
+                `(${configReview.reviewSummary?.expansionLineCount ?? 0} expansion lines, ` +
+                `${configReview.reviewSummary?.customerLineCount ?? 0} customer lines read-only)`}
           </p>
-          {!reviewed && (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                data-testid={tid("select-all")}
-                disabled={configReviewBusy || expansionLines.length === 0}
-                onClick={() => onSelectAllExpansionLines(configReview)}
-                className={APPROVE_BTN}
-              >
-                Select all expansion lines ({expansionLines.length})
-              </button>
-            </div>
-          )}
           <ol className="space-y-2">
             {configReview.lines.map((line) => {
               const selection = selections[line.lineId];
@@ -309,8 +277,10 @@ export function ConfigurationExpansionReviewPanel({
                         onChange={() => onToggleLine(line)}
                       />
                       <span>
-                        {selected ? "Accept (selected)" : "Reject (excluded)"}
-                        {selection?.note ? `: ${selection.note}` : ""}
+                        {selected
+                          ? "Included downstream"
+                          : "Excluded by you. Re-check to include downstream."}
+                        {selection?.note ? ` Note: ${selection.note}` : ""}
                       </span>
                     </label>
                   )}

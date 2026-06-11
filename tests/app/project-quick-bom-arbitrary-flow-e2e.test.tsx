@@ -1540,12 +1540,10 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // Expansion lines default to selected (accept). "Select all" keeps them selected
-    // (local state only, no POST yet); the bulk button must not POST or approve by itself.
+    // Expansion lines default to selected (accept). No bulk action exists, and merely
+    // loading the review must not POST or approve by itself.
     const configExpansionLineCount = screen.getAllByTestId("config-review-checkbox").length;
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("config-review-select-all"));
-    });
+    expect(screen.queryByTestId("config-review-select-all")).toBeNull();
     expect(
       calls.filter((c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url))
     ).toHaveLength(0);
@@ -1876,12 +1874,10 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // Expansion lines default to selected (accept). "Select all" keeps them selected
-    // (local state only, no POST yet); the bulk button must not POST or approve by itself.
+    // Expansion lines default to selected (accept). No bulk action exists, and merely
+    // loading the review must not POST or approve by itself.
     const configExpansionLineCount = screen.getAllByTestId("config-review-checkbox").length;
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("config-review-select-all"));
-    });
+    expect(screen.queryByTestId("config-review-select-all")).toBeNull();
     expect(
       calls.filter((c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url))
     ).toHaveLength(0);
@@ -2247,11 +2243,9 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
       calls.filter((c) => c.method === "GET" && /\/configuration-expansion\/review$/.test(c.url))
     ).toHaveLength(1);
 
-    // Expansion lines default to selected (accept); "Select all" keeps them selected
-    // (local state only, no POST yet).
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("config-review-select-all"));
-    });
+    // Expansion lines default to selected (accept). No bulk action exists, and merely
+    // loading the review must not POST yet.
+    expect(screen.queryByTestId("config-review-select-all")).toBeNull();
     expect(
       calls.filter((c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url))
     ).toHaveLength(0);
