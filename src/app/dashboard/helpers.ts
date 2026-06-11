@@ -21,6 +21,8 @@ export interface ProjectRow {
     blocked: number;
     rejected: number;
   };
+  /** Soft archive timestamp (QBM-LOG-006); absent when active. */
+  archivedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -244,6 +244,8 @@ export interface Project {
   stages: ProjectStage[];
   artifacts: ProjectArtifact[];
   approvals: ProjectApproval[];
+  /** Soft archive timestamp (QBM-LOG-006). undefined = active. No hard delete. */
+  archivedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }

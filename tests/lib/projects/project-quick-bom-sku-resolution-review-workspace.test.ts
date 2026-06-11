@@ -202,7 +202,9 @@ describe("loadQuickBomSkuResolutionReviewWorkspace - tenant scoping", () => {
   it("passes exact tenantId and projectId to getProjectById", async () => {
     await loadQuickBomSkuResolutionReviewWorkspace(TENANT, PROJECT, ARTIFACT_ID);
     expect(getProjectMock).toHaveBeenCalledTimes(1);
-    expect(getProjectMock).toHaveBeenCalledWith(TENANT, PROJECT);
+    expect(getProjectMock).toHaveBeenCalledWith(TENANT, PROJECT, {
+      includeArchived: true,
+    });
   });
 
   it("passes exact tenantId, projectId, and artifactId to getProjectArtifactById", async () => {

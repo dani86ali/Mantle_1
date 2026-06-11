@@ -49,6 +49,10 @@ export const projects = pgTable(
     customerName: text("customer_name"),
     mode: varchar("mode", { length: 20 }).notNull(), // ProjectMode; immutable
     pricingConfig: jsonb("pricing_config"), // ProjectPricingConfig
+    // Soft archive (QBM-LOG-006). NULL = active; non-null = archived at that time.
+    // Archive is non-destructive: archived Projects are hidden from active surfaces
+    // but remain openable for read-only inspection and can be restored. No hard delete.
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

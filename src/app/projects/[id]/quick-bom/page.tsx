@@ -493,6 +493,8 @@ export default function ProjectQuickBomPage() {
   // a reviewed non-draft artifact, the reviewed artifact still awaits explicit
   // stage approval through the generic /approvals route.
   function reviewControls(artifact: ProjectArtifactSummary) {
+    // Archived Projects expose no approve/reject or line-review-required controls.
+    if (workspace?.project.archivedAt) return null;
     if (!isReviewable(artifact)) return null;
     const t = artifact.type;
     if (t === "sku_resolution" && artifact.status === "needs_review") {
@@ -566,6 +568,9 @@ export default function ProjectQuickBomPage() {
   if (!workspace) return null;
 
   const { project, readiness, stages, spineArtifacts, approvals } = workspace;
+  // Archived Projects are read-only (QBM-LOG-006): every mutation control is hidden
+  // while artifact rows, approvals, and the approved export download stay visible.
+  const archived = Boolean(project.archivedAt);
   const exportPkg = spineArtifacts.export_package;
   const skuResolution = spineArtifacts.sku_resolution;
   const configExpansion = spineArtifacts.configuration_expansion;
@@ -593,6 +598,16 @@ export default function ProjectQuickBomPage() {
           </p>
         )}
       </header>
+
+      {archived && (
+        <div
+          data-testid="archived-notice"
+          className="rounded-card border border-warning/30 bg-warning-muted p-3 text-sm text-warning"
+        >
+          This Project is archived and shown read-only. Workflow, upload, and
+          approval controls are hidden until it is restored.
+        </div>
+      )}
 
       {approvalError && (
         <div
@@ -717,7 +732,9 @@ export default function ProjectQuickBomPage() {
       </Card>
 
       {skuResolution &&
-        (skuResolution.status === "needs_review" ||
+        // `needs_review` is the editable line-review state, hidden when archived.
+        // `generated`/`approved` are read-only in the panel, so they stay visible.
+        ((!archived && skuResolution.status === "needs_review") ||
           skuResolution.status === "generated" ||
           skuResolution.status === "approved") && (
           <SkuResolutionReviewPanel
@@ -727,7 +744,7 @@ export default function ProjectQuickBomPage() {
           />
         )}
 
-      {configExpansion && isConfigurationExpansionDraft(configExpansion) && (
+      {!archived && configExpansion && isConfigurationExpansionDraft(configExpansion) && (
         <ConfigurationExpansionReviewPanel
           projectId={id}
           artifactId={configExpansion.id}
@@ -747,9 +764,9 @@ export default function ProjectQuickBomPage() {
       {pricedBoq && pricedBoq.status === "needs_review" && (
         <Card title="Priced BoQ review">
           <p className="mt-2 text-xs text-text-secondary">
-            Inspect priced BoQ lines, SAR totals, and pricing warnings before approval.
-            This is a read-only view - use the Approve / Reject controls above to record
-            the decision.
+            {archived
+              ? "Inspect priced BoQ lines, SAR totals, and pricing warnings. This Project is archived and read-only; approval controls are hidden until it is restored."
+              : "Inspect priced BoQ lines, SAR totals, and pricing warnings before approval. This is a read-only view - use the Approve / Reject controls above to record the decision."}
           </p>
           <button
             type="button"
@@ -840,30 +857,32 @@ export default function ProjectQuickBomPage() {
           </div>
         )}
 
-        <div className="mt-3 space-y-2">
-          <label className="text-xs font-medium text-text-tertiary" htmlFor="workflow-upload-file">
-            Upload a BoQ file (.xlsx or .csv)
-          </label>
-          <input
-            id="workflow-upload-file"
-            type="file"
-            data-testid="workflow-upload-file"
-            onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
-            className="block w-full text-xs text-text-secondary"
-          />
-          <button
-            type="button"
-            data-testid="workflow-upload-normalize"
-            disabled={workflowBusy}
-            onClick={() => void onUploadNormalize()}
-            className={APPROVE_BTN}
-          >
-            Upload and normalize BoQ
-          </button>
-        </div>
+        {!archived && (
+          <div className="mt-3 space-y-2">
+            <label className="text-xs font-medium text-text-tertiary" htmlFor="workflow-upload-file">
+              Upload a BoQ file (.xlsx or .csv)
+            </label>
+            <input
+              id="workflow-upload-file"
+              type="file"
+              data-testid="workflow-upload-file"
+              onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-xs text-text-secondary"
+            />
+            <button
+              type="button"
+              data-testid="workflow-upload-normalize"
+              disabled={workflowBusy}
+              onClick={() => void onUploadNormalize()}
+              className={APPROVE_BTN}
+            >
+              Upload and normalize BoQ
+            </button>
+          </div>
+        )}
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {CREATE_ACTIONS.map((action) => {
+          {!archived && CREATE_ACTIONS.map((action) => {
             const source = spineArtifacts[action.source];
             if (source === null || !canCreate[action.type]) return null;
             if (action.requireApprovedSource && source.status !== "approved") return null;

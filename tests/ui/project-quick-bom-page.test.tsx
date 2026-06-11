@@ -3234,3 +3234,103 @@ describe("ProjectQuickBomPage - static source purity", () => {
     expect(/[^\x00-\x7F]/.test(testSource)).toBe(false);
   });
 });
+
+// -- archived (read-only) fixtures (QBM-LOG-006) --
+const ARCHIVED_AT = "2026-05-25T12:00:00.000Z";
+
+function archivedBase(): Record<string, unknown> {
+  const ws = baseWorkspace();
+  (ws.project as Record<string, unknown>).archivedAt = ARCHIVED_AT;
+  return ws;
+}
+
+function archivedFull(): Record<string, unknown> {
+  const ws = fullWorkspace();
+  (ws.project as Record<string, unknown>).archivedAt = ARCHIVED_AT;
+  return ws;
+}
+
+describe("ProjectQuickBomPage - archived (read-only)", () => {
+  it("shows the archived notice and hides upload + create controls", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: archivedFull() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    expect(screen.getByTestId("archived-notice")).toBeInTheDocument();
+    expect(screen.queryByTestId("workflow-upload-file")).toBeNull();
+    expect(screen.queryByTestId("workflow-upload-normalize")).toBeNull();
+    expect(screen.queryByTestId("workflow-create-sku_resolution")).toBeNull();
+    expect(screen.queryByTestId("workflow-create-export_package")).toBeNull();
+  });
+
+  it("hides artifact approve/reject controls when archived but keeps artifact rows", async () => {
+    // baseWorkspace configuration_expansion is `generated` -> normally approvable.
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: archivedBase() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    expect(screen.queryByTestId("approve-configuration_expansion")).toBeNull();
+    expect(screen.queryByTestId("reject-configuration_expansion")).toBeNull();
+    // Artifact rows themselves stay visible (read-only inspection).
+    expect(screen.getByTestId("spine-configuration_expansion")).toBeInTheDocument();
+  });
+
+  it("keeps the approved export package download visible when archived", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: archivedFull() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    const link = await screen.findByTestId("download-export_package");
+    expect(link).toHaveAttribute(
+      "href",
+      "/api/projects/proj-1/quick-bom/artifacts/art-export/export-package/download"
+    );
+  });
+
+  it("hides the editable SKU line-review panel for an archived needs_review artifact", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: archivedBase() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    // baseWorkspace sku_resolution is needs_review (editable) -> hidden when archived.
+    expect(screen.queryByTestId("sku-review-load")).toBeNull();
+  });
+
+  it("priced BoQ review copy does not reference hidden approval controls when archived", async () => {
+    const ws = archivedBase();
+    const sa = spineOf(ws);
+    (sa.sku_resolution as Record<string, unknown>).status = "approved";
+    (sa.configuration_expansion as Record<string, unknown>).status = "approved";
+    sa.priced_boq = artifact("art-priced", "priced_boq", "needs_review", "boq_pricing_review");
+
+    stubFetch((url) => {
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: ws });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    // The priced review panel remains (read-only) but must not tell the user to use
+    // the Approve / Reject controls, which are hidden while archived.
+    const panel = screen.getByText(/Inspect priced BoQ lines/);
+    expect(panel.textContent ?? "").not.toMatch(/Approve \/ Reject/);
+    expect(panel.textContent ?? "").toMatch(/hidden until it is restored/);
+    // The priced approve/reject buttons are hidden.
+    expect(screen.queryByTestId("approve-priced_boq")).toBeNull();
+  });
+});

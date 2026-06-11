@@ -173,7 +173,8 @@ export async function loadProjectQuickBomExportDownload(
 ): Promise<LoadProjectQuickBomExportDownloadResult> {
   const { tenantId, projectId, artifactId } = input;
 
-  const project = await getProjectById(tenantId, projectId);
+  // Read-only download loader: archived Projects remain downloadable (QBM-LOG-006).
+  const project = await getProjectById(tenantId, projectId, { includeArchived: true });
   if (project === null) return { status: "not_found" };
   if (project.mode !== "quick_bom") {
     return { status: "wrong_mode", project: toProjectSummary(project) };

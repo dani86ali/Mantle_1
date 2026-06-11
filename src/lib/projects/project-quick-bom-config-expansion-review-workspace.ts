@@ -540,7 +540,8 @@ export async function loadQuickBomConfigurationExpansionReviewWorkspace(
   projectId: string,
   artifactId: string
 ): Promise<LoadQuickBomConfigExpansionReviewWorkspaceResult> {
-  const project = await getProjectById(tenantId, projectId);
+  // Read-only review loader: archived Projects stay inspectable (QBM-LOG-006).
+  const project = await getProjectById(tenantId, projectId, { includeArchived: true });
   if (project === null) return { status: "not_found" };
   if (project.mode !== "quick_bom") return { status: "wrong_mode" };
 

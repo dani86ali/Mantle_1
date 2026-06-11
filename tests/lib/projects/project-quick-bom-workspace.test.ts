@@ -367,7 +367,9 @@ describe("loadProjectQuickBomWorkspace - ok workspace", () => {
 
   it("passes tenantId into every store call", async () => {
     await loadProjectQuickBomWorkspace(TENANT, PROJECT);
-    expect(mockGetProjectById).toHaveBeenCalledWith(TENANT, PROJECT);
+    expect(mockGetProjectById).toHaveBeenCalledWith(TENANT, PROJECT, {
+      includeArchived: true,
+    });
     expect(mockListArtifacts).toHaveBeenCalledWith(TENANT, PROJECT);
     expect(mockListApprovals).toHaveBeenCalledWith(TENANT, PROJECT);
   });
