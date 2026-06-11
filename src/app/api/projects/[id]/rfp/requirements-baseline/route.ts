@@ -1,9 +1,12 @@
 /**
- * POST /api/projects/[id]/rfp/requirements-baseline - create one reviewable
- * requirements_baseline draft artifact from explicit candidate requirements
- * that cite persisted RFP extraction evidence rows by id.
+ * /api/projects/[id]/rfp/requirements-baseline.
  *
- * POST only. Authenticated via requireAuth; session.tenantId is the only
+ * POST - create one reviewable requirements_baseline draft artifact from
+ * explicit candidate requirements that cite persisted RFP extraction
+ * evidence rows by id. GET - read-only list of the Project's
+ * requirements_baseline artifact versions for engineer inspection.
+ *
+ * POST is authenticated via requireAuth; session.tenantId is the only
  * tenant authority, the route param is the only project id, and
  * session.userId is the only createdBy authority. The request body supplies
  * ONLY { candidates }; per candidate ONLY text, category, priority,
@@ -37,11 +40,24 @@
  * service error maps to a controlled 500 (rfp_requirements_baseline_failed)
  * that never exposes the thrown error.
  *
+ * GET is authenticated the same way; session.tenantId is the only tenant
+ * authority and the route param id is the only project authority. The
+ * request body is never read. It calls only the read-only inspection
+ * service and maps its result to HTTP: not_found -> 404 project_not_found,
+ * wrong_mode -> 409 wrong_project_mode (with the lean project summary), ok
+ * -> 200 with { project, artifactCount, artifacts } - identifiers, ISO
+ * dates, counts, and whitelisted payload summaries only, never requirement
+ * text, raw evidence text, table rows, a tenantId, or a storage path. An
+ * unexpected service error maps to a controlled 500
+ * (rfp_requirements_baseline_inspection_failed) that never exposes the
+ * thrown error.
+ *
  * This route is a transport adapter only: it never touches the DB or any
  * store, parses no files, reads no raw text or storage path, creates no
  * approval, prices nothing, resolves no SKU or configuration, exports
  * nothing, and calls no AI or catalog. Imports only Next.js server
- * primitives, requireAuth, and the requirements-baseline service.
+ * primitives, requireAuth, the requirements-baseline service, and the
+ * read-only requirements-baseline inspection service.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/middleware/auth";
@@ -53,6 +69,7 @@ import {
   type RfpRequirementPriority,
   type RfpRequirementsBaselineCandidateInput,
 } from "@/lib/projects/project-rfp-requirements-baseline";
+import { loadRfpRequirementsBaselineList } from "@/lib/projects/project-rfp-requirements-baseline-inspection";
 
 function invalidRequest(): NextResponse {
   return NextResponse.json(
@@ -254,6 +271,55 @@ export async function POST(
       {
         code: "rfp_requirements_baseline_failed",
         error: "Unable to create RFP requirements baseline draft.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
+  try {
+    const result = await loadRfpRequirementsBaselineList({
+      tenantId: session.tenantId,
+      projectId: params.id,
+    });
+
+    if (result.status === "not_found") {
+      return NextResponse.json(
+        { code: "project_not_found", error: "Project not found." },
+        { status: 404 }
+      );
+    }
+    if (result.status === "wrong_mode") {
+      return NextResponse.json(
+        {
+          code: "wrong_project_mode",
+          error: "Project is not an RFP project.",
+          project: result.project,
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        project: result.project,
+        artifactCount: result.artifactCount,
+        artifacts: result.artifacts,
+      },
+      { status: 200 }
+    );
+  } catch {
+    return NextResponse.json(
+      {
+        code: "rfp_requirements_baseline_inspection_failed",
+        error: "Unable to inspect requirements baseline.",
       },
       { status: 500 }
     );

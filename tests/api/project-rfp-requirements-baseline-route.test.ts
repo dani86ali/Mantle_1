@@ -2,19 +2,24 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// Mock auth and the requirements-baseline service so the route's auth gate,
-// tenant/project/createdBy authority, body sanitization, and result mapping
-// are tested independent of the DB. The factory also provides the category
-// and priority lists the route imports for its 400 gate; the literals mirror
-// the service's exported RFP_REQUIREMENT_CATEGORIES /
-// RFP_REQUIREMENT_PRIORITIES values (the real service module is never loaded
-// here because it would pull the DB stores into the test).
-const { mockRequireAuth, mockCreateDraft } = vi.hoisted(() => ({
+// Mock auth, the requirements-baseline create service, and the read-only
+// inspection list service so the route's auth gate, tenant/project/createdBy
+// authority, body sanitization, and result mapping are tested independent of
+// the DB. The create-service factory also provides the category and priority
+// lists the route imports for its 400 gate; the literals mirror the
+// service's exported RFP_REQUIREMENT_CATEGORIES /
+// RFP_REQUIREMENT_PRIORITIES values (the real service modules are never
+// loaded here because they would pull the DB stores into the test).
+const { mockRequireAuth, mockCreateDraft, mockLoadList } = vi.hoisted(() => ({
   mockRequireAuth: vi.fn(),
   mockCreateDraft: vi.fn(),
+  mockLoadList: vi.fn(),
 }));
 
 vi.mock("@/lib/middleware/auth", () => ({ requireAuth: mockRequireAuth }));
+vi.mock("@/lib/projects/project-rfp-requirements-baseline-inspection", () => ({
+  loadRfpRequirementsBaselineList: mockLoadList,
+}));
 vi.mock("@/lib/projects/project-rfp-requirements-baseline", () => ({
   createRfpRequirementsBaselineDraft: mockCreateDraft,
   RFP_REQUIREMENT_CATEGORIES: [
@@ -36,7 +41,10 @@ vi.mock("@/lib/projects/project-rfp-requirements-baseline", () => ({
   ],
 }));
 
-import { POST } from "@/app/api/projects/[id]/rfp/requirements-baseline/route";
+import {
+  GET,
+  POST,
+} from "@/app/api/projects/[id]/rfp/requirements-baseline/route";
 import * as routeModule from "@/app/api/projects/[id]/rfp/requirements-baseline/route";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -105,6 +113,38 @@ const WRONG_MODE_PROJECT = {
   updatedAt: "2026-06-02T11:30:00.000Z",
 };
 
+const RFP_PROJECT = {
+  id: PROJECT,
+  name: "STC RFP Bid",
+  customerName: "STC",
+  mode: "rfp",
+  createdAt: "2026-06-01T10:00:00.000Z",
+  updatedAt: "2026-06-02T11:30:00.000Z",
+};
+
+// Inspection list items carry the lean identifier/count payload summary
+// (requirement ids only - never requirement text or evidence references).
+const LIST_ITEMS = [
+  {
+    ...ARTIFACT_SUMMARY,
+    payloadSummary: {
+      payloadKind: "rfp_requirements_baseline",
+      createdBy: SESSION.userId,
+      createdAt: "2026-06-10T12:00:00.000Z",
+      requirementCount: 2,
+      evidenceCount: 2,
+      requirementIds: ["RFP-REQ-001", "RFP-REQ-002"],
+    },
+  },
+];
+
+const LIST_OK = {
+  status: "ok",
+  project: RFP_PROJECT,
+  artifacts: LIST_ITEMS,
+  artifactCount: 1,
+};
+
 const EVIDENCE_SUMMARIES = [
   {
     id: "evidence-wrong-kind-1",
@@ -154,6 +194,7 @@ beforeEach(() => {
     artifact: ARTIFACT_SUMMARY,
     payloadSummary: PAYLOAD_SUMMARY,
   });
+  mockLoadList.mockReset().mockResolvedValue(LIST_OK);
 });
 
 describe("POST .../rfp/requirements-baseline - auth", () => {
@@ -540,10 +581,116 @@ describe("POST .../rfp/requirements-baseline - service failure", () => {
   });
 });
 
-describe("POST .../rfp/requirements-baseline - route surface", () => {
-  it("exports POST only", () => {
+describe("GET .../rfp/requirements-baseline - auth", () => {
+  it("returns the requireAuth response and never calls the inspection service or reads the body when unauthenticated", async () => {
+    const unauth = NextResponse.json(
+      { error: "Authentication required" },
+      { status: 401 }
+    );
+    mockRequireAuth.mockReturnValue(unauth);
+
+    const request = req();
+    const res = await GET(request, PARAMS);
+
+    expect(res).toBe(unauth);
+    expect(res.status).toBe(401);
+    expect(mockLoadList).not.toHaveBeenCalled();
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+    expect(request.json).not.toHaveBeenCalled();
+    expect(request.formData).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET .../rfp/requirements-baseline - authority", () => {
+  it("passes only the session tenant and the route project; a decoy request body is never read", async () => {
+    const request = req({
+      tenantId: "attacker-tenant",
+      projectId: "attacker-project",
+      artifactId: "attacker-artifact",
+      candidates: [{ text: "attacker text", evidenceIds: ["e-1"] }],
+    });
+
+    const res = await GET(request, PARAMS);
+
+    expect(res.status).toBe(200);
+    expect(request.json).not.toHaveBeenCalled();
+    expect(request.formData).not.toHaveBeenCalled();
+    expect(mockLoadList).toHaveBeenCalledTimes(1);
+    const arg = mockLoadList.mock.calls[0][0] as Record<string, unknown>;
+    expect(Object.keys(arg).sort()).toEqual(["projectId", "tenantId"]);
+    expect(arg.tenantId).toBe(SESSION.tenantId);
+    expect(arg.projectId).toBe(PROJECT);
+    expect(JSON.stringify(arg)).not.toContain("attacker");
+  });
+});
+
+describe("GET .../rfp/requirements-baseline - result mapping", () => {
+  it("maps not_found to 404 project_not_found", async () => {
+    mockLoadList.mockResolvedValue({ status: "not_found" });
+
+    const res = await GET(req(), PARAMS);
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      code: "project_not_found",
+      error: "Project not found.",
+    });
+  });
+
+  it("maps wrong_mode to 409 wrong_project_mode with the project summary", async () => {
+    mockLoadList.mockResolvedValue({
+      status: "wrong_mode",
+      project: WRONG_MODE_PROJECT,
+    });
+
+    const res = await GET(req(), PARAMS);
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      code: "wrong_project_mode",
+      error: "Project is not an RFP project.",
+      project: WRONG_MODE_PROJECT,
+    });
+  });
+
+  it("maps ok to 200 with { project, artifactCount, artifacts }, no status discriminator, and no tenantId; the create service is never called", async () => {
+    const res = await GET(req(), PARAMS);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      project: RFP_PROJECT,
+      artifactCount: 1,
+      artifacts: LIST_ITEMS,
+    });
+    expect("status" in body).toBe(false);
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+    const json = JSON.stringify(body);
+    expect(json).not.toContain("tenantId");
+    expect(json).not.toContain(SESSION.tenantId);
+  });
+
+  it("maps an unexpected inspection error to a controlled 500 without exposing the thrown error", async () => {
+    const secret = "boom-internal-stack-detail";
+    mockLoadList.mockRejectedValue(new Error(secret));
+
+    const res = await GET(req(), PARAMS);
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toEqual({
+      code: "rfp_requirements_baseline_inspection_failed",
+      error: "Unable to inspect requirements baseline.",
+    });
+    expect(JSON.stringify(body)).not.toContain(secret);
+  });
+});
+
+describe(".../rfp/requirements-baseline - route surface", () => {
+  it("exports GET and POST only", () => {
     expect(typeof routeModule.POST).toBe("function");
-    for (const method of ["GET", "PATCH", "PUT", "DELETE"]) {
+    expect(typeof routeModule.GET).toBe("function");
+    for (const method of ["PATCH", "PUT", "DELETE"]) {
       expect((routeModule as Record<string, unknown>)[method]).toBeUndefined();
     }
   });
@@ -560,21 +707,23 @@ describe("route module purity (static source check)", () => {
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports only Next.js server primitives, requireAuth, and the requirements-baseline service", () => {
+  it("imports only Next.js server primitives, requireAuth, the requirements-baseline service, and the read-only inspection service", () => {
     const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
     expect(froms).toEqual([
       "next/server",
       "@/lib/middleware/auth",
       "@/lib/projects/project-rfp-requirements-baseline",
+      "@/lib/projects/project-rfp-requirements-baseline-inspection",
     ]);
   });
 
-  it("does not import DB, stores, extraction, persistence, raw file loaders, pricing, config expansion, export, runner, AI, catalog, intake, engine, coordinator, or adapter modules", () => {
+  it("does not import DB, stores, the approval service, extraction, persistence, raw file loaders, pricing, SKU resolution, config expansion, export, runner, AI, catalog, intake, engine, coordinator, or adapter modules", () => {
     for (const forbidden of [
       'from "@/lib/db',
       "createProjectArtifactVersion",
       "createProjectApproval",
       "createProjectEvidenceItem",
+      'from "@/lib/projects/project-rfp-requirements-baseline-approval"',
       'from "@/lib/projects/project-rfp-evidence-persistence"',
       'from "@/lib/projects/project-rfp-evidence-run"',
       'from "@/lib/projects/project-rfp-evidence-inspection"',
@@ -583,11 +732,13 @@ describe("route module purity (static source check)", () => {
       'from "@/lib/projects/project-rfp-input-package',
       'from "@/lib/projects/approvals"',
       'from "@/lib/projects/evidence"',
+      'from "@/lib/projects/files"',
       'from "@/lib/projects/boq-file-loader"',
       'from "@/lib/projects/boq-formats"',
       'from "@/lib/projects/boq-normalization"',
       'from "@/lib/projects/pricing"',
       'from "@/lib/projects/priced-boq',
+      'from "@/lib/projects/sku-resolution',
       'from "@/lib/projects/config-expansion',
       'from "@/lib/projects/mantle',
       'from "@/lib/projects/quick-bom-runner"',
