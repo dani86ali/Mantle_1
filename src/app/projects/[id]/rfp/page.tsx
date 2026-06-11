@@ -10,11 +10,11 @@
  * persisted text body or table cells. Clicking Inspect on one row GETs
  * /api/projects/[id]/rfp/evidence/[evidenceId], and only the detail panel
  * renders the sanitized persisted content (text chunk body or table rows)
- * that the detail API returned. Every fetch is a default GET: the page
- * writes nothing, runs no extraction, reads no file bytes, and decides
- * nothing - it only displays what the read-only inspection APIs return.
- * Types come via `import type` from the inspection read models, erased at
- * compile time, so no server or DB code reaches the client.
+ * that the detail API returned. Every evidence fetch is a default GET: the
+ * evidence views write nothing, run no extraction, read no file bytes, and
+ * decide nothing - they only display what the read-only inspection APIs
+ * return. Types come via `import type` from the inspection read models,
+ * erased at compile time, so no server or DB code reaches the client.
  *
  * Requirements baseline (Milestone 2): on mount the page also GETs the lean
  * requirements_baseline artifact list from
@@ -25,9 +25,21 @@
  * only the baseline detail panel renders the sanitized reviewable payload:
  * requirement text plus locator-only evidence references (identifiers,
  * counts, positions - never raw evidence text, never table rows, never a
- * tenant id, never a storage path, never an arbitrary payload key). The page
- * stays read-only end to end: every fetch is a default GET and the page
- * approves nothing, writes nothing, and decides nothing.
+ * tenant id, never a storage path, never an arbitrary payload key). Every
+ * baseline inspection fetch is a default GET.
+ *
+ * Requirements baseline review (Milestone 2): when the loaded baseline
+ * detail has a reviewable status (needs_review or generated) the detail
+ * panel shows an optional note plus Approve and Reject buttons. A click
+ * sends exactly one POST - the page's only write - to
+ * /api/projects/[id]/rfp/artifacts/[artifactId]/requirements-baseline/review
+ * with { decision } plus a trimmed nonblank note only; it never sends a
+ * tenant, project, version, decidedBy, status, payload, requirement, or
+ * evidence field. On success the panel applies the post-decision
+ * artifactStatus from the response, shows fixed success copy, and reloads
+ * the read-only baseline list; on failure it shows fixed error copy and
+ * keeps the loaded detail. The POST records one human decision and nothing
+ * else: no auto-approval, no extraction, no generation, no other write.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -87,6 +99,19 @@ interface BaselineDetail {
   baseline: RfpRequirementsBaselineInspectionBaseline;
 }
 
+/**
+ * Fields the page reads from the success response of
+ * POST /api/projects/[id]/rfp/artifacts/[artifactId]/requirements-baseline/review.
+ * artifactStatus is the post-decision status; artifact is the pre-approval
+ * summary of the reviewed version, so artifactStatus wins when both exist.
+ */
+interface BaselineReviewResponse {
+  artifactStatus?: RfpRequirementsBaselineInspectionArtifactSummary["status"];
+  artifact?: RfpRequirementsBaselineInspectionArtifactSummary;
+}
+
+type BaselineReviewDecision = "approved" | "rejected";
+
 type BaselineRequirement =
   RfpRequirementsBaselineInspectionBaseline["requirements"][number];
 type BaselineEvidenceReference =
@@ -99,6 +124,9 @@ const DETAIL_ERROR = "Unable to load evidence detail.";
 /** Exact UI copy required for the baseline list/detail failure states. */
 const BASELINE_LIST_ERROR = "Unable to load requirements baseline.";
 const BASELINE_DETAIL_ERROR = "Unable to load requirements baseline detail.";
+
+/** Exact UI copy required for the baseline review failure state. */
+const BASELINE_REVIEW_ERROR = "Unable to review requirements baseline.";
 
 const EMPTY_FILTERS: EvidenceFilters = {
   sourceFileId: "",
@@ -147,6 +175,13 @@ function summaryLine(item: RfpEvidenceListItemSummary): string {
   return `chunk ${s.chunkIndex + 1}/${s.chunkCount} | ${s.charCount} chars${doc}`;
 }
 
+/** Only these artifact statuses may still receive a human review decision. */
+function isReviewableStatus(
+  status: RfpRequirementsBaselineInspectionArtifactSummary["status"]
+): boolean {
+  return status === "needs_review" || status === "generated";
+}
+
 /** One-line locator summary for one evidence reference; never content. */
 function referenceLine(ref: BaselineEvidenceReference): string {
   if (ref.evidenceKind === "rfp_document_table") {
@@ -180,6 +215,11 @@ export default function ProjectRfpEvidencePage() {
   const [baselineDetail, setBaselineDetail] = useState<BaselineDetail | null>(null);
   const [baselineDetailLoading, setBaselineDetailLoading] = useState(false);
   const [baselineDetailError, setBaselineDetailError] = useState<string | null>(null);
+
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewPending, setReviewPending] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
 
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
@@ -261,6 +301,9 @@ export default function ProjectRfpEvidencePage() {
     async (artifactId: string): Promise<void> => {
       setBaselineDetail(null);
       setBaselineDetailError(null);
+      setReviewNote("");
+      setReviewError(null);
+      setReviewSuccess(null);
       setBaselineDetailLoading(true);
       try {
         const res = await fetch(
@@ -284,6 +327,62 @@ export default function ProjectRfpEvidencePage() {
       }
     },
     [id]
+  );
+
+  // The page's single write: record one human approve/reject decision for
+  // the exact inspected requirements_baseline artifact. The body carries only
+  // decision plus a trimmed nonblank note - never a tenant, project, version,
+  // decidedBy, status, payload, requirement, or evidence field; the route
+  // derives all authority server-side. On success the displayed status comes
+  // from the response (artifactStatus is the post-decision status, so it
+  // overrides the pre-approval artifact summary) and the baseline list is
+  // reloaded via the existing read-only GET.
+  const submitReview = useCallback(
+    async (decision: BaselineReviewDecision): Promise<void> => {
+      if (baselineDetail === null || reviewPending) return;
+      setReviewPending(true);
+      setReviewError(null);
+      setReviewSuccess(null);
+      try {
+        const note = reviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${baselineDetail.artifact.id}/requirements-baseline/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(note === "" ? { decision } : { decision, note }),
+          }
+        );
+        const body = (await res
+          .json()
+          .catch(() => null)) as BaselineReviewResponse | null;
+        if (!res.ok) {
+          setReviewError(BASELINE_REVIEW_ERROR);
+          return;
+        }
+        const responseArtifact = body?.artifact;
+        const responseStatus = body?.artifactStatus;
+        setBaselineDetail((prev) => {
+          if (prev === null) return prev;
+          const artifact = responseArtifact ?? prev.artifact;
+          return {
+            artifact: { ...artifact, status: responseStatus ?? artifact.status },
+            baseline: prev.baseline,
+          };
+        });
+        setReviewSuccess(
+          decision === "approved"
+            ? "Requirements baseline approved."
+            : "Requirements baseline rejected."
+        );
+        void loadBaselineList();
+      } catch {
+        setReviewError(BASELINE_REVIEW_ERROR);
+      } finally {
+        setReviewPending(false);
+      }
+    },
+    [baselineDetail, id, loadBaselineList, reviewNote, reviewPending]
   );
 
   function onApply(): void {
@@ -639,6 +738,62 @@ export default function ProjectRfpEvidencePage() {
                 </li>
               ))}
             </ol>
+            <div className="mt-3 border-t border-[var(--border)] pt-3">
+              {reviewError && (
+                <div data-testid="baseline-review-error" className={`mb-2 ${ERROR_BOX}`}>
+                  {reviewError}
+                </div>
+              )}
+              {reviewSuccess && (
+                <p
+                  data-testid="baseline-review-success"
+                  className="mb-2 text-xs text-text-secondary"
+                >
+                  {reviewSuccess}
+                </p>
+              )}
+              {isReviewableStatus(baselineDetail.artifact.status) ? (
+                <>
+                  <label className="flex flex-col text-xs text-text-tertiary">
+                    Review note (optional)
+                    <textarea
+                      data-testid="baseline-review-note"
+                      value={reviewNote}
+                      onChange={(e) => setReviewNote(e.target.value)}
+                      rows={3}
+                      className={FIELD}
+                    />
+                  </label>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      data-testid="baseline-review-approve"
+                      disabled={reviewPending}
+                      onClick={() => void submitReview("approved")}
+                      className={ACTION_BTN}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="baseline-review-reject"
+                      disabled={reviewPending}
+                      onClick={() => void submitReview("rejected")}
+                      className={PLAIN_BTN}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p
+                  data-testid="baseline-review-readonly"
+                  className="text-xs text-text-tertiary"
+                >
+                  Status {baselineDetail.artifact.status} is not reviewable.
+                </p>
+              )}
+            </div>
           </div>
         )}
       </section>

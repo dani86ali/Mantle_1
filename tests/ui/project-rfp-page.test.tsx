@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import ProjectRfpEvidencePage from "@/app/projects/[id]/rfp/page";
 
@@ -15,6 +15,7 @@ const LIST_URL = `/api/projects/${PROJECT_ID}/rfp/evidence`;
 const BASELINE_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/requirements-baseline`;
 const BASELINE_ARTIFACT_ID = "art-rb-1";
 const BASELINE_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${BASELINE_ARTIFACT_ID}/requirements-baseline`;
+const REVIEW_URL = `${BASELINE_DETAIL_URL}/review`;
 
 // Persisted-content canaries. Both are smuggled into the lean list response
 // (which the read model would never carry) AND returned by the detail stubs.
@@ -167,7 +168,7 @@ function baselineArtifactSummary(): Record<string, unknown> {
     projectId: PROJECT_ID,
     stageId: "requirements_baseline_review",
     type: "requirements_baseline",
-    status: "draft",
+    status: "needs_review",
     version: 1,
     sourceFileIds: ["file-rfp-1", "file-rfp-2"],
     sourceArtifactIds: ["art-ip-1"],
@@ -278,6 +279,37 @@ function baselineDetailResponse(): Record<string, unknown> {
   };
 }
 
+/** Baseline detail response whose artifact carries an arbitrary status. */
+function baselineDetailResponseWithStatus(status: string): Record<string, unknown> {
+  const body = baselineDetailResponse();
+  (body.artifact as Record<string, unknown>).status = status;
+  return body;
+}
+
+/**
+ * Success response of the review POST, mirroring the real route contract:
+ * `artifact` is the PRE-approval summary (status still needs_review) while
+ * `artifactStatus` carries the post-decision status the page must display.
+ */
+function baselineReviewSuccessResponse(
+  decision: "approved" | "rejected"
+): Record<string, unknown> {
+  return {
+    approval: {
+      id: "appr-rb-1",
+      projectId: PROJECT_ID,
+      artifactId: BASELINE_ARTIFACT_ID,
+      artifactVersion: 1,
+      decision,
+      decidedBy: "user-1",
+      decidedAt: "2026-06-05T10:00:00.000Z",
+    },
+    artifactStatus: decision,
+    stageStatus: decision,
+    artifact: baselineArtifactSummary(),
+  };
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -313,9 +345,19 @@ function stubFetch(
 }
 
 // Default: evidence list (with or without query), both evidence detail
-// endpoints, and the baseline list/detail endpoints all succeed.
+// endpoints, the baseline list/detail endpoints, and the baseline review
+// POST all succeed. The review branch echoes the posted decision back as the
+// post-decision artifactStatus, like the real route.
 function stubDefault(): Recorded[] {
-  return stubFetch((url) => {
+  return stubFetch((url, init) => {
+    if (url === REVIEW_URL) {
+      const raw = typeof init?.body === "string" ? init.body : "{}";
+      const decision =
+        (JSON.parse(raw) as { decision?: string }).decision === "rejected"
+          ? "rejected"
+          : "approved";
+      return jsonResponse(baselineReviewSuccessResponse(decision));
+    }
     if (url === `${LIST_URL}/ev-text-1`) return jsonResponse(textDetailResponse());
     if (url === `${LIST_URL}/ev-table-1`) return jsonResponse(tableDetailResponse());
     if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
@@ -602,7 +644,7 @@ describe("ProjectRfpEvidencePage - requirements baseline list", () => {
     expect(screen.getByTestId("baseline-count")).toHaveTextContent("Baseline artifacts: 1");
     expect(row).toHaveTextContent(BASELINE_ARTIFACT_ID);
     expect(row).toHaveTextContent("version 1");
-    expect(row).toHaveTextContent("draft");
+    expect(row).toHaveTextContent("needs_review");
     expect(row).toHaveTextContent("created 2026-06-04T09:00:00.000Z");
     expect(row).toHaveTextContent("updated 2026-06-04T09:05:00.000Z");
     expect(row).toHaveTextContent("requirements: 2");
@@ -670,7 +712,7 @@ describe("ProjectRfpEvidencePage - requirements baseline detail", () => {
     const meta = screen.getByTestId("baseline-detail-meta");
     expect(meta).toHaveTextContent(BASELINE_ARTIFACT_ID);
     expect(meta).toHaveTextContent("version 1");
-    expect(meta).toHaveTextContent("draft");
+    expect(meta).toHaveTextContent("needs_review");
     expect(meta).toHaveTextContent("created by user-1");
     expect(meta).toHaveTextContent("requirements: 2");
     expect(meta).toHaveTextContent("evidence refs: 3");
@@ -779,6 +821,227 @@ describe("ProjectRfpEvidencePage - requirements baseline detail", () => {
   });
 });
 
+describe("ProjectRfpEvidencePage - requirements baseline review", () => {
+  async function inspectBaseline(): Promise<void> {
+    await screen.findByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`));
+    });
+    await screen.findByTestId("baseline-detail-panel");
+  }
+
+  it("shows the note textarea and enabled Approve/Reject for a loaded needs_review baseline detail", async () => {
+    stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await inspectBaseline();
+
+    expect(screen.getByTestId("baseline-review-note")).toBeInTheDocument();
+    expect(screen.getByTestId("baseline-review-approve")).toBeEnabled();
+    expect(screen.getByTestId("baseline-review-reject")).toBeEnabled();
+    expect(screen.queryByTestId("baseline-review-readonly")).toBeNull();
+    expect(screen.queryByTestId("baseline-review-error")).toBeNull();
+    expect(screen.queryByTestId("baseline-review-success")).toBeNull();
+  });
+
+  it("Approve POSTs exactly { decision: \"approved\" } (blank note omitted), applies the post-decision status, shows success, and reloads the baseline list", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await inspectBaseline();
+    expect(screen.getByTestId("baseline-detail-meta")).toHaveTextContent("needs_review");
+
+    // Whitespace-only note must trim to blank and be omitted from the body.
+    fireEvent.change(screen.getByTestId("baseline-review-note"), {
+      target: { value: "   " },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("baseline-review-approve"));
+    });
+
+    const success = await screen.findByTestId("baseline-review-success");
+    expect(success.textContent).toBe("Requirements baseline approved.");
+
+    const meta = screen.getByTestId("baseline-detail-meta");
+    expect(meta).toHaveTextContent("approved");
+    expect(meta).not.toHaveTextContent("needs_review");
+
+    const posts = calls.filter((c) => c.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(posts[0].url).toBe(REVIEW_URL);
+    expect(posts[0].body).toEqual({ decision: "approved" });
+
+    const baselineListGets = calls.filter((c) => c.url === BASELINE_LIST_URL);
+    expect(baselineListGets).toHaveLength(2);
+    expect(baselineListGets.every((c) => c.method === "GET")).toBe(true);
+
+    // The decided artifact is no longer reviewable: controls collapse.
+    expect(screen.queryByTestId("baseline-review-approve")).toBeNull();
+    expect(screen.queryByTestId("baseline-review-reject")).toBeNull();
+    expect(screen.getByTestId("baseline-review-readonly")).toHaveTextContent("approved");
+  });
+
+  it("Reject with a padded note POSTs { decision: \"rejected\", note } trimmed, applies the status, and reloads the baseline list", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await inspectBaseline();
+
+    fireEvent.change(screen.getByTestId("baseline-review-note"), {
+      target: { value: "  Scope section is incomplete.  " },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("baseline-review-reject"));
+    });
+
+    const success = await screen.findByTestId("baseline-review-success");
+    expect(success.textContent).toBe("Requirements baseline rejected.");
+    expect(screen.getByTestId("baseline-detail-meta")).toHaveTextContent("rejected");
+
+    const posts = calls.filter((c) => c.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(posts[0].url).toBe(REVIEW_URL);
+    expect(posts[0].body).toEqual({
+      decision: "rejected",
+      note: "Scope section is incomplete.",
+    });
+
+    expect(calls.filter((c) => c.url === BASELINE_LIST_URL)).toHaveLength(2);
+    expect(screen.queryByTestId("baseline-review-approve")).toBeNull();
+  });
+
+  it('renders exactly "Unable to review requirements baseline." on a non-ok review response, keeping the loaded detail and not reloading the list', async () => {
+    const secret = "review-internal-code-detail";
+    const calls = stubFetch((url, init) => {
+      if (url === REVIEW_URL && init?.method === "POST") {
+        return jsonResponse(
+          { code: "requirements_baseline_review_failed", error: secret },
+          409
+        );
+      }
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === BASELINE_DETAIL_URL) return jsonResponse(baselineDetailResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await inspectBaseline();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("baseline-review-approve"));
+    });
+
+    const err = await screen.findByTestId("baseline-review-error");
+    expect(err.textContent).toBe("Unable to review requirements baseline.");
+    expect(screen.queryByTestId("baseline-review-success")).toBeNull();
+
+    // The loaded detail survives the failure and stays reviewable.
+    expect(screen.getByTestId("baseline-detail-panel")).toBeInTheDocument();
+    expect(screen.getAllByTestId("baseline-detail-requirement")).toHaveLength(2);
+    expect(screen.getByTestId("baseline-detail-meta")).toHaveTextContent("needs_review");
+    expect(screen.getByTestId("baseline-review-approve")).toBeEnabled();
+    expect(screen.getByTestId("baseline-review-reject")).toBeEnabled();
+
+    expect(calls.filter((c) => c.url === BASELINE_LIST_URL)).toHaveLength(1);
+    expect(document.body.textContent ?? "").not.toContain(secret);
+  });
+
+  it("renders the exact review error when the review POST throws, without leaking the thrown detail", async () => {
+    const secret = "review-boom-stack-detail";
+    stubFetch((url, init) => {
+      if (url === REVIEW_URL && init?.method === "POST") {
+        throw new Error(secret);
+      }
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === BASELINE_DETAIL_URL) return jsonResponse(baselineDetailResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await inspectBaseline();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("baseline-review-reject"));
+    });
+
+    const err = await screen.findByTestId("baseline-review-error");
+    expect(err.textContent).toBe("Unable to review requirements baseline.");
+    expect(screen.getByTestId("baseline-detail-panel")).toBeInTheDocument();
+    expect(screen.getAllByTestId("baseline-detail-requirement")).toHaveLength(2);
+    expect(document.body.textContent ?? "").not.toContain(secret);
+  });
+
+  it("disables Approve and Reject while the review POST is pending", async () => {
+    let resolveReview: (value: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url === REVIEW_URL && init?.method === "POST") {
+          return new Promise<Response>((r) => { resolveReview = r; });
+        }
+        if (url === BASELINE_LIST_URL) {
+          return Promise.resolve(jsonResponse(baselineListResponse()));
+        }
+        if (url === BASELINE_DETAIL_URL) {
+          return Promise.resolve(jsonResponse(baselineDetailResponse()));
+        }
+        return Promise.resolve(jsonResponse(listResponse()));
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+    await inspectBaseline();
+
+    fireEvent.click(screen.getByTestId("baseline-review-approve"));
+    await waitFor(() =>
+      expect(screen.getByTestId("baseline-review-approve")).toBeDisabled()
+    );
+    expect(screen.getByTestId("baseline-review-reject")).toBeDisabled();
+
+    await act(async () => {
+      resolveReview(jsonResponse(baselineReviewSuccessResponse("approved")));
+    });
+    expect(await screen.findByTestId("baseline-review-success")).toBeInTheDocument();
+  });
+
+  it("treats generated as reviewable and every decided/terminal status as read-only with no review buttons", async () => {
+    const cases: Array<{ status: string; reviewable: boolean }> = [
+      { status: "generated", reviewable: true },
+      { status: "approved", reviewable: false },
+      { status: "rejected", reviewable: false },
+      { status: "stale", reviewable: false },
+      { status: "failed", reviewable: false },
+      { status: "not_applicable", reviewable: false },
+      { status: "missing", reviewable: false },
+    ];
+    for (const { status, reviewable } of cases) {
+      cleanup();
+      vi.unstubAllGlobals();
+      stubFetch((url) => {
+        if (url === BASELINE_DETAIL_URL) {
+          return jsonResponse(baselineDetailResponseWithStatus(status));
+        }
+        if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+        if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+        return jsonResponse({}, 404);
+      });
+      render(<ProjectRfpEvidencePage />);
+      await inspectBaseline();
+
+      if (reviewable) {
+        expect(screen.getByTestId("baseline-review-note"), status).toBeInTheDocument();
+        expect(screen.getByTestId("baseline-review-approve"), status).toBeEnabled();
+        expect(screen.getByTestId("baseline-review-reject"), status).toBeEnabled();
+        expect(screen.queryByTestId("baseline-review-readonly"), status).toBeNull();
+      } else {
+        expect(screen.queryByTestId("baseline-review-approve"), status).toBeNull();
+        expect(screen.queryByTestId("baseline-review-reject"), status).toBeNull();
+        expect(screen.queryByTestId("baseline-review-note"), status).toBeNull();
+        expect(screen.getByTestId("baseline-review-readonly"), status).toHaveTextContent(
+          status
+        );
+      }
+    }
+  });
+});
+
 describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
   it("issues only default-GET fetches to the four inspection endpoints and never calls write or other RFP endpoints", async () => {
     const calls = stubDefault();
@@ -829,6 +1092,54 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       expect(ok, `unexpected fetch url: ${call.url}`).toBe(true);
     }
   });
+
+  it("keeps every fetch a GET except exactly one POST to the exact review endpoint whose body is only decision and optional note", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("project-name");
+    await screen.findByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`));
+    });
+    await screen.findByTestId("baseline-detail-panel");
+    fireEvent.change(screen.getByTestId("baseline-review-note"), {
+      target: { value: "ok to ship" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("baseline-review-approve"));
+    });
+    await screen.findByTestId("baseline-review-success");
+
+    const nonGets = calls.filter((c) => c.method !== "GET");
+    expect(nonGets).toHaveLength(1);
+    expect(nonGets[0].method).toBe("POST");
+    expect(nonGets[0].url).toBe(REVIEW_URL);
+    expect(Object.keys(nonGets[0].body as Record<string, unknown>).sort()).toEqual([
+      "decision",
+      "note",
+    ]);
+    expect(nonGets[0].body).toEqual({ decision: "approved", note: "ok to ship" });
+
+    const allowedExact = new Set([
+      LIST_URL,
+      BASELINE_LIST_URL,
+      BASELINE_DETAIL_URL,
+      REVIEW_URL,
+    ]);
+    for (const call of calls) {
+      const ok = allowedExact.has(call.url) || call.url.startsWith(`${LIST_URL}?`);
+      expect(ok, `unexpected fetch url: ${call.url}`).toBe(true);
+      if (call.url !== REVIEW_URL) {
+        expect(call.method).toBe("GET");
+        expect(call.body).toBeNull();
+      }
+      expect(call.method).not.toBe("PUT");
+      expect(call.method).not.toBe("PATCH");
+      expect(call.method).not.toBe("DELETE");
+      expect(call.url).not.toMatch(/upload|input-package|\/approvals|\/extract|\/files|\/export/);
+    }
+  });
 });
 
 describe("ProjectRfpEvidencePage - static source purity", () => {
@@ -866,7 +1177,7 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
     expect(source).not.toContain("require(");
   });
 
-  it("contains no db/store/route/write/persistence/run/AI/authority tokens and no mutation methods", () => {
+  it("contains no db/store/route/write/persistence/run/AI/authority tokens and no mutation methods beyond the review POST", () => {
     for (const forbidden of [
       'from "@/lib/db',
       'from "@/app/api',
@@ -882,12 +1193,9 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
       "project-rfp-input-package",
       "input-package",
       "/approvals",
-      "/review",
       "/files",
       "/upload",
       "/download",
-      "method:",
-      '"POST"',
       '"PUT"',
       '"PATCH"',
       '"DELETE"',
@@ -908,6 +1216,17 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
     ]) {
       expect(source).not.toContain(forbidden);
     }
+  });
+
+  it("permits exactly one POST - the requirements baseline review fetch - and no other review path", () => {
+    expect((source.match(/"POST"/g) ?? []).length).toBe(1);
+    expect((source.match(/method:/g) ?? []).length).toBe(1);
+    // Every /review occurrence is the requirements-baseline review endpoint;
+    // no arbitrary review or approvals path appears anywhere in the page.
+    const reviewMentions = source.match(/\/review/g) ?? [];
+    const baselineReviewMentions = source.match(/requirements-baseline\/review/g) ?? [];
+    expect(baselineReviewMentions.length).toBeGreaterThanOrEqual(1);
+    expect(reviewMentions.length).toBe(baselineReviewMentions.length);
   });
 
   it("keeps the page and this test file ASCII-only", () => {
