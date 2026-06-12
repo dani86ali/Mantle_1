@@ -776,7 +776,11 @@ describe("default docx adapter (mammoth module mocked; real jszip/xml tables)", 
 });
 
 describe("default xlsx adapter (real xlsx round-trip)", () => {
-  it("keeps workbook sheet order, stringifies cells, and tab-joins text", async () => {
+  function writeWorkbookBuffer(workbook: XLSX.WorkBook): Buffer {
+    return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  }
+
+  it("keeps workbook sheet order, stringifies cells, tab-joins text, and emits no warnings without merges", async () => {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       workbook,
@@ -788,11 +792,9 @@ describe("default xlsx adapter (real xlsx round-trip)", () => {
       XLSX.utils.aoa_to_sheet([["Alpha", 2], ["x", "y"]]),
       "Alpha"
     );
-    const buffer = XLSX.write(workbook, {
-      type: "buffer",
-      bookType: "xlsx",
-    }) as Buffer;
-    const readFile = vi.fn(async (_path: string) => buffer);
+    const readFile = vi.fn(async (_path: string) =>
+      writeWorkbookBuffer(workbook)
+    );
 
     const result = await extractRfpDocumentFile({
       file: makeFile({ fileName: "boq.xlsx" }),
@@ -811,6 +813,63 @@ describe("default xlsx adapter (real xlsx round-trip)", () => {
       ["x", "y"],
     ]);
     expect(result.document.text).toBe("Zed\t1\n\nAlpha\t2\nx\ty");
+    expect(result.document.warnings).toEqual([]);
+  });
+
+  it("emits stable xlsx_merged_cells warnings in sheet then !merges order while tables, text, and metrics stay normal", async () => {
+    const workbook = XLSX.utils.book_new();
+    const summary = XLSX.utils.aoa_to_sheet([
+      ["Network BoQ", null, null],
+      ["SKU", "Qty", "Price"],
+    ]);
+    summary["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
+    XLSX.utils.book_append_sheet(workbook, summary, "Summary");
+
+    const detail = XLSX.utils.aoa_to_sheet([
+      ["Section A", null],
+      ["C9300-24T", "2"],
+    ]);
+    // Deliberately not top-left sorted: warning order must follow !merges order.
+    detail["!merges"] = [
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 1 } },
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
+    ];
+    XLSX.utils.book_append_sheet(workbook, detail, "Detail");
+    const readFile = vi.fn(async (_path: string) =>
+      writeWorkbookBuffer(workbook)
+    );
+
+    const result = await extractRfpDocumentFile({
+      file: makeFile({ fileName: "boq.xlsx" }),
+      adapters: { readFile },
+    });
+
+    if (result.status !== "extracted") throw new Error("unreachable");
+    expect(result.document.warnings).toEqual([
+      "xlsx_merged_cells:Summary:A1:C1",
+      "xlsx_merged_cells:Detail:A2:B2",
+      "xlsx_merged_cells:Detail:A1:B1",
+    ]);
+    expect(result.document.tables.map((t) => t.sheetName)).toEqual([
+      "Summary",
+      "Detail",
+    ]);
+    expect(result.document.tables[0].rows).toEqual([
+      ["Network BoQ"],
+      ["SKU", "Qty", "Price"],
+    ]);
+    expect(result.document.tables[1].rows).toEqual([
+      ["Section A"],
+      ["C9300-24T", "2"],
+    ]);
+    const expectedText = "Network BoQ\nSKU\tQty\tPrice\n\nSection A\nC9300-24T\t2";
+    expect(result.document.text).toBe(expectedText);
+    expect(result.document.metrics).toEqual({
+      textCharCount: expectedText.length,
+      nonWhitespaceTextCharCount: expectedText.replace(/\s/g, "").length,
+      tableCount: 2,
+      tableRowCount: 4,
+    });
   });
 });
 

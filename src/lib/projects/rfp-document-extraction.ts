@@ -251,21 +251,36 @@ function docxRunText(nodes: readonly DocxXmlNode[]): string {
   return text;
 }
 
-/** Default .xlsx extractor: one table per sheet in workbook order; text is tab-joined rows. */
+/**
+ * Default .xlsx extractor: one table per sheet in workbook order; text is
+ * tab-joined rows. Each sheet's merged ranges (SheetJS `!merges`) become
+ * stable `xlsx_merged_cells:<sheetName>:<A1Range>` warnings in sheet then
+ * merge order so engineers can review them; merges never fail extraction
+ * and never alter the extracted rows.
+ */
 export const extractXlsxWithSheetJs: RfpDocumentExtractionAdapters["extractXlsx"] =
   (buffer) => {
     const workbook = XLSX.read(buffer, { type: "buffer" });
     const tables: Array<{ sheetName: string; rows: RfpRawTableRows }> = [];
     const textParts: string[] = [];
+    const warnings: string[] = [];
     for (const sheetName of workbook.SheetNames) {
-      const rows = XLSX.utils.sheet_to_json<string[]>(
-        workbook.Sheets[sheetName],
-        { header: 1, raw: false, blankrows: false, defval: "" }
-      );
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<string[]>(sheet, {
+        header: 1,
+        raw: false,
+        blankrows: false,
+        defval: "",
+      });
       tables.push({ sheetName, rows });
       textParts.push(rows.map((row) => row.join("\t")).join("\n"));
+      for (const merge of sheet["!merges"] ?? []) {
+        warnings.push(
+          `xlsx_merged_cells:${sheetName}:${XLSX.utils.encode_range(merge)}`
+        );
+      }
     }
-    return { text: textParts.join("\n\n"), tables, warnings: [] };
+    return { text: textParts.join("\n\n"), tables, warnings };
   };
 
 /** Default .csv extractor: the whole file is one table; text is tab-joined rows. */
