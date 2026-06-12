@@ -8,7 +8,12 @@
  * field named "fileRole"; any tenantId, projectId, mode, storagePath,
  * createdBy, or decidedBy fields in the body are ignored. Invalid multipart,
  * a missing/duplicated/non-File file field, or a missing role maps to 400
- * invalid_rfp_file_upload_request. The service result maps to HTTP:
+ * invalid_rfp_file_upload_request. The explicit fileRole field is always
+ * passed through unchanged; the route never derives a role from the uploaded
+ * filename (the service enforces the filename/role lock and the boq workbook
+ * file-type guard, and every invalid_file reason maps to the same public
+ * invalid_rfp_file response without exposing internal reason strings). The
+ * service result maps to HTTP:
  * not_found -> 404, wrong_mode -> 409, invalid_file -> 400, ok -> 201 with
  * { file }. An unexpected service error maps to a controlled 500 that never
  * exposes the thrown error. Imports only Next.js server primitives,
@@ -91,7 +96,7 @@ export async function POST(
         {
           code: "invalid_rfp_file",
           error:
-            "Uploaded RFP file must use a known file role and a supported .pdf, .docx, .xlsx, or .csv extension matching its declared size.",
+            "Uploaded RFP file must use a known file role and a supported .pdf, .docx, .xlsx, or .csv extension matching its declared size; the filename must carry exactly one role keyword matching the selected role, and BoQ files must be .xlsx or .csv.",
         },
         { status: 400 }
       );

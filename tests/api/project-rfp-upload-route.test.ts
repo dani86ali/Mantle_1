@@ -252,19 +252,27 @@ describe("POST /api/projects/[id]/rfp/files - result mapping", () => {
     expect(body.project).toEqual(WRONG_MODE_PROJECT);
   });
 
-  it("maps service invalid_file to 400 invalid_rfp_file", async () => {
-    mockUpload.mockResolvedValue({
-      status: "invalid_file",
-      reason: "unsupported_extension",
-    });
+  it("maps every service invalid_file reason to the same 400 invalid_rfp_file without exposing the internal reason string", async () => {
+    for (const reason of [
+      "invalid_role",
+      "unsupported_extension",
+      "unsupported_boq_extension",
+      "filename_role_token_missing",
+      "ambiguous_filename_role",
+      "filename_role_mismatch",
+    ]) {
+      mockUpload.mockResolvedValue({ status: "invalid_file", reason });
 
-    const res = await POST(
-      multipartReq(uploadForm(mockFile("legacy.doc", "abc"))),
-      { params: { id: PROJECT } }
-    );
+      const res = await POST(
+        multipartReq(uploadForm(mockFile("legacy.doc", "abc"))),
+        { params: { id: PROJECT } }
+      );
 
-    expect(res.status).toBe(400);
-    expect((await res.json()).code).toBe("invalid_rfp_file");
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.code).toBe("invalid_rfp_file");
+      expect(JSON.stringify(body)).not.toContain(reason);
+    }
   });
 
   it("maps service ok to 201 with { file } and no status discriminator", async () => {

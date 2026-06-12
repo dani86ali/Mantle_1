@@ -43,7 +43,9 @@ vi.mock("@/lib/db/project-file-store", () => ({
 }));
 
 import {
+  suggestRfpProjectFileRoleFromFileName,
   uploadRfpProjectFile,
+  validateRfpProjectFileNameRoleLock,
   type UploadRfpProjectFileInput,
 } from "@/lib/projects/project-rfp-upload";
 
@@ -305,6 +307,174 @@ describe("uploadRfpProjectFile - file validation", () => {
   });
 });
 
+describe("suggestRfpProjectFileRoleFromFileName", () => {
+  it("suggests the role for every token group, case-insensitively across separators", () => {
+    const cases: Array<{ fileName: string; role: ProjectFileRole }> = [
+      { fileName: "STC_RFP.pdf", role: "rfp" },
+      { fileName: "Tender Documents.pdf", role: "rfp" },
+      { fileName: "project-sow.docx", role: "scope_of_work" },
+      { fileName: "scope.docx", role: "scope_of_work" },
+      { fileName: "ScopeOfWork.pdf", role: "scope_of_work" },
+      { fileName: "customer boq.xlsx", role: "boq" },
+      { fileName: "BOM.csv", role: "boq" },
+      { fileName: "compliance_matrix.xlsx", role: "compliance" },
+      { fileName: "Matrix.xlsx", role: "compliance" },
+      { fileName: "addendum-2.pdf", role: "addendum" },
+      { fileName: "clarification_01.pdf", role: "addendum" },
+      { fileName: "clarifications.pdf", role: "addendum" },
+      { fileName: "Corrigendum No.3.pdf", role: "addendum" },
+      { fileName: "vendor-proposal.docx", role: "other" },
+      { fileName: "response.pdf", role: "other" },
+      { fileName: "other_notes.docx", role: "other" },
+    ];
+    for (const { fileName, role } of cases) {
+      expect(suggestRfpProjectFileRoleFromFileName(fileName)).toBe(role);
+    }
+  });
+
+  it("suggests from the safe basename only (path segments and control chars stripped)", () => {
+    expect(suggestRfpProjectFileRoleFromFileName("sub/dir/STC_RFP.pdf")).toBe(
+      "rfp"
+    );
+    expect(suggestRfpProjectFileRoleFromFileName(DIRTY_NAME)).toBe("rfp");
+  });
+
+  it("returns null when no role token is present", () => {
+    for (const fileName of ["misc.docx", "report.pdf", "Q3-2026.xlsx", ""]) {
+      expect(suggestRfpProjectFileRoleFromFileName(fileName)).toBeNull();
+    }
+  });
+
+  it("returns null when tokens for more than one role are present", () => {
+    for (const fileName of [
+      "rfp_boq.xlsx",
+      "tender-scope.docx",
+      "boq proposal.csv",
+    ]) {
+      expect(suggestRfpProjectFileRoleFromFileName(fileName)).toBeNull();
+    }
+  });
+});
+
+describe("validateRfpProjectFileNameRoleLock", () => {
+  it("accepts a filename whose single detected role matches the explicit role", () => {
+    const cases: Array<{ fileName: string; fileRole: ProjectFileRole }> = [
+      { fileName: "STC_RFP.pdf", fileRole: "rfp" },
+      { fileName: "project-sow.docx", fileRole: "scope_of_work" },
+      { fileName: "customer boq.xlsx", fileRole: "boq" },
+      { fileName: "compliance_matrix.xlsx", fileRole: "compliance" },
+      { fileName: "clarification_01.pdf", fileRole: "addendum" },
+      { fileName: "vendor-proposal.docx", fileRole: "other" },
+    ];
+    for (const { fileName, fileRole } of cases) {
+      expect(validateRfpProjectFileNameRoleLock(fileName, fileRole)).toEqual({
+        ok: true,
+      });
+    }
+  });
+
+  it("rejects a missing token, ambiguous roles, and a detected-role conflict", () => {
+    expect(validateRfpProjectFileNameRoleLock("misc.docx", "other")).toEqual({
+      ok: false,
+      reason: "filename_role_token_missing",
+    });
+    expect(validateRfpProjectFileNameRoleLock("rfp_boq.xlsx", "boq")).toEqual({
+      ok: false,
+      reason: "ambiguous_filename_role",
+    });
+    expect(
+      validateRfpProjectFileNameRoleLock("STC_RFP.pdf", "compliance")
+    ).toEqual({ ok: false, reason: "filename_role_mismatch" });
+  });
+});
+
+describe("uploadRfpProjectFile - filename role lock", () => {
+  it("rejects a filename without a role token as filename_role_token_missing (no mkdir/write/record)", async () => {
+    const result = await uploadRfpProjectFile(
+      validInput({ fileName: "report.pdf", fileRole: "rfp" })
+    );
+
+    expect(result).toEqual({
+      status: "invalid_file",
+      reason: "filename_role_token_missing",
+    });
+    expect(mockMkdir).not.toHaveBeenCalled();
+    expect(mockWriteFile).not.toHaveBeenCalled();
+    expect(mockCreateProjectFileRecord).not.toHaveBeenCalled();
+  });
+
+  it("rejects a filename naming two different roles as ambiguous_filename_role (no mkdir/write/record)", async () => {
+    const result = await uploadRfpProjectFile(
+      validInput({ fileName: "tender_compliance.pdf", fileRole: "rfp" })
+    );
+
+    expect(result).toEqual({
+      status: "invalid_file",
+      reason: "ambiguous_filename_role",
+    });
+    expect(mockMkdir).not.toHaveBeenCalled();
+    expect(mockWriteFile).not.toHaveBeenCalled();
+    expect(mockCreateProjectFileRecord).not.toHaveBeenCalled();
+  });
+
+  it("rejects a detected role conflicting with the explicit fileRole as filename_role_mismatch (no mkdir/write/record)", async () => {
+    const result = await uploadRfpProjectFile(
+      validInput({ fileName: "customer boq.xlsx", fileRole: "rfp" })
+    );
+
+    expect(result).toEqual({
+      status: "invalid_file",
+      reason: "filename_role_mismatch",
+    });
+    expect(mockMkdir).not.toHaveBeenCalled();
+    expect(mockWriteFile).not.toHaveBeenCalled();
+    expect(mockCreateProjectFileRecord).not.toHaveBeenCalled();
+  });
+});
+
+describe("uploadRfpProjectFile - boq file type guard", () => {
+  it("rejects boq uploads with non-workbook extensions as unsupported_boq_extension (no mkdir/write/record)", async () => {
+    for (const fileName of ["customer boq.pdf", "BOM.docx"]) {
+      mockMkdir.mockClear();
+      mockWriteFile.mockClear();
+      mockCreateProjectFileRecord.mockClear();
+
+      const result = await uploadRfpProjectFile(
+        validInput({ fileName, fileRole: "boq" })
+      );
+
+      expect(result).toEqual({
+        status: "invalid_file",
+        reason: "unsupported_boq_extension",
+      });
+      expect(mockMkdir).not.toHaveBeenCalled();
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(mockCreateProjectFileRecord).not.toHaveBeenCalled();
+    }
+  });
+
+  it("accepts .xlsx and .csv boq uploads with a boq/bom token and records the explicit boq role", async () => {
+    for (const fileName of ["customer boq.xlsx", "BOM.csv"]) {
+      mockWriteFile.mockClear();
+      mockCreateProjectFileRecord.mockClear();
+
+      const result = await uploadRfpProjectFile(
+        validInput({ fileName, fileRole: "boq" })
+      );
+
+      expect(result.status).toBe("ok");
+      if (result.status !== "ok") throw new Error("unreachable");
+      expect(result.file.fileName).toBe(fileName);
+      expect(result.file.fileRole).toBe("boq");
+      expect(mockWriteFile).toHaveBeenCalledTimes(1);
+      expect(mockCreateProjectFileRecord).toHaveBeenCalledTimes(1);
+      expect(mockCreateProjectFileRecord.mock.calls[0][0].fileRole).toBe(
+        "boq"
+      );
+    }
+  });
+});
+
 describe("uploadRfpProjectFile - valid upload", () => {
   it("verifies the project first, sanitizes the filename, writes the exact bytes under a tenant/project temp path, records the explicit role, and returns a serializable summary", async () => {
     const bytes = new Uint8Array([10, 20, 30, 40]);
@@ -381,14 +551,14 @@ describe("uploadRfpProjectFile - valid upload", () => {
     expect(typeof result.file.retainUntil).toBe("string");
   });
 
-  it("accepts every supported extension and records each explicit non-rfp role", async () => {
+  it("accepts every supported extension and records each explicit role for a role-locked filename", async () => {
     const cases: Array<{ fileName: string; fileRole: ProjectFileRole }> = [
       { fileName: "tender.pdf", fileRole: "rfp" },
       { fileName: "scope.docx", fileRole: "scope_of_work" },
       { fileName: "boq.xlsx", fileRole: "boq" },
       { fileName: "compliance.csv", fileRole: "compliance" },
       { fileName: "addendum-2.pdf", fileRole: "addendum" },
-      { fileName: "misc.docx", fileRole: "other" },
+      { fileName: "vendor-proposal.docx", fileRole: "other" },
     ];
     for (const { fileName, fileRole } of cases) {
       mockWriteFile.mockClear();
