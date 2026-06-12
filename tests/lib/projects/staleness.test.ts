@@ -26,9 +26,12 @@ function artifact(
 
 describe("getDirectDownstreamArtifactTypes", () => {
   it("returns the expected immediate children", () => {
+    // input_package fans out into the Quick BoM chain (normalized_boq) and the
+    // RFP evidence chain (extraction_delta); requirements_baseline is no longer
+    // a direct child - it hangs off the approved evidence_package.
     expect(getDirectDownstreamArtifactTypes("input_package")).toEqual([
       "normalized_boq",
-      "requirements_baseline",
+      "extraction_delta",
     ]);
     expect(getDirectDownstreamArtifactTypes("normalized_boq")).toEqual([
       "sku_resolution",
@@ -43,6 +46,19 @@ describe("getDirectDownstreamArtifactTypes", () => {
     ]);
     expect(getDirectDownstreamArtifactTypes("technical_proposal")).toEqual([
       "export_package",
+    ]);
+  });
+
+  it("routes the RFP evidence chain extraction_delta -> evidence_package -> requirements_baseline", () => {
+    expect(getDirectDownstreamArtifactTypes("extraction_delta")).toEqual([
+      "evidence_package",
+    ]);
+    expect(getDirectDownstreamArtifactTypes("evidence_package")).toEqual([
+      "requirements_baseline",
+    ]);
+    // requirements_baseline still leads to the compliance matrix.
+    expect(getDirectDownstreamArtifactTypes("requirements_baseline")).toEqual([
+      "compliance_matrix",
     ]);
   });
 
@@ -77,6 +93,46 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
     ]);
   });
 
+  it("input_package reaches requirements_baseline and compliance_matrix only through the evidence chain", () => {
+    const downstream = getTransitiveDownstreamArtifactTypes("input_package");
+    expect(downstream).toContain("extraction_delta");
+    expect(downstream).toContain("evidence_package");
+    expect(downstream).toContain("requirements_baseline");
+    expect(downstream).toContain("compliance_matrix");
+    // The full deterministic BFS discovery order from input_package.
+    expect(downstream).toEqual([
+      "normalized_boq",
+      "extraction_delta",
+      "sku_resolution",
+      "hld_design_delta",
+      "evidence_package",
+      "configuration_expansion",
+      "technical_proposal",
+      "requirements_baseline",
+      "priced_boq",
+      "export_package",
+      "compliance_matrix",
+    ]);
+  });
+
+  it("extraction_delta and evidence_package flow downstream into requirements and compliance", () => {
+    expect(getTransitiveDownstreamArtifactTypes("extraction_delta")).toEqual([
+      "evidence_package",
+      "requirements_baseline",
+      "compliance_matrix",
+      "hld_design_delta",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(getTransitiveDownstreamArtifactTypes("evidence_package")).toEqual([
+      "requirements_baseline",
+      "compliance_matrix",
+      "hld_design_delta",
+      "technical_proposal",
+      "export_package",
+    ]);
+  });
+
   it("technical_proposal is only upstream of export_package", () => {
     expect(getTransitiveDownstreamArtifactTypes("technical_proposal")).toEqual([
       "export_package",
@@ -100,6 +156,17 @@ describe("isArtifactTypeDownstreamOf", () => {
     ).toBe(true);
     expect(
       isArtifactTypeDownstreamOf("input_package", "compliance_matrix")
+    ).toBe(true);
+    // The RFP evidence chain: input_package reaches requirements through
+    // extraction_delta and the approved evidence_package.
+    expect(
+      isArtifactTypeDownstreamOf("input_package", "requirements_baseline")
+    ).toBe(true);
+    expect(
+      isArtifactTypeDownstreamOf("extraction_delta", "requirements_baseline")
+    ).toBe(true);
+    expect(
+      isArtifactTypeDownstreamOf("evidence_package", "compliance_matrix")
     ).toBe(true);
   });
 
@@ -336,6 +403,47 @@ describe("planStaleArtifactUpdates", () => {
       "configuration_expansion",
       "priced_boq",
       "export_package",
+    ]);
+    expect(plan.every((u) => u.nextStatus === "stale")).toBe(true);
+  });
+
+  it("a change to extraction_delta marks evidence_package and the requirements chain stale", () => {
+    const changed = artifact({ id: "exd-1", type: "extraction_delta", version: 2 });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "evp", type: "evidence_package", version: 1, status: "approved" }),
+        artifact({ id: "req", type: "requirements_baseline", version: 1, status: "needs_review" }),
+        artifact({ id: "cmx", type: "compliance_matrix", version: 1 }),
+        // input_package is upstream of extraction_delta and must not be planned.
+        artifact({ id: "inp", type: "input_package", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "evidence_package",
+      "requirements_baseline",
+      "compliance_matrix",
+    ]);
+    expect(plan.every((u) => u.nextStatus === "stale")).toBe(true);
+  });
+
+  it("a change to evidence_package marks requirements_baseline and compliance downstream stale", () => {
+    const changed = artifact({ id: "evp-1", type: "evidence_package", version: 1 });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "req", type: "requirements_baseline", version: 1, status: "approved" }),
+        artifact({ id: "cmx", type: "compliance_matrix", version: 1 }),
+        // Upstream evidence inputs must not be planned.
+        artifact({ id: "exd", type: "extraction_delta", version: 1 }),
+        artifact({ id: "inp", type: "input_package", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "requirements_baseline",
+      "compliance_matrix",
     ]);
     expect(plan.every((u) => u.nextStatus === "stale")).toBe(true);
   });

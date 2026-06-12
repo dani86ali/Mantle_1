@@ -48,9 +48,19 @@ export type ProjectArtifactStatus =
   | "failed"
   | "not_applicable";
 
-/** Versioned artifact kinds. No LLD artifact in MVP. (section 15, section 11A) */
+/**
+ * Versioned artifact kinds. No LLD artifact in MVP. (section 15, section 11A)
+ *
+ * RFP evidence chain: `extraction_delta` holds reviewable extraction delta
+ * candidates/history (deterministic extraction, optionally AI-reviewed later);
+ * it is candidate/review metadata and never final authority. `evidence_package`
+ * is the human-approved final RFP evidence package - the only evidence
+ * authority requirements generation may build on.
+ */
 export type ProjectArtifactType =
   | "input_package"
+  | "extraction_delta"
+  | "evidence_package"
   | "normalized_boq"
   | "sku_resolution"
   | "configuration_expansion"

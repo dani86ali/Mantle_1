@@ -10,6 +10,8 @@ import type { ProjectArtifactType } from "@/types/project";
 
 const VALID_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "input_package",
+  "extraction_delta",
+  "evidence_package",
   "normalized_boq",
   "sku_resolution",
   "configuration_expansion",
@@ -175,5 +177,18 @@ describe("artifact metadata", () => {
         expect(VALID_ARTIFACT_TYPES).toContain(type);
       }
     }
+  });
+
+  it("intake_package_review exposes the RFP evidence-chain artifact kinds", () => {
+    const intake = PROJECT_STAGE_DEFINITIONS.find(
+      (d) => d.stageId === "intake_package_review"
+    );
+    // extraction_delta is candidate/review metadata; evidence_package is the
+    // human-approved final evidence artifact. Both live under intake review.
+    expect(intake?.artifactTypes).toEqual([
+      "input_package",
+      "extraction_delta",
+      "evidence_package",
+    ]);
   });
 });

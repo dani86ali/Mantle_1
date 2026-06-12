@@ -33,8 +33,13 @@ describe("getArtifactTypesForStage", () => {
       "configuration_expansion",
       "priced_boq",
     ]);
+    // Intake review now also carries the RFP evidence chain: extraction_delta
+    // (review candidates, never authority) and the human-approved
+    // evidence_package.
     expect(getArtifactTypesForStage("intake_package_review")).toEqual([
       "input_package",
+      "extraction_delta",
+      "evidence_package",
     ]);
   });
 
@@ -55,6 +60,12 @@ describe("isArtifactTypeAllowedForStage", () => {
     expect(
       isArtifactTypeAllowedForStage("compliance_matrix_review", "compliance_matrix")
     ).toBe(true);
+    expect(
+      isArtifactTypeAllowedForStage("intake_package_review", "extraction_delta")
+    ).toBe(true);
+    expect(
+      isArtifactTypeAllowedForStage("intake_package_review", "evidence_package")
+    ).toBe(true);
   });
 
   it("rejects invalid stage/type pairs", () => {
@@ -63,6 +74,13 @@ describe("isArtifactTypeAllowedForStage", () => {
     ).toBe(false);
     expect(
       isArtifactTypeAllowedForStage("sku_resolution", "technical_proposal")
+    ).toBe(false);
+    // The evidence chain lives only under intake review.
+    expect(
+      isArtifactTypeAllowedForStage("requirements_baseline_review", "evidence_package")
+    ).toBe(false);
+    expect(
+      isArtifactTypeAllowedForStage("boq_format_validation", "extraction_delta")
     ).toBe(false);
   });
 });
@@ -128,7 +146,7 @@ describe("materializeProjectArtifactVersion", () => {
     });
     expect(row.createdAt).toBeInstanceOf(Date);
     expect(row.createdAt.getTime()).toBe(row.updatedAt.getTime());
-    // No `id` — the DB generates it.
+    // No `id` - the DB generates it.
     expect("id" in row).toBe(false);
   });
 
@@ -141,6 +159,30 @@ describe("materializeProjectArtifactVersion", () => {
       ],
     });
     expect(row.version).toBe(3);
+  });
+
+  it("materializes evidence_package at intake_package_review awaiting human review", () => {
+    // The final evidence package is built from the input package plus reviewed
+    // extraction deltas, and starts needs_review - approval stays human-gated.
+    const row = materializeProjectArtifactVersion({
+      projectId: PROJECT,
+      tenantId: TENANT,
+      stageId: "intake_package_review",
+      type: "evidence_package",
+      status: "needs_review",
+      sourceFileIds: ["file-rfp-1", "file-addendum-1"],
+      sourceArtifactIds: ["art-input-package-1", "art-extraction-delta-2"],
+    });
+    expect(row).toMatchObject({
+      projectId: PROJECT,
+      tenantId: TENANT,
+      stageId: "intake_package_review",
+      type: "evidence_package",
+      status: "needs_review",
+      version: 1,
+      sourceFileIds: ["file-rfp-1", "file-addendum-1"],
+      sourceArtifactIds: ["art-input-package-1", "art-extraction-delta-2"],
+    });
   });
 
   it("rejects disallowed stage/type combinations", () => {

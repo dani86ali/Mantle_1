@@ -23,11 +23,20 @@ import type {
  * The MVP artifact dependency graph: each key maps to the artifact types
  * DIRECTLY downstream of it (edges point upstream -> downstream). Readonly so
  * the graph cannot be mutated through it.
+ *
+ * Two chains share input_package as their root:
+ * - Quick BoM: input_package -> normalized_boq -> sku_resolution ->
+ *   configuration_expansion -> priced_boq -> export_package.
+ * - RFP evidence: input_package -> extraction_delta -> evidence_package ->
+ *   requirements_baseline -> compliance_matrix -> ... Requirements depend on
+ *   the human-approved evidence_package, never directly on raw extraction.
  */
 const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   Record<ProjectArtifactType, readonly ProjectArtifactType[]>
 > = {
-  input_package: ["normalized_boq", "requirements_baseline"],
+  input_package: ["normalized_boq", "extraction_delta"],
+  extraction_delta: ["evidence_package"],
+  evidence_package: ["requirements_baseline"],
   normalized_boq: ["sku_resolution", "hld_design_delta"],
   sku_resolution: ["configuration_expansion"],
   configuration_expansion: ["priced_boq"],

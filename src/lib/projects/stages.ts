@@ -44,9 +44,9 @@ export const PROJECT_STAGE_DEFINITIONS: readonly ProjectStageDefinition[] = [
     order: 10,
     label: "Intake Package Review",
     purpose:
-      "Review the uploaded RFP package and correct any misclassified file roles.",
+      "Review the uploaded RFP package, correct any misclassified file roles, and review/approve the final evidence package; extraction deltas are review candidates only, never authority.",
     activeInModes: ["rfp"],
-    artifactTypes: ["input_package"],
+    artifactTypes: ["input_package", "extraction_delta", "evidence_package"],
   },
   {
     stageId: "boq_format_validation",
