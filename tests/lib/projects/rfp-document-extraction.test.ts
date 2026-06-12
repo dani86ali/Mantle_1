@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import JSZip from "jszip";
 import * as XLSX from "xlsx";
 
 // pdf-parse and mammoth are module-mocked so the DEFAULT pdf/docx adapters can
-// be exercised without binary fixtures; the xlsx and papaparse defaults run
-// against the real libraries on tiny in-memory buffers. Most tests inject
-// fake extractor adapters and never touch any parser library.
+// be exercised without binary fixtures; the xlsx, papaparse, and docx table
+// (jszip + fast-xml-parser) defaults run against the real libraries on tiny
+// in-memory buffers. Most tests inject fake extractor adapters and never
+// touch any parser library.
 const { pdfState, mammothState } = vi.hoisted(() => ({
   pdfState: {
     constructorArgs: [] as Array<{ data?: unknown }>,
@@ -93,10 +95,15 @@ function makeFakes(content = "raw-bytes") {
       tables: [] as Array<{ pageNumber?: number; rows: RawCellRows }>,
       warnings: [] as string[],
     })),
-    extractDocx: vi.fn(async (_buffer: Buffer) => ({
-      text: "docx text",
-      warnings: [] as string[],
-    })),
+    extractDocx: vi.fn(
+      async (
+        _buffer: Buffer
+      ): Promise<{
+        text: string;
+        tables?: Array<{ rows: RawCellRows }>;
+        warnings?: string[];
+      }> => ({ text: "docx text", warnings: [] })
+    ),
     extractXlsx: vi.fn((_buffer: Buffer) => ({
       text: "xlsx text",
       tables: [] as Array<{ sheetName: string; rows: RawCellRows }>,
@@ -366,6 +373,68 @@ describe("extractRfpDocumentFile - table normalization", () => {
     expect(result.document.tables.map((t) => t.pageNumber)).toEqual([2, 5]);
     expect("sheetName" in result.document.tables[0]).toBe(false);
   });
+
+  it("normalizes injected docx adapter tables with output-order ids and neither pageNumber nor sheetName", async () => {
+    const { adapters } = makeFakes();
+    const injected: {
+      text: string;
+      tables: Array<{ rows: RawCellRows }>;
+      warnings: string[];
+    } = {
+      text: "docx body",
+      tables: [
+        { rows: [[" Req ", " Met ", ""], ["", "  "]] },
+        { rows: [["First line\nSecond line", null, " B "]] },
+      ],
+      warnings: [],
+    };
+    adapters.extractDocx.mockResolvedValue(injected);
+
+    const result = await extractRfpDocumentFile({
+      file: makeFile({ fileName: "scope.docx" }),
+      adapters,
+    });
+    if (result.status !== "extracted") throw new Error("unreachable");
+
+    expect(result.document.tables).toEqual([
+      {
+        tableId: `${FILE_ID}:table:1`,
+        sourceFileId: FILE_ID,
+        sourceFileName: "scope.docx",
+        sourceFileRole: "rfp",
+        rowCount: 1,
+        columnCount: 2,
+        rows: [["Req", "Met"]],
+      },
+      {
+        tableId: `${FILE_ID}:table:2`,
+        sourceFileId: FILE_ID,
+        sourceFileName: "scope.docx",
+        sourceFileRole: "rfp",
+        rowCount: 1,
+        columnCount: 3,
+        rows: [["First line\nSecond line", "", "B"]],
+      },
+    ]);
+    expect(result.document.metrics.tableCount).toBe(2);
+    expect(result.document.metrics.tableRowCount).toBe(2);
+    expect("pageNumber" in result.document.tables[0]).toBe(false);
+    expect("sheetName" in result.document.tables[0]).toBe(false);
+    expect(result.document.tables[0].rows).not.toBe(injected.tables[0].rows);
+  });
+
+  it("treats an injected docx adapter result without tables as no tables", async () => {
+    const { adapters } = makeFakes();
+    adapters.extractDocx.mockResolvedValue({ text: "legacy", warnings: [] });
+    const result = await extractRfpDocumentFile({
+      file: makeFile({ fileName: "scope.docx" }),
+      adapters,
+    });
+    if (result.status !== "extracted") throw new Error("unreachable");
+    expect(result.document.tables).toEqual([]);
+    expect(result.document.metrics.tableCount).toBe(0);
+    expect(result.document.metrics.tableRowCount).toBe(0);
+  });
 });
 
 describe("extractRfpDocumentFile - warnings and output hygiene", () => {
@@ -550,10 +619,52 @@ describe("default pdf adapter (pdf-parse module mocked)", () => {
   });
 });
 
-describe("default docx adapter (mammoth module mocked)", () => {
-  it("maps mammoth value to text and messages to docx_parser_warning entries, passing the read buffer", async () => {
-    const buffer = Buffer.from("docx-bytes");
-    const readFile = vi.fn(async (_path: string) => buffer);
+describe("default docx adapter (mammoth module mocked; real jszip/xml tables)", () => {
+  // Two document-order tables: trimmable whitespace, split runs in one
+  // paragraph, two paragraphs in one cell, and an empty trailing cell.
+  const DOCX_TABLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:body>
+<w:p><w:r><w:t>Intro paragraph</w:t></w:r></w:p>
+<w:tbl>
+<w:tblPr/>
+<w:tr>
+<w:tc><w:p><w:r><w:t xml:space="preserve">  Requirement  </w:t></w:r></w:p></w:tc>
+<w:tc><w:p><w:r><w:t>Compliance</w:t></w:r></w:p></w:tc>
+</w:tr>
+<w:tr>
+<w:tc><w:p><w:r><w:t xml:space="preserve">Provide </w:t></w:r><w:r><w:t>24 ports</w:t></w:r></w:p><w:p><w:r><w:t>Layer 3</w:t></w:r></w:p></w:tc>
+<w:tc><w:p/></w:tc>
+</w:tr>
+</w:tbl>
+<w:p><w:r><w:t>Between tables</w:t></w:r></w:p>
+<w:tbl>
+<w:tr>
+<w:tc><w:p><w:r><w:t>Totals</w:t></w:r></w:p></w:tc>
+<w:tc><w:p><w:r><w:t>5</w:t></w:r></w:p></w:tc>
+</w:tr>
+</w:tbl>
+</w:body>
+</w:document>`;
+
+  async function buildDocxBuffer(
+    entries: Record<string, string>
+  ): Promise<Buffer> {
+    const zip = new JSZip();
+    for (const [path, content] of Object.entries(entries)) {
+      zip.file(path, content);
+    }
+    return zip.generateAsync({ type: "nodebuffer" });
+  }
+
+  function docxReadFile(buffer: Buffer) {
+    return vi.fn(async (_path: string) => buffer);
+  }
+
+  it("keeps mammoth-driven text/warnings, passing the read buffer, and adds document-order structured tables", async () => {
+    const buffer = await buildDocxBuffer({
+      "word/document.xml": DOCX_TABLES_XML,
+    });
     mammothState.result = {
       value: "Hello  World\r\n\r\n\r\nBye",
       messages: [
@@ -564,7 +675,7 @@ describe("default docx adapter (mammoth module mocked)", () => {
 
     const result = await extractRfpDocumentFile({
       file: makeFile({ fileName: "scope.docx" }),
-      adapters: { readFile },
+      adapters: { readFile: docxReadFile(buffer) },
     });
 
     if (result.status !== "extracted") throw new Error("unreachable");
@@ -573,9 +684,94 @@ describe("default docx adapter (mammoth module mocked)", () => {
       "docx_parser_warning:Unrecognised style abc",
       "docx_parser_warning:broken relationship",
     ]);
-    expect(result.document.tables).toEqual([]);
     expect(mammothState.calls).toHaveLength(1);
     expect(mammothState.calls[0].buffer).toBe(buffer);
+
+    expect(result.document.tables).toEqual([
+      {
+        tableId: `${FILE_ID}:table:1`,
+        sourceFileId: FILE_ID,
+        sourceFileName: "scope.docx",
+        sourceFileRole: "rfp",
+        rowCount: 2,
+        columnCount: 2,
+        rows: [
+          ["Requirement", "Compliance"],
+          ["Provide 24 ports\nLayer 3"],
+        ],
+      },
+      {
+        tableId: `${FILE_ID}:table:2`,
+        sourceFileId: FILE_ID,
+        sourceFileName: "scope.docx",
+        sourceFileRole: "rfp",
+        rowCount: 1,
+        columnCount: 2,
+        rows: [["Totals", "5"]],
+      },
+    ]);
+    expect(result.document.metrics.tableCount).toBe(2);
+    expect(result.document.metrics.tableRowCount).toBe(3);
+    expect("pageNumber" in result.document.tables[0]).toBe(false);
+    expect("sheetName" in result.document.tables[0]).toBe(false);
+
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("storagePath");
+    expect(serialized).not.toContain(STORAGE_PATH);
+  });
+
+  it("treats a docx zip without word/document.xml as no tables and adds no failure warning", async () => {
+    const buffer = await buildDocxBuffer({
+      "[Content_Types].xml": "<Types/>",
+    });
+    mammothState.result = { value: "Text only", messages: [] };
+
+    const result = await extractRfpDocumentFile({
+      file: makeFile({ fileName: "scope.docx" }),
+      adapters: { readFile: docxReadFile(buffer) },
+    });
+
+    if (result.status !== "extracted") throw new Error("unreachable");
+    expect(result.document.text).toBe("Text only");
+    expect(result.document.tables).toEqual([]);
+    expect(result.document.warnings).toEqual([]);
+  });
+
+  it("degrades malformed word/document.xml to docx_table_extraction_failed, keeping mammoth text and warnings", async () => {
+    const buffer = await buildDocxBuffer({
+      "word/document.xml": "<w:document><w:body><w:tbl></w:document>",
+    });
+    mammothState.result = {
+      value: "Body text survives",
+      messages: [{ type: "error", message: "broken relationship" }],
+    };
+
+    const result = await extractRfpDocumentFile({
+      file: makeFile({ fileName: "scope.docx" }),
+      adapters: { readFile: docxReadFile(buffer) },
+    });
+
+    if (result.status !== "extracted") throw new Error("unreachable");
+    expect(result.document.text).toBe("Body text survives");
+    expect(result.document.tables).toEqual([]);
+    expect(result.document.warnings).toEqual([
+      "docx_parser_warning:broken relationship",
+      "docx_table_extraction_failed",
+    ]);
+  });
+
+  it("degrades a non-zip buffer to docx_table_extraction_failed without leaking parser internals", async () => {
+    mammothState.result = { value: "Mapped anyway", messages: [] };
+
+    const result = await extractRfpDocumentFile({
+      file: makeFile({ fileName: "scope.docx" }),
+      adapters: { readFile: docxReadFile(Buffer.from("not-a-zip")) },
+    });
+
+    if (result.status !== "extracted") throw new Error("unreachable");
+    expect(result.document.text).toBe("Mapped anyway");
+    expect(result.document.tables).toEqual([]);
+    expect(result.document.warnings).toEqual(["docx_table_extraction_failed"]);
   });
 });
 
@@ -677,6 +873,8 @@ describe("module purity (static source check)", () => {
     ).sort();
     expect(specifiers).toEqual([
       "@/types/project",
+      "fast-xml-parser",
+      "jszip",
       "mammoth",
       "node:fs/promises",
       "node:path",

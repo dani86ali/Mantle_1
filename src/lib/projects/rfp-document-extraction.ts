@@ -21,6 +21,8 @@ import { readFile as readFileFromDisk } from "node:fs/promises";
 import { extname } from "node:path";
 import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
+import JSZip from "jszip";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import type { ProjectFile, ProjectFileRole } from "@/types/project";
@@ -90,6 +92,8 @@ export interface RfpDocumentExtractionAdapters {
   }>;
   extractDocx(buffer: Buffer): Promise<{
     text: string;
+    /** Optional for backwards compatibility; absent means "no tables". */
+    tables?: ReadonlyArray<{ rows: RfpRawTableRows }>;
     warnings?: readonly string[];
   }>;
   extractXlsx(buffer: Buffer): {
@@ -134,15 +138,118 @@ export const extractPdfWithPdfParse: RfpDocumentExtractionAdapters["extractPdf"]
     }
   };
 
-/** Default .docx extractor: mammoth raw text; parser messages become warnings. */
+/**
+ * Default .docx extractor: mammoth raw text (parser messages become warnings)
+ * plus structured tables read deterministically from word/document.xml. A
+ * table-extraction failure degrades to a stable `docx_table_extraction_failed`
+ * warning (never parser internals) while keeping the mammoth text.
+ */
 export const extractDocxWithMammoth: RfpDocumentExtractionAdapters["extractDocx"] =
   async (buffer) => {
     const result = await mammoth.extractRawText({ buffer });
-    return {
-      text: result.value,
-      warnings: result.messages.map((m) => `docx_parser_warning:${m.message}`),
-    };
+    const warnings = result.messages.map(
+      (m) => `docx_parser_warning:${m.message}`
+    );
+    let tables: Array<{ rows: RfpRawTableRows }> = [];
+    try {
+      tables = await extractDocxTablesFromZip(buffer);
+    } catch {
+      warnings.push("docx_table_extraction_failed");
+    }
+    return { text: result.value, tables, warnings };
   };
+
+/** fast-xml-parser preserveOrder node: one tag key mapping to ordered children. */
+type DocxXmlNode = { readonly [tag: string]: unknown };
+
+/**
+ * Read word/document.xml from the DOCX zip and collect its w:tbl tables in
+ * document order. A missing word/document.xml part means "no tables"; a zip
+ * or XML failure throws so the caller can degrade to a stable warning.
+ */
+async function extractDocxTablesFromZip(
+  buffer: Buffer
+): Promise<Array<{ rows: RfpRawTableRows }>> {
+  const zip = await JSZip.loadAsync(buffer);
+  const part = zip.file("word/document.xml");
+  if (part === null) return [];
+  const xml = await part.async("string");
+  if (XMLValidator.validate(xml) !== true) {
+    throw new Error("docx word/document.xml is not well-formed XML");
+  }
+  // trimValues:false keeps significant run whitespace ("Provide " + "24");
+  // parseTagValue:false keeps numeric-looking cell text as strings.
+  const parsed: unknown = new XMLParser({
+    preserveOrder: true,
+    ignoreAttributes: true,
+    parseTagValue: false,
+    trimValues: false,
+  }).parse(xml);
+  const tableNodes: DocxXmlNode[][] = [];
+  collectDocxNodes(Array.isArray(parsed) ? parsed : [], "w:tbl", tableNodes);
+  return tableNodes.map((children) => ({ rows: docxTableRows(children) }));
+}
+
+/**
+ * Depth-first document-order walk collecting each matching tag's children.
+ * Never descends into a match, so a nested w:tbl folds into its outer cell
+ * text instead of becoming a separate table.
+ */
+function collectDocxNodes(
+  nodes: readonly DocxXmlNode[],
+  tag: string,
+  out: DocxXmlNode[][]
+): void {
+  for (const node of nodes) {
+    for (const [key, children] of Object.entries(node)) {
+      if (!Array.isArray(children)) continue;
+      if (key === tag) out.push(children);
+      else collectDocxNodes(children, tag, out);
+    }
+  }
+}
+
+/**
+ * w:tr children become rows and w:tc children become cells. Within a cell,
+ * run text concatenates per w:p paragraph and paragraphs join with "\n";
+ * empty cells stay "" so row shape is stable until normalizeTableRows.
+ */
+function docxTableRows(tableChildren: readonly DocxXmlNode[]): string[][] {
+  const rows: string[][] = [];
+  for (const tableChild of tableChildren) {
+    const rowChildren = tableChild["w:tr"];
+    if (!Array.isArray(rowChildren)) continue;
+    const cells: string[] = [];
+    for (const rowChild of rowChildren as DocxXmlNode[]) {
+      const cellChildren = rowChild["w:tc"];
+      if (!Array.isArray(cellChildren)) continue;
+      const paragraphs: DocxXmlNode[][] = [];
+      collectDocxNodes(cellChildren, "w:p", paragraphs);
+      cells.push(paragraphs.map((p) => docxRunText(p)).join("\n"));
+    }
+    rows.push(cells);
+  }
+  return rows;
+}
+
+/** Concatenate all descendant w:t text in document order. */
+function docxRunText(nodes: readonly DocxXmlNode[]): string {
+  let text = "";
+  for (const node of nodes) {
+    for (const [tag, children] of Object.entries(node)) {
+      if (!Array.isArray(children)) continue;
+      if (tag === "w:t") {
+        for (const child of children as DocxXmlNode[]) {
+          const value = child["#text"];
+          if (typeof value === "string") text += value;
+        }
+      } else {
+        text += docxRunText(children);
+      }
+    }
+  }
+  return text;
+}
 
 /** Default .xlsx extractor: one table per sheet in workbook order; text is tab-joined rows. */
 export const extractXlsxWithSheetJs: RfpDocumentExtractionAdapters["extractXlsx"] =
@@ -235,7 +342,11 @@ async function runExtractor(
     }
     case ".docx": {
       const result = await adapters.extractDocx(buffer);
-      return { text: result.text, tables: [], warnings: result.warnings ?? [] };
+      return {
+        text: result.text,
+        tables: (result.tables ?? []).map((t) => ({ rows: t.rows })),
+        warnings: result.warnings ?? [],
+      };
     }
     case ".xlsx": {
       const result = adapters.extractXlsx(buffer);
