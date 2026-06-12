@@ -72,6 +72,8 @@ const QUALITY_PASSED: RfpExtractionQualityReport = {
   totalTables: 0,
   totalTableRows: 0,
   warnings: [],
+  warningDetails: [],
+  blockingIssues: [],
 };
 
 const FAILED_FILE: RfpExtractionFileQualitySummary = {

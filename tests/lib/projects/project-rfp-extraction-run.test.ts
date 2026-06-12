@@ -596,6 +596,16 @@ describe("runRfpInputPackageExtraction - per-file quality gate", () => {
     // The throw on the first file must not stop the second file's extraction.
     expect(result.files[1]).toMatchObject({ fileId: FILE_BOQ, quality: "passed" });
     expect(result.documents.map((d) => d.sourceFileId)).toEqual([FILE_BOQ]);
+    expect(result.quality.blockingIssues).toEqual([
+      {
+        fileId: FILE_RFP,
+        fileName: `${FILE_RFP}.pdf`,
+        fileRole: "rfp",
+        reason: "extractor_failed",
+        severity: "blocking",
+        message: "File could not be parsed by the extractor.",
+      },
+    ]);
     const json = JSON.stringify(result);
     expect(json).not.toContain("parser exploded");
     expect(json).not.toContain(STORAGE_SENTINEL);
@@ -644,7 +654,7 @@ describe("runRfpInputPackageExtraction - quality report", () => {
     );
   }
 
-  it("aggregates counts and file-scoped warnings across mixed results", async () => {
+  it("aggregates counts, file-scoped warnings, and structured details across mixed results", async () => {
     mixedRunSetup();
 
     const result = await run();
@@ -664,7 +674,44 @@ describe("runRfpInputPackageExtraction - quality report", () => {
         "file-a:pdf_table_extraction_failed",
         "file-c:docx_parser_warning:odd style",
       ],
+      warningDetails: [
+        {
+          fileId: "file-a",
+          fileName: "file-a.pdf",
+          fileRole: "rfp",
+          warning: "pdf_table_extraction_failed",
+          category: "table_extraction_failed",
+          severity: "warning",
+        },
+        {
+          fileId: "file-c",
+          fileName: "file-c.pdf",
+          fileRole: "rfp",
+          warning: "docx_parser_warning:odd style",
+          category: "parser_warning",
+          severity: "warning",
+        },
+      ],
+      blockingIssues: [
+        {
+          fileId: "file-b",
+          fileName: "file-b.pdf",
+          fileRole: "rfp",
+          reason: "unsupported_extension",
+          severity: "blocking",
+          message: "File extension is not supported for extraction.",
+        },
+        {
+          fileId: "file-c",
+          fileName: "file-c.pdf",
+          fileRole: "rfp",
+          reason: "no_extractable_text_or_tables",
+          severity: "blocking",
+          message: "File has no extractable text or table rows.",
+        },
+      ],
     });
+    expect(JSON.parse(JSON.stringify(result.quality))).toEqual(result.quality);
   });
 
   it("is deterministic: two identical runs produce identical results", async () => {
@@ -691,7 +738,117 @@ describe("runRfpInputPackageExtraction - quality report", () => {
       totalTables: 0,
       totalTableRows: 0,
       warnings: [],
+      warningDetails: [],
+      blockingIssues: [],
     });
+  });
+});
+
+describe("runRfpInputPackageExtraction - structured warning details", () => {
+  it("parses merged-cell warnings into merged_cells details without failing the file", async () => {
+    mockGetArtifactById.mockResolvedValue(
+      makeArtifact({ sourceFileIds: [FILE_BOQ] })
+    );
+    mockGetFileById.mockImplementation(
+      async (_tenantId: string, _projectId: string, fileId: string) =>
+        makeFile(fileId, { fileName: `${fileId}.xlsx`, fileRole: "boq" })
+    );
+    mockExtractRfpDocumentFile.mockImplementation(
+      async (input: { file: ProjectFile }) =>
+        extractedResult(
+          makeDocument(input.file, {
+            extension: ".xlsx",
+            warnings: [
+              "xlsx_merged_cells:BoQ Sheet:A1:D1",
+              "xlsx_merged_cells:Summary:B2:B5",
+            ],
+          })
+        )
+    );
+
+    const result = await run();
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    // Merged cells are engineer-visible warnings, never a failure.
+    expect(result.files[0].quality).toBe("passed");
+    expect(result.quality.status).toBe("passed");
+    expect(result.quality.blockingIssues).toEqual([]);
+    expect(result.quality.warnings).toEqual([
+      `${FILE_BOQ}:xlsx_merged_cells:BoQ Sheet:A1:D1`,
+      `${FILE_BOQ}:xlsx_merged_cells:Summary:B2:B5`,
+    ]);
+    expect(result.quality.warningDetails).toEqual([
+      {
+        fileId: FILE_BOQ,
+        fileName: `${FILE_BOQ}.xlsx`,
+        fileRole: "boq",
+        warning: "xlsx_merged_cells:BoQ Sheet:A1:D1",
+        category: "merged_cells",
+        severity: "warning",
+        sheetName: "BoQ Sheet",
+        range: "A1:D1",
+      },
+      {
+        fileId: FILE_BOQ,
+        fileName: `${FILE_BOQ}.xlsx`,
+        fileRole: "boq",
+        warning: "xlsx_merged_cells:Summary:B2:B5",
+        category: "merged_cells",
+        severity: "warning",
+        sheetName: "Summary",
+        range: "B2:B5",
+      },
+    ]);
+  });
+
+  it("categorizes table-extraction, parser, unknown, and malformed merged-cell warnings deterministically", async () => {
+    const warnings = [
+      "pdf_table_extraction_failed",
+      "docx_table_extraction_failed",
+      "docx_parser_warning:odd style",
+      "csv_parser_warning:Quotes",
+      "totally_unexpected_warning",
+      "xlsx_merged_cells:SheetWithoutRange",
+    ];
+    mockGetArtifactById.mockResolvedValue(
+      makeArtifact({ sourceFileIds: [FILE_RFP] })
+    );
+    mockExtractRfpDocumentFile.mockImplementation(
+      async (input: { file: ProjectFile }) =>
+        extractedResult(makeDocument(input.file, { warnings: warnings.slice() }))
+    );
+
+    const result = await run();
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.quality.status).toBe("passed");
+    expect(
+      result.quality.warningDetails.map((d) => [d.warning, d.category])
+    ).toEqual([
+      ["pdf_table_extraction_failed", "table_extraction_failed"],
+      ["docx_table_extraction_failed", "table_extraction_failed"],
+      ["docx_parser_warning:odd style", "parser_warning"],
+      ["csv_parser_warning:Quotes", "parser_warning"],
+      ["totally_unexpected_warning", "extractor_warning"],
+      ["xlsx_merged_cells:SheetWithoutRange", "merged_cells"],
+    ]);
+    for (const detail of result.quality.warningDetails) {
+      expect(detail.severity).toBe("warning");
+      expect(detail.fileId).toBe(FILE_RFP);
+      expect(detail.fileName).toBe(`${FILE_RFP}.pdf`);
+      expect(detail.fileRole).toBe("rfp");
+    }
+    // A merged-cells warning without a parsable location keeps its category
+    // but omits sheetName/range entirely.
+    const malformed = result.quality.warningDetails[5];
+    expect("sheetName" in malformed).toBe(false);
+    expect("range" in malformed).toBe(false);
+    // The legacy flat list stays index-aligned with the structured details.
+    expect(result.quality.warnings).toEqual(
+      warnings.map((w) => `${FILE_RFP}:${w}`)
+    );
   });
 });
 

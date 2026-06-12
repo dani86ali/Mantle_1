@@ -16,7 +16,10 @@
  * requirement interpretation or compliance classification, and no
  * SKU/catalog/pricing/configuration logic. Returned summaries are lean and
  * serializable: ISO dates, copied arrays, no payload, no tenantId, never a
- * storagePath. Inputs, loaded rows, and extractor results are never mutated.
+ * storagePath. The quality report also carries structured warning and
+ * blocking-issue details derived from the raw warning strings and failure
+ * reasons by pure string matching; warnings (merged cells included) never
+ * fail a file. Inputs, loaded rows, and extractor results are never mutated.
  */
 import { getProjectById } from "@/lib/db/project-store";
 import { getProjectArtifactById } from "@/lib/db/project-artifact-store";
@@ -98,6 +101,50 @@ export type RfpExtractionFileQualitySummary =
       reason: RfpExtractionFileFailureReason;
     });
 
+/** Severity of a structured warning detail; warnings never fail a file. */
+export type RfpExtractionWarningSeverity = "warning";
+
+/** Deterministic category derived from the raw warning string alone. */
+export type RfpExtractionWarningCategory =
+  | "merged_cells"
+  | "table_extraction_failed"
+  | "parser_warning"
+  | "extractor_warning";
+
+/**
+ * One structured warning review aid: file identity, the raw warning string,
+ * and its deterministic category, plus the sheet/range location parsed from
+ * an xlsx merged-cells warning. Lean and JSON-serializable: never table
+ * rows, payloads, stacks, or storage paths.
+ */
+export interface RfpExtractionWarningDetail {
+  fileId: string;
+  fileName: string;
+  fileRole: ProjectFileRole;
+  /** The raw per-file extractor warning string, unprefixed. */
+  warning: string;
+  category: RfpExtractionWarningCategory;
+  severity: RfpExtractionWarningSeverity;
+  /** Workbook sheet parsed from an xlsx_merged_cells warning. */
+  sheetName?: string;
+  /** A1-style cell range parsed from an xlsx_merged_cells warning. */
+  range?: string;
+}
+
+/**
+ * One structured blocking issue per quality-failed file: a review aid beside
+ * the per-file `quality`/`reason` contract, never a replacement for it.
+ */
+export interface RfpExtractionBlockingIssue {
+  fileId: string;
+  fileName: string;
+  fileRole: ProjectFileRole;
+  reason: RfpExtractionFileFailureReason;
+  severity: "blocking";
+  /** Short stable engineer-facing message; never a thrown error or path. */
+  message: string;
+}
+
 /** Deterministic aggregate quality gate over the whole extraction run. */
 export interface RfpExtractionQualityReport {
   /** "passed" only when EVERY source file passed its per-file gate. */
@@ -111,6 +158,10 @@ export interface RfpExtractionQualityReport {
   totalTableRows: number;
   /** Stable `<fileId>:<warning>` strings, in source file order. */
   warnings: string[];
+  /** Structured warning details, file order then warning order in the file. */
+  warningDetails: RfpExtractionWarningDetail[];
+  /** One issue per quality-failed file, in source file order. */
+  blockingIssues: RfpExtractionBlockingIssue[];
 }
 
 /** Discriminated result of {@link runRfpInputPackageExtraction}. */
@@ -219,6 +270,75 @@ function toExtractedFileQuality(
   return { ...base, quality: "failed", reason: "no_extractable_text_or_tables" };
 }
 
+/** xlsx merged-range warning prefix; the rest is `<sheetName>:<A1Range>`. */
+const XLSX_MERGED_CELLS_WARNING_PREFIX = "xlsx_merged_cells:";
+
+/** Exact warnings meaning a format's table pass failed but its text was kept. */
+const TABLE_EXTRACTION_FAILED_WARNINGS: readonly string[] = [
+  "pdf_table_extraction_failed",
+  "docx_table_extraction_failed",
+];
+
+/** Prefixes of warnings the underlying document parsers emit. */
+const PARSER_WARNING_PREFIXES: readonly string[] = [
+  "docx_parser_warning:",
+  "csv_parser_warning:",
+];
+
+/** Stable engineer-facing message per per-file failure reason. */
+const BLOCKING_ISSUE_MESSAGES: Record<RfpExtractionFileFailureReason, string> = {
+  unsupported_extension: "File extension is not supported for extraction.",
+  extractor_failed: "File could not be parsed by the extractor.",
+  no_extractable_text_or_tables: "File has no extractable text or table rows.",
+};
+
+/**
+ * Categorize one raw warning by pure string matching. Excel forbids ":" in
+ * sheet names, so the first ":" after the merged-cells prefix splits sheet
+ * from range; both location fields are omitted unless both are nonempty.
+ */
+function toWarningDetail(
+  file: RfpExtractionFileQualitySummary,
+  warning: string
+): RfpExtractionWarningDetail {
+  const detail: RfpExtractionWarningDetail = {
+    fileId: file.fileId,
+    fileName: file.fileName,
+    fileRole: file.fileRole,
+    warning,
+    category: "extractor_warning",
+    severity: "warning",
+  };
+  if (warning.startsWith(XLSX_MERGED_CELLS_WARNING_PREFIX)) {
+    detail.category = "merged_cells";
+    const location = warning.slice(XLSX_MERGED_CELLS_WARNING_PREFIX.length);
+    const split = location.indexOf(":");
+    if (split > 0 && split < location.length - 1) {
+      detail.sheetName = location.slice(0, split);
+      detail.range = location.slice(split + 1);
+    }
+  } else if (TABLE_EXTRACTION_FAILED_WARNINGS.includes(warning)) {
+    detail.category = "table_extraction_failed";
+  } else if (PARSER_WARNING_PREFIXES.some((p) => warning.startsWith(p))) {
+    detail.category = "parser_warning";
+  }
+  return detail;
+}
+
+/** Blocking review aid for one failed file; quality/reason stay authoritative. */
+function toBlockingIssue(
+  file: Extract<RfpExtractionFileQualitySummary, { quality: "failed" }>
+): RfpExtractionBlockingIssue {
+  return {
+    fileId: file.fileId,
+    fileName: file.fileName,
+    fileRole: file.fileRole,
+    reason: file.reason,
+    severity: "blocking",
+    message: BLOCKING_ISSUE_MESSAGES[file.reason],
+  };
+}
+
 /** Pure arithmetic aggregate over the per-file verdicts, in file order. */
 function buildQualityReport(
   files: readonly RfpExtractionFileQualitySummary[]
@@ -233,16 +353,23 @@ function buildQualityReport(
     totalTables: 0,
     totalTableRows: 0,
     warnings: [],
+    warningDetails: [],
+    blockingIssues: [],
   };
   for (const file of files) {
-    if (file.quality === "passed") report.passedFiles += 1;
-    else report.failedFiles += 1;
+    if (file.quality === "passed") {
+      report.passedFiles += 1;
+    } else {
+      report.failedFiles += 1;
+      report.blockingIssues.push(toBlockingIssue(file));
+    }
     report.totalTextChars += file.metrics.textCharCount;
     report.totalNonWhitespaceTextChars += file.metrics.nonWhitespaceTextCharCount;
     report.totalTables += file.metrics.tableCount;
     report.totalTableRows += file.metrics.tableRowCount;
     for (const warning of file.warnings) {
       report.warnings.push(`${file.fileId}:${warning}`);
+      report.warningDetails.push(toWarningDetail(file, warning));
     }
   }
   if (report.failedFiles > 0) report.status = "failed";

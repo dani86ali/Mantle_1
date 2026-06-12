@@ -157,6 +157,8 @@ function makeOkRun(
         0
       ),
       warnings: [],
+      warningDetails: [],
+      blockingIssues: [],
     },
     ...overrides,
   };
