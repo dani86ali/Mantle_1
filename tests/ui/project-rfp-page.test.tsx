@@ -20,6 +20,8 @@ const GENERATE_URL = `${BASELINE_LIST_URL}/generate`;
 const EXTRACTION_DELTA_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/extraction-delta`;
 const EXTRACTION_DELTA_ARTIFACT_ID = "art-ed-1";
 const EXTRACTION_DELTA_DETAIL_URL = `${EXTRACTION_DELTA_LIST_URL}/${EXTRACTION_DELTA_ARTIFACT_ID}`;
+const EXTRACTION_DELTA_REVIEW_URL =
+  `/api/projects/${PROJECT_ID}/rfp/artifacts/${EXTRACTION_DELTA_ARTIFACT_ID}/extraction-delta/review`;
 const EVIDENCE_PACKAGE_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/evidence-package`;
 const EVIDENCE_PACKAGE_ARTIFACT_ID = "art-ep-1";
 const EVIDENCE_PACKAGE_DETAIL_URL = `${EVIDENCE_PACKAGE_LIST_URL}/${EVIDENCE_PACKAGE_ARTIFACT_ID}`;
@@ -527,6 +529,53 @@ function extractionDeltaDetailResponse(): Record<string, unknown> {
   };
 }
 
+function extractionDeltaAllPendingDetailResponse(): Record<string, unknown> {
+  const response = extractionDeltaDetailResponse();
+  const delta = response.delta as Record<string, unknown>;
+  delta.pendingCount = 2;
+  delta.acceptedCount = 0;
+  delta.reviewedDecisionCount = 0;
+  const candidates = delta.candidates as Array<Record<string, unknown>>;
+  candidates[1] = {
+    ...candidates[1],
+    reviewStatus: "pending_review",
+    reviewHistory: [],
+  };
+  return response;
+}
+
+function extractionDeltaReviewSuccessResponse(): Record<string, unknown> {
+  return {
+    artifact: {
+      ...extractionDeltaArtifactSummary(),
+      id: "art-ed-reviewed-1",
+      version: 3,
+      sourceArtifactIds: ["art-ip-1", EXTRACTION_DELTA_ARTIFACT_ID],
+      updatedAt: "2026-06-04T08:45:00.000Z",
+    },
+    payloadSummary: {
+      payloadKind: "rfp_extraction_delta",
+      createdBy: "user-1",
+      createdAt: "2026-06-04T08:00:00.000Z",
+      proposalSource: "deterministic",
+      inputPackageArtifactId: "art-ip-1",
+      candidateCount: 2,
+      evidenceReferenceCount: 2,
+      reviewedBy: "user-2",
+      reviewedAt: "2026-06-04T08:45:00.000Z",
+      reviewedDecisionCount: 1,
+      pendingCount: 0,
+      acceptedCount: 1,
+      rejectedCount: 0,
+      waivedCount: 0,
+      sourceExtractionDeltaArtifactId: EXTRACTION_DELTA_ARTIFACT_ID,
+      sourceExtractionDeltaArtifactVersion: 2,
+      sourceFileIds: ["file-rfp-1", "file-rfp-2"],
+      sourceArtifactIds: ["art-ip-1", EXTRACTION_DELTA_ARTIFACT_ID],
+    },
+  };
+}
+
 /** Serializable artifact summary shared by the package list/detail stubs. */
 function evidencePackageArtifactSummary(): Record<string, unknown> {
   return {
@@ -686,6 +735,9 @@ function stubDefault(): Recorded[] {
           ? "rejected"
           : "approved";
       return jsonResponse(baselineReviewSuccessResponse(decision));
+    }
+    if (url === EXTRACTION_DELTA_REVIEW_URL && init?.method === "POST") {
+      return jsonResponse(extractionDeltaReviewSuccessResponse());
     }
     if (url === `${LIST_URL}/ev-text-1`) return jsonResponse(textDetailResponse());
     if (url === `${LIST_URL}/ev-table-1`) return jsonResponse(tableDetailResponse());
@@ -1886,6 +1938,212 @@ describe("ProjectRfpEvidencePage - extraction delta detail", () => {
   });
 });
 
+describe("ProjectRfpEvidencePage - extraction delta review", () => {
+  async function inspectDelta(): Promise<void> {
+    await screen.findByTestId(`delta-inspect-${EXTRACTION_DELTA_ARTIFACT_ID}`);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`delta-inspect-${EXTRACTION_DELTA_ARTIFACT_ID}`));
+    });
+    await screen.findByTestId("delta-detail-panel");
+  }
+
+  it("renders pending controls, then POSTs exactly { decisions } with a minimal accept decision and clears the inspected detail on success", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await inspectDelta();
+
+    expect(screen.getByTestId("delta-review-controls-RFP-DELTA-001")).toBeInTheDocument();
+    expect(screen.getByTestId("delta-review-selected-count")).toHaveTextContent(
+      "Selected decisions: 0"
+    );
+    expect(screen.getByTestId("delta-review-submit")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("delta-action-RFP-DELTA-001"), {
+      target: { value: "accept" },
+    });
+    fireEvent.change(screen.getByTestId("delta-note-RFP-DELTA-001"), {
+      target: { value: "   " },
+    });
+    expect(screen.getByTestId("delta-review-selected-count")).toHaveTextContent(
+      "Selected decisions: 1"
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("delta-review-submit"));
+    });
+
+    const success = await screen.findByTestId("delta-review-success");
+    expect(success.textContent).toBe("Extraction delta review recorded.");
+    expect(screen.queryByTestId("delta-detail-panel")).toBeNull();
+    expect(screen.getByTestId("delta-detail-empty")).toHaveTextContent(
+      "No extraction delta inspected yet."
+    );
+
+    const posts = calls.filter((c) => c.method === "POST");
+    const deltaPost = posts.find((c) => c.url === EXTRACTION_DELTA_REVIEW_URL);
+    expect(deltaPost).toBeTruthy();
+    expect(deltaPost!.contentType).toBe("application/json");
+    expect(deltaPost!.body).toEqual({
+      decisions: [{ candidateId: "RFP-DELTA-001", action: "accept" }],
+    });
+    expect(Object.keys(deltaPost!.body as Record<string, unknown>)).toEqual([
+      "decisions",
+    ]);
+    expect(JSON.stringify(deltaPost!.body)).not.toContain("reviewStatus");
+    expect(JSON.stringify(deltaPost!.body)).not.toContain("sourceFileId");
+
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url === EXTRACTION_DELTA_LIST_URL)).toHaveLength(2)
+    );
+    expect(calls.filter((c) => c.url === EXTRACTION_DELTA_DETAIL_URL)).toHaveLength(1);
+  });
+
+  it("POSTs edit_accept decisions with only changed fields while preserving text and table proposal metadata", async () => {
+    const calls = stubFetch((url, init) => {
+      if (url === EXTRACTION_DELTA_REVIEW_URL && init?.method === "POST") {
+        return jsonResponse(extractionDeltaReviewSuccessResponse());
+      }
+      if (url === EXTRACTION_DELTA_DETAIL_URL) {
+        return jsonResponse(extractionDeltaAllPendingDetailResponse());
+      }
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === EVIDENCE_PACKAGE_DETAIL_URL) return jsonResponse(evidencePackageDetailResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === BASELINE_DETAIL_URL) return jsonResponse(baselineDetailResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await inspectDelta();
+
+    fireEvent.change(screen.getByTestId("delta-action-RFP-DELTA-001"), {
+      target: { value: "edit_accept" },
+    });
+    fireEvent.change(screen.getByTestId("delta-edit-title-RFP-DELTA-001"), {
+      target: { value: "Edited redundancy requirement" },
+    });
+    fireEvent.change(screen.getByTestId("delta-edit-description-RFP-DELTA-001"), {
+      target: { value: "Edited text proposal description" },
+    });
+    fireEvent.change(screen.getByTestId("delta-edit-severity-RFP-DELTA-001"), {
+      target: { value: "warning" },
+    });
+    fireEvent.change(screen.getByTestId("delta-edit-confidence-RFP-DELTA-001"), {
+      target: { value: "0.91" },
+    });
+    fireEvent.change(screen.getByTestId("delta-edit-rationale-RFP-DELTA-001"), {
+      target: { value: "Edited rationale" },
+    });
+    fireEvent.change(screen.getByTestId("delta-edit-proposed-text-RFP-DELTA-001"), {
+      target: { value: "Edited redundant core text." },
+    });
+
+    fireEvent.change(screen.getByTestId("delta-action-RFP-DELTA-002"), {
+      target: { value: "edit_accept" },
+    });
+    fireEvent.change(screen.getByTestId("delta-edit-proposed-table-RFP-DELTA-002"), {
+      target: { value: "Item\tQty\nEdited table item\t8" },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("delta-review-submit"));
+    });
+    await screen.findByTestId("delta-review-success");
+
+    const deltaPost = calls.find(
+      (c) => c.method === "POST" && c.url === EXTRACTION_DELTA_REVIEW_URL
+    );
+    expect(deltaPost).toBeTruthy();
+    expect(deltaPost!.body).toEqual({
+      decisions: [
+        {
+          candidateId: "RFP-DELTA-001",
+          action: "edit_accept",
+          editedFields: {
+            title: "Edited redundancy requirement",
+            description: "Edited text proposal description",
+            severity: "warning",
+            confidence: 0.91,
+            rationale: "Edited rationale",
+            proposedEvidence: {
+              evidenceKind: "rfp_document_text_chunk",
+              text: "Edited redundant core text.",
+              sourceFileName: "rfp-main.pdf",
+              sourceFileRole: "rfp_main_document",
+              chunkIndex: 0,
+              chunkCount: 4,
+              charCount: 64,
+            },
+          },
+        },
+        {
+          candidateId: "RFP-DELTA-002",
+          action: "edit_accept",
+          editedFields: {
+            proposedEvidence: {
+              evidenceKind: "rfp_document_table",
+              rows: [
+                ["Item", "Qty"],
+                ["Edited table item", "8"],
+              ],
+              tableId: "tbl-1",
+              sourceFileName: "rfp-scope.xlsx",
+              sourceFileRole: "rfp_attachment",
+              sheetName: "Scope",
+              rowCount: 2,
+              columnCount: 2,
+            },
+          },
+        },
+      ],
+    });
+  });
+
+  it('renders exactly "Unable to review extraction delta." on review failure, keeping the loaded detail and decision drafts without reloading the list', async () => {
+    const secret = "delta-review-internal-detail";
+    const calls = stubFetch((url, init) => {
+      if (url === EXTRACTION_DELTA_REVIEW_URL && init?.method === "POST") {
+        return jsonResponse({ code: "rfp_extraction_delta_review_failed", error: secret }, 500);
+      }
+      if (url === EXTRACTION_DELTA_DETAIL_URL) return jsonResponse(extractionDeltaDetailResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === EVIDENCE_PACKAGE_DETAIL_URL) return jsonResponse(evidencePackageDetailResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === BASELINE_DETAIL_URL) return jsonResponse(baselineDetailResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await inspectDelta();
+    const listCallCount = calls.filter((c) => c.url === EXTRACTION_DELTA_LIST_URL).length;
+
+    fireEvent.change(screen.getByTestId("delta-action-RFP-DELTA-001"), {
+      target: { value: "reject" },
+    });
+    fireEvent.change(screen.getByTestId("delta-note-RFP-DELTA-001"), {
+      target: { value: "  duplicate proposal  " },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("delta-review-submit"));
+    });
+
+    const err = await screen.findByTestId("delta-review-error");
+    expect(err.textContent).toBe("Unable to review extraction delta.");
+    expect(document.body.textContent ?? "").not.toContain(secret);
+    expect(screen.queryByTestId("delta-review-success")).toBeNull();
+    expect(screen.getByTestId("delta-detail-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("delta-action-RFP-DELTA-001")).toHaveValue("reject");
+    expect(screen.getByTestId("delta-note-RFP-DELTA-001")).toHaveValue(
+      "  duplicate proposal  "
+    );
+    expect(calls.filter((c) => c.url === EXTRACTION_DELTA_LIST_URL)).toHaveLength(
+      listCallCount
+    );
+  });
+});
+
 describe("ProjectRfpEvidencePage - evidence package list", () => {
   it("GETs the evidence package list on mount and renders the count and a lean artifact row", async () => {
     const calls = stubDefault();
@@ -2156,7 +2414,7 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
     }
   });
 
-  it("performs exactly two POSTs - generate then review - across the full explicit write flow", async () => {
+  it("performs exactly two POSTs - generate then baseline review - across that explicit write flow", async () => {
     const calls = stubDefault();
     render(<ProjectRfpEvidencePage />);
     await screen.findByTestId("evidence-select-ev-text-1");
@@ -2176,8 +2434,8 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
     });
     await screen.findByTestId("baseline-review-success");
 
-    // Generate and review are the page's only two write endpoints, each
-    // POSTed exactly once with its own minimal body.
+    // This explicit flow writes only generate and baseline review, each POSTed
+    // exactly once with its own minimal body.
     const nonGets = calls.filter((c) => c.method !== "GET");
     expect(nonGets).toHaveLength(2);
     expect(nonGets[0].method).toBe("POST");
@@ -2248,7 +2506,7 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
     expect(source).not.toContain("require(");
   });
 
-  it("contains no db/store/route/write/persistence/run/AI/authority tokens and no mutation methods beyond the review POST", () => {
+  it("contains no db/store/route/write/persistence/run/AI/authority tokens and no unexpected mutation methods", () => {
     for (const forbidden of [
       'from "@/lib/db',
       'from "@/app/api',
@@ -2290,17 +2548,21 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
     }
   });
 
-  it("permits exactly two POSTs - the baseline generate fetch and the review fetch - and no other write path", () => {
-    expect((source.match(/"POST"/g) ?? []).length).toBe(2);
-    expect((source.match(/method:/g) ?? []).length).toBe(2);
-    // Every /review occurrence is the requirements-baseline review endpoint
+  it("permits exactly three POSTs - baseline generate, baseline review, and extraction-delta review - and no other write path", () => {
+    expect((source.match(/"POST"/g) ?? []).length).toBe(3);
+    expect((source.match(/method:/g) ?? []).length).toBe(3);
+    // Every /review occurrence is one of the two explicit review endpoints
     // and every /generate occurrence is the requirements-baseline generate
     // endpoint; no arbitrary review, approvals, or generation path appears
     // anywhere in the page.
     const reviewMentions = source.match(/\/review/g) ?? [];
     const baselineReviewMentions = source.match(/requirements-baseline\/review/g) ?? [];
+    const deltaReviewMentions = source.match(/extraction-delta\/review/g) ?? [];
     expect(baselineReviewMentions.length).toBeGreaterThanOrEqual(1);
-    expect(reviewMentions.length).toBe(baselineReviewMentions.length);
+    expect(deltaReviewMentions.length).toBeGreaterThanOrEqual(1);
+    expect(reviewMentions.length).toBe(
+      baselineReviewMentions.length + deltaReviewMentions.length
+    );
     const generateMentions = source.match(/\/generate/g) ?? [];
     const baselineGenerateMentions =
       source.match(/requirements-baseline\/generate/g) ?? [];

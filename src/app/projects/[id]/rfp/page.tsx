@@ -77,7 +77,7 @@
  * are default GETs that write nothing, run no extraction, and decide nothing.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import type {
   RfpEvidenceDetail,
@@ -184,6 +184,52 @@ type DeltaCandidate = RfpExtractionDeltaInspectionDetail["candidates"][number];
 type DeltaEvidenceReference = DeltaCandidate["evidenceReferences"][number];
 type DeltaProposedEvidence = NonNullable<DeltaCandidate["proposedEvidence"]>;
 type DeltaReviewHistoryEntry = DeltaCandidate["reviewHistory"][number];
+type DeltaProposedTextEvidence = Extract<
+  DeltaProposedEvidence,
+  { evidenceKind: "rfp_document_text_chunk" }
+>;
+type DeltaProposedTableEvidence = Extract<
+  DeltaProposedEvidence,
+  { evidenceKind: "rfp_document_table" }
+>;
+
+/** The closed engineer review-action vocabulary the review route accepts. */
+type DeltaReviewAction = "accept" | "reject" | "edit_accept" | "waive";
+
+/**
+ * One pending candidate's in-progress decision draft, keyed by candidate id.
+ * The edit fields seed from the candidate's current proposal so an unchanged
+ * field stays out of the submitted editedFields.
+ */
+interface DeltaCandidateDecisionState {
+  action: "" | DeltaReviewAction;
+  note: string;
+  title: string;
+  description: string;
+  severity: string;
+  confidence: string;
+  rationale: string;
+  proposedText: string;
+  proposedTableTsv: string;
+}
+
+/** The narrow edit surface one edit_accept decision may carry. */
+interface DeltaEditedFields {
+  title?: string;
+  description?: string;
+  severity?: string;
+  confidence?: number;
+  rationale?: string;
+  proposedEvidence?: DeltaProposedEvidence;
+}
+
+/** One engineer review decision in the extraction-delta review POST body. */
+interface DeltaReviewDecision {
+  candidateId: string;
+  action: DeltaReviewAction;
+  note?: string;
+  editedFields?: DeltaEditedFields;
+}
 
 /** Lean list response of GET /api/projects/[id]/rfp/evidence-package. */
 interface EvidencePackageListResponse {
@@ -223,6 +269,10 @@ const GENERATE_ERROR = "Unable to generate requirements baseline.";
 /** Exact UI copy required for the extraction-delta failure states. */
 const DELTA_LIST_ERROR = "Unable to load extraction deltas.";
 const DELTA_DETAIL_ERROR = "Unable to load extraction delta detail.";
+
+/** Exact UI copy required for the extraction-delta review outcome states. */
+const DELTA_REVIEW_SUCCESS = "Extraction delta review recorded.";
+const DELTA_REVIEW_ERROR = "Unable to review extraction delta.";
 
 /** Exact UI copy required for the evidence-package failure states. */
 const PACKAGE_LIST_ERROR = "Unable to load final evidence packages.";
@@ -372,7 +422,13 @@ function DeltaProposedEvidenceView({
  * the engineer review history (expandable). Reused for pending and decided
  * candidates; the caller collapses the decided group.
  */
-function DeltaCandidateRow({ candidate }: { candidate: DeltaCandidate }) {
+function DeltaCandidateRow({
+  candidate,
+  children,
+}: {
+  candidate: DeltaCandidate;
+  children?: ReactNode;
+}) {
   return (
     <li
       data-testid="delta-candidate"
@@ -443,7 +499,341 @@ function DeltaCandidateRow({ candidate }: { candidate: DeltaCandidate }) {
           </ul>
         </details>
       )}
+      {children}
     </li>
+  );
+}
+
+/** Proposed table rows round-tripped through a tab/newline TSV string. */
+function rowsToTsv(rows: string[][]): string {
+  return rows.map((row) => row.join("\t")).join("\n");
+}
+
+function tsvToRows(tsv: string): string[][] {
+  return tsv.split("\n").map((line) => line.split("\t"));
+}
+
+/**
+ * Seed one pending candidate's decision draft from its current values so the
+ * edit_accept fields start at the AI/engineer proposal and "changed" means the
+ * engineer actually edited away from it.
+ */
+function initialDeltaDecisionState(
+  candidate: DeltaCandidate
+): DeltaCandidateDecisionState {
+  const proposed = candidate.proposedEvidence;
+  return {
+    action: "",
+    note: "",
+    title: candidate.title,
+    description: candidate.description,
+    severity: candidate.severity,
+    confidence:
+      candidate.confidence !== undefined ? String(candidate.confidence) : "",
+    rationale: candidate.rationale ?? "",
+    proposedText:
+      proposed !== undefined &&
+      proposed.evidenceKind === "rfp_document_text_chunk"
+        ? proposed.text
+        : "",
+    proposedTableTsv:
+      proposed !== undefined && proposed.evidenceKind === "rfp_document_table"
+        ? rowsToTsv(proposed.rows)
+        : "",
+  };
+}
+
+/** Seed the decision map for the pending candidates of a loaded delta detail. */
+function initialDeltaDecisions(
+  detail: ExtractionDeltaDetail
+): Record<string, DeltaCandidateDecisionState> {
+  const decisions: Record<string, DeltaCandidateDecisionState> = {};
+  for (const candidate of detail.delta.candidates) {
+    if (candidate.reviewStatus === "pending_review") {
+      decisions[candidate.id] = initialDeltaDecisionState(candidate);
+    }
+  }
+  return decisions;
+}
+
+/**
+ * Rebuild an edited proposedEvidence ONLY when the engineer changed it, never
+ * inventing one for a candidate that has none. Editable content is the text
+ * body (text proposals) or the rows parsed from the TSV (table proposals); the
+ * proposal-side locator metadata is preserved exactly as stored.
+ */
+function buildDeltaEditedProposedEvidence(
+  candidate: DeltaCandidate,
+  state: DeltaCandidateDecisionState
+): DeltaProposedEvidence | undefined {
+  const proposed = candidate.proposedEvidence;
+  if (proposed === undefined) return undefined;
+  if (proposed.evidenceKind === "rfp_document_text_chunk") {
+    if (state.proposedText === proposed.text) return undefined;
+    const next: DeltaProposedTextEvidence = {
+      evidenceKind: "rfp_document_text_chunk",
+      text: state.proposedText,
+      ...(proposed.sourceFileName !== undefined
+        ? { sourceFileName: proposed.sourceFileName }
+        : {}),
+      ...(proposed.sourceFileRole !== undefined
+        ? { sourceFileRole: proposed.sourceFileRole }
+        : {}),
+      ...(proposed.chunkIndex !== undefined
+        ? { chunkIndex: proposed.chunkIndex }
+        : {}),
+      ...(proposed.chunkCount !== undefined
+        ? { chunkCount: proposed.chunkCount }
+        : {}),
+      ...(proposed.charCount !== undefined
+        ? { charCount: proposed.charCount }
+        : {}),
+    };
+    return next;
+  }
+  const originalTsv = rowsToTsv(proposed.rows);
+  if (state.proposedTableTsv === originalTsv) return undefined;
+  const next: DeltaProposedTableEvidence = {
+    evidenceKind: "rfp_document_table",
+    rows: tsvToRows(state.proposedTableTsv),
+    ...(proposed.tableId !== undefined ? { tableId: proposed.tableId } : {}),
+    ...(proposed.sourceFileName !== undefined
+      ? { sourceFileName: proposed.sourceFileName }
+      : {}),
+    ...(proposed.sourceFileRole !== undefined
+      ? { sourceFileRole: proposed.sourceFileRole }
+      : {}),
+    ...(proposed.pageNumber !== undefined
+      ? { pageNumber: proposed.pageNumber }
+      : {}),
+    ...(proposed.sheetName !== undefined
+      ? { sheetName: proposed.sheetName }
+      : {}),
+    ...(proposed.rowCount !== undefined ? { rowCount: proposed.rowCount } : {}),
+    ...(proposed.columnCount !== undefined
+      ? { columnCount: proposed.columnCount }
+      : {}),
+  };
+  return next;
+}
+
+/**
+ * Collect ONLY the fields the engineer actually changed for an edit_accept:
+ * changed nonblank title/description/severity/rationale, a finite changed
+ * confidence, and an edited proposedEvidence. Unchanged or blank fields are
+ * omitted so the server keeps authority over everything else.
+ */
+function buildDeltaEditedFields(
+  candidate: DeltaCandidate,
+  state: DeltaCandidateDecisionState
+): DeltaEditedFields {
+  const editedFields: DeltaEditedFields = {};
+  const title = state.title.trim();
+  if (title !== "" && title !== candidate.title) editedFields.title = title;
+  const description = state.description.trim();
+  if (description !== "" && description !== candidate.description) {
+    editedFields.description = description;
+  }
+  const severity = state.severity.trim();
+  if (severity !== "" && severity !== candidate.severity) {
+    editedFields.severity = severity;
+  }
+  const rationale = state.rationale.trim();
+  if (rationale !== "" && rationale !== (candidate.rationale ?? "")) {
+    editedFields.rationale = rationale;
+  }
+  const confidenceText = state.confidence.trim();
+  if (confidenceText !== "") {
+    const confidence = Number(confidenceText);
+    if (Number.isFinite(confidence) && confidence !== candidate.confidence) {
+      editedFields.confidence = confidence;
+    }
+  }
+  const proposedEvidence = buildDeltaEditedProposedEvidence(candidate, state);
+  if (proposedEvidence !== undefined) {
+    editedFields.proposedEvidence = proposedEvidence;
+  }
+  return editedFields;
+}
+
+/**
+ * Build one minimal review decision: candidateId + action, a trimmed nonblank
+ * note, and editedFields only for edit_accept. No authority or provenance
+ * field ever rides along.
+ */
+function buildDeltaReviewDecision(
+  candidate: DeltaCandidate,
+  state: DeltaCandidateDecisionState,
+  action: DeltaReviewAction
+): DeltaReviewDecision {
+  const decision: DeltaReviewDecision = { candidateId: candidate.id, action };
+  const note = state.note.trim();
+  if (note !== "") decision.note = note;
+  if (action === "edit_accept") {
+    decision.editedFields = buildDeltaEditedFields(candidate, state);
+  }
+  return decision;
+}
+
+/**
+ * Compact engineer review controls for ONE pending candidate, kept beside the
+ * candidate's proposal and decision context. The action select drives whether
+ * the edit_accept fields show; the long proposal/table editing sits inside a
+ * details block so the default view stays scannable.
+ */
+function DeltaPendingCandidateControls({
+  candidate,
+  state,
+  disabled,
+  onChange,
+}: {
+  candidate: DeltaCandidate;
+  state: DeltaCandidateDecisionState;
+  disabled: boolean;
+  onChange: (next: DeltaCandidateDecisionState) => void;
+}) {
+  const proposed = candidate.proposedEvidence;
+  const update = (patch: Partial<DeltaCandidateDecisionState>): void =>
+    onChange({ ...state, ...patch });
+  return (
+    <div
+      data-testid={`delta-review-controls-${candidate.id}`}
+      className="mt-2 space-y-2 border-t border-[var(--border)] pt-2"
+    >
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col text-xs text-text-tertiary">
+          Decision
+          <select
+            data-testid={`delta-action-${candidate.id}`}
+            value={state.action}
+            disabled={disabled}
+            onChange={(e) =>
+              update({ action: e.target.value as "" | DeltaReviewAction })
+            }
+            className={FIELD}
+          >
+            <option value="">no decision</option>
+            <option value="accept">accept</option>
+            <option value="reject">reject</option>
+            <option value="edit_accept">edit and accept</option>
+            <option value="waive">waive</option>
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-1 flex-col text-xs text-text-tertiary">
+          Note (required to waive)
+          <textarea
+            data-testid={`delta-note-${candidate.id}`}
+            value={state.note}
+            disabled={disabled}
+            onChange={(e) => update({ note: e.target.value })}
+            rows={2}
+            className={FIELD}
+          />
+        </label>
+      </div>
+      {state.action === "edit_accept" && (
+        <div
+          data-testid={`delta-edit-${candidate.id}`}
+          className="space-y-2 rounded-button bg-bg-card p-2"
+        >
+          <p className="text-xs text-text-tertiary">
+            Edit the AI/engineer proposal before accepting (a proposal for
+            review, not authority).
+          </p>
+          <label className="flex flex-col text-xs text-text-tertiary">
+            Title
+            <input
+              type="text"
+              data-testid={`delta-edit-title-${candidate.id}`}
+              value={state.title}
+              disabled={disabled}
+              onChange={(e) => update({ title: e.target.value })}
+              className={FIELD}
+            />
+          </label>
+          <label className="flex flex-col text-xs text-text-tertiary">
+            Description
+            <textarea
+              data-testid={`delta-edit-description-${candidate.id}`}
+              value={state.description}
+              disabled={disabled}
+              onChange={(e) => update({ description: e.target.value })}
+              rows={2}
+              className={FIELD}
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Severity
+              <input
+                type="text"
+                data-testid={`delta-edit-severity-${candidate.id}`}
+                value={state.severity}
+                disabled={disabled}
+                onChange={(e) => update({ severity: e.target.value })}
+                className={FIELD}
+              />
+            </label>
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Confidence
+              <input
+                type="text"
+                data-testid={`delta-edit-confidence-${candidate.id}`}
+                value={state.confidence}
+                disabled={disabled}
+                onChange={(e) => update({ confidence: e.target.value })}
+                className={FIELD}
+              />
+            </label>
+          </div>
+          <label className="flex flex-col text-xs text-text-tertiary">
+            Rationale
+            <textarea
+              data-testid={`delta-edit-rationale-${candidate.id}`}
+              value={state.rationale}
+              disabled={disabled}
+              onChange={(e) => update({ rationale: e.target.value })}
+              rows={2}
+              className={FIELD}
+            />
+          </label>
+          {proposed !== undefined && (
+            <details data-testid={`delta-edit-proposed-${candidate.id}`}>
+              <summary className="cursor-pointer text-xs text-text-secondary">
+                Edit proposed evidence (proposal for review)
+              </summary>
+              {proposed.evidenceKind === "rfp_document_text_chunk" ? (
+                <label className="mt-1 flex flex-col text-xs text-text-tertiary">
+                  Proposed text
+                  <textarea
+                    data-testid={`delta-edit-proposed-text-${candidate.id}`}
+                    value={state.proposedText}
+                    disabled={disabled}
+                    onChange={(e) => update({ proposedText: e.target.value })}
+                    rows={4}
+                    className={FIELD}
+                  />
+                </label>
+              ) : (
+                <label className="mt-1 flex flex-col text-xs text-text-tertiary">
+                  Proposed table rows (tab between cells, newline between rows)
+                  <textarea
+                    data-testid={`delta-edit-proposed-table-${candidate.id}`}
+                    value={state.proposedTableTsv}
+                    disabled={disabled}
+                    onChange={(e) =>
+                      update({ proposedTableTsv: e.target.value })
+                    }
+                    rows={4}
+                    className={FIELD}
+                  />
+                </label>
+              )}
+            </details>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -569,6 +959,15 @@ export default function ProjectRfpEvidencePage() {
   const [deltaDetail, setDeltaDetail] = useState<ExtractionDeltaDetail | null>(null);
   const [deltaDetailLoading, setDeltaDetailLoading] = useState(false);
   const [deltaDetailError, setDeltaDetailError] = useState<string | null>(null);
+
+  const [deltaDecisions, setDeltaDecisions] = useState<
+    Record<string, DeltaCandidateDecisionState>
+  >({});
+  const [deltaReviewPending, setDeltaReviewPending] = useState(false);
+  const [deltaReviewError, setDeltaReviewError] = useState<string | null>(null);
+  const [deltaReviewSuccess, setDeltaReviewSuccess] = useState<string | null>(
+    null
+  );
 
   const [packageList, setPackageList] = useState<EvidencePackageListResponse | null>(null);
   const [packageListLoading, setPackageListLoading] = useState(true);
@@ -705,6 +1104,11 @@ export default function ProjectRfpEvidencePage() {
           return;
         }
         setDeltaDetail({ artifact: body.artifact, delta: body.delta });
+        setDeltaDecisions(
+          initialDeltaDecisions({ artifact: body.artifact, delta: body.delta })
+        );
+        setDeltaReviewError(null);
+        setDeltaReviewSuccess(null);
       } catch {
         setDeltaDetailError(DELTA_DETAIL_ERROR);
       } finally {
@@ -899,6 +1303,44 @@ export default function ProjectRfpEvidencePage() {
     [baselineDetail, id, loadBaselineList, reviewNote, reviewPending]
   );
 
+  const submitDeltaReview = useCallback(async (): Promise<void> => {
+    if (deltaDetail === null || deltaReviewPending) return;
+    const decisions = deltaDetail.delta.candidates
+      .filter((candidate) => candidate.reviewStatus === "pending_review")
+      .flatMap((candidate) => {
+        const state = deltaDecisions[candidate.id];
+        if (state === undefined || state.action === "") return [];
+        return [buildDeltaReviewDecision(candidate, state, state.action)];
+      });
+    if (decisions.length === 0) return;
+    setDeltaReviewPending(true);
+    setDeltaReviewError(null);
+    setDeltaReviewSuccess(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${id}/rfp/artifacts/${deltaDetail.artifact.id}/extraction-delta/review`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decisions }),
+        }
+      );
+      if (!res.ok) {
+        setDeltaReviewError(DELTA_REVIEW_ERROR);
+        return;
+      }
+      setDeltaReviewSuccess(DELTA_REVIEW_SUCCESS);
+      setDeltaDecisions({});
+      setDeltaDetail(null);
+      setDeltaDetailError(null);
+      void loadDeltaList();
+    } catch {
+      setDeltaReviewError(DELTA_REVIEW_ERROR);
+    } finally {
+      setDeltaReviewPending(false);
+    }
+  }, [deltaDecisions, deltaDetail, deltaReviewPending, id, loadDeltaList]);
+
   function onApply(): void {
     void loadList({
       sourceFileId: sourceFileIdInput,
@@ -927,6 +1369,14 @@ export default function ProjectRfpEvidencePage() {
         (candidate) => candidate.reviewStatus !== "pending_review"
       )
     : [];
+  const deltaReviewable =
+    deltaDetail !== null &&
+    deltaDetail.artifact.status === "needs_review" &&
+    pendingDeltaCandidates.length > 0;
+  const selectedDeltaDecisionCount = pendingDeltaCandidates.filter((candidate) => {
+    const state = deltaDecisions[candidate.id];
+    return state !== undefined && state.action !== "";
+  }).length;
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-6">
@@ -1226,6 +1676,16 @@ export default function ProjectRfpEvidencePage() {
               Loading extraction delta detail...
             </p>
           )}
+          {deltaReviewError && (
+            <div data-testid="delta-review-error" className={`mt-2 ${ERROR_BOX}`}>
+              {deltaReviewError}
+            </div>
+          )}
+          {deltaReviewSuccess && (
+            <p data-testid="delta-review-success" className="mt-2 text-xs text-text-secondary">
+              {deltaReviewSuccess}
+            </p>
+          )}
           {!deltaDetail && !deltaDetailLoading && !deltaDetailError && (
             <p data-testid="delta-detail-empty" className="mt-1 text-xs text-text-tertiary">
               No extraction delta inspected yet.
@@ -1250,9 +1710,53 @@ export default function ProjectRfpEvidencePage() {
               ) : (
                 <ol data-testid="delta-pending-list" className="mt-2 space-y-2">
                   {pendingDeltaCandidates.map((candidate) => (
-                    <DeltaCandidateRow key={candidate.id} candidate={candidate} />
+                    <DeltaCandidateRow key={candidate.id} candidate={candidate}>
+                      {deltaReviewable && deltaDecisions[candidate.id] !== undefined && (
+                        <DeltaPendingCandidateControls
+                          candidate={candidate}
+                          state={deltaDecisions[candidate.id]}
+                          disabled={deltaReviewPending}
+                          onChange={(next) =>
+                            setDeltaDecisions((prev) => ({
+                              ...prev,
+                              [candidate.id]: next,
+                            }))
+                          }
+                        />
+                      )}
+                    </DeltaCandidateRow>
                   ))}
                 </ol>
+              )}
+              {deltaReviewable ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
+                  <p
+                    data-testid="delta-review-selected-count"
+                    className="text-xs text-text-secondary"
+                  >
+                    Selected decisions: {selectedDeltaDecisionCount}
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="delta-review-submit"
+                    disabled={
+                      deltaReviewPending || selectedDeltaDecisionCount === 0
+                    }
+                    onClick={() => void submitDeltaReview()}
+                    className={ACTION_BTN}
+                  >
+                    Record decisions
+                  </button>
+                </div>
+              ) : (
+                pendingDeltaCandidates.length > 0 && (
+                  <p
+                    data-testid="delta-review-readonly"
+                    className="mt-2 text-xs text-text-tertiary"
+                  >
+                    Status {deltaDetail.artifact.status} is not reviewable.
+                  </p>
+                )
               )}
               {decidedDeltaCandidates.length > 0 && (
                 <details data-testid="delta-decided" className="mt-2">
