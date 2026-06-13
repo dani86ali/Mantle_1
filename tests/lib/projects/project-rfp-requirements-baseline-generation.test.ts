@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type {
+  DraftRfpRequirementCandidatesFromEvidencePackageResult,
   DraftRfpRequirementCandidatesFromEvidenceResult,
   RfpCandidateDraftingExecutor,
   RfpDraftedRequirementCandidate,
@@ -18,13 +19,20 @@ import type {
 // test stays real. No DB store, file byte, parser, or AI module is touched
 // anywhere in this suite: the injected executor is a plain test function
 // that the mocked drafting service never invokes.
-const { mockDraftCandidates, mockCreateBaseline } = vi.hoisted(() => ({
+const {
+  mockDraftCandidates,
+  mockDraftCandidatesFromPackage,
+  mockCreateBaseline,
+} = vi.hoisted(() => ({
   mockDraftCandidates: vi.fn(),
+  mockDraftCandidatesFromPackage: vi.fn(),
   mockCreateBaseline: vi.fn(),
 }));
 
 vi.mock("@/lib/projects/project-rfp-requirements-candidate-drafting", () => ({
   draftRfpRequirementCandidatesFromEvidence: mockDraftCandidates,
+  draftRfpRequirementCandidatesFromEvidencePackage:
+    mockDraftCandidatesFromPackage,
 }));
 vi.mock("@/lib/projects/project-rfp-requirements-baseline", () => ({
   createRfpRequirementsBaselineDraft: mockCreateBaseline,
@@ -32,16 +40,21 @@ vi.mock("@/lib/projects/project-rfp-requirements-baseline", () => ({
 
 import {
   generateRfpRequirementsBaselineDraftFromEvidence,
+  generateRfpRequirementsBaselineDraftFromEvidencePackage,
   type GenerateRfpRequirementsBaselineDraftFromEvidenceInput,
+  type GenerateRfpRequirementsBaselineDraftFromEvidencePackageInput,
+  type GenerateRfpRequirementsBaselineDraftFromEvidencePackageResult,
   type GenerateRfpRequirementsBaselineDraftFromEvidenceResult,
   type RfpBaselineGenerationCreationBlockedResult,
   type RfpBaselineGenerationDraftingBlockedResult,
+  type RfpBaselineGenerationPackageDraftingBlockedResult,
 } from "@/lib/projects/project-rfp-requirements-baseline-generation";
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const PROJECT = "proj-rfp-1";
 const PACKAGE_A = "art-input-package-1";
 const PACKAGE_B = "art-input-package-2";
+const EVIDENCE_PACKAGE = "art-evidence-package-1";
 const FILE_RFP = "file-rfp-1";
 const FILE_BOQ = "file-boq-1";
 const EV_TEXT = "evidence-text-1";
@@ -102,6 +115,24 @@ function makeInputPackageSummary(
   };
 }
 
+function makeEvidencePackageSummary(
+  overrides: Partial<RfpRequirementsBaselineArtifactSummary> = {}
+): RfpRequirementsBaselineArtifactSummary {
+  return {
+    id: EVIDENCE_PACKAGE,
+    projectId: PROJECT,
+    stageId: "intake_package_review",
+    type: "evidence_package",
+    status: "approved",
+    version: 4,
+    sourceFileIds: [FILE_RFP, FILE_BOQ],
+    sourceArtifactIds: [PACKAGE_A],
+    createdAt: TS1,
+    updatedAt: TS2,
+    ...overrides,
+  };
+}
+
 /** Sanitized candidates exactly as the drafting service would return them. */
 function makeCandidates(): RfpDraftedRequirementCandidate[] {
   return [
@@ -134,6 +165,24 @@ function makeDraftingOk(): DraftingOk {
     evidenceCount: 3,
     sourceFileIds: [FILE_RFP, FILE_BOQ],
     sourceArtifactIds: [PACKAGE_A, PACKAGE_B],
+  };
+}
+
+type PackageDraftingOk = Extract<
+  DraftRfpRequirementCandidatesFromEvidencePackageResult,
+  { status: "ok" }
+>;
+
+function makePackageDraftingOk(): PackageDraftingOk {
+  return {
+    status: "ok",
+    project: makeProjectSummary(),
+    evidencePackageArtifactId: EVIDENCE_PACKAGE,
+    candidates: makeCandidates(),
+    candidateCount: 2,
+    evidenceCount: 3,
+    sourceFileIds: [FILE_RFP, FILE_BOQ],
+    sourceArtifactIds: [PACKAGE_A],
   };
 }
 
@@ -227,6 +276,39 @@ function makeDraftingBlockedResults(): RfpBaselineGenerationDraftingBlockedResul
   ];
 }
 
+/** One representative member of every non-ok package-drafting status. */
+function makePackageDraftingBlockedResults(): RfpBaselineGenerationPackageDraftingBlockedResult[] {
+  return [
+    { status: "not_found" },
+    {
+      status: "wrong_mode",
+      project: { ...makeProjectSummary(), mode: "quick_bom" },
+    },
+    { status: "evidence_package_artifact_not_found" },
+    {
+      status: "artifact_not_evidence_package",
+      artifact: makeEvidencePackageSummary({ type: "input_package" }),
+    },
+    {
+      status: "evidence_package_not_approved",
+      artifact: makeEvidencePackageSummary({ status: "needs_review" }),
+    },
+    {
+      status: "invalid_evidence_package_payload",
+      artifact: makeEvidencePackageSummary(),
+    },
+    {
+      status: "evidence_package_empty",
+      artifact: makeEvidencePackageSummary(),
+    },
+    { status: "drafting_failed", error: "candidate_drafting_failed" },
+    {
+      status: "invalid_candidate_output",
+      errors: ["candidates[0] cites unknown evidence ID: evidence-bogus-1."],
+    },
+  ];
+}
+
 /** One representative member of every non-ok baseline-create status. */
 function makeCreationBlockedResults(): RfpBaselineGenerationCreationBlockedResult[] {
   return [
@@ -277,8 +359,24 @@ function generate(
   });
 }
 
+function generatePackage(
+  overrides: Partial<GenerateRfpRequirementsBaselineDraftFromEvidencePackageInput> = {}
+): Promise<GenerateRfpRequirementsBaselineDraftFromEvidencePackageResult> {
+  return generateRfpRequirementsBaselineDraftFromEvidencePackage({
+    tenantId: TENANT,
+    projectId: PROJECT,
+    evidencePackageArtifactId: EVIDENCE_PACKAGE,
+    requestedBy: REQUESTED_BY,
+    executor: makeExecutor(),
+    ...overrides,
+  });
+}
+
 beforeEach(() => {
   mockDraftCandidates.mockReset().mockResolvedValue(makeDraftingOk());
+  mockDraftCandidatesFromPackage
+    .mockReset()
+    .mockResolvedValue(makePackageDraftingOk());
   mockCreateBaseline.mockReset().mockResolvedValue(makeCreationOk());
 });
 
@@ -328,6 +426,44 @@ describe("generateRfpRequirementsBaselineDraftFromEvidence - drafting phase inpu
   });
 });
 
+describe("generateRfpRequirementsBaselineDraftFromEvidencePackage - package drafting phase input", () => {
+  it("calls package-based candidate drafting with evidencePackageArtifactId and no raw evidenceIds", async () => {
+    const executor = makeExecutor();
+
+    await generatePackage({ executor });
+
+    expect(mockDraftCandidatesFromPackage).toHaveBeenCalledTimes(1);
+    expect(mockDraftCandidates).not.toHaveBeenCalled();
+    const draftingInput = mockDraftCandidatesFromPackage.mock.calls[0][0];
+    expect(draftingInput).toEqual({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      evidencePackageArtifactId: EVIDENCE_PACKAGE,
+      requestedBy: REQUESTED_BY,
+      executor,
+    });
+    expect(draftingInput.executor).toBe(executor);
+    expect(Object.keys(draftingInput).sort()).toEqual([
+      "evidencePackageArtifactId",
+      "executor",
+      "projectId",
+      "requestedBy",
+      "tenantId",
+    ]);
+    expect("evidenceIds" in draftingInput).toBe(false);
+  });
+
+  it("runs package candidate drafting strictly before baseline creation", async () => {
+    await generatePackage();
+
+    expect(mockDraftCandidatesFromPackage).toHaveBeenCalledTimes(1);
+    expect(mockCreateBaseline).toHaveBeenCalledTimes(1);
+    expect(
+      mockDraftCandidatesFromPackage.mock.invocationCallOrder[0]
+    ).toBeLessThan(mockCreateBaseline.mock.invocationCallOrder[0]);
+  });
+});
+
 describe("candidate drafting blocked", () => {
   it("wraps every non-ok drafting status with phase candidate_drafting and never calls baseline creation", async () => {
     for (const blocked of makeDraftingBlockedResults()) {
@@ -365,6 +501,24 @@ describe("candidate drafting blocked", () => {
   });
 });
 
+describe("package candidate drafting blocked", () => {
+  it("wraps every non-ok package-drafting status with phase candidate_drafting and never calls baseline creation", async () => {
+    for (const blocked of makePackageDraftingBlockedResults()) {
+      mockDraftCandidatesFromPackage.mockReset().mockResolvedValue(blocked);
+      mockCreateBaseline.mockClear();
+
+      const result = await generatePackage();
+
+      expect(result).toEqual({
+        status: "blocked",
+        phase: "candidate_drafting",
+        drafting: blocked,
+      });
+      expect(mockCreateBaseline).not.toHaveBeenCalled();
+    }
+  });
+});
+
 describe("baseline creation phase input", () => {
   it("hands baseline creation the same tenant/project, trimmed createdBy, and exactly the drafted candidates", async () => {
     const draftingOk = makeDraftingOk();
@@ -392,6 +546,31 @@ describe("baseline creation phase input", () => {
   });
 });
 
+describe("package baseline creation phase input", () => {
+  it("hands baseline creation the sanitized package-drafted candidates only", async () => {
+    const draftingOk = makePackageDraftingOk();
+    mockDraftCandidatesFromPackage.mockReset().mockResolvedValue(draftingOk);
+
+    await generatePackage({ requestedBy: `  ${REQUESTED_BY}  ` });
+
+    expect(mockCreateBaseline).toHaveBeenCalledTimes(1);
+    const creationInput = mockCreateBaseline.mock.calls[0][0];
+    expect(creationInput).toEqual({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      createdBy: REQUESTED_BY,
+      candidates: draftingOk.candidates,
+    });
+    expect(creationInput.candidates).toBe(draftingOk.candidates);
+    expect(Object.keys(creationInput).sort()).toEqual([
+      "candidates",
+      "createdBy",
+      "projectId",
+      "tenantId",
+    ]);
+  });
+});
+
 describe("baseline creation blocked", () => {
   it("wraps every non-ok creation status with phase baseline_creation after a successful drafting phase", async () => {
     for (const blocked of makeCreationBlockedResults()) {
@@ -406,6 +585,24 @@ describe("baseline creation blocked", () => {
         creation: blocked,
       });
       expect(mockDraftCandidates).toHaveBeenCalledTimes(1);
+    }
+  });
+});
+
+describe("package baseline creation blocked", () => {
+  it("wraps every non-ok creation status with phase baseline_creation after successful package drafting", async () => {
+    for (const blocked of makeCreationBlockedResults()) {
+      mockDraftCandidatesFromPackage.mockClear();
+      mockCreateBaseline.mockReset().mockResolvedValue(blocked);
+
+      const result = await generatePackage();
+
+      expect(result).toEqual({
+        status: "blocked",
+        phase: "baseline_creation",
+        creation: blocked,
+      });
+      expect(mockDraftCandidatesFromPackage).toHaveBeenCalledTimes(1);
     }
   });
 });
@@ -483,6 +680,68 @@ describe("success", () => {
   });
 });
 
+describe("package success", () => {
+  it("returns the lean package ok read model with the evidence_package id", async () => {
+    const result = await generatePackage();
+
+    expect(result).toEqual({
+      status: "ok",
+      candidateCount: 2,
+      evidenceCount: 3,
+      evidencePackageArtifactId: EVIDENCE_PACKAGE,
+      sourceFileIds: [FILE_RFP, FILE_BOQ],
+      sourceArtifactIds: [PACKAGE_A],
+      artifact: makeArtifactSummary(),
+      payloadSummary: makePayloadSummary(),
+    });
+    expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+  });
+
+  it("exposes no package-drafted candidates, project summary, raw evidence IDs input, or tenant on the ok result", async () => {
+    const result = await generatePackage();
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(Object.keys(result).sort()).toEqual([
+      "artifact",
+      "candidateCount",
+      "evidenceCount",
+      "evidencePackageArtifactId",
+      "payloadSummary",
+      "sourceArtifactIds",
+      "sourceFileIds",
+      "status",
+    ]);
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain(TENANT);
+    expect(serialized).not.toContain("tenantId");
+    expect(serialized).not.toContain("CANDIDATE-TEXT");
+    expect(serialized).not.toContain("evidenceIds");
+  });
+
+  it("returns copies for the package ok result", async () => {
+    const draftingOk = makePackageDraftingOk();
+    const creationOk = makeCreationOk();
+    const draftingSnapshot = structuredClone(draftingOk);
+    const creationSnapshot = structuredClone(creationOk);
+    mockDraftCandidatesFromPackage.mockReset().mockResolvedValue(draftingOk);
+    mockCreateBaseline.mockReset().mockResolvedValue(creationOk);
+
+    const result = await generatePackage();
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    result.sourceFileIds.push("hacked-file");
+    result.sourceArtifactIds.push("hacked-artifact");
+    result.artifact.status = "approved";
+    result.artifact.sourceFileIds.push("hacked-file");
+    result.payloadSummary.requirementIds.push("RFP-REQ-999");
+
+    expect(draftingOk).toEqual(draftingSnapshot);
+    expect(creationOk).toEqual(creationSnapshot);
+  });
+});
+
 describe("service failures bubble unhidden", () => {
   it("bubbles a drafting service throw and never calls baseline creation", async () => {
     mockDraftCandidates
@@ -499,6 +758,17 @@ describe("service failures bubble unhidden", () => {
       .mockRejectedValue(new Error("artifact create failed"));
 
     await expect(generate()).rejects.toThrow("artifact create failed");
+  });
+
+  it("bubbles a package drafting service throw and never calls baseline creation", async () => {
+    mockDraftCandidatesFromPackage
+      .mockReset()
+      .mockRejectedValue(new Error("evidencePackageArtifactId is required."));
+
+    await expect(generatePackage()).rejects.toThrow(
+      "evidencePackageArtifactId is required."
+    );
+    expect(mockCreateBaseline).not.toHaveBeenCalled();
   });
 });
 

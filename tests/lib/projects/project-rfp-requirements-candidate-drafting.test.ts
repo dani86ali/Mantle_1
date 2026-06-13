@@ -37,7 +37,10 @@ vi.mock("@/lib/db/project-artifact-store", () => ({
 
 import {
   draftRfpRequirementCandidatesFromEvidence,
+  draftRfpRequirementCandidatesFromEvidencePackage,
   type DraftRfpRequirementCandidatesFromEvidenceInput,
+  type DraftRfpRequirementCandidatesFromEvidencePackageInput,
+  type DraftRfpRequirementCandidatesFromEvidencePackageResult,
   type DraftRfpRequirementCandidatesFromEvidenceResult,
   type RfpCandidateDraftingExecutor,
   type RfpCandidateDraftingExecutorInput,
@@ -56,6 +59,7 @@ const TENANT = "11111111-1111-1111-1111-111111111111";
 const PROJECT = "proj-rfp-1";
 const PACKAGE_A = "art-input-package-1";
 const PACKAGE_B = "art-input-package-2";
+const EVIDENCE_PACKAGE = "art-evidence-package-1";
 const FILE_RFP = "file-rfp-1";
 const FILE_BOQ = "file-boq-1";
 const EV_TEXT = "evidence-text-1";
@@ -176,6 +180,80 @@ function makeInputPackageArtifact(
   };
 }
 
+/** One approved final evidence_package artifact, with trap payload keys. */
+function makeEvidencePackageArtifact(
+  overrides: Partial<ProjectArtifact> = {}
+): ProjectArtifact {
+  return {
+    id: EVIDENCE_PACKAGE,
+    projectId: PROJECT,
+    stageId: "intake_package_review",
+    type: "evidence_package",
+    status: "approved",
+    version: 4,
+    payload: {
+      payloadKind: "rfp_evidence_package",
+      createdBy: REQUESTED_BY,
+      createdAt: TS2.toISOString(),
+      inputPackageArtifactId: PACKAGE_A,
+      evidenceCount: 2,
+      textChunkCount: 1,
+      tableEvidenceCount: 1,
+      sourceFileIds: [FILE_RFP, FILE_BOQ],
+      sourceArtifactIds: [PACKAGE_A],
+      evidence: [
+        {
+          evidenceId: EV_TEXT,
+          evidenceKind: TEXT_KIND,
+          sourceFileId: FILE_RFP,
+          inputPackageArtifactId: PACKAGE_A,
+          sourceFileName: "rfp.pdf",
+          sourceFileRole: "rfp",
+          chunkIndex: 1,
+          chunkCount: 1,
+          charCount: 54,
+          text: "PACKAGE-TEXT: supply access switching for all IDFs.",
+          documentMetrics: {
+            textCharCount: 54,
+            nonWhitespaceTextCharCount: 46,
+            tableCount: 1,
+            tableRowCount: 2,
+          },
+          storagePath: "C:/secret-store/package-text.json",
+          tenantId: TENANT,
+          pricing: { unitPrice: 1 },
+        },
+        {
+          evidenceId: EV_TABLE,
+          evidenceKind: TABLE_KIND,
+          sourceFileId: FILE_BOQ,
+          inputPackageArtifactId: PACKAGE_A,
+          sourceFileName: "boq.xlsx",
+          sourceFileRole: "boq",
+          tableId: TABLE_ID,
+          sheetName: "BoQ Sheet",
+          rowCount: 2,
+          columnCount: 2,
+          rows: [
+            ["PACKAGE-TABLE-CELL-A1", "1"],
+            ["PACKAGE-TABLE-CELL-A2", "2"],
+          ],
+          storagePath: "C:/secret-store/package-table.json",
+          tenantId: TENANT,
+          sku: "C9300X-48HX",
+        },
+      ],
+      storagePath: "C:/secret-store/package.json",
+      internalScratch: "PACKAGE-ARBITRARY-CONTENT",
+    },
+    sourceFileIds: [FILE_RFP, FILE_BOQ],
+    sourceArtifactIds: [PACKAGE_A],
+    createdAt: TS1,
+    updatedAt: TS2,
+    ...overrides,
+  };
+}
+
 /** A well-behaved minimal executor; gate tests assert it is never reached. */
 function makeValidExecutor() {
   return vi.fn(async () => ({
@@ -190,6 +268,19 @@ function draft(
     tenantId: TENANT,
     projectId: PROJECT,
     evidenceIds: [EV_TEXT, EV_TABLE],
+    requestedBy: REQUESTED_BY,
+    executor: makeValidExecutor(),
+    ...overrides,
+  });
+}
+
+function draftPackage(
+  overrides: Partial<DraftRfpRequirementCandidatesFromEvidencePackageInput> = {}
+): Promise<DraftRfpRequirementCandidatesFromEvidencePackageResult> {
+  return draftRfpRequirementCandidatesFromEvidencePackage({
+    tenantId: TENANT,
+    projectId: PROJECT,
+    evidencePackageArtifactId: EVIDENCE_PACKAGE,
     requestedBy: REQUESTED_BY,
     executor: makeValidExecutor(),
     ...overrides,
@@ -301,6 +392,7 @@ beforeEach(() => {
   artifactById = new Map([
     [PACKAGE_A, makeInputPackageArtifact(PACKAGE_A)],
     [PACKAGE_B, makeInputPackageArtifact(PACKAGE_B)],
+    [EVIDENCE_PACKAGE, makeEvidencePackageArtifact()],
   ]);
   mockGetProject.mockReset().mockResolvedValue(makeProject());
   mockGetEvidenceItem
@@ -594,6 +686,300 @@ describe("input package gates", () => {
       },
     ]);
     expect(executor).not.toHaveBeenCalled();
+  });
+});
+
+describe("evidence package authority path", () => {
+  it("throws on blank evidencePackageArtifactId before any store call", async () => {
+    for (const blank of ["", "   "]) {
+      const executor = makeValidExecutor();
+      await expect(
+        draftPackage({ evidencePackageArtifactId: blank, executor })
+      ).rejects.toThrow("evidencePackageArtifactId is required.");
+      expect(executor).not.toHaveBeenCalled();
+    }
+    expectNoStoreCalls();
+  });
+
+  it("returns evidence_package_not_approved and never calls the executor", async () => {
+    artifactById.set(
+      EVIDENCE_PACKAGE,
+      makeEvidencePackageArtifact({ status: "needs_review" })
+    );
+    const executor = makeValidExecutor();
+
+    const result = await draftPackage({ executor });
+
+    expect(result).toEqual({
+      status: "evidence_package_not_approved",
+      artifact: {
+        id: EVIDENCE_PACKAGE,
+        projectId: PROJECT,
+        stageId: "intake_package_review",
+        type: "evidence_package",
+        status: "needs_review",
+        version: 4,
+        sourceFileIds: [FILE_RFP, FILE_BOQ],
+        sourceArtifactIds: [PACKAGE_A],
+        createdAt: TS1.toISOString(),
+        updatedAt: TS2.toISOString(),
+      },
+    });
+    expect(mockGetEvidenceItem).not.toHaveBeenCalled();
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("returns artifact_not_evidence_package for the wrong artifact type or stage", async () => {
+    const variants: Array<Partial<ProjectArtifact>> = [
+      { type: "input_package" },
+      { stageId: "requirements_baseline_review" },
+    ];
+    for (const variant of variants) {
+      artifactById.set(EVIDENCE_PACKAGE, makeEvidencePackageArtifact(variant));
+      const executor = makeValidExecutor();
+
+      const result = await draftPackage({ executor });
+
+      expect(result.status).toBe("artifact_not_evidence_package");
+      expect(mockGetEvidenceItem).not.toHaveBeenCalled();
+      expect(executor).not.toHaveBeenCalled();
+    }
+  });
+
+  it("returns invalid_evidence_package_payload for malformed package payload identity or kind", async () => {
+    const basePayload = makeEvidencePackageArtifact().payload as Record<
+      string,
+      unknown
+    >;
+    const baseEvidence = basePayload.evidence as Array<Record<string, unknown>>;
+    const invalidPayloads: Record<string, unknown>[] = [
+      { ...basePayload, payloadKind: "rfp_input_package" },
+      { ...basePayload, evidence: "not-an-array" },
+      { ...basePayload, evidence: [42] },
+      {
+        ...basePayload,
+        evidence: [{ ...baseEvidence[0], evidenceKind: "boq_line_item" }],
+      },
+      {
+        ...basePayload,
+        evidence: [{ ...baseEvidence[0], evidenceId: "   " }],
+      },
+      {
+        ...basePayload,
+        evidence: [
+          baseEvidence[0],
+          { ...baseEvidence[1], evidenceId: baseEvidence[0].evidenceId },
+        ],
+      },
+      {
+        ...basePayload,
+        evidence: [{ ...baseEvidence[0], sourceFileId: "" }],
+      },
+      {
+        ...basePayload,
+        evidence: [{ ...baseEvidence[0], inputPackageArtifactId: null }],
+      },
+    ];
+
+    for (const payload of invalidPayloads) {
+      artifactById.set(
+        EVIDENCE_PACKAGE,
+        makeEvidencePackageArtifact({ payload })
+      );
+      const executor = makeValidExecutor();
+
+      const result = await draftPackage({ executor });
+
+      expect(result.status).toBe("invalid_evidence_package_payload");
+      expect(mockGetEvidenceItem).not.toHaveBeenCalled();
+      expect(executor).not.toHaveBeenCalled();
+    }
+  });
+
+  it("returns evidence_package_empty for a valid package payload with no evidence", async () => {
+    const basePayload = makeEvidencePackageArtifact().payload as Record<
+      string,
+      unknown
+    >;
+    artifactById.set(
+      EVIDENCE_PACKAGE,
+      makeEvidencePackageArtifact({
+        payload: { ...basePayload, evidence: [] },
+      })
+    );
+    const executor = makeValidExecutor();
+
+    const result = await draftPackage({ executor });
+
+    expect(result.status).toBe("evidence_package_empty");
+    expect(mockGetEvidenceItem).not.toHaveBeenCalled();
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("hands the executor copied whitelisted entries from the evidence_package payload only", async () => {
+    const artifact = makeEvidencePackageArtifact();
+    artifactById.set(EVIDENCE_PACKAGE, artifact);
+    const payloadSnapshot = structuredClone(artifact.payload);
+    let capturedInput: RfpCandidateDraftingExecutorInput | undefined;
+    const executor = vi.fn(
+      async (executorInput: RfpCandidateDraftingExecutorInput) => {
+        capturedInput = structuredClone(executorInput);
+        executorInput.evidencePackageArtifactId = "hacked-package";
+        executorInput.sourceFileIds.push("hacked-file");
+        executorInput.sourceArtifactIds.push("hacked-artifact");
+        const first = executorInput.evidence[0];
+        if (first.evidenceKind === TEXT_KIND) first.text = "HACKED-TEXT";
+        const second = executorInput.evidence[1];
+        if (second.evidenceKind === TABLE_KIND) {
+          second.rows[0].push("HACKED-CELL");
+          second.rows.push(["HACKED-ROW"]);
+        }
+        return {
+          candidates: [
+            { text: "Package requirement.", evidenceIds: [EV_TEXT, EV_TABLE] },
+          ],
+        };
+      }
+    );
+
+    const result = await draftPackage({ executor });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(mockGetEvidenceItem).not.toHaveBeenCalled();
+    expect(executor).toHaveBeenCalledTimes(1);
+    expect(capturedInput).toMatchObject({
+      requestedBy: REQUESTED_BY,
+      evidencePackageArtifactId: EVIDENCE_PACKAGE,
+      sourceFileIds: [FILE_RFP, FILE_BOQ],
+      sourceArtifactIds: [PACKAGE_A],
+    });
+    expect(capturedInput?.evidence).toStrictEqual([
+      {
+        evidenceId: EV_TEXT,
+        evidenceKind: TEXT_KIND,
+        sourceFileId: FILE_RFP,
+        inputPackageArtifactId: PACKAGE_A,
+        sourceFileName: "rfp.pdf",
+        sourceFileRole: "rfp",
+        chunkIndex: 1,
+        chunkCount: 1,
+        charCount: 54,
+        text: "PACKAGE-TEXT: supply access switching for all IDFs.",
+      },
+      {
+        evidenceId: EV_TABLE,
+        evidenceKind: TABLE_KIND,
+        sourceFileId: FILE_BOQ,
+        inputPackageArtifactId: PACKAGE_A,
+        sourceFileName: "boq.xlsx",
+        sourceFileRole: "boq",
+        tableId: TABLE_ID,
+        sheetName: "BoQ Sheet",
+        rowCount: 2,
+        columnCount: 2,
+        rows: [
+          ["PACKAGE-TABLE-CELL-A1", "1"],
+          ["PACKAGE-TABLE-CELL-A2", "2"],
+        ],
+      },
+    ]);
+    expect(artifact.payload).toEqual(payloadSnapshot);
+    expect(result.sourceFileIds).toEqual([FILE_RFP, FILE_BOQ]);
+    expect(result.sourceArtifactIds).toEqual([PACKAGE_A]);
+
+    const serializedInput = JSON.stringify(capturedInput);
+    for (const leak of [
+      TENANT,
+      "tenantId",
+      "storagePath",
+      "secret-store",
+      "documentMetrics",
+      "PACKAGE-ARBITRARY-CONTENT",
+      "unitPrice",
+      "C9300X-48HX",
+    ]) {
+      expect(serializedInput).not.toContain(leak);
+    }
+  });
+
+  it("rejects candidate citations outside the approved evidence_package", async () => {
+    const executor = vi.fn(async () => ({
+      candidates: [
+        {
+          text: "Package requirement.",
+          evidenceIds: [EV_TEXT, EV_TEXT_B, "ghost-evidence"],
+        },
+      ],
+    }));
+
+    const result = await draftPackage({ executor });
+
+    expect(result).toEqual({
+      status: "invalid_candidate_output",
+      errors: [
+        `candidates[0] cites unknown evidence ID: ${EV_TEXT_B}.`,
+        "candidates[0] cites unknown evidence ID: ghost-evidence.",
+      ],
+    });
+  });
+
+  it("returns a lean result without raw package evidence, table rows, or executor raw fields", async () => {
+    const executor = vi.fn(async () => ({
+      candidates: [
+        {
+          text: "  Package requirement.  ",
+          evidenceIds: [EV_TEXT, EV_TABLE, EV_TEXT],
+          category: "technical",
+          priority: "mandatory",
+          id: "model-made-id",
+          tenantId: TENANT,
+          sku: "C9300X-48HX",
+          payload: { secret: "EXECUTOR-RAW-SECRET" },
+        },
+      ],
+    }));
+
+    const result = await draftPackage({ executor });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result).toEqual({
+      status: "ok",
+      project: {
+        id: PROJECT,
+        name: "STC RFP Bid",
+        customerName: "STC",
+        mode: "rfp",
+        createdAt: TS1.toISOString(),
+        updatedAt: TS2.toISOString(),
+      },
+      evidencePackageArtifactId: EVIDENCE_PACKAGE,
+      candidates: [
+        {
+          text: "Package requirement.",
+          evidenceIds: [EV_TEXT, EV_TABLE],
+          category: "technical",
+          priority: "mandatory",
+        },
+      ],
+      candidateCount: 1,
+      evidenceCount: 2,
+      sourceFileIds: [FILE_RFP, FILE_BOQ],
+      sourceArtifactIds: [PACKAGE_A],
+    });
+    const serialized = JSON.stringify(result);
+    for (const leak of [
+      TENANT,
+      "tenantId",
+      "PACKAGE-TEXT",
+      "PACKAGE-TABLE-CELL",
+      "EXECUTOR-RAW-SECRET",
+      "model-made-id",
+      "C9300X-48HX",
+    ]) {
+      expect(serialized).not.toContain(leak);
+    }
   });
 });
 

@@ -71,6 +71,25 @@ const INPUT_PACKAGE_STAGE_ID: ProjectArtifact["stageId"] =
   "intake_package_review";
 
 /**
+ * The only artifact type / stage accepted as the approved final evidence
+ * authority by the evidence-package drafting path. The evidence_package is
+ * the human-approved final RFP evidence package, the only evidence authority
+ * requirements generation may build on.
+ */
+const EVIDENCE_PACKAGE_ARTIFACT_TYPE: ProjectArtifact["type"] =
+  "evidence_package";
+const EVIDENCE_PACKAGE_STAGE_ID: ProjectArtifact["stageId"] =
+  "intake_package_review";
+
+/**
+ * The payload discriminator every approved evidence_package payload carries.
+ * Restated locally (never imported) so the evidence-package draft and
+ * inspection modules stay out of this contract's module graph; the static
+ * purity test pins the import list to exactly five modules.
+ */
+const RFP_EVIDENCE_PACKAGE_PAYLOAD_KIND = "rfp_evidence_package";
+
+/**
  * The two persisted RFP extraction evidence kinds draftable here. Defined
  * locally on purpose (exactly like the baseline draft service): importing
  * them would pull the extraction/persistence write modules into this
@@ -183,6 +202,12 @@ export interface RfpCandidateDraftingExecutorInput {
   sourceFileIds: string[];
   /** Unique approved input_package artifact ids in first-seen evidence order. */
   sourceArtifactIds: string[];
+  /**
+   * Present only on the evidence-package drafting path: the exact approved
+   * evidence_package artifact id whose payload these entries were copied from.
+   * The raw-evidence path omits it entirely.
+   */
+  evidencePackageArtifactId?: string;
 }
 
 /**
@@ -239,6 +264,58 @@ export type DraftRfpRequirementCandidatesFromEvidenceResult =
       sourceArtifactIds: string[];
     };
 
+/** Input for {@link draftRfpRequirementCandidatesFromEvidencePackage}. */
+export interface DraftRfpRequirementCandidatesFromEvidencePackageInput {
+  tenantId: string;
+  projectId: string;
+  /** The exact APPROVED final evidence_package artifact to draft from. */
+  evidencePackageArtifactId: string;
+  requestedBy: string;
+  executor: RfpCandidateDraftingExecutor;
+}
+
+/**
+ * Discriminated result of
+ * {@link draftRfpRequirementCandidatesFromEvidencePackage}. The evidence
+ * gates differ from the raw-evidence path (one approved evidence_package
+ * artifact, not many ProjectEvidence rows), so it carries its own statuses;
+ * the drafting/sanitization tail is shared.
+ */
+export type DraftRfpRequirementCandidatesFromEvidencePackageResult =
+  | { status: "not_found" }
+  | { status: "wrong_mode"; project: RfpCandidateDraftingProjectSummary }
+  | { status: "evidence_package_artifact_not_found" }
+  | {
+      status: "artifact_not_evidence_package";
+      artifact: RfpCandidateDraftingArtifactSummary;
+    }
+  | {
+      status: "evidence_package_not_approved";
+      artifact: RfpCandidateDraftingArtifactSummary;
+    }
+  | {
+      status: "invalid_evidence_package_payload";
+      artifact: RfpCandidateDraftingArtifactSummary;
+    }
+  | {
+      status: "evidence_package_empty";
+      artifact: RfpCandidateDraftingArtifactSummary;
+    }
+  | { status: "drafting_failed"; error: "candidate_drafting_failed" }
+  | { status: "invalid_candidate_output"; errors: string[] }
+  | {
+      status: "ok";
+      project: RfpCandidateDraftingProjectSummary;
+      /** The approved evidence_package the entries were copied from. */
+      evidencePackageArtifactId: string;
+      candidates: RfpDraftedRequirementCandidate[];
+      candidateCount: number;
+      /** Count of sanitized evidence entries read from the package payload. */
+      evidenceCount: number;
+      sourceFileIds: string[];
+      sourceArtifactIds: string[];
+    };
+
 function isRfpRequirementCategory(
   value: string
 ): value is RfpRequirementCategory {
@@ -286,6 +363,33 @@ function asOptionalNumber(value: unknown): number | undefined {
 /** Read one optional string content field; omitted when not a string. */
 function asOptionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+/** True for a plain object record; arrays and null are not records. */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** A payload value as a plain record; {} when it is anything else. */
+function toRecord(value: unknown): Record<string, unknown> {
+  return isPlainRecord(value) ? value : {};
+}
+
+/** Unique nonblank strings in first-seen order; fresh array, input untouched. */
+function uniqueNonblankInOrder(values: readonly string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (value === "" || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+/** Nonblank string check used for package-payload identifier fields. */
+function isNonblankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
 }
 
 /**
@@ -404,6 +508,86 @@ function toExecutorEvidence(
     charCount: asCount(content.charCount),
     text: asString(content.text),
   };
+}
+
+/**
+ * Build one fresh whitelisted executor entry from a stored evidence_package
+ * payload entry. Mirrors {@link toExecutorEvidence} but reads an untyped
+ * stored payload record instead of a ProjectEvidenceItem: it copies the same
+ * per-kind whitelist (identifiers, locator metadata, and the drafting body -
+ * text or a copied rows matrix) and degrades malformed content fields to safe
+ * fallbacks ("" / 0 / omitted optionals). The kind is an internal invariant:
+ * payload validation has already guaranteed one of the two extraction kinds.
+ * A tenantId, storage path, document-metrics block, or any other arbitrary
+ * payload key is never copied; the stored rows matrix is copied, never
+ * aliased.
+ */
+function packageEntryToExecutorEvidence(
+  entry: Record<string, unknown>
+): RfpCandidateDraftingEvidence {
+  const kind = entry.evidenceKind;
+  if (!isRfpExtractionEvidenceKind(asString(kind))) {
+    throw new Error(
+      `Evidence package entry kind is not draftable: ${String(kind)}.`
+    );
+  }
+  const sourceFileName = asOptionalString(entry.sourceFileName);
+  const sourceFileRole = asOptionalString(entry.sourceFileRole);
+  if (kind === RFP_TABLE_EVIDENCE_KIND) {
+    const pageNumber = asOptionalNumber(entry.pageNumber);
+    const sheetName = asOptionalString(entry.sheetName);
+    return {
+      evidenceId: asString(entry.evidenceId),
+      evidenceKind: RFP_TABLE_EVIDENCE_KIND,
+      sourceFileId: asString(entry.sourceFileId),
+      inputPackageArtifactId: asString(entry.inputPackageArtifactId),
+      ...(sourceFileName !== undefined ? { sourceFileName } : {}),
+      ...(sourceFileRole !== undefined ? { sourceFileRole } : {}),
+      tableId: asString(entry.tableId),
+      ...(pageNumber !== undefined ? { pageNumber } : {}),
+      ...(sheetName !== undefined ? { sheetName } : {}),
+      rowCount: asCount(entry.rowCount),
+      columnCount: asCount(entry.columnCount),
+      rows: toRowsMatrix(entry.rows),
+    };
+  }
+  return {
+    evidenceId: asString(entry.evidenceId),
+    evidenceKind: RFP_TEXT_CHUNK_EVIDENCE_KIND,
+    sourceFileId: asString(entry.sourceFileId),
+    inputPackageArtifactId: asString(entry.inputPackageArtifactId),
+    ...(sourceFileName !== undefined ? { sourceFileName } : {}),
+    ...(sourceFileRole !== undefined ? { sourceFileRole } : {}),
+    chunkIndex: asCount(entry.chunkIndex),
+    chunkCount: asCount(entry.chunkCount),
+    charCount: asCount(entry.charCount),
+    text: asString(entry.text),
+  };
+}
+
+/**
+ * Validate the untyped payload evidence array enough that executor entries
+ * cannot silently invent identity or kind. Content fields still degrade by
+ * whitelist copy (text -> "", rows -> []), but evidenceKind/evidenceId,
+ * sourceFileId, and inputPackageArtifactId must be explicit nonblank strings,
+ * and evidenceId must be unique within the package.
+ */
+function isValidEvidencePackageEntryList(
+  value: unknown
+): value is Record<string, unknown>[] {
+  if (!Array.isArray(value)) return false;
+  const seenEvidenceIds = new Set<string>();
+  for (const entry of value) {
+    if (!isPlainRecord(entry)) return false;
+    const kind = entry.evidenceKind;
+    if (!isRfpExtractionEvidenceKind(asString(kind))) return false;
+    if (!isNonblankString(entry.evidenceId)) return false;
+    if (seenEvidenceIds.has(entry.evidenceId)) return false;
+    seenEvidenceIds.add(entry.evidenceId);
+    if (!isNonblankString(entry.sourceFileId)) return false;
+    if (!isNonblankString(entry.inputPackageArtifactId)) return false;
+  }
+  return true;
 }
 
 /** Outcome of one executor-output sanitization pass. */
@@ -721,5 +905,155 @@ export async function draftRfpRequirementCandidatesFromEvidence(
     evidenceCount: loadedEvidence.length,
     sourceFileIds: sourceFileIds.slice(),
     sourceArtifactIds: packageIds.slice(),
+  };
+}
+
+/**
+ * Draft candidate requirements from exactly ONE approved final
+ * evidence_package artifact instead of raw ProjectEvidence ids. The approved
+ * evidence_package is the only RFP evidence authority requirements generation
+ * may build on, so this path reads the evidence entries ONLY from the
+ * artifact payload's evidence array - it never consults the evidence store.
+ * Throws deterministic programmer errors before any store call: nonblank
+ * projectId, nonblank evidencePackageArtifactId, nonblank requestedBy, and a
+ * function executor. Gates in order, tenant scoped: project exists, rfp mode,
+ * the exact artifact exists, it is type evidence_package at stage
+ * intake_package_review, it is approved, its payload is a valid
+ * rfp_evidence_package shape (discriminator plus an array of plain-object
+ * entries), and that evidence array is nonempty - each failing gate returns a
+ * lean summary and never calls the executor. The executor receives only fresh
+ * whitelisted copies of the package evidence entries (text body or a copied
+ * rows matrix, never a storage path, document-metrics block, tenantId, or
+ * arbitrary payload key) plus a lean project summary, the unique source-file /
+ * input-package ids, and the evidence_package id. An executor throw maps to
+ * drafting_failed with a fixed error code; its thrown detail is never exposed.
+ * Executor output is sanitized exactly as the raw-evidence path sanitizes it,
+ * and a candidate may cite only an evidence id present in the approved package
+ * payload; any unknown citation fails invalid_candidate_output. On success the
+ * result is lean and serializable: sanitized candidates plus identifier/count
+ * fields only - never a raw evidence body, never table rows, never the
+ * executor's raw output. Inputs and the loaded artifact are never mutated;
+ * store failures bubble unhidden.
+ */
+export async function draftRfpRequirementCandidatesFromEvidencePackage(
+  input: DraftRfpRequirementCandidatesFromEvidencePackageInput
+): Promise<DraftRfpRequirementCandidatesFromEvidencePackageResult> {
+  if (typeof input.projectId !== "string" || input.projectId.trim() === "") {
+    throw new Error("projectId is required.");
+  }
+  if (
+    typeof input.evidencePackageArtifactId !== "string" ||
+    input.evidencePackageArtifactId.trim() === ""
+  ) {
+    throw new Error("evidencePackageArtifactId is required.");
+  }
+  if (
+    typeof input.requestedBy !== "string" ||
+    input.requestedBy.trim() === ""
+  ) {
+    throw new Error("requestedBy is required.");
+  }
+  if (typeof input.executor !== "function") {
+    throw new Error("executor is required.");
+  }
+  const requestedBy = input.requestedBy.trim();
+  const { tenantId, projectId, evidencePackageArtifactId } = input;
+
+  const project = await getProjectById(tenantId, projectId);
+  if (project === null) return { status: "not_found" };
+  if (project.mode !== "rfp") {
+    return { status: "wrong_mode", project: toProjectSummary(project) };
+  }
+
+  const artifact = await getProjectArtifactById(
+    tenantId,
+    projectId,
+    evidencePackageArtifactId
+  );
+  if (artifact === null) {
+    return { status: "evidence_package_artifact_not_found" };
+  }
+  if (
+    artifact.type !== EVIDENCE_PACKAGE_ARTIFACT_TYPE ||
+    artifact.stageId !== EVIDENCE_PACKAGE_STAGE_ID
+  ) {
+    return {
+      status: "artifact_not_evidence_package",
+      artifact: toArtifactSummary(artifact),
+    };
+  }
+  if (artifact.status !== "approved") {
+    return {
+      status: "evidence_package_not_approved",
+      artifact: toArtifactSummary(artifact),
+    };
+  }
+
+  // Read evidence ONLY from the approved package payload; the evidence store
+  // is never consulted on this path.
+  const payload = toRecord(artifact.payload);
+  const payloadEvidence = payload.evidence;
+  if (
+    payload.payloadKind !== RFP_EVIDENCE_PACKAGE_PAYLOAD_KIND ||
+    !isValidEvidencePackageEntryList(payloadEvidence)
+  ) {
+    return {
+      status: "invalid_evidence_package_payload",
+      artifact: toArtifactSummary(artifact),
+    };
+  }
+  if (payloadEvidence.length === 0) {
+    return {
+      status: "evidence_package_empty",
+      artifact: toArtifactSummary(artifact),
+    };
+  }
+
+  // One fresh whitelisted entry per stored payload entry, in stored order.
+  const evidence = payloadEvidence.map((entry) =>
+    packageEntryToExecutorEvidence(entry)
+  );
+  const evidenceCount = evidence.length;
+  const sourceFileIds = uniqueNonblankInOrder(
+    evidence.map((entry) => entry.sourceFileId)
+  );
+  const sourceArtifactIds = uniqueNonblankInOrder(
+    evidence.map((entry) => entry.inputPackageArtifactId)
+  );
+  // Every evidence id a candidate may cite comes from the approved package.
+  const packageEvidenceIds = new Set<string>();
+  for (const entry of evidence) packageEvidenceIds.add(entry.evidenceId);
+
+  // The executor gets its own copies; mutating them never reaches the stored
+  // artifact payload, this function's locals, or the returned result.
+  let rawOutput: unknown;
+  try {
+    rawOutput = await input.executor({
+      project: toProjectSummary(project),
+      evidence,
+      requestedBy,
+      sourceFileIds: sourceFileIds.slice(),
+      sourceArtifactIds: sourceArtifactIds.slice(),
+      evidencePackageArtifactId,
+    });
+  } catch {
+    // The thrown detail (provider error, prompt, stack) is never surfaced.
+    return { status: "drafting_failed", error: "candidate_drafting_failed" };
+  }
+
+  const sanitized = sanitizeExecutorOutput(rawOutput, packageEvidenceIds);
+  if (sanitized.errors.length > 0) {
+    return { status: "invalid_candidate_output", errors: sanitized.errors };
+  }
+
+  return {
+    status: "ok",
+    project: toProjectSummary(project),
+    evidencePackageArtifactId,
+    candidates: sanitized.candidates,
+    candidateCount: sanitized.candidates.length,
+    evidenceCount,
+    sourceFileIds: sourceFileIds.slice(),
+    sourceArtifactIds: sourceArtifactIds.slice(),
   };
 }

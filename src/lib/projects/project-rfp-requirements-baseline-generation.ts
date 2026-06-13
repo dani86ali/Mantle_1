@@ -39,8 +39,11 @@
  */
 import {
   draftRfpRequirementCandidatesFromEvidence,
+  draftRfpRequirementCandidatesFromEvidencePackage,
   type DraftRfpRequirementCandidatesFromEvidenceInput,
   type DraftRfpRequirementCandidatesFromEvidenceResult,
+  type DraftRfpRequirementCandidatesFromEvidencePackageInput,
+  type DraftRfpRequirementCandidatesFromEvidencePackageResult,
 } from "@/lib/projects/project-rfp-requirements-candidate-drafting";
 import {
   createRfpRequirementsBaselineDraft,
@@ -59,9 +62,24 @@ import {
 export type GenerateRfpRequirementsBaselineDraftFromEvidenceInput =
   DraftRfpRequirementCandidatesFromEvidenceInput;
 
+/**
+ * Input for {@link generateRfpRequirementsBaselineDraftFromEvidencePackage}:
+ * exactly the package-based drafting contract's input (tenantId, projectId,
+ * evidencePackageArtifactId, requestedBy, executor), aliased so the two stay
+ * in lockstep. No raw ProjectEvidence ids are accepted on this path.
+ */
+export type GenerateRfpRequirementsBaselineDraftFromEvidencePackageInput =
+  DraftRfpRequirementCandidatesFromEvidencePackageInput;
+
 /** Every candidate-drafting outcome that blocks baseline creation. */
 export type RfpBaselineGenerationDraftingBlockedResult = Exclude<
   DraftRfpRequirementCandidatesFromEvidenceResult,
+  { status: "ok" }
+>;
+
+/** Every package-based candidate-drafting outcome that blocks creation. */
+export type RfpBaselineGenerationPackageDraftingBlockedResult = Exclude<
+  DraftRfpRequirementCandidatesFromEvidencePackageResult,
   { status: "ok" }
 >;
 
@@ -95,6 +113,37 @@ export type GenerateRfpRequirementsBaselineDraftFromEvidenceResult =
       candidateCount: number;
       /** Count of unique loaded evidence rows handed to the executor. */
       evidenceCount: number;
+      sourceFileIds: string[];
+      sourceArtifactIds: string[];
+      artifact: RfpRequirementsBaselineArtifactSummary;
+      payloadSummary: RfpRequirementsBaselinePayloadSummary;
+    };
+
+/**
+ * Discriminated result of
+ * {@link generateRfpRequirementsBaselineDraftFromEvidencePackage}. Identical
+ * in shape to the raw-evidence result except the candidate_drafting block
+ * wraps the package-based drafting statuses and the ok result also carries
+ * the approved evidence_package id this draft was generated from.
+ */
+export type GenerateRfpRequirementsBaselineDraftFromEvidencePackageResult =
+  | {
+      status: "blocked";
+      phase: "candidate_drafting";
+      drafting: RfpBaselineGenerationPackageDraftingBlockedResult;
+    }
+  | {
+      status: "blocked";
+      phase: "baseline_creation";
+      creation: RfpBaselineGenerationCreationBlockedResult;
+    }
+  | {
+      status: "ok";
+      candidateCount: number;
+      /** Count of sanitized evidence entries read from the package payload. */
+      evidenceCount: number;
+      /** The approved evidence_package this draft was generated from. */
+      evidencePackageArtifactId: string;
       sourceFileIds: string[];
       sourceArtifactIds: string[];
       artifact: RfpRequirementsBaselineArtifactSummary;
@@ -178,6 +227,52 @@ export async function generateRfpRequirementsBaselineDraftFromEvidence(
     status: "ok",
     candidateCount: drafting.candidateCount,
     evidenceCount: drafting.evidenceCount,
+    sourceFileIds: drafting.sourceFileIds.slice(),
+    sourceArtifactIds: drafting.sourceArtifactIds.slice(),
+    artifact: copyArtifactSummary(creation.artifact),
+    payloadSummary: copyPayloadSummary(creation.payloadSummary),
+  };
+}
+
+/**
+ * Generate ONE reviewable requirements_baseline draft from an approved final
+ * evidence_package artifact by running package-based candidate drafting first
+ * and, only when it succeeds, the baseline draft service. This is the
+ * package-authority path: its input has no raw ProjectEvidence id list, and
+ * candidate drafting reads evidence bodies only from the approved
+ * evidence_package payload. This orchestrator still adds no stores, parsing,
+ * validation, sanitization, or persistence of its own; it composes the two
+ * services and returns copied summaries.
+ */
+export async function generateRfpRequirementsBaselineDraftFromEvidencePackage(
+  input: GenerateRfpRequirementsBaselineDraftFromEvidencePackageInput
+): Promise<GenerateRfpRequirementsBaselineDraftFromEvidencePackageResult> {
+  const drafting = await draftRfpRequirementCandidatesFromEvidencePackage({
+    tenantId: input.tenantId,
+    projectId: input.projectId,
+    evidencePackageArtifactId: input.evidencePackageArtifactId,
+    requestedBy: input.requestedBy,
+    executor: input.executor,
+  });
+  if (drafting.status !== "ok") {
+    return { status: "blocked", phase: "candidate_drafting", drafting };
+  }
+
+  const creation = await createRfpRequirementsBaselineDraft({
+    tenantId: input.tenantId,
+    projectId: input.projectId,
+    createdBy: input.requestedBy.trim(),
+    candidates: drafting.candidates,
+  });
+  if (creation.status !== "ok") {
+    return { status: "blocked", phase: "baseline_creation", creation };
+  }
+
+  return {
+    status: "ok",
+    candidateCount: drafting.candidateCount,
+    evidenceCount: drafting.evidenceCount,
+    evidencePackageArtifactId: drafting.evidencePackageArtifactId,
     sourceFileIds: drafting.sourceFileIds.slice(),
     sourceArtifactIds: drafting.sourceArtifactIds.slice(),
     artifact: copyArtifactSummary(creation.artifact),
