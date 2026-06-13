@@ -1,6 +1,6 @@
 /**
  * Evidence: the Cisco collaboration / Room Kit EQX approved SKU scope is a pure,
- * import-free, same-SKU recognition helper. It exports exactly the five approved
+ * import-free, same-SKU recognition helper. It exports exactly the 33 approved
  * collaboration SKUs as zero-price placeholder rows (NOT pricing authority), with
  * no replacement/substitution/config/child fields, returning fresh copies each
  * call.
@@ -26,14 +26,43 @@ const TEST_PATH = join(
 
 const APPROVED_SKUS = [
   "CS-KIT-EQX-C-K9",
-  "CS-KIT-EQX-FSK-C",
-  "CS-MIC-TABLE-J",
   "CON-SNT-CSKITEK9",
+  "CS-MIC-TABLE-J",
   "CON-SNT-CS5HEJMI",
+  "PWR-CORD-GBR-F",
+  "CAB-HDMI-MUL4K-9M",
+  "CAB-EQX-SCREENS",
+  "CS-CODEC-EQ-K9-",
+  "CS-RQUADCAM-",
+  "CS-PANO-DNAM4-",
+  "CS-EQX-SPK-",
+  "CS-EQX-BASS-",
+  "CS-EQX-FAN-",
+  "CS-EQX-CENTER-MOD-",
+  "CS-EQX-SIDE-MOD-",
+  "CS-EQX-FRAME-C-",
+  "CS-EQX-VESA-",
+  "PSU-12VDC-120W-",
+  "PSU-24VDC-270W-",
+  "CS-EQX-ANT-",
+  "CS-PWR-STRIP4-",
+  "PWR-CAB-INT-3.0M-",
+  "PWR-CAB-INT-0.22M-",
+  "CAB-ETH-5M-GR-",
+  "CAB-2HDMI-1.5M-GR-",
+  "CAB-ETH-1.5M-GR-",
+  "CAB-EQX-SPKR-",
+  "PWR-CAB-INT-1.45M-",
+  "CAB-CAT5E-12M-",
+  "CS-T10-TS-LX-",
+  "CS-EQX-FSK-ST-C-",
+  "CS-EQX-FSK-RC-C-",
+  "CS-KIT-EQX-FSK-C",
 ];
 
 describe("getCiscoCollaborationApprovedSkuScopeItems", () => {
-  it("exports exactly the five approved Cisco collaboration SKUs", () => {
+  it("exports exactly the 33 approved Cisco collaboration SKUs", () => {
+    expect(APPROVED_SKUS).toHaveLength(33);
     const items = getCiscoCollaborationApprovedSkuScopeItems();
     expect(Object.keys(items).sort()).toEqual([...APPROVED_SKUS].sort());
   });

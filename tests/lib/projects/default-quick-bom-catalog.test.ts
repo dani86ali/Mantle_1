@@ -26,17 +26,49 @@ const HONEYWELL_ONLY_SKUS = ["C9300X-48HX-A", "C9300L-24P-4X-A", "CW9178I-CFG"] 
 // A SKU that lives in the local mock catalog and must keep resolving from it.
 const LOCAL_SKU = "C9300-48P-E";
 const STANDALONE_OPTICS = ["SFP-10G-LR-S=", "SFP-10/25G-LR-S="] as const;
-// All five approved Cisco collaboration / Room Kit EQX SKUs must resolve same-SKU.
+// All 33 approved Cisco collaboration / Room Kit EQX SKUs must resolve same-SKU.
 const CISCO_COLLABORATION_SKUS = [
   "CS-KIT-EQX-C-K9",
-  "CS-KIT-EQX-FSK-C",
-  "CS-MIC-TABLE-J",
   "CON-SNT-CSKITEK9",
+  "CS-MIC-TABLE-J",
   "CON-SNT-CS5HEJMI",
+  "PWR-CORD-GBR-F",
+  "CAB-HDMI-MUL4K-9M",
+  "CAB-EQX-SCREENS",
+  "CS-CODEC-EQ-K9-",
+  "CS-RQUADCAM-",
+  "CS-PANO-DNAM4-",
+  "CS-EQX-SPK-",
+  "CS-EQX-BASS-",
+  "CS-EQX-FAN-",
+  "CS-EQX-CENTER-MOD-",
+  "CS-EQX-SIDE-MOD-",
+  "CS-EQX-FRAME-C-",
+  "CS-EQX-VESA-",
+  "PSU-12VDC-120W-",
+  "PSU-24VDC-270W-",
+  "CS-EQX-ANT-",
+  "CS-PWR-STRIP4-",
+  "PWR-CAB-INT-3.0M-",
+  "PWR-CAB-INT-0.22M-",
+  "CAB-ETH-5M-GR-",
+  "CAB-2HDMI-1.5M-GR-",
+  "CAB-ETH-1.5M-GR-",
+  "CAB-EQX-SPKR-",
+  "PWR-CAB-INT-1.45M-",
+  "CAB-CAT5E-12M-",
+  "CS-T10-TS-LX-",
+  "CS-EQX-FSK-ST-C-",
+  "CS-EQX-FSK-RC-C-",
+  "CS-KIT-EQX-FSK-C",
 ] as const;
-// Of those five, these two already live in the local mock catalog at a positive
-// price and must keep their local row (the zero-price scope must not override).
-const LOCAL_PRICED_COLLABORATION_SKUS = ["CS-MIC-TABLE-J", "CON-SNT-CS5HEJMI"] as const;
+// Of those 33, these already live in the local mock catalog at a positive price
+// and must keep their local row (the zero-price scope must not override).
+const LOCAL_PRICED_COLLABORATION_SKUS = [
+  "CS-MIC-TABLE-J",
+  "CON-SNT-CS5HEJMI",
+  "CAB-HDMI-MUL4K-9M",
+] as const;
 // All ten approved Cisco industrial switching / accessory SKUs must resolve same-SKU.
 const CISCO_INDUSTRIAL_SKUS = [
   "IEM-3500-14T2S=",
@@ -94,7 +126,7 @@ describe("getDefaultQuickBomCatalogLookupIndex", () => {
     expect(result.status).toBe("matched");
   });
 
-  it("resolves all five Cisco collaboration SKUs as exact same-SKU matches", () => {
+  it("resolves all 33 Cisco collaboration SKUs as exact same-SKU matches", () => {
     const index = getDefaultQuickBomCatalogLookupIndex();
     for (const sku of CISCO_COLLABORATION_SKUS) {
       const result = lookupCatalogSku(sku, index);

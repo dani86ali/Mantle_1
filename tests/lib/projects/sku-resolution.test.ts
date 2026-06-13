@@ -323,18 +323,50 @@ describe("buildSkuResolutionDraft", () => {
 });
 
 describe("buildSkuResolutionDraft - Cisco collaboration scope", () => {
-  // All five approved collaboration SKUs; CS-MIC-TABLE-J and CON-SNT-CS5HEJMI are
-  // already carried by the local mock catalog at a positive price, so the default
-  // catalog keeps those local rows and the zero-price scope only fills the other
-  // three. Assert that exact partition so precedence is explicit.
+  // All 33 approved collaboration SKUs; CS-MIC-TABLE-J, CON-SNT-CS5HEJMI, and
+  // CAB-HDMI-MUL4K-9M are already carried by the local mock catalog at a positive
+  // price, so the default catalog keeps those local rows and the zero-price scope
+  // only fills the other 30. Assert that exact partition so precedence is explicit.
   const CISCO_COLLABORATION_SKUS = [
     "CS-KIT-EQX-C-K9",
-    "CS-KIT-EQX-FSK-C",
-    "CS-MIC-TABLE-J",
     "CON-SNT-CSKITEK9",
+    "CS-MIC-TABLE-J",
     "CON-SNT-CS5HEJMI",
+    "PWR-CORD-GBR-F",
+    "CAB-HDMI-MUL4K-9M",
+    "CAB-EQX-SCREENS",
+    "CS-CODEC-EQ-K9-",
+    "CS-RQUADCAM-",
+    "CS-PANO-DNAM4-",
+    "CS-EQX-SPK-",
+    "CS-EQX-BASS-",
+    "CS-EQX-FAN-",
+    "CS-EQX-CENTER-MOD-",
+    "CS-EQX-SIDE-MOD-",
+    "CS-EQX-FRAME-C-",
+    "CS-EQX-VESA-",
+    "PSU-12VDC-120W-",
+    "PSU-24VDC-270W-",
+    "CS-EQX-ANT-",
+    "CS-PWR-STRIP4-",
+    "PWR-CAB-INT-3.0M-",
+    "PWR-CAB-INT-0.22M-",
+    "CAB-ETH-5M-GR-",
+    "CAB-2HDMI-1.5M-GR-",
+    "CAB-ETH-1.5M-GR-",
+    "CAB-EQX-SPKR-",
+    "PWR-CAB-INT-1.45M-",
+    "CAB-CAT5E-12M-",
+    "CS-T10-TS-LX-",
+    "CS-EQX-FSK-ST-C-",
+    "CS-EQX-FSK-RC-C-",
+    "CS-KIT-EQX-FSK-C",
   ] as const;
-  const LOCAL_PRICED_COLLABORATION_SKUS = ["CS-MIC-TABLE-J", "CON-SNT-CS5HEJMI"] as const;
+  const LOCAL_PRICED_COLLABORATION_SKUS = [
+    "CS-MIC-TABLE-J",
+    "CON-SNT-CS5HEJMI",
+    "CAB-HDMI-MUL4K-9M",
+  ] as const;
 
   function collaborationLines(): CanonicalBoqLine[] {
     return CISCO_COLLABORATION_SKUS.map((sku, i) => ({
@@ -349,7 +381,7 @@ describe("buildSkuResolutionDraft - Cisco collaboration scope", () => {
     }));
   }
 
-  it("default draft resolves the five collaboration SKUs to needs_review exact same-SKU suggestions", () => {
+  it("default draft resolves the 33 collaboration SKUs to needs_review exact same-SKU suggestions", () => {
     const { decisions, summary } = buildSkuResolutionDraft({ lines: collaborationLines() });
     expect(summary.catalogSource).toBe(DEFAULT_QUICK_BOM_CATALOG_SOURCE);
     for (let i = 0; i < decisions.length; i++) {
@@ -376,7 +408,7 @@ describe("buildSkuResolutionDraft - Cisco collaboration scope", () => {
     }
   });
 
-  it("scope-only catalog reports a zero-price suggestion count of five", () => {
+  it("scope-only catalog reports a zero-price suggestion count of 33", () => {
     const scopeIndex = buildCatalogLookupIndex(
       getCiscoCollaborationApprovedSkuScopeItems(),
       CISCO_COLLABORATION_APPROVED_SKU_SCOPE_PRICE_LIST_ID
@@ -385,18 +417,18 @@ describe("buildSkuResolutionDraft - Cisco collaboration scope", () => {
       lines: collaborationLines(),
       catalogIndex: scopeIndex,
     });
-    expect(summary.needsReviewCount).toBe(5);
-    expect(summary.exactSuggestionCount).toBe(5);
-    expect(summary.zeroPriceSuggestionCount).toBe(5);
+    expect(summary.needsReviewCount).toBe(33);
+    expect(summary.exactSuggestionCount).toBe(33);
+    expect(summary.zeroPriceSuggestionCount).toBe(33);
   });
 
-  it("default catalog zero-price count respects local precedence (only the three local mock misses)", () => {
+  it("default catalog zero-price count respects local precedence (only the 30 local mock misses)", () => {
     const { summary } = buildSkuResolutionDraft({ lines: collaborationLines() });
     const expectedZeroPrice =
       CISCO_COLLABORATION_SKUS.length - LOCAL_PRICED_COLLABORATION_SKUS.length;
-    expect(expectedZeroPrice).toBe(3);
+    expect(expectedZeroPrice).toBe(30);
     expect(summary.zeroPriceSuggestionCount).toBe(expectedZeroPrice);
-    expect(summary.exactSuggestionCount).toBe(5);
+    expect(summary.exactSuggestionCount).toBe(33);
   });
 });
 
