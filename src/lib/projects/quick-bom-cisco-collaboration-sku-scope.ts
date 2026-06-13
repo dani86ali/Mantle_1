@@ -3,7 +3,7 @@
  * (same-SKU recognition only).
  *
  * Exposes a flat catalog-shaped item map for exactly the five approved Cisco
- * collaboration SKUs needed by Marafiq-style BoQ processing (Room Kit EQX bundle,
+ * collaboration SKUs needed by mixed Cisco collaboration BoQ processing (Room Kit EQX bundle,
  * floor stand kit, table microphone, and their SNTC support lines). The local STC
  * mock catalog and the Honeywell sources miss several of these, so a default Quick
  * BoM SKU-resolution pass cannot recognize them without this scope. Adding them

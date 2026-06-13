@@ -3,8 +3,8 @@
  * scope (same-SKU recognition only).
  *
  * Exposes a flat catalog-shaped item map for exactly the ten approved Cisco
- * industrial switching / industrial accessory SKUs needed by Marafiq-style BoQ
- * processing (IE3500 rugged switch and its SNTC support line, IE-1000 industrial
+ * industrial switching / industrial accessory SKUs needed by mixed Cisco industrial
+ * switching BoQ processing (IE3500 rugged switch and its SNTC support line, IE-1000 industrial
  * switch and its SNTC support line, industrial DIN-rail power supplies, IoT
  * utilities recognition tokens, a UK power cord, and a DIN-rail rack mount kit).
  * The local STC mock catalog and the Honeywell sources miss most of these, so a
