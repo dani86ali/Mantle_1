@@ -26,6 +26,7 @@ import {
   createProjectQuickBomConfigurationExpansionDraft,
   type CreateProjectQuickBomConfigurationExpansionDraftInput,
 } from "@/lib/projects/project-quick-bom-config-expansion-draft";
+import * as coreModule from "@/lib/projects/project-boq-config-expansion-draft-core";
 import { getProjectById } from "@/lib/db/project-store";
 import {
   createProjectArtifactVersion,
@@ -754,32 +755,88 @@ describe("createProjectQuickBomConfigurationExpansionDraft - configuration autho
   });
 });
 
+describe("createProjectQuickBomConfigurationExpansionDraft - wrapper mode pinning", () => {
+  it("pins expectedMode to quick_bom so a non-quick_bom project is wrong_mode through the wrapper and writes nothing", async () => {
+    getProjectMock.mockResolvedValue(
+      makeProject({ mode: "rfp", name: "RFP Bid", customerName: "Acme" })
+    );
+
+    const result = await createProjectQuickBomConfigurationExpansionDraft(input());
+
+    expect(result.status).toBe("wrong_mode");
+    if (result.status !== "wrong_mode") throw new Error("unreachable");
+    expect(result.project.mode).toBe("rfp");
+    // The wrapper stops at the mode gate: no source artifact reads, no draft write.
+    expect(getArtifactMock).not.toHaveBeenCalled();
+    expect(createArtifactMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("module purity and surface (static source check)", () => {
   const SRC_PATH = join(
     process.cwd(),
     "src/lib/projects/project-quick-bom-config-expansion-draft.ts"
+  );
+  const CORE_PATH = join(
+    process.cwd(),
+    "src/lib/projects/project-boq-config-expansion-draft-core.ts"
   );
   const TEST_PATH = join(
     process.cwd(),
     "tests/lib/projects/project-quick-bom-config-expansion-draft.test.ts"
   );
   const source = readFileSync(SRC_PATH, "utf8");
+  const coreSource = readFileSync(CORE_PATH, "utf8");
 
-  it("imports the stores, the pure builder, the approved Honeywell pack, the config authority module, and the project/draft types", () => {
-    expect(source).toContain('from "@/lib/db/project-store"');
-    expect(source).toContain('from "@/lib/db/project-artifact-store"');
-    // Prompt 90 writes the artifact directly, so this IS a legitimate import here.
-    expect(source).toContain("createProjectArtifactVersion");
-    expect(source).toContain('from "@/lib/projects/config-expansion"');
-    expect(source).toContain('from "@/lib/projects/config-expansion-types"');
-    expect(source).toContain('from "@/lib/projects/honeywell-config-expansion-rule-pack"');
-    expect(source).toContain('from "@/lib/projects/honeywell-demo-config-authority"');
-    expect(source).toContain("getHoneywellDemoConfigAuthorityProfile");
-    expect(source).toContain("getHoneywellDemoConfigAuthorityForSku");
-    expect(source).toContain('from "@/types/project"');
+  it("the Quick wrapper imports the shared core (and project types only as needed)", () => {
+    expect(source).toContain(
+      'from "@/lib/projects/project-boq-config-expansion-draft-core"'
+    );
+    expect(source).toContain("createProjectBoqConfigurationExpansionDraftCore");
   });
 
-  it("does not import the reviewed-expansion service, the review helper, the runner, approvals, pricing, export, AI, catalog, engine, coordinator, or adapter modules", () => {
+  it("the Quick wrapper does not import the stores, builder, Honeywell pack, config authority, the artifact-write fn, pricing, export, AI, catalog, engine, coordinator, or adapter modules", () => {
+    for (const forbidden of [
+      'from "@/lib/db/project-store"',
+      'from "@/lib/db/project-artifact-store"',
+      "createProjectArtifactVersion",
+      'from "@/lib/projects/config-expansion"',
+      'from "@/lib/projects/config-expansion-types"',
+      'from "@/lib/projects/honeywell-config-expansion-rule-pack"',
+      'from "@/lib/projects/honeywell-demo-config-authority"',
+      'from "@/lib/projects/pricing"',
+      'from "@/lib/projects/priced-boq',
+      'from "@/lib/projects/mantle',
+      'from "@/lib/export',
+      'from "@/lib/adapters',
+      'from "@/lib/agent',
+      'from "@/lib/ai',
+      'from "@/lib/llm',
+      'from "@/lib/catalog',
+      'from "@/coordinator',
+      'from "@/engines',
+      "@anthropic-ai",
+      "@google/generative-ai",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
+  });
+
+  it("the core imports the stores, the pure builder, the approved Honeywell pack, the config authority module, and the project/draft types", () => {
+    expect(coreSource).toContain('from "@/lib/db/project-store"');
+    expect(coreSource).toContain('from "@/lib/db/project-artifact-store"');
+    // The core writes the artifact directly, so this IS a legitimate import here.
+    expect(coreSource).toContain("createProjectArtifactVersion");
+    expect(coreSource).toContain('from "@/lib/projects/config-expansion"');
+    expect(coreSource).toContain('from "@/lib/projects/config-expansion-types"');
+    expect(coreSource).toContain('from "@/lib/projects/honeywell-config-expansion-rule-pack"');
+    expect(coreSource).toContain('from "@/lib/projects/honeywell-demo-config-authority"');
+    expect(coreSource).toContain("getHoneywellDemoConfigAuthorityProfile");
+    expect(coreSource).toContain("getHoneywellDemoConfigAuthorityForSku");
+    expect(coreSource).toContain('from "@/types/project"');
+  });
+
+  it("the core does not import the reviewed-expansion service, the review helper, the runner, approvals, pricing, export, AI, catalog, engine, coordinator, or adapter modules", () => {
     for (const forbidden of [
       'from "@/lib/projects/config-expansion-artifact"',
       'from "@/lib/projects/config-expansion-review"',
@@ -802,19 +859,26 @@ describe("module purity and surface (static source check)", () => {
       "@anthropic-ai",
       "@google/generative-ai",
     ]) {
-      expect(source).not.toContain(forbidden);
+      expect(coreSource).not.toContain(forbidden);
     }
   });
 
-  it("exposes only the wrapper service as a runtime export", () => {
+  it("the Quick wrapper exposes only the wrapper service as a runtime export", () => {
     expect(Object.keys(serviceModule)).toEqual([
       "createProjectQuickBomConfigurationExpansionDraft",
     ]);
   });
 
-  it("keeps the source and test files ASCII-only", () => {
+  it("the core exposes only the core draft service as a runtime export", () => {
+    expect(Object.keys(coreModule)).toEqual([
+      "createProjectBoqConfigurationExpansionDraftCore",
+    ]);
+  });
+
+  it("keeps the wrapper, core, and test files ASCII-only", () => {
     const testSource = readFileSync(TEST_PATH, "utf8");
     expect(/[^\x00-\x7F]/.test(source)).toBe(false);
+    expect(/[^\x00-\x7F]/.test(coreSource)).toBe(false);
     expect(/[^\x00-\x7F]/.test(testSource)).toBe(false);
   });
 });
