@@ -25,6 +25,8 @@ const EXTRACTION_DELTA_REVIEW_URL =
 const EVIDENCE_PACKAGE_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/evidence-package`;
 const EVIDENCE_PACKAGE_ARTIFACT_ID = "art-ep-1";
 const EVIDENCE_PACKAGE_DETAIL_URL = `${EVIDENCE_PACKAGE_LIST_URL}/${EVIDENCE_PACKAGE_ARTIFACT_ID}`;
+const EVIDENCE_PACKAGE_REVIEW_URL =
+  `/api/projects/${PROJECT_ID}/rfp/artifacts/${EVIDENCE_PACKAGE_ARTIFACT_ID}/evidence-package/review`;
 
 // Persisted-content canaries. Both are smuggled into the lean list response
 // (which the read model would never carry) AND returned by the detail stubs.
@@ -681,6 +683,45 @@ function evidencePackageDetailResponse(): Record<string, unknown> {
   };
 }
 
+function evidencePackageDetailResponseWithStatus(status: string): Record<string, unknown> {
+  const response = evidencePackageDetailResponse();
+  response.artifact = {
+    ...(response.artifact as Record<string, unknown>),
+    status,
+  };
+  return response;
+}
+
+function evidencePackageReviewSuccessResponse(
+  decision: "approved" | "rejected" = "approved"
+): Record<string, unknown> {
+  const artifactStatus = decision === "approved" ? "approved" : "rejected";
+  return {
+    approval: {
+      id: `appr-${decision}`,
+      artifactId: EVIDENCE_PACKAGE_ARTIFACT_ID,
+      decision,
+    },
+    artifactStatus,
+    stageStatus: decision === "approved" ? "approved" : "in_progress",
+    artifact: evidencePackageArtifactSummary(),
+    ...(decision === "approved"
+      ? {
+          payloadSummary: {
+            payloadKind: "rfp_evidence_package",
+            inputPackageArtifactId: "art-ip-1",
+            evidenceCount: 2,
+            textChunkCount: 1,
+            tableEvidenceCount: 1,
+            sourceFileIds: ["file-rfp-1", "file-rfp-2"],
+            sourceArtifactIds: ["art-ip-1"],
+            extractionDeltaSourceArtifactIds: [],
+          },
+        }
+      : {}),
+  };
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -718,11 +759,10 @@ function stubFetch(
   return calls;
 }
 
-// Default: evidence list (with or without query), both evidence detail
-// endpoints, the baseline list/detail endpoints, and the baseline review and
-// generate POSTs all succeed. The review branch echoes the posted decision
-// back as the post-decision artifactStatus, like the real route; the
-// generate branch answers 201 like the real route.
+// Default: evidence list (with or without query), evidence/detail endpoints,
+// baseline/package list/detail endpoints, and the explicit review/generate
+// POSTs all succeed. Review branches echo the posted decision back as the
+// post-decision artifactStatus, like the real routes; generate answers 201.
 function stubDefault(): Recorded[] {
   return stubFetch((url, init) => {
     if (url === GENERATE_URL && init?.method === "POST") {
@@ -738,6 +778,14 @@ function stubDefault(): Recorded[] {
     }
     if (url === EXTRACTION_DELTA_REVIEW_URL && init?.method === "POST") {
       return jsonResponse(extractionDeltaReviewSuccessResponse());
+    }
+    if (url === EVIDENCE_PACKAGE_REVIEW_URL && init?.method === "POST") {
+      const raw = typeof init.body === "string" ? init.body : "{}";
+      const decision =
+        (JSON.parse(raw) as { decision?: string }).decision === "rejected"
+          ? "rejected"
+          : "approved";
+      return jsonResponse(evidencePackageReviewSuccessResponse(decision));
     }
     if (url === `${LIST_URL}/ev-text-1`) return jsonResponse(textDetailResponse());
     if (url === `${LIST_URL}/ev-table-1`) return jsonResponse(tableDetailResponse());
@@ -2304,6 +2352,176 @@ describe("ProjectRfpEvidencePage - evidence package detail", () => {
   });
 });
 
+describe("ProjectRfpEvidencePage - evidence package review", () => {
+  async function inspectPackage(): Promise<void> {
+    await screen.findByTestId(`ep-inspect-${EVIDENCE_PACKAGE_ARTIFACT_ID}`);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`ep-inspect-${EVIDENCE_PACKAGE_ARTIFACT_ID}`));
+    });
+    await screen.findByTestId("ep-detail-panel");
+  }
+
+  it("renders review controls for a needs_review package and approved POSTs exactly { decision }, clears the note, updates status, and reloads the package list", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await inspectPackage();
+
+    expect(screen.getByTestId("ep-review-note")).toBeInTheDocument();
+    expect(screen.getByTestId("ep-review-approve")).toBeEnabled();
+    expect(screen.getByTestId("ep-review-reject")).toBeEnabled();
+    expect(screen.queryByTestId("ep-review-readonly")).toBeNull();
+
+    fireEvent.change(screen.getByTestId("ep-review-note"), {
+      target: { value: "   " },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("ep-review-approve"));
+    });
+
+    const success = await screen.findByTestId("ep-review-success");
+    expect(success.textContent).toBe("Final evidence package approved.");
+    expect(screen.getByTestId("ep-detail-meta")).toHaveTextContent("approved");
+    expect(screen.queryByTestId("ep-review-note")).toBeNull();
+    expect(screen.queryByTestId("ep-review-approve")).toBeNull();
+    expect(screen.queryByTestId("ep-review-reject")).toBeNull();
+    expect(screen.getByTestId("ep-review-readonly")).toHaveTextContent("approved");
+
+    const deltaPosts = calls.filter((c) => c.url === EXTRACTION_DELTA_REVIEW_URL);
+    expect(deltaPosts).toHaveLength(0);
+    const posts = calls.filter((c) => c.method === "POST");
+    const packagePost = posts.find((c) => c.url === EVIDENCE_PACKAGE_REVIEW_URL);
+    expect(packagePost).toBeTruthy();
+    expect(packagePost!.contentType).toBe("application/json");
+    expect(packagePost!.body).toEqual({ decision: "approved" });
+    expect(Object.keys(packagePost!.body as Record<string, unknown>).sort()).toEqual([
+      "decision",
+    ]);
+    const bodyJson = JSON.stringify(packagePost!.body);
+    expect(bodyJson).not.toContain("artifactId");
+    expect(bodyJson).not.toContain("artifactStatus");
+    expect(bodyJson).not.toContain("payloadSummary");
+
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url === EVIDENCE_PACKAGE_LIST_URL)).toHaveLength(2)
+    );
+    expect(calls.filter((c) => c.url === EVIDENCE_PACKAGE_DETAIL_URL)).toHaveLength(1);
+    expect(calls.filter((c) => c.url === GENERATE_URL)).toHaveLength(0);
+  });
+
+  it("Reject with a padded note POSTs { decision: \"rejected\", note } trimmed and makes the loaded package read-only", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await inspectPackage();
+
+    fireEvent.change(screen.getByTestId("ep-review-note"), {
+      target: { value: "  package needs correction  " },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("ep-review-reject"));
+    });
+
+    const success = await screen.findByTestId("ep-review-success");
+    expect(success.textContent).toBe("Final evidence package rejected.");
+    expect(screen.getByTestId("ep-detail-meta")).toHaveTextContent("rejected");
+    expect(screen.getByTestId("ep-review-readonly")).toHaveTextContent("rejected");
+
+    const packagePost = calls.find(
+      (c) => c.method === "POST" && c.url === EVIDENCE_PACKAGE_REVIEW_URL
+    );
+    expect(packagePost).toBeTruthy();
+    expect(packagePost!.body).toEqual({
+      decision: "rejected",
+      note: "package needs correction",
+    });
+  });
+
+  it("treats decided and terminal evidence package statuses as read-only with no approve/reject controls", async () => {
+    const cases = ["approved", "rejected", "stale", "failed", "not_applicable", "missing"];
+    for (const status of cases) {
+      stubFetch((url) => {
+        if (url === EVIDENCE_PACKAGE_DETAIL_URL) {
+          return jsonResponse(evidencePackageDetailResponseWithStatus(status));
+        }
+        if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+        if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+        if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+        if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+        return jsonResponse({}, 404);
+      });
+      render(<ProjectRfpEvidencePage />);
+      await inspectPackage();
+
+      expect(screen.queryByTestId("ep-review-note"), status).toBeNull();
+      expect(screen.queryByTestId("ep-review-approve"), status).toBeNull();
+      expect(screen.queryByTestId("ep-review-reject"), status).toBeNull();
+      expect(screen.getByTestId("ep-review-readonly"), status).toHaveTextContent(status);
+      cleanup();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('renders exactly "Unable to review final evidence package." on a non-ok review response, keeping the loaded detail and note without reloading the package list', async () => {
+    const secret = "package-review-server-secret";
+    const calls = stubFetch((url, init) => {
+      if (url === EVIDENCE_PACKAGE_REVIEW_URL && init?.method === "POST") {
+        return jsonResponse({ code: "evidence_package_review_failed", error: secret }, 409);
+      }
+      if (url === EVIDENCE_PACKAGE_DETAIL_URL) return jsonResponse(evidencePackageDetailResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await inspectPackage();
+    const listCallCount = calls.filter((c) => c.url === EVIDENCE_PACKAGE_LIST_URL).length;
+
+    fireEvent.change(screen.getByTestId("ep-review-note"), {
+      target: { value: "  keep this note  " },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("ep-review-approve"));
+    });
+
+    const err = await screen.findByTestId("ep-review-error");
+    expect(err.textContent).toBe("Unable to review final evidence package.");
+    expect(document.body.textContent ?? "").not.toContain(secret);
+    expect(screen.queryByTestId("ep-review-success")).toBeNull();
+    expect(screen.getByTestId("ep-detail-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("ep-review-note")).toHaveValue("  keep this note  ");
+    expect(calls.filter((c) => c.url === EVIDENCE_PACKAGE_LIST_URL)).toHaveLength(
+      listCallCount
+    );
+  });
+
+  it("renders the exact package review error when the POST throws, without leaking the thrown detail", async () => {
+    const secret = "package-review-thrown-secret";
+    stubFetch((url, init) => {
+      if (url === EVIDENCE_PACKAGE_REVIEW_URL && init?.method === "POST") {
+        throw new Error(secret);
+      }
+      if (url === EVIDENCE_PACKAGE_DETAIL_URL) return jsonResponse(evidencePackageDetailResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await inspectPackage();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("ep-review-reject"));
+    });
+
+    const err = await screen.findByTestId("ep-review-error");
+    expect(err.textContent).toBe("Unable to review final evidence package.");
+    expect(document.body.textContent ?? "").not.toContain(secret);
+    expect(screen.getByTestId("ep-detail-panel")).toBeInTheDocument();
+  });
+});
+
 describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
   it("issues only default-GET fetches to the four inspection endpoints and never calls write or other RFP endpoints", async () => {
     const calls = stubDefault();
@@ -2548,20 +2766,24 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
     }
   });
 
-  it("permits exactly three POSTs - baseline generate, baseline review, and extraction-delta review - and no other write path", () => {
-    expect((source.match(/"POST"/g) ?? []).length).toBe(3);
-    expect((source.match(/method:/g) ?? []).length).toBe(3);
-    // Every /review occurrence is one of the two explicit review endpoints
+  it("permits exactly four POSTs - baseline generate, baseline review, extraction-delta review, and evidence-package review - and no other write path", () => {
+    expect((source.match(/"POST"/g) ?? []).length).toBe(4);
+    expect((source.match(/method:/g) ?? []).length).toBe(4);
+    // Every /review occurrence is one of the three explicit review endpoints
     // and every /generate occurrence is the requirements-baseline generate
     // endpoint; no arbitrary review, approvals, or generation path appears
     // anywhere in the page.
     const reviewMentions = source.match(/\/review/g) ?? [];
     const baselineReviewMentions = source.match(/requirements-baseline\/review/g) ?? [];
     const deltaReviewMentions = source.match(/extraction-delta\/review/g) ?? [];
+    const packageReviewMentions = source.match(/evidence-package\/review/g) ?? [];
     expect(baselineReviewMentions.length).toBeGreaterThanOrEqual(1);
     expect(deltaReviewMentions.length).toBeGreaterThanOrEqual(1);
+    expect(packageReviewMentions.length).toBeGreaterThanOrEqual(1);
     expect(reviewMentions.length).toBe(
-      baselineReviewMentions.length + deltaReviewMentions.length
+      baselineReviewMentions.length +
+        deltaReviewMentions.length +
+        packageReviewMentions.length
     );
     const generateMentions = source.match(/\/generate/g) ?? [];
     const baselineGenerateMentions =

@@ -249,6 +249,19 @@ interface EvidencePackageDetail {
   package: RfpEvidencePackageInspectionPackage;
 }
 
+/**
+ * Fields the page reads from the success response of
+ * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
+ * artifactStatus is the post-decision status; artifact is the pre-approval
+ * summary of the reviewed version, so artifactStatus wins when both exist.
+ */
+interface EvidencePackageReviewResponse {
+  artifactStatus?: RfpEvidencePackageInspectionArtifactSummary["status"];
+  artifact?: RfpEvidencePackageInspectionArtifactSummary;
+}
+
+type EvidencePackageReviewDecision = "approved" | "rejected";
+
 type PackageEvidence = RfpEvidencePackageInspectionPackage["evidence"][number];
 
 /** Exact UI copy required for the list/detail failure states. */
@@ -277,6 +290,11 @@ const DELTA_REVIEW_ERROR = "Unable to review extraction delta.";
 /** Exact UI copy required for the evidence-package failure states. */
 const PACKAGE_LIST_ERROR = "Unable to load final evidence packages.";
 const PACKAGE_DETAIL_ERROR = "Unable to load final evidence package detail.";
+
+/** Exact UI copy required for the evidence-package review outcome states. */
+const PACKAGE_APPROVE_SUCCESS = "Final evidence package approved.";
+const PACKAGE_REJECT_SUCCESS = "Final evidence package rejected.";
+const PACKAGE_REVIEW_ERROR = "Unable to review final evidence package.";
 
 const EMPTY_FILTERS: EvidenceFilters = {
   sourceFileId: "",
@@ -976,6 +994,10 @@ export default function ProjectRfpEvidencePage() {
   const [packageDetail, setPackageDetail] = useState<EvidencePackageDetail | null>(null);
   const [packageDetailLoading, setPackageDetailLoading] = useState(false);
   const [packageDetailError, setPackageDetailError] = useState<string | null>(null);
+  const [packageReviewNote, setPackageReviewNote] = useState("");
+  const [packageReviewPending, setPackageReviewPending] = useState(false);
+  const [packageReviewError, setPackageReviewError] = useState<string | null>(null);
+  const [packageReviewSuccess, setPackageReviewSuccess] = useState<string | null>(null);
 
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
@@ -1147,6 +1169,9 @@ export default function ProjectRfpEvidencePage() {
     async (artifactId: string): Promise<void> => {
       setPackageDetail(null);
       setPackageDetailError(null);
+      setPackageReviewNote("");
+      setPackageReviewError(null);
+      setPackageReviewSuccess(null);
       setPackageDetailLoading(true);
       try {
         const res = await fetch(`/api/projects/${id}/rfp/evidence-package/${artifactId}`);
@@ -1340,6 +1365,59 @@ export default function ProjectRfpEvidencePage() {
       setDeltaReviewPending(false);
     }
   }, [deltaDecisions, deltaDetail, deltaReviewPending, id, loadDeltaList]);
+
+  const submitPackageReview = useCallback(
+    async (decision: EvidencePackageReviewDecision): Promise<void> => {
+      if (packageDetail === null || packageReviewPending) return;
+      setPackageReviewPending(true);
+      setPackageReviewError(null);
+      setPackageReviewSuccess(null);
+      try {
+        const note = packageReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${packageDetail.artifact.id}/evidence-package/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(note === "" ? { decision } : { decision, note }),
+          }
+        );
+        const body = (await res
+          .json()
+          .catch(() => null)) as EvidencePackageReviewResponse | null;
+        if (!res.ok) {
+          setPackageReviewError(PACKAGE_REVIEW_ERROR);
+          return;
+        }
+        const responseArtifact = body?.artifact;
+        const responseStatus = body?.artifactStatus;
+        setPackageDetail((prev) => {
+          if (prev === null) return prev;
+          const artifact = responseArtifact ?? prev.artifact;
+          return {
+            artifact: { ...artifact, status: responseStatus ?? artifact.status },
+            package: prev.package,
+          };
+        });
+        setPackageReviewNote("");
+        setPackageReviewSuccess(
+          decision === "approved" ? PACKAGE_APPROVE_SUCCESS : PACKAGE_REJECT_SUCCESS
+        );
+        void loadPackageList();
+      } catch {
+        setPackageReviewError(PACKAGE_REVIEW_ERROR);
+      } finally {
+        setPackageReviewPending(false);
+      }
+    },
+    [
+      id,
+      loadPackageList,
+      packageDetail,
+      packageReviewNote,
+      packageReviewPending,
+    ]
+  );
 
   function onApply(): void {
     void loadList({
@@ -1860,6 +1938,16 @@ export default function ProjectRfpEvidencePage() {
               Loading final evidence package detail...
             </p>
           )}
+          {packageReviewError && (
+            <div data-testid="ep-review-error" className={`mt-2 ${ERROR_BOX}`}>
+              {packageReviewError}
+            </div>
+          )}
+          {packageReviewSuccess && (
+            <p data-testid="ep-review-success" className="mt-2 text-xs text-text-secondary">
+              {packageReviewSuccess}
+            </p>
+          )}
           {!packageDetail && !packageDetailLoading && !packageDetailError && (
             <p data-testid="ep-detail-empty" className="mt-1 text-xs text-text-tertiary">
               No final evidence package inspected yet.
@@ -1883,6 +1971,47 @@ export default function ProjectRfpEvidencePage() {
                   <PackageEvidenceView key={evidenceIndex} evidence={evidence} />
                 ))}
               </ol>
+              <div className="mt-3 border-t border-[var(--border)] pt-3">
+                {packageDetail.artifact.status === "needs_review" ? (
+                  <>
+                    <label className="flex flex-col text-xs text-text-tertiary">
+                      Review note (optional)
+                      <textarea
+                        data-testid="ep-review-note"
+                        value={packageReviewNote}
+                        onChange={(e) => setPackageReviewNote(e.target.value)}
+                        disabled={packageReviewPending}
+                        rows={3}
+                        className={FIELD}
+                      />
+                    </label>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        type="button"
+                        data-testid="ep-review-approve"
+                        disabled={packageReviewPending}
+                        onClick={() => void submitPackageReview("approved")}
+                        className={ACTION_BTN}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="ep-review-reject"
+                        disabled={packageReviewPending}
+                        onClick={() => void submitPackageReview("rejected")}
+                        className={PLAIN_BTN}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p data-testid="ep-review-readonly" className="text-xs text-text-tertiary">
+                    Status {packageDetail.artifact.status} is not reviewable.
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>
