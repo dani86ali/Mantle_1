@@ -32,11 +32,26 @@ const WRONG_TYPE_MESSAGE = "Artifact is not a sku_resolution artifact.";
 const INVALID_PAYLOAD_MESSAGE = "SKU resolution artifact payload is invalid.";
 
 /**
+ * Persisted reviewed SKU-resolution summary: the deterministic draft summary plus
+ * the two review-state counts added for unsupported-line hardening. A
+ * backward-compatible superset of {@link SkuResolutionDraftSummary} (every existing
+ * field is preserved); `manualCount`/`outOfScopeCount` track explicit non-priced
+ * classifications. No pricing fields.
+ */
+export type ReviewedSkuResolutionSummary = SkuResolutionDraftSummary & {
+  /** Lines explicitly classified as manual / third-party / non-Cisco. */
+  manualCount: number;
+  /** Lines explicitly excluded from Cisco Quick BoM pricing. */
+  outOfScopeCount: number;
+};
+
+/**
  * JSONB payload stored on the reviewed `sku_resolution` artifact. A type alias
  * (not an interface) so it carries an implicit index signature assignable to the
  * repository's `Record<string, unknown>` payload. Same shape as the unreviewed
- * draft payload, but decisions now carry human accept/reject state and the summary
- * reflects it (catalog/source counts preserved). No pricing fields.
+ * draft payload, but decisions now carry human accept/reject/manual/out_of_scope
+ * state and the summary reflects it (catalog/source counts preserved). No pricing
+ * fields.
  */
 export type ReviewedSkuResolutionArtifactPayload = {
   sourceNormalizedBoqArtifactId: string;
@@ -44,7 +59,7 @@ export type ReviewedSkuResolutionArtifactPayload = {
   sourceFileIds: string[];
   lineCount: number;
   decisions: SkuResolutionDecision[];
-  summary: SkuResolutionDraftSummary;
+  summary: ReviewedSkuResolutionSummary;
 };
 
 /** Input for {@link createReviewedSkuResolutionArtifact}. */
@@ -106,7 +121,7 @@ function parseSourcePayload(
     sourceFileIds,
     lineCount: typeof lineCount === "number" ? lineCount : decisions.length,
     decisions: decisions as SkuResolutionDecision[],
-    summary: summary as unknown as SkuResolutionDraftSummary,
+    summary: summary as unknown as ReviewedSkuResolutionSummary,
   };
 }
 
@@ -116,7 +131,8 @@ function parseSourcePayload(
  * into a fresh array, and emits FRESH decision objects with fresh suggestion
  * arrays (so the payload never aliases the source decisions, including untouched
  * rows). The summary preserves the source catalog/source counts and replaces the
- * review-state counts from the review result. Never mutates inputs.
+ * review-state counts (including the manual/out-of-scope counts) from the review
+ * result. Never mutates inputs.
  */
 export function buildReviewedSkuResolutionArtifactPayload(
   sourcePayload: ReviewedSkuResolutionArtifactPayload,
@@ -141,6 +157,8 @@ export function buildReviewedSkuResolutionArtifactPayload(
       acceptedCount: reviewResult.acceptedCount,
       rejectedCount: reviewResult.rejectedCount,
       unresolvedCount: reviewResult.unresolvedCount,
+      manualCount: reviewResult.manualCount,
+      outOfScopeCount: reviewResult.outOfScopeCount,
       exactSuggestionCount: sourcePayload.summary.exactSuggestionCount,
       normalizedSuggestionCount: sourcePayload.summary.normalizedSuggestionCount,
       ambiguousCount: sourcePayload.summary.ambiguousCount,
@@ -153,11 +171,12 @@ export function buildReviewedSkuResolutionArtifactPayload(
 /**
  * Persist explicit human SKU review actions as a new `sku_resolution` artifact
  * version: load the source artifact (throwing the exact missing/wrong-type/
- * invalid-payload messages), apply the accept/reject actions (bubbling review
- * errors unchanged, before any artifact exists), build the reviewed payload, and
- * create exactly one new `sku_resolution` artifact - `needs_review` while any
- * decision still needs review, otherwise `generated`. Returns the created
- * artifact, source artifact, payload, and review result. Does not mutate inputs.
+ * invalid-payload messages), apply the review actions (bubbling review errors
+ * unchanged, before any artifact exists), build the reviewed payload, and create
+ * exactly one new `sku_resolution` artifact - `needs_review` while any decision is
+ * still `needs_review` or `unresolved`, otherwise `generated` (every line then
+ * accepted/rejected/manual/out_of_scope). Returns the created artifact, source
+ * artifact, payload, and review result. Does not mutate inputs.
  */
 export async function createReviewedSkuResolutionArtifact(
   input: CreateReviewedSkuResolutionArtifactInput
@@ -188,7 +207,13 @@ export async function createReviewedSkuResolutionArtifact(
     tenantId,
     stageId: "sku_resolution",
     type: "sku_resolution",
-    status: payload.summary.needsReviewCount > 0 ? "needs_review" : "generated",
+    // An unresolved row is still undecided, so it keeps the artifact in review
+    // alongside any remaining needs_review rows; `generated` requires every line
+    // to be explicitly accepted/rejected/manual/out_of_scope.
+    status:
+      payload.summary.needsReviewCount > 0 || payload.summary.unresolvedCount > 0
+        ? "needs_review"
+        : "generated",
     payload,
     sourceFileIds: [...sourceArtifact.sourceFileIds],
     sourceArtifactIds: [sourceArtifact.id],

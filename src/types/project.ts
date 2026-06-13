@@ -117,13 +117,19 @@ export interface CanonicalBoqLine {
 /**
  * Current resolution state of a BoQ line's SKU - the row's state, not how a
  * match was produced (that lives on the suggestion's `source`). Pricing runs
- * only on rows with status `accepted`. (section 8)
+ * only on rows with status `accepted`. `manual` (a non-Cisco / third-party /
+ * manual-commercial line) and `out_of_scope` (a line intentionally excluded from
+ * Cisco Quick BoM pricing) are explicit human classifications for unsupported
+ * rows; like `rejected` and `unresolved` they are never priced and never carry
+ * an `acceptedSku`. (section 8)
  */
 export type SkuResolutionStatus =
   | "needs_review"
   | "accepted"
   | "rejected"
-  | "unresolved";
+  | "unresolved"
+  | "manual"
+  | "out_of_scope";
 
 /** A candidate SKU match. AI may suggest; it must never silently apply. (section 8) */
 export interface SkuResolutionSuggestion {

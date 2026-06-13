@@ -133,6 +133,19 @@ const rejectRow3: SkuResolutionReviewAction = {
   sourceRowNumber: 3,
   decidedBy: "engineer@stc.com",
 };
+// Row 4 is `unresolved` in the source payload; manual/out_of_scope may classify it.
+const outOfScopeRow4: SkuResolutionReviewAction = {
+  decision: "out_of_scope",
+  sourceFileId: "file-1",
+  sourceRowNumber: 4,
+  decidedBy: "engineer@stc.com",
+};
+const manualRow4: SkuResolutionReviewAction = {
+  decision: "manual",
+  sourceFileId: "file-1",
+  sourceRowNumber: 4,
+  decidedBy: "engineer@stc.com",
+};
 
 function input(
   actions: readonly SkuResolutionReviewAction[]
@@ -247,9 +260,17 @@ describe("createReviewedSkuResolutionArtifact - composition", () => {
     expect(createMock.mock.calls[0][0].status).toBe("needs_review");
   });
 
-  it("sets status generated when no decision still needs review", async () => {
-    // Both needs_review rows decided; row 4 stays unresolved (does not count).
+  it("keeps status needs_review while an unresolved decision remains, even with no needs_review left", async () => {
+    // Both needs_review rows decided, but row 4 stays unresolved -> still in review.
     await createReviewedSkuResolutionArtifact(input([acceptRow2, rejectRow3]));
+    expect(createMock.mock.calls[0][0].status).toBe("needs_review");
+  });
+
+  it("sets status generated when all rows are accepted/rejected/manual/out_of_scope", async () => {
+    // Row 2 accepted, row 3 rejected, row 4 (unresolved) classified out_of_scope.
+    await createReviewedSkuResolutionArtifact(
+      input([acceptRow2, rejectRow3, outOfScopeRow4])
+    );
     expect(createMock.mock.calls[0][0].status).toBe("generated");
   });
 
@@ -296,7 +317,36 @@ describe("createReviewedSkuResolutionArtifact - payload shape", () => {
       acceptedCount: 1,
       rejectedCount: 1,
       unresolvedCount: 1,
+      // New review-state counts are always present (zero when no such action ran).
+      manualCount: 0,
+      outOfScopeCount: 0,
     });
+  });
+
+  it("counts manual and out_of_scope classifications in the summary", async () => {
+    // Row 4 (unresolved) classified out_of_scope; row 2 accepted, row 3 rejected.
+    const { payload } = await createReviewedSkuResolutionArtifact(
+      input([acceptRow2, rejectRow3, outOfScopeRow4])
+    );
+    expect(payload.summary).toMatchObject({
+      needsReviewCount: 0,
+      acceptedCount: 1,
+      rejectedCount: 1,
+      unresolvedCount: 0,
+      manualCount: 0,
+      outOfScopeCount: 1,
+    });
+  });
+
+  it("classifies a needs_review row as manual without an acceptedSku", async () => {
+    // Reuse row 4 manual on the unresolved row alongside the two needs_review rows.
+    const { payload } = await createReviewedSkuResolutionArtifact(
+      input([acceptRow2, rejectRow3, manualRow4])
+    );
+    expect(payload.decisions[2].status).toBe("manual");
+    expect("acceptedSku" in payload.decisions[2]).toBe(false);
+    expect(payload.summary.manualCount).toBe(1);
+    expect(payload.summary.outOfScopeCount).toBe(0);
   });
 
   it("preserves the catalog/source counts from the source summary", async () => {
@@ -378,10 +428,32 @@ describe("buildReviewedSkuResolutionArtifactPayload", () => {
       acceptedCount: 0,
       rejectedCount: 0,
       unresolvedCount: 1,
+      manualCount: 0,
+      outOfScopeCount: 0,
     });
     expect(payload.lineCount).toBe(3);
     expect(payload.summary.totalLines).toBe(3);
     expect(payload.sourceFileIds).not.toBe(sourcePayload.sourceFileIds);
+  });
+
+  it("carries manual/out_of_scope counts from the review result and preserves catalog counts", () => {
+    const sourcePayload = makeSourcePayload();
+    const payload = buildReviewedSkuResolutionArtifactPayload(sourcePayload, {
+      decisions: sourcePayload.decisions,
+      appliedCount: 2,
+      needsReviewCount: 0,
+      acceptedCount: 0,
+      rejectedCount: 0,
+      unresolvedCount: 1,
+      manualCount: 1,
+      outOfScopeCount: 1,
+    });
+    expect(payload.summary.manualCount).toBe(1);
+    expect(payload.summary.outOfScopeCount).toBe(1);
+    // Existing catalog/source counts are still preserved verbatim.
+    expect(payload.summary.exactSuggestionCount).toBe(1);
+    expect(payload.summary.normalizedSuggestionCount).toBe(1);
+    expect(payload.summary.catalogSource).toBe("local_stc_historical_mock");
   });
 });
 

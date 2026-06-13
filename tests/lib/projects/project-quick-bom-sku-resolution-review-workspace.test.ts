@@ -618,6 +618,99 @@ describe("loadQuickBomSkuResolutionReviewWorkspace - related configured item dis
   });
 });
 
+describe("loadQuickBomSkuResolutionReviewWorkspace - manual and out_of_scope classifications", () => {
+  function classifiedPayload(): Record<string, unknown> {
+    return {
+      sourceNormalizedBoqArtifactId: "art-nb-7",
+      sourceNormalizedBoqArtifactVersion: 5,
+      sourceFileIds: ["file-1"],
+      lineCount: 4,
+      summary: {
+        totalLines: 4,
+        needsReviewCount: 1,
+        acceptedCount: 1,
+        rejectedCount: 0,
+        unresolvedCount: 0,
+        manualCount: 1,
+        outOfScopeCount: 1,
+      },
+      decisions: [
+        {
+          sourceFileId: "file-1",
+          sourceRowNumber: 2,
+          originalLineNumber: "L-1",
+          originalSku: "THIRD-PARTY-SKU",
+          status: "manual",
+          decidedBy: "engineer@stc.com",
+          decidedAt: "2026-05-22T10:00:00.000Z",
+          note: "third-party commercial line",
+          suggestions: [],
+        },
+        {
+          sourceFileId: "file-1",
+          sourceRowNumber: 3,
+          originalLineNumber: "L-2",
+          originalSku: "EXCLUDED-SKU",
+          status: "out_of_scope",
+          decidedBy: "engineer@stc.com",
+          suggestions: [],
+        },
+        {
+          sourceFileId: "file-1",
+          sourceRowNumber: 4,
+          originalLineNumber: "L-3",
+          originalSku: "WS-C3650-48FD-E",
+          status: "needs_review",
+          suggestions: [{ suggestedSku: "C9300-48P-A", source: "exact" }],
+        },
+        {
+          sourceFileId: "file-1",
+          sourceRowNumber: 5,
+          originalLineNumber: "L-4",
+          originalSku: "OLD-SKU",
+          status: "accepted",
+          acceptedSku: "NEW-SKU",
+          suggestions: [{ suggestedSku: "NEW-SKU", source: "normalized" }],
+        },
+      ],
+    };
+  }
+
+  it("parses and projects manual and out_of_scope line statuses without an acceptedSku", async () => {
+    getArtifactMock.mockResolvedValue(makeArtifact({ payload: classifiedPayload() }));
+    const result = await loadQuickBomSkuResolutionReviewWorkspace(TENANT, PROJECT, ARTIFACT_ID);
+    if (result.status !== "ok") throw new Error("expected ok");
+    const [manual, outOfScope] = result.review.lines;
+    expect(manual.status).toBe("manual");
+    expect(manual.note).toBe("third-party commercial line");
+    expect("acceptedSku" in manual).toBe(false);
+    expect(outOfScope.status).toBe("out_of_scope");
+    expect("acceptedSku" in outOfScope).toBe(false);
+  });
+
+  it("counts manual and out_of_scope lines in the deterministic review counts", async () => {
+    getArtifactMock.mockResolvedValue(makeArtifact({ payload: classifiedPayload() }));
+    const result = await loadQuickBomSkuResolutionReviewWorkspace(TENANT, PROJECT, ARTIFACT_ID);
+    if (result.status !== "ok") throw new Error("expected ok");
+    const { reviewSummary } = result.review;
+    expect(reviewSummary.totalLineCount).toBe(4);
+    expect(reviewSummary.manualCount).toBe(1);
+    expect(reviewSummary.outOfScopeCount).toBe(1);
+    expect(reviewSummary.needsReviewCount).toBe(1);
+    expect(reviewSummary.acceptedCount).toBe(1);
+    expect(reviewSummary.rejectedCount).toBe(0);
+    expect(reviewSummary.unresolvedCount).toBe(0);
+  });
+
+  it("surfaces manualCount and outOfScopeCount through the allowlisted payload summary", async () => {
+    getArtifactMock.mockResolvedValue(makeArtifact({ payload: classifiedPayload() }));
+    const result = await loadQuickBomSkuResolutionReviewWorkspace(TENANT, PROJECT, ARTIFACT_ID);
+    if (result.status !== "ok") throw new Error("expected ok");
+    expect(result.review.payloadSummary.summary.manualCount).toBe(1);
+    expect(result.review.payloadSummary.summary.outOfScopeCount).toBe(1);
+  });
+});
+
 describe("loadQuickBomSkuResolutionReviewWorkspace - static source purity", () => {
   const SRC_PATH = join(
     process.cwd(),

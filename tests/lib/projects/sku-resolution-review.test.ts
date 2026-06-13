@@ -61,6 +61,30 @@ function rejectAction(
   };
 }
 
+function manualAction(
+  overrides: Partial<Extract<SkuResolutionReviewAction, { decision: "manual" }>> = {}
+): SkuResolutionReviewAction {
+  return {
+    decision: "manual",
+    sourceFileId: "file-1",
+    sourceRowNumber: 2,
+    decidedBy: "engineer@stc.com",
+    ...overrides,
+  };
+}
+
+function outOfScopeAction(
+  overrides: Partial<Extract<SkuResolutionReviewAction, { decision: "out_of_scope" }>> = {}
+): SkuResolutionReviewAction {
+  return {
+    decision: "out_of_scope",
+    sourceFileId: "file-1",
+    sourceRowNumber: 2,
+    decidedBy: "engineer@stc.com",
+    ...overrides,
+  };
+}
+
 describe("getSkuResolutionDecisionKey", () => {
   it("is derived from sourceFileId and sourceRowNumber", () => {
     expect(getSkuResolutionDecisionKey({ sourceFileId: "f-9", sourceRowNumber: 42 })).toBe(
@@ -253,6 +277,87 @@ describe("applySkuResolutionReviewAction - reviewability guard", () => {
   });
 });
 
+describe("applySkuResolutionReviewAction - manual and out_of_scope", () => {
+  it("classifies a needs_review row as manual with no acceptedSku", () => {
+    const result = applySkuResolutionReviewAction(
+      makeDecision(),
+      manualAction({ note: "third-party commercial line" })
+    );
+    expect(result.status).toBe("manual");
+    expect("acceptedSku" in result).toBe(false);
+    expect(result.acceptedSku).toBeUndefined();
+    expect(result.decidedBy).toBe("engineer@stc.com");
+    expect(result.note).toBe("third-party commercial line");
+    // Source identity and suggestions are preserved.
+    expect(result.originalSku).toBe("C9300-48P-E");
+    expect(result.suggestions).toHaveLength(1);
+  });
+
+  it("classifies a needs_review row as out_of_scope with no acceptedSku", () => {
+    const result = applySkuResolutionReviewAction(makeDecision(), outOfScopeAction());
+    expect(result.status).toBe("out_of_scope");
+    expect("acceptedSku" in result).toBe(false);
+    expect(result.acceptedSku).toBeUndefined();
+  });
+
+  it("classifies an unresolved row as manual or out_of_scope", () => {
+    const unresolved = makeDecision({ status: "unresolved", suggestions: [] });
+    expect(applySkuResolutionReviewAction(unresolved, manualAction()).status).toBe("manual");
+    expect(applySkuResolutionReviewAction(unresolved, outOfScopeAction()).status).toBe(
+      "out_of_scope"
+    );
+  });
+
+  it("rejects a manual action that carries acceptedSku", () => {
+    const action = { ...manualAction(), acceptedSku: "C9300-48P-E" } as SkuResolutionReviewAction;
+    expect(() => applySkuResolutionReviewAction(makeDecision(), action)).toThrow(
+      "Manual or out-of-scope SKU resolution cannot include acceptedSku."
+    );
+  });
+
+  it("rejects an out_of_scope action that carries acceptedSku", () => {
+    const action = {
+      ...outOfScopeAction(),
+      acceptedSku: "C9300-48P-E",
+    } as SkuResolutionReviewAction;
+    expect(() => applySkuResolutionReviewAction(makeDecision(), action)).toThrow(
+      "Manual or out-of-scope SKU resolution cannot include acceptedSku."
+    );
+  });
+
+  it("requires a nonblank decidedBy", () => {
+    expect(() =>
+      applySkuResolutionReviewAction(makeDecision(), manualAction({ decidedBy: "  " }))
+    ).toThrow("decidedBy is required.");
+  });
+
+  it("refuses accepted and rejected rows (only needs_review/unresolved are targetable)", () => {
+    for (const status of ["accepted", "rejected"] as SkuResolutionStatus[]) {
+      expect(() =>
+        applySkuResolutionReviewAction(makeDecision({ status }), manualAction())
+      ).toThrow("SKU resolution decision is not reviewable.");
+      expect(() =>
+        applySkuResolutionReviewAction(makeDecision({ status }), outOfScopeAction())
+      ).toThrow("SKU resolution decision is not reviewable.");
+    }
+  });
+
+  it("allows manual/out_of_scope on a deferred non-priced row (only accept is guarded)", () => {
+    const deferred = makeDecision({ originalSku: "SC9300UK9-1712", suggestions: [] });
+    expect(applySkuResolutionReviewAction(deferred, manualAction()).status).toBe("manual");
+    expect(applySkuResolutionReviewAction(deferred, outOfScopeAction()).status).toBe(
+      "out_of_scope"
+    );
+  });
+
+  it("does not mutate the original decision or its suggestions", () => {
+    const decision = makeDecision();
+    const snapshot = structuredClone(decision);
+    applySkuResolutionReviewAction(decision, manualAction());
+    expect(decision).toEqual(snapshot);
+  });
+});
+
 describe("applySkuResolutionReviewActions", () => {
   function batchDecisions(): SkuResolutionDecision[] {
     return [
@@ -298,6 +403,27 @@ describe("applySkuResolutionReviewActions", () => {
       acceptedCount: 1,
       rejectedCount: 0,
       unresolvedCount: 1,
+    });
+  });
+
+  it("classifies needs_review and unresolved rows via manual/out_of_scope and counts them", () => {
+    const result = applySkuResolutionReviewActions(batchDecisions(), [
+      manualAction({ sourceRowNumber: 2 }),
+      outOfScopeAction({ sourceRowNumber: 4 }),
+    ]);
+    // Row 2 was needs_review -> manual; row 4 was unresolved -> out_of_scope.
+    expect(result.decisions[0].status).toBe("manual");
+    expect(result.decisions[2].status).toBe("out_of_scope");
+    // Row 3 (needs_review) is untargeted and unchanged.
+    expect(result.decisions[1].status).toBe("needs_review");
+    expect(result).toMatchObject({
+      appliedCount: 2,
+      needsReviewCount: 1,
+      acceptedCount: 0,
+      rejectedCount: 0,
+      unresolvedCount: 0,
+      manualCount: 1,
+      outOfScopeCount: 1,
     });
   });
 

@@ -1,7 +1,8 @@
 /**
  * Quick BoM SKU resolution review service: apply EXPLICIT per-line human
- * accept/reject decisions to one already-recorded `needs_review` sku_resolution
- * artifact, persisting them as a new version. Source of truth:
+ * accept/reject/manual/out_of_scope decisions to one already-recorded
+ * `needs_review` sku_resolution artifact, persisting them as a new version.
+ * Source of truth:
  * C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md
  * Canonical shapes: src/types/project.ts.
  *
@@ -62,10 +63,24 @@ export interface QuickBomSkuResolutionRejectActionInput
   decision: "reject";
 }
 
+/** Classify a line as a manual / third-party / non-Cisco commercial line; no accepted SKU. */
+export interface QuickBomSkuResolutionManualActionInput
+  extends QuickBomSkuResolutionReviewActionInputBase {
+  decision: "manual";
+}
+
+/** Mark a line as intentionally excluded from Cisco Quick BoM pricing; no accepted SKU. */
+export interface QuickBomSkuResolutionOutOfScopeActionInput
+  extends QuickBomSkuResolutionReviewActionInputBase {
+  decision: "out_of_scope";
+}
+
 /** One explicit human review choice targeting a line by file + row. */
 export type QuickBomSkuResolutionReviewActionInput =
   | QuickBomSkuResolutionAcceptActionInput
-  | QuickBomSkuResolutionRejectActionInput;
+  | QuickBomSkuResolutionRejectActionInput
+  | QuickBomSkuResolutionManualActionInput
+  | QuickBomSkuResolutionOutOfScopeActionInput;
 
 /** Input for {@link reviewProjectQuickBomSkuResolutionLines}. */
 export interface ReviewProjectQuickBomSkuResolutionLinesInput {
@@ -117,13 +132,16 @@ export interface QuickBomSkuResolutionReviewSummary {
   acceptedCount: number;
   rejectedCount: number;
   unresolvedCount: number;
+  manualCount: number;
+  outOfScopeCount: number;
 }
 
 /** Why a batch of actions was rejected as invalid. */
 export type QuickBomSkuResolutionInvalidActionsReason =
   | "actions_required"
   | "accepted_sku_required"
-  | "reject_has_accepted_sku";
+  | "reject_has_accepted_sku"
+  | "manual_or_out_of_scope_has_accepted_sku";
 
 /** Discriminated result of {@link reviewProjectQuickBomSkuResolutionLines}. */
 export type ReviewProjectQuickBomSkuResolutionLinesResult =
@@ -165,6 +183,8 @@ const DECISION_NOT_REVIEWABLE_MESSAGE = "SKU resolution decision is not reviewab
 const ACCEPTED_SKU_REQUIRED_MESSAGE = "acceptedSku is required.";
 const ACCEPTED_SKU_NO_MATCH_MESSAGE = "Accepted SKU must match an existing suggestion.";
 const REJECT_HAS_ACCEPTED_SKU_MESSAGE = "Rejected SKU resolution cannot include acceptedSku.";
+const UNSUPPORTED_HAS_ACCEPTED_SKU_MESSAGE =
+  "Manual or out-of-scope SKU resolution cannot include acceptedSku.";
 const ACCEPT_DEFERRED_NOT_ALLOWED_MESSAGE =
   "Deferred non-priced SKU resolution row cannot be accepted.";
 const DUPLICATE_ACTION_MESSAGE = "Duplicate SKU resolution action for decision.";
@@ -231,14 +251,17 @@ function toReviewSummary(
     acceptedCount: result.acceptedCount,
     rejectedCount: result.rejectedCount,
     unresolvedCount: result.unresolvedCount,
+    manualCount: result.manualCount,
+    outOfScopeCount: result.outOfScopeCount,
   };
 }
 
 /**
  * Copy each action input into a lower-level review action, stamping `decidedBy`
  * from the service input (never from the action). The decided time is never set,
- * so the lower helper defaults it; a reject action never forwards an accepted SKU.
- * Returns fresh objects in a fresh array so the input actions are never aliased.
+ * so the lower helper defaults it; only an accept action forwards an accepted SKU,
+ * while reject/manual/out_of_scope carry none. Returns fresh objects in a fresh
+ * array so the input actions are never aliased.
  */
 function toLowerActions(
   actions: readonly QuickBomSkuResolutionReviewActionInput[],
@@ -251,6 +274,15 @@ function toLowerActions(
         sourceFileId: action.sourceFileId,
         sourceRowNumber: action.sourceRowNumber,
         acceptedSku: action.acceptedSku,
+        decidedBy,
+        ...(action.note !== undefined ? { note: action.note } : {}),
+      };
+    }
+    if (action.decision === "manual" || action.decision === "out_of_scope") {
+      return {
+        decision: action.decision,
+        sourceFileId: action.sourceFileId,
+        sourceRowNumber: action.sourceRowNumber,
         decidedBy,
         ...(action.note !== undefined ? { note: action.note } : {}),
       };
@@ -286,6 +318,12 @@ function translateReviewError(
   if (message === REJECT_HAS_ACCEPTED_SKU_MESSAGE) {
     return { status: "invalid_actions", reason: "reject_has_accepted_sku" };
   }
+  if (message === UNSUPPORTED_HAS_ACCEPTED_SKU_MESSAGE) {
+    return {
+      status: "invalid_actions",
+      reason: "manual_or_out_of_scope_has_accepted_sku",
+    };
+  }
   if (message === ACCEPT_DEFERRED_NOT_ALLOWED_MESSAGE) {
     return { status: "accept_deferred_not_allowed" };
   }
@@ -295,8 +333,8 @@ function translateReviewError(
 }
 
 /**
- * Apply explicit per-line human accept/reject decisions to one Quick BoM
- * sku_resolution artifact. `decidedBy` must be nonblank (a programming invariant;
+ * Apply explicit per-line human accept/reject/manual/out_of_scope decisions to one
+ * Quick BoM sku_resolution artifact. `decidedBy` must be nonblank (a programming invariant;
  * throws otherwise) and at least one action is required (invalid_actions /
  * actions_required) - both checked before any store call. It verifies the Project
  * within its tenant (not_found / wrong_mode, lean summary) and then the exact

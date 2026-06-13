@@ -80,6 +80,8 @@ export interface QuickBomSkuResolutionReviewWorkspaceCounts {
   acceptedCount: number;
   rejectedCount: number;
   unresolvedCount: number;
+  manualCount: number;
+  outOfScopeCount: number;
 }
 
 /** One candidate SKU match, projected to the fields the UI shows. */
@@ -171,6 +173,8 @@ const REVIEW_STATUSES: ReadonlySet<string> = new Set([
   "accepted",
   "rejected",
   "unresolved",
+  "manual",
+  "out_of_scope",
 ]);
 const SUGGESTION_SOURCES: ReadonlySet<string> = new Set([
   "exact",
@@ -383,6 +387,8 @@ function toSummarySafe(raw: Record<string, unknown>): Record<string, unknown> {
     "unresolvedCount",
     "acceptedCount",
     "rejectedCount",
+    "manualCount",
+    "outOfScopeCount",
     "exactSuggestionCount",
     "normalizedSuggestionCount",
     "ambiguousCount",
@@ -416,11 +422,15 @@ function toReviewCounts(
   let acceptedCount = 0;
   let rejectedCount = 0;
   let unresolvedCount = 0;
+  let manualCount = 0;
+  let outOfScopeCount = 0;
   for (const line of lines) {
     if (line.status === "needs_review") needsReviewCount++;
     else if (line.status === "accepted") acceptedCount++;
     else if (line.status === "rejected") rejectedCount++;
     else if (line.status === "unresolved") unresolvedCount++;
+    else if (line.status === "manual") manualCount++;
+    else if (line.status === "out_of_scope") outOfScopeCount++;
   }
   return {
     totalLineCount: lines.length,
@@ -428,6 +438,8 @@ function toReviewCounts(
     acceptedCount,
     rejectedCount,
     unresolvedCount,
+    manualCount,
+    outOfScopeCount,
   };
 }
 

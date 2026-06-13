@@ -343,6 +343,85 @@ describe("reviewProjectBoqArtifact - configuration_expansion draft guard", () =>
   });
 });
 
+describe("reviewProjectBoqArtifact - sku_resolution completeness gate", () => {
+  function skuResolutionArtifact(
+    decisionStatuses: string[],
+    status: ProjectArtifactStatus = "needs_review"
+  ): ProjectArtifact {
+    return makeArtifact("sku_resolution", status, {
+      payload: {
+        secret: PAYLOAD_SENTINEL,
+        decisions: decisionStatuses.map((decisionStatus, i) => ({
+          sourceFileId: "file-1",
+          sourceRowNumber: i + 2,
+          originalLineNumber: `L-${i}`,
+          originalSku: `SKU-${i}`,
+          status: decisionStatus,
+          suggestions: [],
+        })),
+      },
+    });
+  }
+
+  it("blocks approving a sku_resolution artifact while any decision is still needs_review", async () => {
+    mockGetArtifactById.mockResolvedValue(
+      skuResolutionArtifact(["accepted", "needs_review"])
+    );
+
+    const result = await review();
+
+    expect(result.status).toBe("artifact_not_reviewable");
+    if (result.status !== "artifact_not_reviewable") throw new Error("unreachable");
+    expect(result.artifact.type).toBe("sku_resolution");
+    expect("payload" in result.artifact).toBe(false);
+    expect(JSON.stringify(result)).not.toContain(PAYLOAD_SENTINEL);
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("blocks approving a sku_resolution artifact while any decision is still unresolved", async () => {
+    mockGetArtifactById.mockResolvedValue(
+      skuResolutionArtifact(["accepted", "unresolved"])
+    );
+
+    const result = await review();
+
+    expect(result.status).toBe("artifact_not_reviewable");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("allows approving a sku_resolution artifact when every decision is accepted/rejected/manual/out_of_scope", async () => {
+    mockGetArtifactById.mockResolvedValue(
+      skuResolutionArtifact(["accepted", "rejected", "manual", "out_of_scope"])
+    );
+
+    const result = await review();
+
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("still records a rejection of an incomplete sku_resolution because only approval is gated", async () => {
+    mockGetArtifactById.mockResolvedValue(
+      skuResolutionArtifact(["needs_review", "unresolved"])
+    );
+    mockCreateApproval.mockResolvedValue(makeCreated({ decision: "rejected" }));
+
+    const result = await review({ decision: "rejected" });
+
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not block a sku_resolution artifact whose payload has no decisions array", async () => {
+    mockGetArtifactById.mockResolvedValue(makeArtifact("sku_resolution", "generated"));
+
+    const result = await review();
+
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("reviewProjectBoqArtifact - allowedArtifactTypes intersection", () => {
   it("approves a priced_boq artifact when the allowlist is narrowed to priced_boq", async () => {
     mockGetArtifactById.mockResolvedValue(makeArtifact("priced_boq", "needs_review"));

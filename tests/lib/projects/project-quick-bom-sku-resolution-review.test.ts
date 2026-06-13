@@ -27,6 +27,8 @@ import {
   type ReviewProjectQuickBomSkuResolutionLinesResult,
   type QuickBomSkuResolutionAcceptActionInput,
   type QuickBomSkuResolutionRejectActionInput,
+  type QuickBomSkuResolutionManualActionInput,
+  type QuickBomSkuResolutionOutOfScopeActionInput,
 } from "@/lib/projects/project-quick-bom-sku-resolution-review";
 import { getProjectById } from "@/lib/db/project-store";
 import { getProjectArtifactById } from "@/lib/db/project-artifact-store";
@@ -121,6 +123,8 @@ function makeSummary(): ReviewedSkuResolutionArtifactPayload["summary"] {
     unresolvedCount: 0,
     acceptedCount: 1,
     rejectedCount: 1,
+    manualCount: 0,
+    outOfScopeCount: 0,
     exactSuggestionCount: 1,
     normalizedSuggestionCount: 0,
     ambiguousCount: 0,
@@ -169,6 +173,8 @@ function makeServiceResult(): CreateReviewedSkuResolutionArtifactResult {
       acceptedCount: 1,
       rejectedCount: 1,
       unresolvedCount: 0,
+      manualCount: 0,
+      outOfScopeCount: 0,
     },
   };
 }
@@ -370,6 +376,45 @@ describe("reviewProjectQuickBomSkuResolutionLines - exact lower-service call", (
     });
   });
 
+  it("maps manual and out_of_scope inputs to decidedBy-stamped lower actions with no acceptedSku", async () => {
+    const manual: QuickBomSkuResolutionManualActionInput = {
+      decision: "manual",
+      sourceFileId: FILE_ID,
+      sourceRowNumber: 4,
+      note: "third-party commercial line",
+    };
+    const outOfScope: QuickBomSkuResolutionOutOfScopeActionInput = {
+      decision: "out_of_scope",
+      sourceFileId: FILE_ID,
+      sourceRowNumber: 5,
+    };
+
+    await reviewProjectQuickBomSkuResolutionLines(input([manual, outOfScope]));
+
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actions: [
+          {
+            decision: "manual",
+            sourceFileId: FILE_ID,
+            sourceRowNumber: 4,
+            decidedBy: DECIDED_BY,
+            note: "third-party commercial line",
+          },
+          {
+            decision: "out_of_scope",
+            sourceFileId: FILE_ID,
+            sourceRowNumber: 5,
+            decidedBy: DECIDED_BY,
+          },
+        ],
+      })
+    );
+    const passed = createMock.mock.calls[0][0].actions;
+    expect("acceptedSku" in passed[0]).toBe(false);
+    expect("acceptedSku" in passed[1]).toBe(false);
+  });
+
   it("stamps decidedBy from the service input and never lets an action set decidedBy/decidedAt", async () => {
     const sneaky = {
       decision: "accept",
@@ -410,6 +455,10 @@ describe("reviewProjectQuickBomSkuResolutionLines - known lower-level error tran
     [
       "Rejected SKU resolution cannot include acceptedSku.",
       { status: "invalid_actions", reason: "reject_has_accepted_sku" },
+    ],
+    [
+      "Manual or out-of-scope SKU resolution cannot include acceptedSku.",
+      { status: "invalid_actions", reason: "manual_or_out_of_scope_has_accepted_sku" },
     ],
     [
       "Deferred non-priced SKU resolution row cannot be accepted.",
@@ -500,6 +549,8 @@ describe("reviewProjectQuickBomSkuResolutionLines - ok summaries", () => {
       acceptedCount: 1,
       rejectedCount: 1,
       unresolvedCount: 0,
+      manualCount: 0,
+      outOfScopeCount: 0,
     });
   });
 });

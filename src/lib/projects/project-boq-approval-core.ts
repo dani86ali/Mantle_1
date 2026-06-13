@@ -134,6 +134,24 @@ function isConfigurationExpansionDraftArtifact(
   );
 }
 
+/**
+ * True when a `sku_resolution` artifact still has at least one line decision that is
+ * not yet classified - `needs_review` or `unresolved`. Such an artifact must not be
+ * approved through this generic path because approval would lock in undecided lines.
+ * Explicit `accepted`, `rejected`, `manual`, and `out_of_scope` decisions never block.
+ * This is a local payload-content gate; no SKU-resolution module is imported here.
+ */
+function hasUnreviewedSkuResolutionDecisions(artifact: ProjectArtifact): boolean {
+  if (artifact.type !== "sku_resolution") return false;
+  const decisions = artifact.payload.decisions;
+  if (!Array.isArray(decisions)) return false;
+  return decisions.some((decision) => {
+    if (decision === null || typeof decision !== "object") return false;
+    const status = (decision as { status?: unknown }).status;
+    return status === "needs_review" || status === "unresolved";
+  });
+}
+
 /** Payload-free artifact projection; the payload must never leak into a response. */
 function toArtifactSummary(
   artifact: ProjectArtifact
@@ -200,6 +218,12 @@ export async function reviewProjectBoqArtifact<W>(
     };
   }
   if (!isArtifactReviewable(artifact)) {
+    return {
+      status: "artifact_not_reviewable",
+      artifact: toArtifactSummary(artifact),
+    };
+  }
+  if (decision === "approved" && hasUnreviewedSkuResolutionDecisions(artifact)) {
     return {
       status: "artifact_not_reviewable",
       artifact: toArtifactSummary(artifact),
