@@ -3,25 +3,25 @@ import { join } from "node:path";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Project, ProjectArtifact } from "@/types/project";
 
-// The Quick BoM export download service is a thin wrapper over the shared, mode-gated
-// Project BoQ export-package download core. Per the task, the Quick lane must reject rfp
-// projects as wrong_mode and pass quick_bom projects THROUGH THE CORE BEHAVIOR, so this
-// test drives the REAL core (mocking only the project store, the artifact store, and
+// The RFP BoQ export download service is a thin wrapper over the shared, mode-gated Project
+// BoQ export-package download core. Per the task, the RFP lane must reject quick_bom
+// projects as wrong_mode and pass rfp projects THROUGH THE CORE BEHAVIOR, so this test
+// drives the REAL core (mocking only the project store, the artifact store, and
 // stat/readFile) rather than mocking the core. That proves the wrapper truly pins
-// expectedMode = "quick_bom" and the "Quick-BoM" filename label: a quick_bom project
-// serves its workbook, an rfp project is rejected before any artifact or filesystem read,
-// the caller ids are forwarded tenant-scoped, and the lane adds no path/filename authority.
-// The full status / canary / immutability behavior is proven exhaustively in the core's
-// own test.
+// expectedMode = "rfp" and the "RFP-BoQ" filename label: an rfp project serves its
+// workbook, a quick_bom project is rejected before any artifact or filesystem read, the
+// caller ids are forwarded tenant-scoped, and the lane adds no path/filename authority. The
+// full status / canary / immutability behavior is proven exhaustively in the core's own
+// test.
 vi.mock("@/lib/db/project-store", () => ({ getProjectById: vi.fn() }));
 vi.mock("@/lib/db/project-artifact-store", () => ({ getProjectArtifactById: vi.fn() }));
 vi.mock("node:fs/promises", () => ({ stat: vi.fn(), readFile: vi.fn() }));
 
-import * as serviceModule from "@/lib/projects/project-quick-bom-export-download";
+import * as serviceModule from "@/lib/projects/project-rfp-boq-export-download";
 import {
-  loadProjectQuickBomExportDownload,
-  type LoadProjectQuickBomExportDownloadInput,
-} from "@/lib/projects/project-quick-bom-export-download";
+  loadProjectRfpBoqExportDownload,
+  type LoadProjectRfpBoqExportDownloadInput,
+} from "@/lib/projects/project-rfp-boq-export-download";
 import { getProjectById } from "@/lib/db/project-store";
 import { getProjectArtifactById } from "@/lib/db/project-artifact-store";
 import { readFile, stat } from "node:fs/promises";
@@ -32,9 +32,9 @@ const statMock = vi.mocked(stat);
 const readFileMock = vi.mocked(readFile);
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
-const PROJECT = "proj-1";
-const ARTIFACT_ID = "art-ep-1";
-const PRICED_ID = "art-pb-7";
+const PROJECT = "proj-rfp-1";
+const ARTIFACT_ID = "art-ep-rfp-1";
+const PRICED_ID = "art-rfp-pb-1";
 const FILE_ID = "file-1";
 const FILE_PATH = "C:/Pre-Sales/out/written-mantle.xlsx";
 const XLSX_MIME =
@@ -53,9 +53,9 @@ function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: PROJECT,
     tenantId: TENANT,
-    name: "Honeywell Quick BoM",
-    customerName: "Honeywell",
-    mode: "quick_bom",
+    name: "RFP Priced BoQ",
+    customerName: "Acme",
+    mode: "rfp",
     files: [],
     evidence: [],
     stages: [],
@@ -86,8 +86,8 @@ function makeArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact
 }
 
 function input(
-  overrides: Partial<LoadProjectQuickBomExportDownloadInput> = {}
-): LoadProjectQuickBomExportDownloadInput {
+  overrides: Partial<LoadProjectRfpBoqExportDownloadInput> = {}
+): LoadProjectRfpBoqExportDownloadInput {
   return { tenantId: TENANT, projectId: PROJECT, artifactId: ARTIFACT_ID, ...overrides };
 }
 
@@ -99,9 +99,9 @@ beforeEach(() => {
   readFileMock.mockResolvedValue(BYTES);
 });
 
-describe("loadProjectQuickBomExportDownload - pins quick_bom (through core behavior)", () => {
-  it("passes the mode gate for a quick_bom project and serves the workbook bytes", async () => {
-    const result = await loadProjectQuickBomExportDownload(input());
+describe("loadProjectRfpBoqExportDownload - pins rfp (through core behavior)", () => {
+  it("passes the mode gate for an rfp project and serves the workbook bytes", async () => {
+    const result = await loadProjectRfpBoqExportDownload(input());
 
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("unreachable");
@@ -112,10 +112,10 @@ describe("loadProjectQuickBomExportDownload - pins quick_bom (through core behav
     expect(readFileMock).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects an rfp project as wrong_mode before any artifact or filesystem read", async () => {
-    getProjectMock.mockResolvedValue(makeProject({ mode: "rfp" }));
+  it("rejects a quick_bom project as wrong_mode before any artifact or filesystem read", async () => {
+    getProjectMock.mockResolvedValue(makeProject({ mode: "quick_bom" }));
 
-    const result = await loadProjectQuickBomExportDownload(input());
+    const result = await loadProjectRfpBoqExportDownload(input());
 
     expect(result.status).toBe("wrong_mode");
     expect(getArtifactMock).not.toHaveBeenCalled();
@@ -123,17 +123,17 @@ describe("loadProjectQuickBomExportDownload - pins quick_bom (through core behav
     expect(readFileMock).not.toHaveBeenCalled();
   });
 
-  it("preserves the existing Quick download filename label and shape", async () => {
-    const result = await loadProjectQuickBomExportDownload(input());
+  it("uses the RFP filename label and shape", async () => {
+    const result = await loadProjectRfpBoqExportDownload(input());
 
     if (result.status !== "ok") throw new Error("unreachable");
-    expect(result.filename).toBe("BOMATIC-Quick-BoM-Honeywell-v1.xlsx");
-    // Never the RFP lane's label.
-    expect(result.filename).not.toContain("RFP-BoQ");
+    expect(result.filename).toBe("BOMATIC-RFP-BoQ-Acme-v1.xlsx");
+    // Never the Quick lane's label.
+    expect(result.filename).not.toContain("Quick-BoM");
   });
 
   it("forwards the caller ids tenant-scoped into the archived-inclusive project read, the artifact load, and the byte read", async () => {
-    await loadProjectQuickBomExportDownload(input());
+    await loadProjectRfpBoqExportDownload(input());
 
     expect(getProjectMock).toHaveBeenCalledWith(TENANT, PROJECT, { includeArchived: true });
     expect(getArtifactMock).toHaveBeenCalledWith(TENANT, PROJECT, ARTIFACT_ID);
@@ -144,7 +144,7 @@ describe("loadProjectQuickBomExportDownload - pins quick_bom (through core behav
   it("surfaces the core's exact export_package status names unchanged", async () => {
     getArtifactMock.mockResolvedValue(makeArtifact({ status: "needs_review" }));
 
-    const result = await loadProjectQuickBomExportDownload(input());
+    const result = await loadProjectRfpBoqExportDownload(input());
 
     expect(result.status).toBe("export_package_not_approved");
   });
@@ -152,7 +152,7 @@ describe("loadProjectQuickBomExportDownload - pins quick_bom (through core behav
   it("returns not_found when the project is absent (no artifact or filesystem read)", async () => {
     getProjectMock.mockResolvedValue(null);
 
-    const result = await loadProjectQuickBomExportDownload(input());
+    const result = await loadProjectRfpBoqExportDownload(input());
 
     expect(result.status).toBe("not_found");
     expect(getArtifactMock).not.toHaveBeenCalled();
@@ -160,14 +160,14 @@ describe("loadProjectQuickBomExportDownload - pins quick_bom (through core behav
   });
 });
 
-describe("loadProjectQuickBomExportDownload - module purity and surface (static source check)", () => {
+describe("loadProjectRfpBoqExportDownload - module purity and surface (static source check)", () => {
   const SRC_PATH = join(
     process.cwd(),
-    "src/lib/projects/project-quick-bom-export-download.ts"
+    "src/lib/projects/project-rfp-boq-export-download.ts"
   );
   const TEST_PATH = join(
     process.cwd(),
-    "tests/lib/projects/project-quick-bom-export-download.test.ts"
+    "tests/lib/projects/project-rfp-boq-export-download.test.ts"
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
@@ -177,16 +177,16 @@ describe("loadProjectQuickBomExportDownload - module purity and surface (static 
     );
     expect(froms).toEqual(["@/lib/projects/project-boq-export-download-core"]);
     expect(source).toContain("loadProjectBoqExportDownloadCore");
-    expect(source).toContain('expectedMode: "quick_bom"');
-    expect(source).toContain("Quick-BoM");
+    expect(source).toContain('expectedMode: "rfp"');
+    expect(source).toContain("RFP-BoQ");
   });
 
-  it("re-exports the Quick-specific public type aliases over the shared shapes", () => {
+  it("re-exports the RFP-specific public type aliases over the shared shapes", () => {
     for (const typeName of [
-      "LoadProjectQuickBomExportDownloadInput",
-      "QuickBomExportDownloadProjectSummary",
-      "QuickBomExportDownloadArtifactSummary",
-      "LoadProjectQuickBomExportDownloadResult",
+      "LoadProjectRfpBoqExportDownloadInput",
+      "RfpBoqExportDownloadProjectSummary",
+      "RfpBoqExportDownloadArtifactSummary",
+      "LoadProjectRfpBoqExportDownloadResult",
     ]) {
       expect(source).toContain(`export type ${typeName}`);
     }
@@ -207,8 +207,9 @@ describe("loadProjectQuickBomExportDownload - module purity and surface (static 
       'from "@/lib/projects/priced-boq',
       'from "@/lib/projects/pricing"',
       'from "@/lib/projects/config-expansion',
+      'from "@/lib/projects/rfp-runner"',
       'from "@/lib/projects/quick-bom-runner"',
-      'from "@/lib/projects/project-quick-bom-export"',
+      'from "@/lib/projects/project-rfp-boq-export"',
       'from "@/lib/export',
       'from "@/lib/adapters',
       'from "@/lib/agent',
@@ -226,7 +227,7 @@ describe("loadProjectQuickBomExportDownload - module purity and surface (static 
   });
 
   it("exposes only the wrapper service as a runtime export", () => {
-    expect(Object.keys(serviceModule)).toEqual(["loadProjectQuickBomExportDownload"]);
+    expect(Object.keys(serviceModule)).toEqual(["loadProjectRfpBoqExportDownload"]);
   });
 
   it("keeps the source and test files ASCII-only", () => {
