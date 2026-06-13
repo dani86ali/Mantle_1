@@ -18,6 +18,10 @@ import {
   CISCO_COLLABORATION_APPROVED_SKU_SCOPE_PRICE_LIST_ID,
   getCiscoCollaborationApprovedSkuScopeItems,
 } from "@/lib/projects/quick-bom-cisco-collaboration-sku-scope";
+import {
+  CISCO_INDUSTRIAL_SWITCHING_APPROVED_SKU_SCOPE_PRICE_LIST_ID,
+  getCiscoIndustrialSwitchingApprovedSkuScopeItems,
+} from "@/lib/projects/quick-bom-cisco-industrial-sku-scope";
 import type { CanonicalBoqLine } from "@/types/project";
 
 function makeLine(overrides: Partial<CanonicalBoqLine> = {}): CanonicalBoqLine {
@@ -393,6 +397,122 @@ describe("buildSkuResolutionDraft - Cisco collaboration scope", () => {
     expect(expectedZeroPrice).toBe(3);
     expect(summary.zeroPriceSuggestionCount).toBe(expectedZeroPrice);
     expect(summary.exactSuggestionCount).toBe(5);
+  });
+});
+
+describe("buildSkuResolutionDraft - Cisco industrial switching scope", () => {
+  // All ten approved industrial SKUs; STK-RACK-DINRAIL= is already carried by the
+  // local mock catalog at a positive price (listPrice 125), so the default catalog
+  // keeps that local row and the zero-price scope only fills the other nine.
+  const CISCO_INDUSTRIAL_SKUS = [
+    "IEM-3500-14T2S=",
+    "CON-SNT-IEM35B2S",
+    "PWR-IE480W-PCAC-L=",
+    "IE-1000-4P2S-LM",
+    "CON-SNT-I1002SLM",
+    "IOT-UTILITIES",
+    "IOT-UTIL-OTHER",
+    "PWR-IE170W-PC-AC=",
+    "CAB-TA-UK=",
+    "STK-RACK-DINRAIL=",
+  ] as const;
+  // STK-RACK-DINRAIL= is the only one with a positive local price.
+  const LOCAL_PRICED_INDUSTRIAL_SKUS = ["STK-RACK-DINRAIL="] as const;
+
+  function industrialLines(): CanonicalBoqLine[] {
+    return CISCO_INDUSTRIAL_SKUS.map((sku, i) => ({
+      sourceFormat: "format_1_line_item",
+      sourceFileId: "cisco-industrial-subset",
+      sourceRowNumber: i + 2,
+      originalLineNumber: String(i + 1),
+      sku,
+      description: sku,
+      quantity: 1,
+      originalCells: {},
+    }));
+  }
+
+  it("default draft resolves the ten industrial SKUs to needs_review exact same-SKU suggestions", () => {
+    const { decisions, summary } = buildSkuResolutionDraft({ lines: industrialLines() });
+    expect(summary.catalogSource).toBe(DEFAULT_QUICK_BOM_CATALOG_SOURCE);
+    for (let i = 0; i < decisions.length; i++) {
+      const decision = decisions[i];
+      const sku = CISCO_INDUSTRIAL_SKUS[i];
+      expect(decision.status, sku).toBe("needs_review");
+      expect(decision.suggestions, sku).toHaveLength(1);
+      expect(decision.suggestions[0].source, sku).toBe("exact");
+      expect(decision.suggestions[0].suggestedSku, sku).toBe(sku);
+      // SKU recognition only - never accepts, prices, configures, or replaces.
+      expect(decision.acceptedSku, sku).toBeUndefined();
+      for (const forbidden of [
+        "acceptedSku",
+        "listPrice",
+        "unitPrice",
+        "parentSku",
+        "children",
+        "includedItems",
+        "replacementFor",
+        "substitutedSku",
+      ]) {
+        expect(decision, `${sku}:${forbidden}`).not.toHaveProperty(forbidden);
+      }
+    }
+  });
+
+  it("scope-only catalog reports a zero-price suggestion count of ten", () => {
+    const scopeIndex = buildCatalogLookupIndex(
+      getCiscoIndustrialSwitchingApprovedSkuScopeItems(),
+      CISCO_INDUSTRIAL_SWITCHING_APPROVED_SKU_SCOPE_PRICE_LIST_ID
+    );
+    const { summary } = buildSkuResolutionDraft({
+      lines: industrialLines(),
+      catalogIndex: scopeIndex,
+    });
+    expect(summary.needsReviewCount).toBe(10);
+    expect(summary.exactSuggestionCount).toBe(10);
+    expect(summary.zeroPriceSuggestionCount).toBe(10);
+  });
+
+  it("default catalog zero-price count respects local precedence (STK-RACK-DINRAIL= stays local-priced)", () => {
+    const { summary } = buildSkuResolutionDraft({ lines: industrialLines() });
+    const expectedZeroPrice =
+      CISCO_INDUSTRIAL_SKUS.length - LOCAL_PRICED_INDUSTRIAL_SKUS.length;
+    expect(expectedZeroPrice).toBe(9);
+    expect(summary.zeroPriceSuggestionCount).toBe(expectedZeroPrice);
+    expect(summary.exactSuggestionCount).toBe(10);
+  });
+
+  it("does not collapse two duplicate STK-RACK-DINRAIL= lines (separate decisions in source order)", () => {
+    const lines: CanonicalBoqLine[] = [
+      {
+        sourceFormat: "format_1_line_item",
+        sourceFileId: "cisco-industrial-dup",
+        sourceRowNumber: 11,
+        originalLineNumber: "4",
+        sku: "STK-RACK-DINRAIL=",
+        description: "STK-RACK-DINRAIL=",
+        quantity: 1,
+        originalCells: {},
+      },
+      {
+        sourceFormat: "format_1_line_item",
+        sourceFileId: "cisco-industrial-dup",
+        sourceRowNumber: 27,
+        originalLineNumber: "9",
+        sku: "STK-RACK-DINRAIL=",
+        description: "STK-RACK-DINRAIL=",
+        quantity: 1,
+        originalCells: {},
+      },
+    ];
+    const { decisions } = buildSkuResolutionDraft({ lines });
+    expect(decisions).toHaveLength(2);
+    expect(decisions.map((d) => d.sourceRowNumber)).toEqual([11, 27]);
+    expect(decisions.map((d) => d.originalLineNumber)).toEqual(["4", "9"]);
+    for (const decision of decisions) {
+      expect(decision.status).toBe("needs_review");
+      expect(decision.suggestions[0].suggestedSku).toBe("STK-RACK-DINRAIL=");
+    }
   });
 });
 

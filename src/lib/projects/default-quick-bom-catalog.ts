@@ -2,7 +2,7 @@
  * Canonical default Project Quick BoM SKU lookup catalog.
  *
  * Builds the single default CatalogLookupIndex used by Quick BoM SKU resolution
- * when no explicit catalog index is supplied. It composes four approved
+ * when no explicit catalog index is supplied. It composes five approved
  * deterministic sources only:
  *   1. the committed local STC historical/mock catalog projection already used by
  *      getLocalMockCatalogLookupIndex();
@@ -11,16 +11,21 @@
  *   3. the Honeywell known same-SKU metadata for the Batch 4 historical/deferred
  *      replacement-candidate SKUs from getHoneywellKnownSameSkuCatalogItems();
  *   4. the Cisco collaboration / Room Kit EQX approved same-SKU recognition scope
- *      from getCiscoCollaborationApprovedSkuScopeItems().
+ *      from getCiscoCollaborationApprovedSkuScopeItems();
+ *   5. the Cisco industrial switching / accessory approved same-SKU recognition
+ *      scope from getCiscoIndustrialSwitchingApprovedSkuScopeItems().
  * Local mock entries keep precedence on any shared SKU; the Honeywell demo
  * metadata only adds SKUs the local mock catalog misses (e.g. C9300X-48HX-A,
  * C9300L-24P-4X-A, CW9178I-CFG); the known same-SKU metadata then fills only the
  * remaining missing historical SKUs (e.g. C9300-DNX-A-48-3Y, CON-L1NBX-C9300XY4)
- * as same-SKU recognition rows; the Cisco collaboration scope last fills only the
+ * as same-SKU recognition rows; the Cisco collaboration scope fills only the
  * remaining missing Room Kit EQX SKUs (e.g. CS-KIT-EQX-C-K9, CON-SNT-CSKITEK9)
  * as zero-price same-SKU recognition rows, never overriding a positive-priced
- * local row (e.g. CS-MIC-TABLE-J, CON-SNT-CS5HEJMI stay local-priced). This is
- * SKU recognition only - the merged index
+ * local row (e.g. CS-MIC-TABLE-J, CON-SNT-CS5HEJMI stay local-priced); the Cisco
+ * industrial switching scope last fills only the remaining missing industrial
+ * SKUs (e.g. IEM-3500-14T2S=, IE-1000-4P2S-LM) as zero-price same-SKU recognition
+ * rows, never overriding a positive-priced local row (e.g. STK-RACK-DINRAIL= stays
+ * local-priced). This is SKU recognition only - the merged index
  * is NOT pricing authority, NOT configuration authority, NOT replacement/
  * substitution authority, and NOT broad production Cisco-catalog authority. The
  * known same-SKU rows recognize each historical SKU as ITSELF and never map it to
@@ -30,7 +35,8 @@
  * stays separate.
  *
  * PURE HELPER: imports only catalog-lookup, honeywell-demo-catalog-fixture,
- * honeywell-known-sku-catalog, and quick-bom-cisco-collaboration-sku-scope. No
+ * honeywell-known-sku-catalog, quick-bom-cisco-collaboration-sku-scope, and
+ * quick-bom-cisco-industrial-sku-scope. No
  * DB, API/UI, auth, env, engine, coordinator, adapter (beyond the local mock-data
  * helper reached via catalog-lookup), pricing/export service, runner, AI/LLM, or
  * network client. Every catalog item is freshly copied so callers can never mutate
@@ -45,6 +51,7 @@ import {
 import { getHoneywellDemoCatalogItems } from "@/lib/projects/honeywell-demo-catalog-fixture";
 import { getHoneywellKnownSameSkuCatalogItems } from "@/lib/projects/honeywell-known-sku-catalog";
 import { getCiscoCollaborationApprovedSkuScopeItems } from "@/lib/projects/quick-bom-cisco-collaboration-sku-scope";
+import { getCiscoIndustrialSwitchingApprovedSkuScopeItems } from "@/lib/projects/quick-bom-cisco-industrial-sku-scope";
 
 /** Provenance tag for the canonical default Quick BoM approved-catalog lookup index. */
 export const DEFAULT_QUICK_BOM_CATALOG_SOURCE =
@@ -96,6 +103,26 @@ function buildDefaultItems(): Record<string, CatalogLookupItem> {
   // as CS-MIC-TABLE-J and CON-SNT-CS5HEJMI keep their local prices), and never
   // maps a SKU to a replacement. The zero listPrice is a placeholder, not pricing.
   for (const item of Object.values(getCiscoCollaborationApprovedSkuScopeItems())) {
+    const trimmedSku = item.sku.trim();
+    if (trimmedSku === "" || trimmedSku in items) continue;
+    items[trimmedSku] = {
+      sku: item.sku,
+      description: item.description,
+      listPrice: item.listPrice,
+      currency: item.currency,
+      vendor: item.vendor,
+      priceListId: item.priceListId,
+    };
+  }
+
+  // Cisco industrial switching / accessory approved same-SKU recognition scope
+  // fills only the remaining missing industrial SKUs as zero-price recognition
+  // rows; never overrides a local/demo/known/collaboration entry (so a positive-
+  // priced local row such as STK-RACK-DINRAIL= keeps its local price), and never
+  // maps a SKU to a replacement. The zero listPrice is a placeholder, not pricing.
+  for (const item of Object.values(
+    getCiscoIndustrialSwitchingApprovedSkuScopeItems()
+  )) {
     const trimmedSku = item.sku.trim();
     if (trimmedSku === "" || trimmedSku in items) continue;
     items[trimmedSku] = {
