@@ -33,6 +33,8 @@ import {
   RFP_EXTRACTION_DELTA_PAYLOAD_KIND,
   RFP_EXTRACTION_DELTA_KINDS,
   RFP_EXTRACTION_DELTA_PROPOSAL_SOURCES,
+  RFP_EXTRACTION_DELTA_REVIEW_ACTIONS,
+  RFP_EXTRACTION_DELTA_REVIEW_STATUSES,
   type CreateRfpExtractionDeltaDraftInput,
   type CreateRfpExtractionDeltaDraftResult,
   type RfpExtractionDeltaCandidateInput,
@@ -301,6 +303,21 @@ describe("exported vocabularies", () => {
       "deterministic",
       "ai",
       "engineer",
+    ]);
+  });
+
+  it("pins the review statuses and review actions for the review service", () => {
+    expect(RFP_EXTRACTION_DELTA_REVIEW_STATUSES).toEqual([
+      "pending_review",
+      "accepted",
+      "rejected",
+      "waived",
+    ]);
+    expect(RFP_EXTRACTION_DELTA_REVIEW_ACTIONS).toEqual([
+      "accept",
+      "reject",
+      "edit_accept",
+      "waive",
     ]);
   });
 });
@@ -1176,9 +1193,17 @@ describe("module purity (static source check)", () => {
 
   it("can only write the pending_review candidate review status", () => {
     expect(source).toContain('reviewStatus: "pending_review"');
-    // The candidate decision vocabulary stays out of this service entirely;
-    // accept/reject/waive belongs to a later delta-review prompt.
-    for (const forbidden of ['"accepted"', '"rejected"', '"waived"']) {
+    // The review status/action vocabularies and history entry types live
+    // here as exported declarations for the delta-review service, but the
+    // draft service itself never writes a decided status or a history
+    // entry ("reviewHistory:" without the optional "?" would be an object
+    // literal assignment, not the type declaration).
+    for (const forbidden of [
+      'reviewStatus: "accepted"',
+      'reviewStatus: "rejected"',
+      'reviewStatus: "waived"',
+      "reviewHistory:",
+    ]) {
       expect(source).not.toContain(forbidden);
     }
   });

@@ -11,7 +11,10 @@
  * service cannot accept, apply, replace, validate, approve, price, or
  * configure anything, and the only review status it can write is
  * "pending_review" (delta-review decisions and final evidence-package
- * approval are later prompts). It is deterministic Project-state
+ * approval are later prompts). This module also hosts the shared
+ * extraction-delta review vocabularies and history entry shapes as types
+ * and constants only; writing a decided status belongs solely to the
+ * delta-review persistence service. It is deterministic Project-state
  * assembly only: no AI or model call, no OCR, no document parsing, no
  * file or storage reads, no evidence persistence, no evidence-package
  * assembly, no approvals, no routes or UI, and no SKU, catalog, pricing,
@@ -87,6 +90,39 @@ export type RfpExtractionDeltaSeverity =
   (typeof RFP_EXTRACTION_DELTA_SEVERITIES)[number];
 
 const DEFAULT_SEVERITY: RfpExtractionDeltaSeverity = "warning";
+
+/**
+ * The closed candidate review-status vocabulary. The draft service only
+ * ever writes "pending_review"; the decided statuses are written solely
+ * by the delta-review persistence service
+ * (src/lib/projects/project-rfp-extraction-delta-review.ts).
+ */
+export const RFP_EXTRACTION_DELTA_REVIEW_STATUSES = [
+  "pending_review",
+  "accepted",
+  "rejected",
+  "waived",
+] as const;
+
+/** Review status of one delta candidate. */
+export type RfpExtractionDeltaReviewStatus =
+  (typeof RFP_EXTRACTION_DELTA_REVIEW_STATUSES)[number];
+
+/**
+ * The closed engineer review-action vocabulary. A recorded decision is
+ * candidate review metadata only - never final evidence authority (the
+ * approved evidence_package is a later, separate artifact).
+ */
+export const RFP_EXTRACTION_DELTA_REVIEW_ACTIONS = [
+  "accept",
+  "reject",
+  "edit_accept",
+  "waive",
+] as const;
+
+/** Action of one engineer review decision. */
+export type RfpExtractionDeltaReviewAction =
+  (typeof RFP_EXTRACTION_DELTA_REVIEW_ACTIONS)[number];
 
 /** The artifact type / stage this service creates. */
 const EXTRACTION_DELTA_ARTIFACT_TYPE: ProjectArtifact["type"] =
@@ -232,7 +268,36 @@ export type RfpExtractionDeltaProposedEvidence =
   | RfpExtractionDeltaProposedTextEvidence
   | RfpExtractionDeltaProposedTableEvidence;
 
-/** One stored pending candidate. The review decision is a later prompt. */
+/**
+ * The narrow editable surface one edit_accept review decision may change:
+ * candidate display/proposal fields only. Identity and provenance fields
+ * (id, kind, sourceFileId, evidenceReferences, package/source artifact
+ * ids, review status, review history) are never editable.
+ */
+export interface RfpExtractionDeltaEditedFields {
+  title?: string;
+  description?: string;
+  severity?: RfpExtractionDeltaSeverity;
+  /** Finite and between 0 and 1 inclusive. */
+  confidence?: number;
+  rationale?: string;
+  proposedEvidence?: RfpExtractionDeltaProposedEvidence;
+}
+
+/** One visible review decision appended to a candidate's review history. */
+export interface RfpExtractionDeltaReviewHistoryEntry {
+  action: RfpExtractionDeltaReviewAction;
+  decidedBy: string;
+  /** ISO decision timestamp. */
+  decidedAt: string;
+  previousReviewStatus: RfpExtractionDeltaReviewStatus;
+  nextReviewStatus: RfpExtractionDeltaReviewStatus;
+  note?: string;
+  /** Present only for edit_accept: the sanitized fields that were applied. */
+  editedFields?: RfpExtractionDeltaEditedFields;
+}
+
+/** One stored delta candidate; drafted "pending_review", decided later. */
 export interface RfpExtractionDeltaCandidate {
   /** Deterministic in candidate order: RFP-DELTA-001, RFP-DELTA-002, ... */
   id: string;
@@ -243,8 +308,10 @@ export interface RfpExtractionDeltaCandidate {
   severity: RfpExtractionDeltaSeverity;
   confidence?: number;
   rationale?: string;
-  /** The only review status this service can write. */
-  reviewStatus: "pending_review";
+  /** The draft service only ever writes "pending_review". */
+  reviewStatus: RfpExtractionDeltaReviewStatus;
+  /** Visible review decisions, oldest first; absent until first decided. */
+  reviewHistory?: RfpExtractionDeltaReviewHistoryEntry[];
   /** Locator-only references to cited rows, in candidate citation order. */
   evidenceReferences: RfpExtractionDeltaEvidenceReference[];
   proposedEvidence?: RfpExtractionDeltaProposedEvidence;
@@ -514,8 +581,10 @@ function toEvidenceReference(
  * (the candidate omits the field) when the proposal is missing, not a
  * plain object, or not one of the two RFP extraction kinds. Arbitrary
  * proposal keys are never copied; a malformed proposal never throws.
+ * Exported so the delta-review persistence service applies exactly this
+ * whitelist to edit_accept proposal edits; still a proposal, never final.
  */
-function sanitizeProposedEvidence(
+export function sanitizeRfpExtractionDeltaProposedEvidence(
   value: unknown
 ): RfpExtractionDeltaProposedEvidence | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -639,7 +708,9 @@ function sanitizeCandidate(candidate: unknown, index: number): SanitizedCandidat
       evidenceIds.push(evidenceId);
     }
   }
-  const proposedEvidence = sanitizeProposedEvidence(record.proposedEvidence);
+  const proposedEvidence = sanitizeRfpExtractionDeltaProposedEvidence(
+    record.proposedEvidence
+  );
   return {
     kind,
     sourceFileId,
