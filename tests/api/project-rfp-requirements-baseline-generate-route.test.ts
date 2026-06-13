@@ -26,7 +26,7 @@ vi.mock(
   })
 );
 vi.mock("@/lib/projects/project-rfp-requirements-baseline-generation", () => ({
-  generateRfpRequirementsBaselineDraftFromEvidence: mockGenerate,
+  generateRfpRequirementsBaselineDraftFromEvidencePackage: mockGenerate,
 }));
 
 import {
@@ -48,10 +48,12 @@ const SESSION = {
 const PARAMS = { params: { id: PROJECT } };
 
 const INVALID_REQUEST_ERROR =
-  "evidenceIds must be an array holding at least one nonblank string evidence id.";
+  "evidencePackageArtifactId must be a nonblank string naming one approved final evidence package artifact.";
+
+const EVIDENCE_PACKAGE_ARTIFACT_ID = "art-evidence-package-approved-1";
 
 const VALID_BODY = {
-  evidenceIds: ["evidence-text-1", "evidence-table-1"],
+  evidencePackageArtifactId: EVIDENCE_PACKAGE_ARTIFACT_ID,
 };
 
 // The injected drafting executor the mocked factory hands out. The route
@@ -87,6 +89,7 @@ const GENERATION_OK = {
   status: "ok",
   candidateCount: 2,
   evidenceCount: 2,
+  evidencePackageArtifactId: EVIDENCE_PACKAGE_ARTIFACT_ID,
   sourceFileIds: ["file-rfp-1", "file-boq-1"],
   sourceArtifactIds: ["art-input-package-1"],
   artifact: ARTIFACT_SUMMARY,
@@ -128,10 +131,26 @@ const ARTIFACT_SUMMARIES = [
   },
 ];
 
-// The eight evidence/provenance gate statuses both phases share, with the
-// existing create-route mapping each must reuse:
+// Lean artifact summary echoed by the package-drafting provenance gates that
+// carry the offending artifact (not_evidence_package / not_approved /
+// invalid_payload / empty).
+const PACKAGE_ARTIFACT_SUMMARY = {
+  id: EVIDENCE_PACKAGE_ARTIFACT_ID,
+  projectId: PROJECT,
+  stageId: "intake_package_review",
+  type: "evidence_package",
+  status: "needs_review",
+  version: 1,
+  sourceFileIds: ["file-rfp-1", "file-boq-1"],
+  sourceArtifactIds: ["art-input-package-1"],
+  createdAt: "2026-06-05T09:00:00.000Z",
+  updatedAt: "2026-06-05T09:30:00.000Z",
+};
+
+// The eight evidence/provenance gate statuses the BASELINE CREATION phase can
+// return, with the existing create-route mapping each must reuse:
 // [status, result extras, expected HTTP status, expected body].
-const GATE_CASES: Array<
+const CREATION_GATE_CASES: Array<
   [string, Record<string, unknown>, number, Record<string, unknown>]
 > = [
   [
@@ -214,6 +233,79 @@ const GATE_CASES: Array<
   ],
 ];
 
+// The approved-evidence_package provenance gate statuses the CANDIDATE DRAFTING
+// phase can return, with the package-specific mapping each must use:
+// [status, result extras, expected HTTP status, expected body].
+const PACKAGE_DRAFTING_GATE_CASES: Array<
+  [string, Record<string, unknown>, number, Record<string, unknown>]
+> = [
+  [
+    "not_found",
+    {},
+    404,
+    { code: "project_not_found", error: "Project not found." },
+  ],
+  [
+    "wrong_mode",
+    { project: WRONG_MODE_PROJECT },
+    409,
+    {
+      code: "wrong_project_mode",
+      error: "Project is not an RFP project.",
+      project: WRONG_MODE_PROJECT,
+    },
+  ],
+  [
+    "evidence_package_artifact_not_found",
+    {},
+    409,
+    {
+      code: "rfp_requirements_baseline_evidence_package_not_found",
+      error: "The cited evidence package artifact was not found.",
+    },
+  ],
+  [
+    "artifact_not_evidence_package",
+    { artifact: PACKAGE_ARTIFACT_SUMMARY },
+    409,
+    {
+      code: "rfp_requirements_baseline_artifact_not_evidence_package",
+      error: "The cited artifact is not an evidence package artifact.",
+      artifact: PACKAGE_ARTIFACT_SUMMARY,
+    },
+  ],
+  [
+    "evidence_package_not_approved",
+    { artifact: PACKAGE_ARTIFACT_SUMMARY },
+    409,
+    {
+      code: "rfp_requirements_baseline_evidence_package_not_approved",
+      error: "The cited evidence package artifact is not approved.",
+      artifact: PACKAGE_ARTIFACT_SUMMARY,
+    },
+  ],
+  [
+    "invalid_evidence_package_payload",
+    { artifact: PACKAGE_ARTIFACT_SUMMARY },
+    409,
+    {
+      code: "rfp_requirements_baseline_invalid_evidence_package_payload",
+      error: "The cited evidence package artifact payload is invalid.",
+      artifact: PACKAGE_ARTIFACT_SUMMARY,
+    },
+  ],
+  [
+    "evidence_package_empty",
+    { artifact: PACKAGE_ARTIFACT_SUMMARY },
+    409,
+    {
+      code: "rfp_requirements_baseline_evidence_package_empty",
+      error: "The cited evidence package artifact has no evidence.",
+      artifact: PACKAGE_ARTIFACT_SUMMARY,
+    },
+  ],
+];
+
 function draftingBlocked(drafting: Record<string, unknown>) {
   return { status: "blocked", phase: "candidate_drafting", drafting };
 }
@@ -266,7 +358,7 @@ describe("POST .../rfp/requirements-baseline/generate - auth", () => {
 });
 
 describe("POST .../rfp/requirements-baseline/generate - authority and body sanitization", () => {
-  it("passes session.tenantId, the route param, session.userId, sanitized evidenceIds, and the configured executor; decoy fields never reach the orchestrator", async () => {
+  it("passes session.tenantId, the route param, session.userId, the evidencePackageArtifactId, and the configured executor; evidenceIds and every other decoy field never reach the orchestrator", async () => {
     const request = req({
       tenantId: "attacker-tenant",
       projectId: "attacker-project",
@@ -289,14 +381,9 @@ describe("POST .../rfp/requirements-baseline/generate - authority and body sanit
       sku: "C9300-48T",
       configuration: { expand: true },
       exportFormat: "xlsx",
-      evidenceIds: [
-        " evidence-text-1 ",
-        42,
-        null,
-        "",
-        "evidence-table-1",
-        "evidence-text-1",
-      ],
+      // Raw persisted evidence ids are no longer accepted and must be dropped.
+      evidenceIds: ["evidence-text-1", "evidence-table-1"],
+      evidencePackageArtifactId: EVIDENCE_PACKAGE_ARTIFACT_ID,
     });
 
     const res = await POST(request, PARAMS);
@@ -314,7 +401,7 @@ describe("POST .../rfp/requirements-baseline/generate - authority and body sanit
 
     const arg = mockGenerate.mock.calls[0][0] as Record<string, unknown>;
     expect(Object.keys(arg).sort()).toEqual([
-      "evidenceIds",
+      "evidencePackageArtifactId",
       "executor",
       "projectId",
       "requestedBy",
@@ -324,24 +411,21 @@ describe("POST .../rfp/requirements-baseline/generate - authority and body sanit
     expect(arg.projectId).toBe(PROJECT);
     expect(arg.requestedBy).toBe(SESSION.userId);
     expect(arg.executor).toBe(EXECUTOR);
+    expect(arg.evidencePackageArtifactId).toBe(EVIDENCE_PACKAGE_ARTIFACT_ID);
     expect(EXECUTOR).not.toHaveBeenCalled();
 
-    // Non-string entries are dropped; string entries pass through verbatim
-    // because trimming and deduplication stay in the drafting service.
-    expect(arg.evidenceIds).toEqual([
-      " evidence-text-1 ",
-      "",
-      "evidence-table-1",
-      "evidence-text-1",
-    ]);
+    // evidenceIds is the rejected raw-evidence path and never passes through.
+    expect("evidenceIds" in arg).toBe(false);
 
     // JSON.stringify drops the executor function; every serializable field
-    // must be free of body-supplied authority or content values.
+    // must be free of body-supplied authority, raw evidence ids, or content.
     const json = JSON.stringify(arg);
     expect(json).not.toContain("attacker");
     expect(json).not.toContain("raw rfp text dump");
     expect(json).not.toContain("unitPrice");
     expect(json).not.toContain("C9300-48T");
+    expect(json).not.toContain("evidence-text-1");
+    expect(json).not.toContain("evidence-table-1");
   });
 });
 
@@ -363,18 +447,25 @@ describe("POST .../rfp/requirements-baseline/generate - malformed body", () => {
   const INVALID_BODIES: Array<[string, unknown]> = [
     ["a null body", null],
     ["a number body", 42],
-    ["a string body", "evidence-text-1"],
-    ["an array body", ["evidence-text-1"]],
-    ["a body without evidenceIds", {}],
-    ["a string evidenceIds", { evidenceIds: "evidence-text-1" }],
-    ["an object evidenceIds", { evidenceIds: { 0: "evidence-text-1" } }],
-    ["an empty evidenceIds array", { evidenceIds: [] }],
-    ["only blank evidence ids", { evidenceIds: ["", "   "] }],
-    ["only non-string evidence ids", { evidenceIds: [42, null, true] }],
+    ["a string body", "art-evidence-package-1"],
+    ["an array body", ["art-evidence-package-1"]],
+    ["a body without evidencePackageArtifactId", {}],
+    // The raw-evidence path is gone: an evidenceIds body must be rejected even
+    // when it holds well-formed ids.
+    ["an evidenceIds body", { evidenceIds: ["evidence-text-1", "evidence-table-1"] }],
     [
-      "only blank and non-string evidence ids",
-      { evidenceIds: ["", 42, null, "   "] },
+      "an evidenceIds body without evidencePackageArtifactId",
+      { evidenceIds: ["evidence-text-1"], note: "ignore" },
     ],
+    ["an array evidencePackageArtifactId", { evidencePackageArtifactId: ["art-1"] }],
+    ["a number evidencePackageArtifactId", { evidencePackageArtifactId: 42 }],
+    ["a null evidencePackageArtifactId", { evidencePackageArtifactId: null }],
+    [
+      "an object evidencePackageArtifactId",
+      { evidencePackageArtifactId: { id: "art-1" } },
+    ],
+    ["an empty evidencePackageArtifactId", { evidencePackageArtifactId: "" }],
+    ["a blank evidencePackageArtifactId", { evidencePackageArtifactId: "   " }],
   ];
 
   it.each(INVALID_BODIES)(
@@ -413,7 +504,7 @@ describe("POST .../rfp/requirements-baseline/generate - executor availability", 
 });
 
 describe("POST .../rfp/requirements-baseline/generate - ok mapping", () => {
-  it("maps ok to 201 with { artifact, payloadSummary, candidateSummary }, no status discriminator, and no tenantId", async () => {
+  it("maps ok to 201 with { artifact, payloadSummary, candidateSummary } carrying evidencePackageArtifactId, no status discriminator, and no tenantId", async () => {
     const res = await POST(req(), PARAMS);
 
     expect(res.status).toBe(201);
@@ -424,6 +515,7 @@ describe("POST .../rfp/requirements-baseline/generate - ok mapping", () => {
       candidateSummary: {
         candidateCount: 2,
         evidenceCount: 2,
+        evidencePackageArtifactId: EVIDENCE_PACKAGE_ARTIFACT_ID,
         sourceFileIds: ["file-rfp-1", "file-boq-1"],
         sourceArtifactIds: ["art-input-package-1"],
       },
@@ -438,8 +530,8 @@ describe("POST .../rfp/requirements-baseline/generate - ok mapping", () => {
 });
 
 describe("POST .../rfp/requirements-baseline/generate - candidate drafting blocked mapping", () => {
-  it.each(GATE_CASES)(
-    "maps a drafting-phase %s block to the existing create-route response",
+  it.each(PACKAGE_DRAFTING_GATE_CASES)(
+    "maps a drafting-phase %s block to its evidence-package response",
     async (status, extras, expectedStatus, expectedBody) => {
       mockGenerate.mockResolvedValue(
         draftingBlocked({ status, ...extras })
@@ -490,7 +582,7 @@ describe("POST .../rfp/requirements-baseline/generate - candidate drafting block
 });
 
 describe("POST .../rfp/requirements-baseline/generate - baseline creation blocked mapping", () => {
-  it.each(GATE_CASES)(
+  it.each(CREATION_GATE_CASES)(
     "maps a creation-phase %s block to the existing create-route response",
     async (status, extras, expectedStatus, expectedBody) => {
       mockGenerate.mockResolvedValue(

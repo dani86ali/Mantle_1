@@ -27,6 +27,10 @@ const EVIDENCE_PACKAGE_ARTIFACT_ID = "art-ep-1";
 const EVIDENCE_PACKAGE_DETAIL_URL = `${EVIDENCE_PACKAGE_LIST_URL}/${EVIDENCE_PACKAGE_ARTIFACT_ID}`;
 const EVIDENCE_PACKAGE_REVIEW_URL =
   `/api/projects/${PROJECT_ID}/rfp/artifacts/${EVIDENCE_PACKAGE_ARTIFACT_ID}/evidence-package/review`;
+// A second, APPROVED evidence_package: the only kind a requirements baseline
+// draft may be generated from. The default art-ep-1 stays needs_review so the
+// package review/list/detail tests keep their single not-yet-approved row.
+const APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID = "art-ep-approved-1";
 
 // Persisted-content canaries. Both are smuggled into the lean list response
 // (which the read model would never carry) AND returned by the detail stubs.
@@ -626,6 +630,28 @@ function evidencePackageListResponse(): Record<string, unknown> {
   };
 }
 
+/** An approved evidence_package list item: the only kind selectable for generation. */
+function approvedEvidencePackageListItem(): Record<string, unknown> {
+  return {
+    ...evidencePackageListItem(),
+    id: APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID,
+    status: "approved",
+  };
+}
+
+/**
+ * Package list carrying the default needs_review package (not selectable)
+ * alongside one approved package (selectable for requirements baseline
+ * generation).
+ */
+function evidencePackageListResponseWithApproved(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 2,
+    artifacts: [evidencePackageListItem(), approvedEvidencePackageListItem()],
+  };
+}
+
 function evidencePackageDetailResponse(): Record<string, unknown> {
   return {
     project: projectContext(),
@@ -796,6 +822,49 @@ function stubDefault(): Recorded[] {
     if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
     if (url === EXTRACTION_DELTA_DETAIL_URL) return jsonResponse(extractionDeltaDetailResponse());
     if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+    if (url === EVIDENCE_PACKAGE_DETAIL_URL) return jsonResponse(evidencePackageDetailResponse());
+    if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+    return jsonResponse({}, 404);
+  });
+}
+
+// Generation needs an APPROVED final evidence package to select. This is
+// stubDefault with the evidence-package LIST carrying one approved package
+// alongside the default needs_review one; every other endpoint behaves the
+// same (generate answers 201, the reviews echo their decision).
+function stubWithApprovedPackage(): Recorded[] {
+  return stubFetch((url, init) => {
+    if (url === GENERATE_URL && init?.method === "POST") {
+      return jsonResponse(generateSuccessResponse(), 201);
+    }
+    if (url === REVIEW_URL) {
+      const raw = typeof init?.body === "string" ? init.body : "{}";
+      const decision =
+        (JSON.parse(raw) as { decision?: string }).decision === "rejected"
+          ? "rejected"
+          : "approved";
+      return jsonResponse(baselineReviewSuccessResponse(decision));
+    }
+    if (url === EXTRACTION_DELTA_REVIEW_URL && init?.method === "POST") {
+      return jsonResponse(extractionDeltaReviewSuccessResponse());
+    }
+    if (url === EVIDENCE_PACKAGE_REVIEW_URL && init?.method === "POST") {
+      const raw = typeof init.body === "string" ? init.body : "{}";
+      const decision =
+        (JSON.parse(raw) as { decision?: string }).decision === "rejected"
+          ? "rejected"
+          : "approved";
+      return jsonResponse(evidencePackageReviewSuccessResponse(decision));
+    }
+    if (url === `${LIST_URL}/ev-text-1`) return jsonResponse(textDetailResponse());
+    if (url === `${LIST_URL}/ev-table-1`) return jsonResponse(tableDetailResponse());
+    if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+    if (url === BASELINE_DETAIL_URL) return jsonResponse(baselineDetailResponse());
+    if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+    if (url === EXTRACTION_DELTA_DETAIL_URL) return jsonResponse(extractionDeltaDetailResponse());
+    if (url === EVIDENCE_PACKAGE_LIST_URL) {
+      return jsonResponse(evidencePackageListResponseWithApproved());
+    }
     if (url === EVIDENCE_PACKAGE_DETAIL_URL) return jsonResponse(evidencePackageDetailResponse());
     if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
     return jsonResponse({}, 404);
@@ -1523,55 +1592,81 @@ describe("ProjectRfpEvidencePage - requirements baseline review", () => {
 });
 
 describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
-  it("renders a checkbox per evidence row and tracks the selected count as rows toggle", async () => {
-    stubDefault();
+  it("renders raw evidence rows as read-only and only approved evidence packages as selectable", async () => {
+    stubWithApprovedPackage();
     render(<ProjectRfpEvidencePage />);
-    await screen.findByTestId("evidence-select-ev-text-1");
+    await screen.findAllByTestId("evidence-row");
+    await screen.findByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`);
 
-    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
-      "Selected evidence: 0"
+    expect(screen.queryByTestId("evidence-select-ev-text-1")).toBeNull();
+    expect(screen.queryByTestId("evidence-select-ev-table-1")).toBeNull();
+    expect(screen.getByTestId("generate-selected-package")).toHaveTextContent(
+      "Selected evidence package: none"
     );
-    expect(screen.getByTestId("evidence-select-ev-text-1")).not.toBeChecked();
-    expect(screen.getByTestId("evidence-select-ev-table-1")).not.toBeChecked();
-
-    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
-    expect(screen.getByTestId("evidence-select-ev-text-1")).toBeChecked();
-    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
-      "Selected evidence: 1"
-    );
-
-    fireEvent.click(screen.getByTestId("evidence-select-ev-table-1"));
-    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
-      "Selected evidence: 2"
-    );
-
-    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
-    expect(screen.getByTestId("evidence-select-ev-text-1")).not.toBeChecked();
-    expect(screen.getByTestId("evidence-select-ev-table-1")).toBeChecked();
-    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
-      "Selected evidence: 1"
-    );
-  });
-
-  it("disables Generate with zero selected ids and enables it once a row is selected", async () => {
-    stubDefault();
-    render(<ProjectRfpEvidencePage />);
-    await screen.findByTestId("evidence-select-ev-text-1");
-
     expect(screen.getByTestId("generate-baseline")).toBeDisabled();
-    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+
+    expect(
+      screen.getByTestId(`ep-select-readonly-${EVIDENCE_PACKAGE_ARTIFACT_ID}`)
+    ).toHaveTextContent("Approve to use for generation");
+    expect(screen.queryByTestId(`ep-select-${EVIDENCE_PACKAGE_ARTIFACT_ID}`)).toBeNull();
+
+    const approvedSelect = screen.getByTestId(
+      `ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`
+    );
+    expect(approvedSelect).toBeEnabled();
+    expect(approvedSelect).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(approvedSelect);
+    expect(approvedSelect).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("generate-selected-package")).toHaveTextContent(
+      APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID
+    );
     expect(screen.getByTestId("generate-baseline")).toBeEnabled();
-    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
-    expect(screen.getByTestId("generate-baseline")).toBeDisabled();
   });
 
-  it("Generate POSTs application/json with exactly { evidenceIds } for the selected rows and nothing else", async () => {
-    const calls = stubDefault();
-    render(<ProjectRfpEvidencePage />);
-    await screen.findByTestId("evidence-select-ev-text-1");
+  it("keeps non-approved evidence packages read-only and unable to enable Generate", async () => {
+    for (const status of ["needs_review", "rejected", "stale", "failed", "missing"]) {
+      cleanup();
+      vi.unstubAllGlobals();
+      const packageId = `art-ep-${status}`;
+      stubFetch((url) => {
+        if (url === EVIDENCE_PACKAGE_LIST_URL) {
+          return jsonResponse({
+            project: projectContext(),
+            artifactCount: 1,
+            artifacts: [
+              {
+                ...evidencePackageListItem(),
+                id: packageId,
+                status,
+              },
+            ],
+          });
+        }
+        if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+        if (url === EXTRACTION_DELTA_LIST_URL) {
+          return jsonResponse(extractionDeltaListResponse());
+        }
+        if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+        return jsonResponse({}, 404);
+      });
+      render(<ProjectRfpEvidencePage />);
+      await screen.findByTestId(`ep-select-readonly-${packageId}`);
 
-    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
-    fireEvent.click(screen.getByTestId("evidence-select-ev-table-1"));
+      expect(screen.queryByTestId(`ep-select-${packageId}`), status).toBeNull();
+      expect(screen.getByTestId("generate-baseline"), status).toBeDisabled();
+      expect(screen.getByTestId("generate-selected-package"), status).toHaveTextContent(
+        "Selected evidence package: none"
+      );
+    }
+  });
+
+  it("Generate POSTs application/json with exactly { evidencePackageArtifactId } and nothing else", async () => {
+    const calls = stubWithApprovedPackage();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`);
+
+    fireEvent.click(screen.getByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`));
     await act(async () => {
       fireEvent.click(screen.getByTestId("generate-baseline"));
     });
@@ -1581,13 +1676,18 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
     expect(posts[0].url).toBe(GENERATE_URL);
     expect(posts[0].contentType).toBe("application/json");
     expect(Object.keys(posts[0].body as Record<string, unknown>)).toEqual([
-      "evidenceIds",
+      "evidencePackageArtifactId",
     ]);
-    expect(posts[0].body).toEqual({ evidenceIds: ["ev-text-1", "ev-table-1"] });
+    expect(posts[0].body).toEqual({
+      evidencePackageArtifactId: APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID,
+    });
 
     // No decoy authority/content/decision field rides along.
     const serialized = JSON.stringify(posts[0].body);
     for (const banned of [
+      "evidenceIds",
+      "ev-text-1",
+      "ev-table-1",
       TEXT_BODY_CANARY,
       TABLE_CELL_CANARY,
       TENANT_ID_CANARY,
@@ -1597,7 +1697,7 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
       "payload",
       "artifact",
       "decision",
-      "approv",
+      "approval",
       "requestedBy",
       "createdBy",
       "rows",
@@ -1606,13 +1706,12 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
     }
   });
 
-  it("successful generation shows the exact success copy, clears the selection, and reloads only the baseline list", async () => {
-    const calls = stubDefault();
+  it("successful generation shows the exact success copy, clears the selected package, and reloads only the baseline list", async () => {
+    const calls = stubWithApprovedPackage();
     render(<ProjectRfpEvidencePage />);
-    await screen.findByTestId("evidence-select-ev-text-1");
+    await screen.findByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`);
 
-    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
-    fireEvent.click(screen.getByTestId("evidence-select-ev-table-1"));
+    fireEvent.click(screen.getByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`));
     await act(async () => {
       fireEvent.click(screen.getByTestId("generate-baseline"));
     });
@@ -1622,16 +1721,21 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
     expect(screen.queryByTestId("generate-error")).toBeNull();
 
     // Selection is cleared, so the button drops back to disabled.
-    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
-      "Selected evidence: 0"
+    expect(screen.getByTestId("generate-selected-package")).toHaveTextContent(
+      "Selected evidence package: none"
     );
-    expect(screen.getByTestId("evidence-select-ev-text-1")).not.toBeChecked();
-    expect(screen.getByTestId("evidence-select-ev-table-1")).not.toBeChecked();
+    expect(
+      screen.getByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`)
+    ).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByTestId("generate-baseline")).toBeDisabled();
 
-    // Only the baseline list reloads: no evidence list reload, no evidence
-    // detail fetch, no auto-inspection of the created artifact, no review.
+    // Only the baseline list reloads: no evidence/package list reload, no
+    // evidence/package detail fetch, no auto-inspection of the created
+    // artifact, no review.
     expect(calls.filter((c) => c.url === BASELINE_LIST_URL)).toHaveLength(2);
+    expect(calls.filter((c) => c.url === EVIDENCE_PACKAGE_LIST_URL)).toHaveLength(
+      1
+    );
     expect(
       calls.filter((c) => c.method === "GET" && isEvidenceUrl(c.url))
     ).toHaveLength(1);
@@ -1656,14 +1760,19 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
         );
       }
       if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) {
+        return jsonResponse(extractionDeltaListResponse());
+      }
+      if (url === EVIDENCE_PACKAGE_LIST_URL) {
+        return jsonResponse(evidencePackageListResponseWithApproved());
+      }
       if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
       return jsonResponse({}, 404);
     });
     render(<ProjectRfpEvidencePage />);
-    await screen.findByTestId("evidence-select-ev-text-1");
+    await screen.findByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`);
 
-    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
-    fireEvent.click(screen.getByTestId("evidence-select-ev-table-1"));
+    fireEvent.click(screen.getByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`));
     await act(async () => {
       fireEvent.click(screen.getByTestId("generate-baseline"));
     });
@@ -1673,11 +1782,12 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
     expect(screen.queryByTestId("generate-success")).toBeNull();
 
     // The selection survives the failure so the engineer can retry.
-    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
-      "Selected evidence: 2"
+    expect(screen.getByTestId("generate-selected-package")).toHaveTextContent(
+      APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID
     );
-    expect(screen.getByTestId("evidence-select-ev-text-1")).toBeChecked();
-    expect(screen.getByTestId("evidence-select-ev-table-1")).toBeChecked();
+    expect(
+      screen.getByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`)
+    ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("generate-baseline")).toBeEnabled();
 
     expect(calls.filter((c) => c.url === BASELINE_LIST_URL)).toHaveLength(1);
@@ -1686,20 +1796,26 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
     expect(body).not.toContain("rfp_requirements_candidate_drafting_unavailable");
   });
 
-  it("renders the exact generate error when the POST throws, without leaking the thrown detail", async () => {
+  it("renders the exact generate error when the POST throws, keeping the selected package and not leaking the thrown detail", async () => {
     const secret = "generate-boom-stack-detail";
     const calls = stubFetch((url, init) => {
       if (url === GENERATE_URL && init?.method === "POST") {
         throw new Error(secret);
       }
       if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) {
+        return jsonResponse(extractionDeltaListResponse());
+      }
+      if (url === EVIDENCE_PACKAGE_LIST_URL) {
+        return jsonResponse(evidencePackageListResponseWithApproved());
+      }
       if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
       return jsonResponse({}, 404);
     });
     render(<ProjectRfpEvidencePage />);
-    await screen.findByTestId("evidence-select-ev-text-1");
+    await screen.findByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`);
 
-    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    fireEvent.click(screen.getByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`));
     await act(async () => {
       fireEvent.click(screen.getByTestId("generate-baseline"));
     });
@@ -1707,7 +1823,12 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
     const err = await screen.findByTestId("generate-error");
     expect(err.textContent).toBe("Unable to generate requirements baseline.");
     expect(screen.queryByTestId("generate-success")).toBeNull();
-    expect(screen.getByTestId("evidence-select-ev-text-1")).toBeChecked();
+    expect(screen.getByTestId("generate-selected-package")).toHaveTextContent(
+      APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID
+    );
+    expect(
+      screen.getByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`)
+    ).toHaveAttribute("aria-pressed", "true");
     expect(calls.filter((c) => c.url === BASELINE_LIST_URL)).toHaveLength(1);
     expect(document.body.textContent ?? "").not.toContain(secret);
   });
@@ -1719,7 +1840,9 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
       vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === "string" ? input : input.toString();
         if (url === GENERATE_URL && init?.method === "POST") {
-          return new Promise<Response>((r) => { resolveGenerate = r; });
+          return new Promise<Response>((r) => {
+            resolveGenerate = r;
+          });
         }
         if (url === BASELINE_LIST_URL) {
           return Promise.resolve(jsonResponse(baselineListResponse()));
@@ -1728,37 +1851,59 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
           return Promise.resolve(jsonResponse(extractionDeltaListResponse()));
         }
         if (url === EVIDENCE_PACKAGE_LIST_URL) {
-          return Promise.resolve(jsonResponse(evidencePackageListResponse()));
+          return Promise.resolve(jsonResponse(evidencePackageListResponseWithApproved()));
         }
         return Promise.resolve(jsonResponse(listResponse()));
       })
     );
     render(<ProjectRfpEvidencePage />);
-    await screen.findByTestId("evidence-select-ev-text-1");
+    await screen.findByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`);
 
-    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    fireEvent.click(screen.getByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`));
     expect(screen.getByTestId("generate-baseline")).toBeEnabled();
     fireEvent.click(screen.getByTestId("generate-baseline"));
     await waitFor(() =>
       expect(screen.getByTestId("generate-baseline")).toBeDisabled()
     );
     // Still pending: the selection has not been cleared yet.
-    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
-      "Selected evidence: 1"
+    expect(screen.getByTestId("generate-selected-package")).toHaveTextContent(
+      APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID
     );
 
     await act(async () => {
       resolveGenerate(jsonResponse(generateSuccessResponse(), 201));
     });
     expect(await screen.findByTestId("generate-success")).toBeInTheDocument();
-    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
-      "Selected evidence: 0"
+    expect(screen.getByTestId("generate-selected-package")).toHaveTextContent(
+      "Selected evidence package: none"
     );
   });
 
-  it("drops selections for evidence rows no longer present after a filtered reload", async () => {
-    let listCallCount = 0;
+  it("clears the selected package when a package-list reload no longer includes it as approved", async () => {
+    let packageListCalls = 0;
     const calls = stubFetch((url, init) => {
+      if (url === EVIDENCE_PACKAGE_LIST_URL) {
+        packageListCalls += 1;
+        if (packageListCalls === 1) {
+          return jsonResponse(evidencePackageListResponseWithApproved());
+        }
+        return jsonResponse({
+          project: projectContext(),
+          artifactCount: 1,
+          artifacts: [
+            {
+              ...approvedEvidencePackageListItem(),
+              status: "stale",
+            },
+          ],
+        });
+      }
+      if (url === EVIDENCE_PACKAGE_DETAIL_URL) {
+        return jsonResponse(evidencePackageDetailResponse());
+      }
+      if (url === EVIDENCE_PACKAGE_REVIEW_URL && init?.method === "POST") {
+        return jsonResponse(evidencePackageReviewSuccessResponse("approved"));
+      }
       if (url === GENERATE_URL && init?.method === "POST") {
         return jsonResponse(generateSuccessResponse(), 201);
       }
@@ -1766,47 +1911,30 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
       if (url === EXTRACTION_DELTA_LIST_URL) {
         return jsonResponse(extractionDeltaListResponse());
       }
-      if (url === EVIDENCE_PACKAGE_LIST_URL) {
-        return jsonResponse(evidencePackageListResponse());
-      }
-      if (url.startsWith(LIST_URL)) {
-        listCallCount += 1;
-        if (listCallCount > 1) {
-          return jsonResponse({
-            project: projectContext(),
-            filters: {},
-            evidenceCount: 1,
-            textChunkCount: 0,
-            tableEvidenceCount: 1,
-            evidence: [tableListItem()],
-          });
-        }
-        return jsonResponse(listResponse());
-      }
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
       return jsonResponse({}, 404);
     });
     render(<ProjectRfpEvidencePage />);
-    await screen.findByTestId("evidence-select-ev-text-1");
+    await screen.findByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`);
 
-    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
-    fireEvent.click(screen.getByTestId("evidence-select-ev-table-1"));
-    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
-      "Selected evidence: 2"
-    );
+    fireEvent.click(screen.getByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`));
+    expect(screen.getByTestId("generate-baseline")).toBeEnabled();
 
-    fireEvent.change(screen.getByTestId("filter-kind"), {
-      target: { value: "rfp_document_table" },
-    });
+    fireEvent.click(screen.getByTestId(`ep-inspect-${EVIDENCE_PACKAGE_ARTIFACT_ID}`));
+    await screen.findByTestId("ep-detail-panel");
     await act(async () => {
-      fireEvent.click(screen.getByTestId("filter-apply"));
+      fireEvent.click(screen.getByTestId("ep-review-approve"));
     });
+    await screen.findByTestId("ep-review-success");
 
-    // The text row left the list, so its selection is dropped; the still
-    // visible table row stays selected.
-    expect(screen.queryByTestId("evidence-select-ev-text-1")).toBeNull();
-    expect(screen.getByTestId("evidence-select-ev-table-1")).toBeChecked();
-    expect(screen.getByTestId("generate-selected-count")).toHaveTextContent(
-      "Selected evidence: 1"
+    await waitFor(() =>
+      expect(screen.getByTestId("generate-selected-package")).toHaveTextContent(
+        "Selected evidence package: none"
+      )
+    );
+    expect(screen.getByTestId("generate-baseline")).toBeDisabled();
+    expect(calls.filter((c) => c.url === EVIDENCE_PACKAGE_LIST_URL)).toHaveLength(
+      2
     );
 
     await act(async () => {
@@ -1814,7 +1942,7 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
     });
     const posts = calls.filter((c) => c.method === "POST");
     expect(posts).toHaveLength(1);
-    expect(posts[0].body).toEqual({ evidenceIds: ["ev-table-1"] });
+    expect(posts[0].url).toBe(EVIDENCE_PACKAGE_REVIEW_URL);
   });
 });
 
@@ -2633,11 +2761,11 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
   });
 
   it("performs exactly two POSTs - generate then baseline review - across that explicit write flow", async () => {
-    const calls = stubDefault();
+    const calls = stubWithApprovedPackage();
     render(<ProjectRfpEvidencePage />);
-    await screen.findByTestId("evidence-select-ev-text-1");
+    await screen.findByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`);
 
-    fireEvent.click(screen.getByTestId("evidence-select-ev-text-1"));
+    fireEvent.click(screen.getByTestId(`ep-select-${APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID}`));
     await act(async () => {
       fireEvent.click(screen.getByTestId("generate-baseline"));
     });
@@ -2658,7 +2786,9 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
     expect(nonGets).toHaveLength(2);
     expect(nonGets[0].method).toBe("POST");
     expect(nonGets[0].url).toBe(GENERATE_URL);
-    expect(nonGets[0].body).toEqual({ evidenceIds: ["ev-text-1"] });
+    expect(nonGets[0].body).toEqual({
+      evidencePackageArtifactId: APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID,
+    });
     expect(nonGets[1].method).toBe("POST");
     expect(nonGets[1].url).toBe(REVIEW_URL);
     expect(nonGets[1].body).toEqual({ decision: "approved" });

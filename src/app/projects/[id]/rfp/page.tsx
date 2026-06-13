@@ -41,24 +41,28 @@
  * keeps the loaded detail. The POST records one human decision and nothing
  * else: no auto-approval, no extraction, no other side effect.
  *
- * Requirements baseline generation (Milestone 2): every evidence list row
- * carries a selection checkbox that stores only the evidence id - selection
- * works from the lean list alone and never fetches detail content. A compact
- * control under the requirements baseline heading shows the selected count
- * and a Generate button, disabled while zero ids are selected or while a
- * generation is in flight. Clicking Generate sends one POST to
- * /api/projects/[id]/rfp/requirements-baseline/generate whose JSON body is
- * exactly { evidenceIds } - never raw evidence text, table rows, tenant or
- * project or user authority, status, payload, artifact, or approval fields.
- * The server drafts candidate requirements from those persisted evidence
- * rows and stores ONE needs_review draft; nothing generates on mount, the
- * created draft is never auto-inspected, and nothing is auto-approved - the
- * draft still goes through the human review above. On success the control
- * shows fixed success copy, clears the selection, and reloads the read-only
- * baseline list; on failure it shows fixed error copy, keeps the selection,
- * and reloads nothing. Whenever the evidence list reloads, the selection is
- * pruned to ids still present in the current list. Generation and review
- * are the page's only two writes, each on its own endpoint.
+ * Requirements baseline generation (Milestone 2): the approved final
+ * evidence_package is the only evidence authority a baseline draft may be
+ * generated from, so generation selects ONE approved evidence_package artifact
+ * from the final evidence package list (the raw evidence rows are read-only and
+ * carry no generation control). Only an approved package row is selectable; a
+ * non-approved package row stays read-only and cannot be picked. A compact
+ * control under the requirements baseline heading names the selected package
+ * and carries a Generate button, disabled until one approved package is
+ * selected and while a generation is in flight. Clicking Generate sends one
+ * POST to /api/projects/[id]/rfp/requirements-baseline/generate whose JSON body
+ * is exactly { evidencePackageArtifactId } - never raw evidence ids or text,
+ * table rows, tenant or project or user authority, status, payload, artifact,
+ * or approval fields. The server drafts candidate requirements from that
+ * approved package and stores ONE needs_review draft; nothing generates on
+ * mount, the created draft is never auto-inspected, and nothing is
+ * auto-approved - the draft still goes through the human review above. On
+ * success the control shows fixed success copy, clears the selected package,
+ * and reloads only the read-only baseline list; on failure it shows fixed error
+ * copy, keeps the selected package, and reloads nothing. Whenever the package
+ * list reloads, a selected package that is gone or no longer approved is
+ * cleared. Generation and the human reviews are the page's only writes, each on
+ * its own endpoint.
  *
  * Extraction review (Stage 1A): on mount the page also GETs two lean,
  * read-only artifact lists - the extraction_delta list from
@@ -965,7 +969,9 @@ export default function ProjectRfpEvidencePage() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
 
-  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([]);
+  const [selectedEvidencePackageId, setSelectedEvidencePackageId] = useState<
+    string | null
+  >(null);
   const [generatePending, setGeneratePending] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [generateSuccess, setGenerateSuccess] = useState<string | null>(null);
@@ -1008,21 +1014,12 @@ export default function ProjectRfpEvidencePage() {
         const body = (await res.json().catch(() => null)) as EvidenceListResponse | null;
         if (!res.ok || body === null || !body.project || !Array.isArray(body.evidence)) {
           setData(null);
-          setSelectedEvidenceIds([]);
           setListError(LIST_ERROR);
           return;
         }
         setData(body);
-        // Selection tracks the visible list only: a reload (filtered or not)
-        // drops ids for evidence rows no longer present.
-        setSelectedEvidenceIds((prev) =>
-          prev.filter((selectedId) =>
-            body.evidence.some((item) => item.id === selectedId)
-          )
-        );
       } catch {
         setData(null);
-        setSelectedEvidenceIds([]);
         setListError(LIST_ERROR);
       } finally {
         setListLoading(false);
@@ -1148,12 +1145,24 @@ export default function ProjectRfpEvidencePage() {
       const body = (await res.json().catch(() => null)) as EvidencePackageListResponse | null;
       if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
         setPackageList(null);
+        setSelectedEvidencePackageId(null);
         setPackageListError(PACKAGE_LIST_ERROR);
         return;
       }
       setPackageList(body);
+      // Generation selection tracks the visible approved packages only: a
+      // reload drops a selection whose package is gone or no longer approved.
+      setSelectedEvidencePackageId((prev) =>
+        prev !== null &&
+        body.artifacts.some(
+          (item) => item.id === prev && item.status === "approved"
+        )
+          ? prev
+          : null
+      );
     } catch {
       setPackageList(null);
+      setSelectedEvidencePackageId(null);
       setPackageListError(PACKAGE_LIST_ERROR);
     } finally {
       setPackageListLoading(false);
@@ -1195,24 +1204,22 @@ export default function ProjectRfpEvidencePage() {
     [id]
   );
 
-  function toggleEvidenceSelection(evidenceId: string): void {
-    setSelectedEvidenceIds((prev) =>
-      prev.includes(evidenceId)
-        ? prev.filter((selectedId) => selectedId !== evidenceId)
-        : [...prev, evidenceId]
+  function toggleEvidencePackageSelection(artifactId: string): void {
+    setSelectedEvidencePackageId((prev) =>
+      prev === artifactId ? null : artifactId
     );
   }
 
   // The page's generation write: ask the server to draft ONE reviewable
-  // needs_review requirements_baseline artifact from the selected persisted
-  // evidence rows. The body carries only the selected evidence ids - never
-  // raw content, tenant/project/user authority, status, payload, artifact,
-  // or approval fields; the route derives all authority server-side. Success
-  // clears the selection and reloads the read-only baseline list; the new
-  // draft is never auto-inspected or auto-approved. Failure keeps the
-  // selection and reloads nothing.
+  // needs_review requirements_baseline artifact from the selected APPROVED
+  // final evidence_package. The body carries only that package artifact id -
+  // never raw evidence ids or content, tenant/project/user authority, status,
+  // payload, artifact, or approval fields; the route derives all authority
+  // server-side. Success clears the selected package and reloads only the
+  // read-only baseline list; the new draft is never auto-inspected or
+  // auto-approved. Failure keeps the selected package and reloads nothing.
   const submitGenerate = useCallback(async (): Promise<void> => {
-    if (selectedEvidenceIds.length === 0 || generatePending) return;
+    if (selectedEvidencePackageId === null || generatePending) return;
     setGeneratePending(true);
     setGenerateError(null);
     setGenerateSuccess(null);
@@ -1222,7 +1229,9 @@ export default function ProjectRfpEvidencePage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ evidenceIds: selectedEvidenceIds }),
+          body: JSON.stringify({
+            evidencePackageArtifactId: selectedEvidencePackageId,
+          }),
         }
       );
       if (!res.ok) {
@@ -1230,14 +1239,14 @@ export default function ProjectRfpEvidencePage() {
         return;
       }
       setGenerateSuccess(GENERATE_SUCCESS);
-      setSelectedEvidenceIds([]);
+      setSelectedEvidencePackageId(null);
       void loadBaselineList();
     } catch {
       setGenerateError(GENERATE_ERROR);
     } finally {
       setGeneratePending(false);
     }
-  }, [generatePending, id, loadBaselineList, selectedEvidenceIds]);
+  }, [generatePending, id, loadBaselineList, selectedEvidencePackageId]);
 
   // Baseline payload content is fetched only here, on an explicit Inspect.
   const loadBaselineDetail = useCallback(
@@ -1554,14 +1563,6 @@ export default function ProjectRfpEvidencePage() {
                   data-testid="evidence-row"
                   className="flex items-start justify-between gap-2 rounded-button border border-[var(--border)] p-2"
                 >
-                  <input
-                    type="checkbox"
-                    data-testid={`evidence-select-${item.id}`}
-                    aria-label={`Select evidence ${item.id}`}
-                    checked={selectedEvidenceIds.includes(item.id)}
-                    onChange={() => toggleEvidenceSelection(item.id)}
-                    className="mt-1"
-                  />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-text-primary">
                       <span className="font-mono">{item.id}</span> | {kindLabel(item.kind)}
@@ -1907,15 +1908,43 @@ export default function ProjectRfpEvidencePage() {
                           created {item.createdAt} | updated {item.updatedAt}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        data-testid={`ep-inspect-${item.id}`}
-                        disabled={packageDetailLoading}
-                        onClick={() => void loadPackageDetail(item.id)}
-                        className={ACTION_BTN}
-                      >
-                        Inspect
-                      </button>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        {item.status === "approved" ? (
+                          <button
+                            type="button"
+                            data-testid={`ep-select-${item.id}`}
+                            aria-pressed={selectedEvidencePackageId === item.id}
+                            onClick={() =>
+                              toggleEvidencePackageSelection(item.id)
+                            }
+                            className={
+                              selectedEvidencePackageId === item.id
+                                ? ACTION_BTN
+                                : PLAIN_BTN
+                            }
+                          >
+                            {selectedEvidencePackageId === item.id
+                              ? "Selected for generation"
+                              : "Select for generation"}
+                          </button>
+                        ) : (
+                          <span
+                            data-testid={`ep-select-readonly-${item.id}`}
+                            className="text-xs text-text-tertiary"
+                          >
+                            Approve to use for generation
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          data-testid={`ep-inspect-${item.id}`}
+                          disabled={packageDetailLoading}
+                          onClick={() => void loadPackageDetail(item.id)}
+                          className={ACTION_BTN}
+                        >
+                          Inspect
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ol>
@@ -2023,13 +2052,18 @@ export default function ProjectRfpEvidencePage() {
           data-testid="generate-control"
           className="mt-2 flex flex-wrap items-center gap-2 rounded-card border border-[var(--border)] p-3"
         >
-          <p data-testid="generate-selected-count" className="text-xs text-text-secondary">
-            Selected evidence: {selectedEvidenceIds.length}
+          <p
+            data-testid="generate-selected-package"
+            className="min-w-0 flex-1 text-xs text-text-secondary"
+          >
+            {selectedEvidencePackageId === null
+              ? "Selected evidence package: none (select an approved final evidence package above)"
+              : `Selected evidence package: ${selectedEvidencePackageId}`}
           </p>
           <button
             type="button"
             data-testid="generate-baseline"
-            disabled={selectedEvidenceIds.length === 0 || generatePending}
+            disabled={selectedEvidencePackageId === null || generatePending}
             onClick={() => void submitGenerate()}
             className={ACTION_BTN}
           >
