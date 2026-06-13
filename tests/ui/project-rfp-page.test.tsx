@@ -17,6 +17,12 @@ const BASELINE_ARTIFACT_ID = "art-rb-1";
 const BASELINE_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${BASELINE_ARTIFACT_ID}/requirements-baseline`;
 const REVIEW_URL = `${BASELINE_DETAIL_URL}/review`;
 const GENERATE_URL = `${BASELINE_LIST_URL}/generate`;
+const EXTRACTION_DELTA_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/extraction-delta`;
+const EXTRACTION_DELTA_ARTIFACT_ID = "art-ed-1";
+const EXTRACTION_DELTA_DETAIL_URL = `${EXTRACTION_DELTA_LIST_URL}/${EXTRACTION_DELTA_ARTIFACT_ID}`;
+const EVIDENCE_PACKAGE_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/evidence-package`;
+const EVIDENCE_PACKAGE_ARTIFACT_ID = "art-ep-1";
+const EVIDENCE_PACKAGE_DETAIL_URL = `${EVIDENCE_PACKAGE_LIST_URL}/${EVIDENCE_PACKAGE_ARTIFACT_ID}`;
 
 // Persisted-content canaries. Both are smuggled into the lean list response
 // (which the read model would never carry) AND returned by the detail stubs.
@@ -36,6 +42,22 @@ const SMUGGLED_KEY_CANARY = "SMUGGLED-KEY-CANARY";
 // Generate-response canary: the page must ignore the generate POST response
 // body entirely, so nothing from it may ever reach the DOM.
 const GENERATE_RESPONSE_CANARY = "GENERATE-RESPONSE-CANARY";
+
+// Extraction-delta canaries. The LIST group is smuggled into the lean list
+// response (which the read model would never carry) and must never reach the
+// DOM. The DETAIL group is the sanitized proposal/review trail the detail
+// surfaces for review, so it MAY render only after an explicit Inspect.
+const DELTA_LIST_CANDIDATE_CANARY = "DELTA-LIST-CANDIDATE-CANARY";
+const DELTA_PROPOSED_TEXT_CANARY = "DELTA-PROPOSED-TEXT-CANARY";
+const DELTA_PROPOSED_ROW_CANARY = "DELTA-PROPOSED-ROW-CANARY";
+const DELTA_HISTORY_NOTE_CANARY = "DELTA-HISTORY-NOTE-CANARY";
+
+// Evidence-package canaries. The LIST group is smuggled into the lean list and
+// must never render; the DETAIL group is the sanitized final evidence content
+// under human review, so it MAY render only after an explicit Inspect.
+const PACKAGE_LIST_EVIDENCE_CANARY = "PACKAGE-LIST-EVIDENCE-CANARY";
+const PACKAGE_EVIDENCE_TEXT_CANARY = "PACKAGE-EVIDENCE-TEXT-CANARY";
+const PACKAGE_TABLE_CELL_CANARY = "PACKAGE-TABLE-CELL-CANARY";
 
 function projectContext(): Record<string, unknown> {
   return {
@@ -343,6 +365,273 @@ function generateSuccessResponse(): Record<string, unknown> {
   };
 }
 
+/** Serializable artifact summary shared by the delta list/detail stubs. */
+function extractionDeltaArtifactSummary(): Record<string, unknown> {
+  return {
+    id: EXTRACTION_DELTA_ARTIFACT_ID,
+    projectId: PROJECT_ID,
+    stageId: "intake_package_review",
+    type: "extraction_delta",
+    status: "needs_review",
+    version: 2,
+    sourceFileIds: ["file-rfp-1", "file-rfp-2"],
+    sourceArtifactIds: ["art-ip-1"],
+    createdAt: "2026-06-04T08:00:00.000Z",
+    updatedAt: "2026-06-04T08:30:00.000Z",
+  };
+}
+
+function extractionDeltaListItem(): Record<string, unknown> {
+  return {
+    ...extractionDeltaArtifactSummary(),
+    payloadSummary: {
+      payloadKind: "rfp_extraction_delta",
+      createdBy: "user-1",
+      createdAt: "2026-06-04T08:00:00.000Z",
+      proposalSource: "deterministic",
+      inputPackageArtifactId: "art-ip-1",
+      candidateCount: 3,
+      evidenceReferenceCount: 4,
+      pendingCount: 1,
+      acceptedCount: 1,
+      rejectedCount: 1,
+      waivedCount: 0,
+      reviewedBy: "user-2",
+      reviewedAt: "2026-06-04T08:25:00.000Z",
+      reviewedDecisionCount: 2,
+      sourceFileIds: ["file-rfp-1", "file-rfp-2"],
+      sourceArtifactIds: ["art-ip-1"],
+      // Never present in the real lean read model; planted to prove the list
+      // renders identifier/count fields only - never a candidate body.
+      candidates: [{ id: "RFP-DELTA-001", title: DELTA_LIST_CANDIDATE_CANARY }],
+    },
+    // Smuggled keys the page must ignore entirely.
+    payload: { candidates: [{ proposedEvidence: { text: DELTA_LIST_CANDIDATE_CANARY } } ] },
+    tenantId: TENANT_ID_CANARY,
+    storagePath: STORAGE_PATH_CANARY,
+  };
+}
+
+function extractionDeltaListResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 1,
+    artifacts: [extractionDeltaListItem()],
+  };
+}
+
+function extractionDeltaDetailResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: extractionDeltaArtifactSummary(),
+    delta: {
+      payloadKind: "rfp_extraction_delta",
+      createdBy: "user-1",
+      createdAt: "2026-06-04T08:00:00.000Z",
+      proposalSource: "deterministic",
+      inputPackageArtifactId: "art-ip-1",
+      candidateCount: 2,
+      evidenceReferenceCount: 2,
+      pendingCount: 1,
+      acceptedCount: 1,
+      rejectedCount: 0,
+      waivedCount: 0,
+      reviewedBy: "user-2",
+      reviewedAt: "2026-06-04T08:25:00.000Z",
+      reviewedDecisionCount: 1,
+      sourceFileIds: ["file-rfp-1", "file-rfp-2"],
+      sourceArtifactIds: ["art-ip-1"],
+      // Smuggled keys the page must ignore entirely.
+      tenantId: TENANT_ID_CANARY,
+      storagePath: STORAGE_PATH_CANARY,
+      candidates: [
+        {
+          id: "RFP-DELTA-001",
+          kind: "missing_evidence",
+          sourceFileId: "file-rfp-1",
+          title: "Missing redundancy requirement",
+          description: "Section 3.1 lists a redundancy requirement not captured.",
+          severity: "blocking",
+          reviewStatus: "pending_review",
+          confidence: 0.82,
+          rationale: "Found in scope table but absent from extraction.",
+          smuggledKey: SMUGGLED_KEY_CANARY,
+          evidenceReferences: [
+            {
+              evidenceId: "ev-text-1",
+              evidenceKind: "rfp_document_text_chunk",
+              sourceFileId: "file-rfp-1",
+              inputPackageArtifactId: "art-ip-1",
+              chunkIndex: 0,
+              chunkCount: 4,
+              charCount: 1810,
+            },
+          ],
+          proposedEvidence: {
+            evidenceKind: "rfp_document_text_chunk",
+            text: `${DELTA_PROPOSED_TEXT_CANARY} The supplier shall provide redundant cores.`,
+            sourceFileName: "rfp-main.pdf",
+            sourceFileRole: "rfp_main_document",
+            chunkIndex: 0,
+            chunkCount: 4,
+            charCount: 64,
+          },
+          reviewHistory: [],
+        },
+        {
+          id: "RFP-DELTA-002",
+          kind: "table_reconstruction",
+          sourceFileId: "file-rfp-2",
+          title: "Rebuild scope table",
+          description: "Table 1 lost its header row during extraction.",
+          severity: "warning",
+          reviewStatus: "accepted",
+          evidenceReferences: [
+            {
+              evidenceId: "ev-table-1",
+              evidenceKind: "rfp_document_table",
+              sourceFileId: "file-rfp-2",
+              inputPackageArtifactId: "art-ip-1",
+              tableId: "tbl-1",
+              sheetName: "Scope",
+              rowCount: 12,
+              columnCount: 5,
+            },
+          ],
+          proposedEvidence: {
+            evidenceKind: "rfp_document_table",
+            tableId: "tbl-1",
+            sourceFileName: "rfp-scope.xlsx",
+            sourceFileRole: "rfp_attachment",
+            sheetName: "Scope",
+            rowCount: 2,
+            columnCount: 2,
+            rows: [
+              ["Item", "Qty"],
+              [DELTA_PROPOSED_ROW_CANARY, "4"],
+            ],
+          },
+          reviewHistory: [
+            {
+              action: "accept",
+              decidedBy: "user-2",
+              decidedAt: "2026-06-04T08:25:00.000Z",
+              previousReviewStatus: "pending_review",
+              nextReviewStatus: "accepted",
+              note: DELTA_HISTORY_NOTE_CANARY,
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+/** Serializable artifact summary shared by the package list/detail stubs. */
+function evidencePackageArtifactSummary(): Record<string, unknown> {
+  return {
+    id: EVIDENCE_PACKAGE_ARTIFACT_ID,
+    projectId: PROJECT_ID,
+    stageId: "intake_package_review",
+    type: "evidence_package",
+    status: "needs_review",
+    version: 1,
+    sourceFileIds: ["file-rfp-1", "file-rfp-2"],
+    sourceArtifactIds: ["art-ip-1"],
+    createdAt: "2026-06-04T09:10:00.000Z",
+    updatedAt: "2026-06-04T09:20:00.000Z",
+  };
+}
+
+function evidencePackageListItem(): Record<string, unknown> {
+  return {
+    ...evidencePackageArtifactSummary(),
+    payloadSummary: {
+      payloadKind: "rfp_evidence_package",
+      createdBy: "user-1",
+      createdAt: "2026-06-04T09:10:00.000Z",
+      inputPackageArtifactId: "art-ip-1",
+      evidenceCount: 2,
+      textChunkCount: 1,
+      tableEvidenceCount: 1,
+      sourceFileIds: ["file-rfp-1", "file-rfp-2"],
+      sourceArtifactIds: ["art-ip-1"],
+      // Never present in the real lean read model; planted to prove the list
+      // renders identifier/count fields only - never a final evidence body.
+      evidence: [{ text: PACKAGE_LIST_EVIDENCE_CANARY }],
+    },
+    // Smuggled keys the page must ignore entirely.
+    payload: { evidence: [{ rows: [[PACKAGE_LIST_EVIDENCE_CANARY]] }] },
+    tenantId: TENANT_ID_CANARY,
+    storagePath: STORAGE_PATH_CANARY,
+  };
+}
+
+function evidencePackageListResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 1,
+    artifacts: [evidencePackageListItem()],
+  };
+}
+
+function evidencePackageDetailResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: evidencePackageArtifactSummary(),
+    package: {
+      payloadKind: "rfp_evidence_package",
+      createdBy: "user-1",
+      createdAt: "2026-06-04T09:10:00.000Z",
+      inputPackageArtifactId: "art-ip-1",
+      evidenceCount: 2,
+      textChunkCount: 1,
+      tableEvidenceCount: 1,
+      sourceFileIds: ["file-rfp-1", "file-rfp-2"],
+      sourceArtifactIds: ["art-ip-1"],
+      // Smuggled keys the page must ignore entirely.
+      tenantId: TENANT_ID_CANARY,
+      storagePath: STORAGE_PATH_CANARY,
+      evidence: [
+        {
+          evidenceId: "ev-text-1",
+          evidenceKind: "rfp_document_text_chunk",
+          sourceFileId: "file-rfp-1",
+          inputPackageArtifactId: "art-ip-1",
+          sourceFileName: "rfp-main.pdf",
+          sourceFileRole: "rfp_main_document",
+          chunkIndex: 0,
+          chunkCount: 4,
+          charCount: 1810,
+          text: `${PACKAGE_EVIDENCE_TEXT_CANARY} The supplier shall provide a network design.`,
+          documentMetrics: {
+            textCharCount: 7200,
+            nonWhitespaceTextCharCount: 6804,
+            tableCount: 2,
+            tableRowCount: 18,
+          },
+        },
+        {
+          evidenceId: "ev-table-1",
+          evidenceKind: "rfp_document_table",
+          sourceFileId: "file-rfp-2",
+          inputPackageArtifactId: "art-ip-1",
+          sourceFileName: "rfp-scope.xlsx",
+          sourceFileRole: "rfp_attachment",
+          tableId: "tbl-1",
+          sheetName: "Scope",
+          rowCount: 2,
+          columnCount: 2,
+          rows: [
+            ["Item", "Qty"],
+            [PACKAGE_TABLE_CELL_CANARY, "4"],
+          ],
+        },
+      ],
+    },
+  };
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -402,9 +691,26 @@ function stubDefault(): Recorded[] {
     if (url === `${LIST_URL}/ev-table-1`) return jsonResponse(tableDetailResponse());
     if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
     if (url === BASELINE_DETAIL_URL) return jsonResponse(baselineDetailResponse());
+    // The evidence-package endpoints share the /rfp/evidence prefix, so match
+    // them by exact url BEFORE the startsWith(LIST_URL) evidence fallback.
+    if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+    if (url === EXTRACTION_DELTA_DETAIL_URL) return jsonResponse(extractionDeltaDetailResponse());
+    if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+    if (url === EVIDENCE_PACKAGE_DETAIL_URL) return jsonResponse(evidencePackageDetailResponse());
     if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
     return jsonResponse({}, 404);
   });
+}
+
+// The evidence inspection surface is LIST_URL itself, its ?query variants, and
+// its /<evidenceId> detail children - never the sibling evidence-package
+// endpoint, which only shares the /rfp/evidence text prefix.
+function isEvidenceUrl(url: string): boolean {
+  return (
+    url === LIST_URL ||
+    url.startsWith(`${LIST_URL}?`) ||
+    url.startsWith(`${LIST_URL}/`)
+  );
 }
 
 afterEach(() => {
@@ -413,7 +719,7 @@ afterEach(() => {
 });
 
 describe("ProjectRfpEvidencePage - list load", () => {
-  it("GETs the evidence list and the baseline list on mount and renders context, counts, and lean rows", async () => {
+  it("GETs all four inspection list endpoints on mount and renders context, counts, and lean rows", async () => {
     const calls = stubDefault();
     render(<ProjectRfpEvidencePage />);
 
@@ -443,11 +749,17 @@ describe("ProjectRfpEvidencePage - list load", () => {
     expect(rows[1]).toHaveTextContent("sheet Scope");
     expect(rows[1]).toHaveTextContent("12 rows x 5 cols");
 
+    await screen.findByTestId("delta-row");
+    await screen.findByTestId("ep-row");
+
     const gets = calls.filter((c) => c.method === "GET");
-    expect(gets).toHaveLength(2);
+    expect(gets).toHaveLength(4);
     const urls = gets.map((c) => c.url);
     expect(urls).toContain(LIST_URL);
+    expect(urls).toContain(EXTRACTION_DELTA_LIST_URL);
+    expect(urls).toContain(EVIDENCE_PACKAGE_LIST_URL);
     expect(urls).toContain(BASELINE_LIST_URL);
+    expect(gets.every((c) => c.body === null)).toBe(true);
   });
 
   it("shows a list loading state while the list GET is pending", async () => {
@@ -458,6 +770,12 @@ describe("ProjectRfpEvidencePage - list load", () => {
         const url = typeof input === "string" ? input : input.toString();
         if (url === BASELINE_LIST_URL) {
           return Promise.resolve(jsonResponse(baselineListResponse()));
+        }
+        if (url === EXTRACTION_DELTA_LIST_URL) {
+          return Promise.resolve(jsonResponse(extractionDeltaListResponse()));
+        }
+        if (url === EVIDENCE_PACKAGE_LIST_URL) {
+          return Promise.resolve(jsonResponse(evidencePackageListResponse()));
         }
         return new Promise<Response>((r) => { resolveList = r; });
       })
@@ -477,12 +795,16 @@ describe("ProjectRfpEvidencePage - list load", () => {
     render(<ProjectRfpEvidencePage />);
     await screen.findByTestId("project-name");
     await screen.findByTestId("baseline-row");
+    await screen.findByTestId("delta-row");
+    await screen.findByTestId("ep-row");
 
     expect(screen.getAllByTestId("evidence-row")).toHaveLength(2);
     const body = document.body.textContent ?? "";
     expect(body).not.toContain(TEXT_BODY_CANARY);
     expect(body).not.toContain(TABLE_CELL_CANARY);
     expect(body).not.toContain(LIST_REQUIREMENT_TEXT_CANARY);
+    expect(body).not.toContain(DELTA_LIST_CANDIDATE_CANARY);
+    expect(body).not.toContain(PACKAGE_LIST_EVIDENCE_CANARY);
     expect(body).not.toContain(TENANT_ID_CANARY);
     expect(body).not.toContain(STORAGE_PATH_CANARY);
   });
@@ -528,7 +850,7 @@ describe("ProjectRfpEvidencePage - filters", () => {
     });
 
     const evidenceGets = calls.filter(
-      (c) => c.method === "GET" && c.url.startsWith(LIST_URL)
+      (c) => c.method === "GET" && isEvidenceUrl(c.url)
     );
     expect(evidenceGets).toHaveLength(2);
     const applied = new URL(evidenceGets[1].url, "http://localhost");
@@ -564,7 +886,7 @@ describe("ProjectRfpEvidencePage - filters", () => {
     expect(screen.getByTestId("filter-kind")).toHaveValue("all");
 
     const evidenceGets = calls.filter(
-      (c) => c.method === "GET" && c.url.startsWith(LIST_URL)
+      (c) => c.method === "GET" && isEvidenceUrl(c.url)
     );
     expect(evidenceGets).toHaveLength(3);
     expect(evidenceGets[1].url).toContain("?");
@@ -633,6 +955,12 @@ describe("ProjectRfpEvidencePage - detail inspection", () => {
         }
         if (url === BASELINE_LIST_URL) {
           return Promise.resolve(jsonResponse(baselineListResponse()));
+        }
+        if (url === EXTRACTION_DELTA_LIST_URL) {
+          return Promise.resolve(jsonResponse(extractionDeltaListResponse()));
+        }
+        if (url === EVIDENCE_PACKAGE_LIST_URL) {
+          return Promise.resolve(jsonResponse(evidencePackageListResponse()));
         }
         return Promise.resolve(jsonResponse(listResponse()));
       })
@@ -818,6 +1146,12 @@ describe("ProjectRfpEvidencePage - requirements baseline detail", () => {
         }
         if (url === BASELINE_LIST_URL) {
           return Promise.resolve(jsonResponse(baselineListResponse()));
+        }
+        if (url === EXTRACTION_DELTA_LIST_URL) {
+          return Promise.resolve(jsonResponse(extractionDeltaListResponse()));
+        }
+        if (url === EVIDENCE_PACKAGE_LIST_URL) {
+          return Promise.resolve(jsonResponse(evidencePackageListResponse()));
         }
         return Promise.resolve(jsonResponse(listResponse()));
       })
@@ -1023,6 +1357,12 @@ describe("ProjectRfpEvidencePage - requirements baseline review", () => {
         if (url === BASELINE_DETAIL_URL) {
           return Promise.resolve(jsonResponse(baselineDetailResponse()));
         }
+        if (url === EXTRACTION_DELTA_LIST_URL) {
+          return Promise.resolve(jsonResponse(extractionDeltaListResponse()));
+        }
+        if (url === EVIDENCE_PACKAGE_LIST_URL) {
+          return Promise.resolve(jsonResponse(evidencePackageListResponse()));
+        }
         return Promise.resolve(jsonResponse(listResponse()));
       })
     );
@@ -1193,7 +1533,7 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
     // detail fetch, no auto-inspection of the created artifact, no review.
     expect(calls.filter((c) => c.url === BASELINE_LIST_URL)).toHaveLength(2);
     expect(
-      calls.filter((c) => c.method === "GET" && c.url.startsWith(LIST_URL))
+      calls.filter((c) => c.method === "GET" && isEvidenceUrl(c.url))
     ).toHaveLength(1);
     expect(calls.some((c) => c.url === BASELINE_DETAIL_URL)).toBe(false);
     expect(calls.some((c) => c.url === REVIEW_URL)).toBe(false);
@@ -1284,6 +1624,12 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
         if (url === BASELINE_LIST_URL) {
           return Promise.resolve(jsonResponse(baselineListResponse()));
         }
+        if (url === EXTRACTION_DELTA_LIST_URL) {
+          return Promise.resolve(jsonResponse(extractionDeltaListResponse()));
+        }
+        if (url === EVIDENCE_PACKAGE_LIST_URL) {
+          return Promise.resolve(jsonResponse(evidencePackageListResponse()));
+        }
         return Promise.resolve(jsonResponse(listResponse()));
       })
     );
@@ -1317,6 +1663,12 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
         return jsonResponse(generateSuccessResponse(), 201);
       }
       if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) {
+        return jsonResponse(extractionDeltaListResponse());
+      }
+      if (url === EVIDENCE_PACKAGE_LIST_URL) {
+        return jsonResponse(evidencePackageListResponse());
+      }
       if (url.startsWith(LIST_URL)) {
         listCallCount += 1;
         if (listCallCount > 1) {
@@ -1366,6 +1718,334 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
   });
 });
 
+describe("ProjectRfpEvidencePage - extraction delta list", () => {
+  it("GETs the extraction delta list on mount and renders the count and a lean artifact row", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+
+    const row = await screen.findByTestId("delta-row");
+    expect(screen.getByTestId("delta-count")).toHaveTextContent("Extraction deltas: 1");
+    expect(row).toHaveTextContent(EXTRACTION_DELTA_ARTIFACT_ID);
+    expect(row).toHaveTextContent("version 2");
+    expect(row).toHaveTextContent("needs_review");
+    expect(row).toHaveTextContent("source deterministic");
+    expect(row).toHaveTextContent("package art-ip-1");
+    expect(row).toHaveTextContent("candidates 3");
+    expect(row).toHaveTextContent("pending 1");
+    expect(row).toHaveTextContent("accepted 1");
+    expect(row).toHaveTextContent("rejected 1");
+    expect(row).toHaveTextContent("waived 0");
+    expect(row).toHaveTextContent("source artifacts: art-ip-1");
+    expect(row).toHaveTextContent("source files: file-rfp-1, file-rfp-2");
+    expect(row).toHaveTextContent("created 2026-06-04T08:00:00.000Z");
+    expect(row).toHaveTextContent("updated 2026-06-04T08:30:00.000Z");
+
+    const gets = calls.filter((c) => c.url === EXTRACTION_DELTA_LIST_URL);
+    expect(gets).toHaveLength(1);
+    expect(gets[0].method).toBe("GET");
+    expect(gets[0].body).toBeNull();
+
+    // The lean list never renders a candidate body or any smuggled key.
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(DELTA_LIST_CANDIDATE_CANARY);
+    expect(body).not.toContain(TENANT_ID_CANARY);
+    expect(body).not.toContain(STORAGE_PATH_CANARY);
+  });
+
+  it('renders exactly "No extraction delta artifacts yet." when the list is empty', async () => {
+    stubFetch((url) => {
+      if (url === EXTRACTION_DELTA_LIST_URL) {
+        return jsonResponse({ project: projectContext(), artifactCount: 0, artifacts: [] });
+      }
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const empty = await screen.findByTestId("delta-empty");
+    expect(empty.textContent).toBe("No extraction delta artifacts yet.");
+    expect(screen.getByTestId("delta-count")).toHaveTextContent("Extraction deltas: 0");
+    expect(screen.queryByTestId("delta-row")).toBeNull();
+    expect(screen.queryByTestId("delta-list-error")).toBeNull();
+  });
+
+  it('renders exactly "Unable to load extraction deltas." when the list GET fails, keeping evidence', async () => {
+    stubFetch((url) => {
+      if (url === EXTRACTION_DELTA_LIST_URL) {
+        return jsonResponse({ code: "rfp_extraction_delta_inspection_failed" }, 500);
+      }
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const err = await screen.findByTestId("delta-list-error");
+    expect(err.textContent).toBe("Unable to load extraction deltas.");
+    expect(screen.queryByTestId("delta-row")).toBeNull();
+    expect(screen.queryByTestId("delta-count")).toBeNull();
+    expect(await screen.findByTestId("project-name")).toBeInTheDocument();
+    expect(screen.getAllByTestId("evidence-row")).toHaveLength(2);
+  });
+});
+
+describe("ProjectRfpEvidencePage - extraction delta detail", () => {
+  async function inspectDelta(): Promise<void> {
+    await screen.findByTestId(`delta-inspect-${EXTRACTION_DELTA_ARTIFACT_ID}`);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`delta-inspect-${EXTRACTION_DELTA_ARTIFACT_ID}`));
+    });
+    await screen.findByTestId("delta-detail-panel");
+  }
+
+  it("Inspect GETs the exact detail endpoint, shows pending candidates by default, and keeps decided candidates and history collapsed", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await inspectDelta();
+
+    const meta = screen.getByTestId("delta-detail-meta");
+    expect(meta).toHaveTextContent(EXTRACTION_DELTA_ARTIFACT_ID);
+    expect(meta).toHaveTextContent("version 2");
+    expect(meta).toHaveTextContent("candidates 2");
+    expect(meta).toHaveTextContent("pending 1");
+    expect(meta).toHaveTextContent("accepted 1");
+
+    // Default focus: the pending candidate is surfaced directly.
+    const pendingList = screen.getByTestId("delta-pending-list");
+    expect(pendingList).toHaveTextContent("RFP-DELTA-001");
+    expect(pendingList).toHaveTextContent("Missing redundancy requirement");
+    expect(pendingList).toHaveTextContent("missing_evidence");
+    expect(pendingList).toHaveTextContent("blocking");
+    expect(pendingList).toHaveTextContent("confidence 0.82");
+    expect(pendingList).toHaveTextContent("Found in scope table");
+    expect(pendingList).toHaveTextContent("source file file-rfp-1");
+
+    // Locator-only evidence reference (identifiers, positions, counts only).
+    const refs = screen.getAllByTestId("delta-reference");
+    expect(refs[0]).toHaveTextContent("ev-text-1");
+    expect(refs[0]).toHaveTextContent("chunk 1/4");
+    expect(refs[0]).toHaveTextContent("1810 chars");
+    expect(refs[0]).toHaveTextContent("file file-rfp-1");
+    expect(refs[0]).toHaveTextContent("package art-ip-1");
+
+    // Proposed evidence is surfaced for review (a proposal, not authority).
+    expect(screen.getByTestId("delta-proposed-text-body")).toHaveTextContent(
+      DELTA_PROPOSED_TEXT_CANARY
+    );
+
+    // Decided candidate and its review history stay in collapsed details.
+    const decided = screen.getByTestId("delta-decided");
+    expect(decided.tagName).toBe("DETAILS");
+    expect(decided).not.toHaveAttribute("open");
+    expect(decided).toHaveTextContent("RFP-DELTA-002");
+    expect(decided).toHaveTextContent("Rebuild scope table");
+    const history = screen.getByTestId("delta-review-history");
+    expect(history.tagName).toBe("DETAILS");
+    expect(history).not.toHaveAttribute("open");
+    expect(history).toHaveTextContent("accept");
+    expect(history).toHaveTextContent("pending_review to accepted");
+    expect(history).toHaveTextContent(DELTA_HISTORY_NOTE_CANARY);
+
+    const detailCall = calls.find((c) => c.url === EXTRACTION_DELTA_DETAIL_URL);
+    expect(detailCall).toBeTruthy();
+    expect(detailCall!.method).toBe("GET");
+    expect(detailCall!.body).toBeNull();
+
+    // Smuggled tenant/storage/arbitrary keys never reach the DOM.
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(TENANT_ID_CANARY);
+    expect(body).not.toContain(STORAGE_PATH_CANARY);
+    expect(body).not.toContain(SMUGGLED_KEY_CANARY);
+  });
+
+  it('renders exactly "Unable to load extraction delta detail." when the detail GET fails, keeping the list', async () => {
+    stubFetch((url) => {
+      if (url === EXTRACTION_DELTA_DETAIL_URL) {
+        return jsonResponse({ code: "extraction_delta_artifact_not_found" }, 404);
+      }
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId(`delta-inspect-${EXTRACTION_DELTA_ARTIFACT_ID}`);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`delta-inspect-${EXTRACTION_DELTA_ARTIFACT_ID}`));
+    });
+
+    const err = await screen.findByTestId("delta-detail-error");
+    expect(err.textContent).toBe("Unable to load extraction delta detail.");
+    expect(screen.queryByTestId("delta-detail-panel")).toBeNull();
+    expect(screen.getByTestId("delta-row")).toBeInTheDocument();
+  });
+});
+
+describe("ProjectRfpEvidencePage - evidence package list", () => {
+  it("GETs the evidence package list on mount and renders the count and a lean artifact row", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+
+    const row = await screen.findByTestId("ep-row");
+    expect(screen.getByTestId("ep-count")).toHaveTextContent("Final evidence packages: 1");
+    expect(row).toHaveTextContent(EVIDENCE_PACKAGE_ARTIFACT_ID);
+    expect(row).toHaveTextContent("version 1");
+    expect(row).toHaveTextContent("needs_review");
+    expect(row).toHaveTextContent("package art-ip-1");
+    expect(row).toHaveTextContent("evidence 2");
+    expect(row).toHaveTextContent("text 1");
+    expect(row).toHaveTextContent("tables 1");
+    expect(row).toHaveTextContent("source artifacts: art-ip-1");
+    expect(row).toHaveTextContent("source files: file-rfp-1, file-rfp-2");
+    expect(row).toHaveTextContent("created 2026-06-04T09:10:00.000Z");
+    expect(row).toHaveTextContent("updated 2026-06-04T09:20:00.000Z");
+
+    const gets = calls.filter((c) => c.url === EVIDENCE_PACKAGE_LIST_URL);
+    expect(gets).toHaveLength(1);
+    expect(gets[0].method).toBe("GET");
+    expect(gets[0].body).toBeNull();
+
+    // The lean list never renders a final evidence body or any smuggled key.
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(PACKAGE_LIST_EVIDENCE_CANARY);
+    expect(body).not.toContain(TENANT_ID_CANARY);
+    expect(body).not.toContain(STORAGE_PATH_CANARY);
+  });
+
+  it('renders exactly "No final evidence package artifacts yet." when the list is empty', async () => {
+    stubFetch((url) => {
+      if (url === EVIDENCE_PACKAGE_LIST_URL) {
+        return jsonResponse({ project: projectContext(), artifactCount: 0, artifacts: [] });
+      }
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const empty = await screen.findByTestId("ep-empty");
+    expect(empty.textContent).toBe("No final evidence package artifacts yet.");
+    expect(screen.getByTestId("ep-count")).toHaveTextContent("Final evidence packages: 0");
+    expect(screen.queryByTestId("ep-row")).toBeNull();
+    expect(screen.queryByTestId("ep-list-error")).toBeNull();
+  });
+
+  it('renders exactly "Unable to load final evidence packages." when the list GET fails, keeping evidence', async () => {
+    stubFetch((url) => {
+      if (url === EVIDENCE_PACKAGE_LIST_URL) {
+        return jsonResponse({ code: "rfp_evidence_package_inspection_failed" }, 500);
+      }
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const err = await screen.findByTestId("ep-list-error");
+    expect(err.textContent).toBe("Unable to load final evidence packages.");
+    expect(screen.queryByTestId("ep-row")).toBeNull();
+    expect(screen.queryByTestId("ep-count")).toBeNull();
+    expect(await screen.findByTestId("project-name")).toBeInTheDocument();
+    expect(screen.getAllByTestId("evidence-row")).toHaveLength(2);
+  });
+});
+
+describe("ProjectRfpEvidencePage - evidence package detail", () => {
+  async function inspectPackage(): Promise<void> {
+    await screen.findByTestId(`ep-inspect-${EVIDENCE_PACKAGE_ARTIFACT_ID}`);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`ep-inspect-${EVIDENCE_PACKAGE_ARTIFACT_ID}`));
+    });
+    await screen.findByTestId("ep-detail-panel");
+  }
+
+  it("Inspect GETs the exact detail endpoint and renders sanitized final evidence text and table content with source traceability", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+    await inspectPackage();
+
+    const meta = screen.getByTestId("ep-detail-meta");
+    expect(meta).toHaveTextContent(EVIDENCE_PACKAGE_ARTIFACT_ID);
+    expect(meta).toHaveTextContent("version 1");
+    expect(meta).toHaveTextContent("needs_review");
+    expect(meta).toHaveTextContent("package art-ip-1");
+    expect(meta).toHaveTextContent("evidence 2");
+    expect(meta).toHaveTextContent("text 1");
+    expect(meta).toHaveTextContent("tables 1");
+
+    const entries = screen.getAllByTestId("ep-evidence");
+    expect(entries).toHaveLength(2);
+
+    // Final evidence text body is rendered (the package is under human review).
+    const textBody = screen.getByTestId("ep-evidence-text-body");
+    expect(textBody).toHaveTextContent(PACKAGE_EVIDENCE_TEXT_CANARY);
+    expect(textBody).toHaveTextContent("The supplier shall provide a network design.");
+    // Text entry source traceability.
+    expect(entries[0]).toHaveTextContent("ev-text-1");
+    expect(entries[0]).toHaveTextContent("rfp-main.pdf");
+    expect(entries[0]).toHaveTextContent("rfp_main_document");
+    expect(entries[0]).toHaveTextContent("chunk 1/4");
+    expect(entries[0]).toHaveTextContent("file file-rfp-1");
+    expect(entries[0]).toHaveTextContent("package art-ip-1");
+
+    // Final evidence table rows are rendered with traceability.
+    const rows = screen.getAllByTestId("ep-evidence-table-row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent("Item");
+    expect(rows[0]).toHaveTextContent("Qty");
+    expect(rows[1]).toHaveTextContent(PACKAGE_TABLE_CELL_CANARY);
+    expect(rows[1]).toHaveTextContent("4");
+    expect(entries[1]).toHaveTextContent("tbl-1");
+    expect(entries[1]).toHaveTextContent("sheet Scope");
+    expect(entries[1]).toHaveTextContent("2 rows x 2 cols");
+
+    // Long content sits inside collapsed details for scannability.
+    expect(screen.getByTestId("ep-evidence-text").tagName).toBe("DETAILS");
+    expect(screen.getByTestId("ep-evidence-table").tagName).toBe("DETAILS");
+
+    const detailCall = calls.find((c) => c.url === EVIDENCE_PACKAGE_DETAIL_URL);
+    expect(detailCall).toBeTruthy();
+    expect(detailCall!.method).toBe("GET");
+    expect(detailCall!.body).toBeNull();
+
+    // Even in the detail, storage/tenant fields never reach the DOM.
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(TENANT_ID_CANARY);
+    expect(body).not.toContain(STORAGE_PATH_CANARY);
+  });
+
+  it('renders exactly "Unable to load final evidence package detail." when the detail GET fails, keeping the list', async () => {
+    stubFetch((url) => {
+      if (url === EVIDENCE_PACKAGE_DETAIL_URL) {
+        return jsonResponse({ code: "evidence_package_artifact_not_found" }, 404);
+      }
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId(`ep-inspect-${EVIDENCE_PACKAGE_ARTIFACT_ID}`);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`ep-inspect-${EVIDENCE_PACKAGE_ARTIFACT_ID}`));
+    });
+
+    const err = await screen.findByTestId("ep-detail-error");
+    expect(err.textContent).toBe("Unable to load final evidence package detail.");
+    expect(screen.queryByTestId("ep-detail-panel")).toBeNull();
+    expect(screen.getByTestId("ep-row")).toBeInTheDocument();
+  });
+});
+
 describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
   it("issues only default-GET fetches to the four inspection endpoints and never calls write or other RFP endpoints", async () => {
     const calls = stubDefault();
@@ -1401,7 +2081,7 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       expect(call.url).not.toMatch(/upload/);
       expect(call.url).not.toMatch(/input-package/);
       expect(call.url).not.toMatch(/\/approvals/);
-      expect(call.url).not.toMatch(/\/extract/);
+      expect(call.url).not.toMatch(/\/extract(?:\/|$)/);
       expect(call.url).not.toMatch(/\/files/);
     }
     // Every call targets the evidence or baseline inspection surface only.
@@ -1409,6 +2089,10 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       LIST_URL,
       `${LIST_URL}/ev-text-1`,
       `${LIST_URL}/ev-table-1`,
+      EXTRACTION_DELTA_LIST_URL,
+      EXTRACTION_DELTA_DETAIL_URL,
+      EVIDENCE_PACKAGE_LIST_URL,
+      EVIDENCE_PACKAGE_DETAIL_URL,
       BASELINE_LIST_URL,
       BASELINE_DETAIL_URL,
     ]);
@@ -1448,6 +2132,10 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
 
     const allowedExact = new Set([
       LIST_URL,
+      EXTRACTION_DELTA_LIST_URL,
+      EXTRACTION_DELTA_DETAIL_URL,
+      EVIDENCE_PACKAGE_LIST_URL,
+      EVIDENCE_PACKAGE_DETAIL_URL,
       BASELINE_LIST_URL,
       BASELINE_DETAIL_URL,
       REVIEW_URL,
@@ -1462,7 +2150,9 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       expect(call.method).not.toBe("PUT");
       expect(call.method).not.toBe("PATCH");
       expect(call.method).not.toBe("DELETE");
-      expect(call.url).not.toMatch(/upload|input-package|\/approvals|\/extract|\/files|\/export/);
+      expect(call.url).not.toMatch(
+        /upload|input-package|\/approvals|\/extract(?:\/|$)|\/files|\/export/
+      );
     }
   });
 
@@ -1499,6 +2189,10 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
 
     const allowedExact = new Set([
       LIST_URL,
+      EXTRACTION_DELTA_LIST_URL,
+      EXTRACTION_DELTA_DETAIL_URL,
+      EVIDENCE_PACKAGE_LIST_URL,
+      EVIDENCE_PACKAGE_DETAIL_URL,
       BASELINE_LIST_URL,
       BASELINE_DETAIL_URL,
       REVIEW_URL,
@@ -1510,7 +2204,9 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       expect(call.method).not.toBe("PUT");
       expect(call.method).not.toBe("PATCH");
       expect(call.method).not.toBe("DELETE");
-      expect(call.url).not.toMatch(/upload|input-package|\/approvals|\/extract|\/files|\/export/);
+      expect(call.url).not.toMatch(
+        /upload|input-package|\/approvals|\/extract(?:\/|$)|\/files|\/export/
+      );
     }
   });
 });
@@ -1528,7 +2224,7 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
     expect(source).toContain("/rfp/artifacts/");
   });
 
-  it("imports only react, next/navigation, and the two type-only inspection read models", () => {
+  it("imports only react, next/navigation, and the type-only inspection read models", () => {
     const statements = source.match(/^import[^;]+;/gm) ?? [];
     expect(statements.length).toBeGreaterThanOrEqual(4);
     const allowed = new Set([
@@ -1536,6 +2232,8 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
       "next/navigation",
       "@/lib/projects/project-rfp-evidence-inspection",
       "@/lib/projects/project-rfp-requirements-baseline-inspection",
+      "@/lib/projects/project-rfp-extraction-delta-inspection",
+      "@/lib/projects/project-rfp-evidence-package-inspection",
     ]);
     for (const statement of statements) {
       const m = statement.match(/from\s+"([^"]+)"/);

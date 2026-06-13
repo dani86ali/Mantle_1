@@ -59,6 +59,22 @@
  * and reloads nothing. Whenever the evidence list reloads, the selection is
  * pruned to ids still present in the current list. Generation and review
  * are the page's only two writes, each on its own endpoint.
+ *
+ * Extraction review (Stage 1A): on mount the page also GETs two lean,
+ * read-only artifact lists - the extraction_delta list from
+ * /api/projects/[id]/rfp/extraction-delta and the evidence_package list from
+ * /api/projects/[id]/rfp/evidence-package - rendering identifiers, ISO dates,
+ * counts, and source ids only, never a candidate body, proposed evidence,
+ * final evidence text or table rows, a tenant id, or a storage path. Clicking
+ * Inspect on a delta row GETs .../extraction-delta/[artifactId] and shows
+ * pending candidates first with their locator-only evidence references and the
+ * AI/engineer proposed evidence (a proposal surfaced for review, never
+ * authority), keeping decided candidates and review history in collapsed
+ * details. Clicking Inspect on an evidence_package row GETs
+ * .../evidence-package/[artifactId] and renders the sanitized final evidence
+ * text and table content - the package under human review - in collapsed
+ * details with full source traceability. All four extraction-review fetches
+ * are default GETs that write nothing, run no extraction, and decide nothing.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -73,6 +89,16 @@ import type {
   RfpRequirementsBaselineInspectionBaseline,
   RfpRequirementsBaselineInspectionListItem,
 } from "@/lib/projects/project-rfp-requirements-baseline-inspection";
+import type {
+  RfpExtractionDeltaInspectionArtifactSummary,
+  RfpExtractionDeltaInspectionDetail,
+  RfpExtractionDeltaInspectionListItem,
+} from "@/lib/projects/project-rfp-extraction-delta-inspection";
+import type {
+  RfpEvidencePackageInspectionArtifactSummary,
+  RfpEvidencePackageInspectionListItem,
+  RfpEvidencePackageInspectionPackage,
+} from "@/lib/projects/project-rfp-evidence-package-inspection";
 
 type EvidenceKind = RfpEvidenceListItemSummary["kind"];
 type KindFilter = "all" | EvidenceKind;
@@ -136,6 +162,49 @@ type BaselineRequirement =
 type BaselineEvidenceReference =
   BaselineRequirement["evidenceReferences"][number];
 
+/** Lean list response of GET /api/projects/[id]/rfp/extraction-delta. */
+interface ExtractionDeltaListResponse {
+  artifactCount: number;
+  artifacts: RfpExtractionDeltaInspectionListItem[];
+}
+
+/** Detail response of GET .../rfp/extraction-delta/[artifactId]. */
+interface ExtractionDeltaDetailResponse {
+  artifact?: RfpExtractionDeltaInspectionArtifactSummary;
+  delta?: RfpExtractionDeltaInspectionDetail;
+}
+
+/** Loaded extraction-delta detail: the artifact summary plus sanitized delta. */
+interface ExtractionDeltaDetail {
+  artifact: RfpExtractionDeltaInspectionArtifactSummary;
+  delta: RfpExtractionDeltaInspectionDetail;
+}
+
+type DeltaCandidate = RfpExtractionDeltaInspectionDetail["candidates"][number];
+type DeltaEvidenceReference = DeltaCandidate["evidenceReferences"][number];
+type DeltaProposedEvidence = NonNullable<DeltaCandidate["proposedEvidence"]>;
+type DeltaReviewHistoryEntry = DeltaCandidate["reviewHistory"][number];
+
+/** Lean list response of GET /api/projects/[id]/rfp/evidence-package. */
+interface EvidencePackageListResponse {
+  artifactCount: number;
+  artifacts: RfpEvidencePackageInspectionListItem[];
+}
+
+/** Detail response of GET .../rfp/evidence-package/[artifactId]. */
+interface EvidencePackageDetailResponse {
+  artifact?: RfpEvidencePackageInspectionArtifactSummary;
+  package?: RfpEvidencePackageInspectionPackage;
+}
+
+/** Loaded evidence-package detail: the artifact summary plus sanitized package. */
+interface EvidencePackageDetail {
+  artifact: RfpEvidencePackageInspectionArtifactSummary;
+  package: RfpEvidencePackageInspectionPackage;
+}
+
+type PackageEvidence = RfpEvidencePackageInspectionPackage["evidence"][number];
+
 /** Exact UI copy required for the list/detail failure states. */
 const LIST_ERROR = "Unable to load RFP evidence.";
 const DETAIL_ERROR = "Unable to load evidence detail.";
@@ -150,6 +219,14 @@ const BASELINE_REVIEW_ERROR = "Unable to review requirements baseline.";
 /** Exact UI copy required for the baseline generation outcome states. */
 const GENERATE_SUCCESS = "Requirements baseline draft generated.";
 const GENERATE_ERROR = "Unable to generate requirements baseline.";
+
+/** Exact UI copy required for the extraction-delta failure states. */
+const DELTA_LIST_ERROR = "Unable to load extraction deltas.";
+const DELTA_DETAIL_ERROR = "Unable to load extraction delta detail.";
+
+/** Exact UI copy required for the evidence-package failure states. */
+const PACKAGE_LIST_ERROR = "Unable to load final evidence packages.";
+const PACKAGE_DETAIL_ERROR = "Unable to load final evidence package detail.";
 
 const EMPTY_FILTERS: EvidenceFilters = {
   sourceFileId: "",
@@ -215,6 +292,242 @@ function referenceLine(ref: BaselineEvidenceReference): string {
   return `chunk ${ref.chunkIndex + 1}/${ref.chunkCount} | ${ref.charCount} chars`;
 }
 
+/** One-line locator summary for one delta evidence reference; never content. */
+function deltaReferenceLine(ref: DeltaEvidenceReference): string {
+  if (ref.evidenceKind === "rfp_document_table") {
+    const page = ref.pageNumber !== undefined ? ` | page ${ref.pageNumber}` : "";
+    const sheet = ref.sheetName !== undefined ? ` | sheet ${ref.sheetName}` : "";
+    return `table ${ref.tableId}${page}${sheet} | ${ref.rowCount} rows x ${ref.columnCount} cols`;
+  }
+  return `chunk ${ref.chunkIndex + 1}/${ref.chunkCount} | ${ref.charCount} chars`;
+}
+
+/**
+ * One AI/engineer proposed-evidence block, surfaced for review only - a
+ * proposal, never authority. Text proposals show the body; table proposals
+ * show the fresh row matrix. Both carry their proposal-side metadata.
+ */
+function DeltaProposedEvidenceView({
+  proposed,
+}: {
+  proposed: DeltaProposedEvidence;
+}) {
+  if (proposed.evidenceKind === "rfp_document_text_chunk") {
+    return (
+      <div data-testid="delta-proposed-text">
+        <p className="mt-1 text-xs text-text-secondary">
+          text proposal
+          {proposed.sourceFileName !== undefined ? ` | ${proposed.sourceFileName}` : ""}
+          {proposed.sourceFileRole !== undefined ? ` (${proposed.sourceFileRole})` : ""}
+          {proposed.chunkIndex !== undefined && proposed.chunkCount !== undefined
+            ? ` | chunk ${proposed.chunkIndex + 1}/${proposed.chunkCount}`
+            : ""}
+          {proposed.charCount !== undefined ? ` | ${proposed.charCount} chars` : ""}
+        </p>
+        <pre
+          data-testid="delta-proposed-text-body"
+          className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-button bg-bg-card p-2 text-xs text-text-primary"
+        >
+          {proposed.text}
+        </pre>
+      </div>
+    );
+  }
+  return (
+    <div data-testid="delta-proposed-table">
+      <p className="mt-1 text-xs text-text-secondary">
+        table proposal
+        {proposed.tableId !== undefined ? ` ${proposed.tableId}` : ""}
+        {proposed.sheetName !== undefined ? ` | sheet ${proposed.sheetName}` : ""}
+        {proposed.pageNumber !== undefined ? ` | page ${proposed.pageNumber}` : ""}
+        {proposed.rowCount !== undefined && proposed.columnCount !== undefined
+          ? ` | ${proposed.rowCount} rows x ${proposed.columnCount} cols`
+          : ""}
+      </p>
+      <div className="mt-1 max-h-72 overflow-auto">
+        <table className="w-full border-collapse text-xs">
+          <tbody>
+            {proposed.rows.map((row, rowIndex) => (
+              <tr key={rowIndex} data-testid="delta-proposed-table-row">
+                {row.map((cell, cellIndex) => (
+                  <td
+                    key={cellIndex}
+                    className="border border-[var(--border)] px-2 py-1 text-text-primary"
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One delta candidate: identity/display fields, the source file, locator-only
+ * evidence references, the proposed evidence (expandable, proposal-only), and
+ * the engineer review history (expandable). Reused for pending and decided
+ * candidates; the caller collapses the decided group.
+ */
+function DeltaCandidateRow({ candidate }: { candidate: DeltaCandidate }) {
+  return (
+    <li
+      data-testid="delta-candidate"
+      className="rounded-button border border-[var(--border)] p-2"
+    >
+      <p className="text-xs font-medium text-text-primary">
+        <span className="font-mono">{candidate.id}</span> | {candidate.kind} |{" "}
+        {candidate.severity} | {candidate.reviewStatus}
+        {candidate.confidence !== undefined
+          ? ` | confidence ${candidate.confidence}`
+          : ""}
+      </p>
+      <p className="text-xs font-medium text-text-primary">{candidate.title}</p>
+      <p className="mt-1 whitespace-pre-wrap text-xs text-text-primary">
+        {candidate.description}
+      </p>
+      {candidate.rationale !== undefined && (
+        <p className="mt-1 text-xs text-text-secondary">
+          Rationale: {candidate.rationale}
+        </p>
+      )}
+      <p className="text-xs text-text-tertiary">
+        source file <span className="font-mono">{candidate.sourceFileId}</span>
+      </p>
+      {candidate.evidenceReferences.length > 0 && (
+        <ul className="mt-1 space-y-0.5">
+          {candidate.evidenceReferences.map((ref, refIndex) => (
+            <li
+              key={refIndex}
+              data-testid="delta-reference"
+              className="text-xs text-text-tertiary"
+            >
+              <span className="font-mono">{ref.evidenceId}</span> |{" "}
+              {kindLabel(ref.evidenceKind)} | {deltaReferenceLine(ref)} | file{" "}
+              <span className="font-mono">{ref.sourceFileId}</span> | package{" "}
+              <span className="font-mono">{ref.inputPackageArtifactId}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {candidate.proposedEvidence !== undefined && (
+        <details data-testid="delta-proposed-evidence" className="mt-1">
+          <summary className="cursor-pointer text-xs text-text-secondary">
+            Proposed evidence (proposal for review)
+          </summary>
+          <DeltaProposedEvidenceView proposed={candidate.proposedEvidence} />
+        </details>
+      )}
+      {candidate.reviewHistory.length > 0 && (
+        <details data-testid="delta-review-history" className="mt-1">
+          <summary className="cursor-pointer text-xs text-text-secondary">
+            Review history ({candidate.reviewHistory.length})
+          </summary>
+          <ul className="mt-1 space-y-0.5">
+            {candidate.reviewHistory.map(
+              (entry: DeltaReviewHistoryEntry, entryIndex) => (
+                <li
+                  key={entryIndex}
+                  data-testid="delta-history-entry"
+                  className="text-xs text-text-tertiary"
+                >
+                  {entry.action} | {entry.decidedBy} | {entry.decidedAt} |{" "}
+                  {entry.previousReviewStatus} to {entry.nextReviewStatus}
+                  {entry.note !== undefined ? ` | ${entry.note}` : ""}
+                </li>
+              )
+            )}
+          </ul>
+        </details>
+      )}
+    </li>
+  );
+}
+
+/**
+ * One final evidence-package entry. This is the sanitized evidence under human
+ * review, so the body is surfaced - text in a collapsed details block, table
+ * rows in a collapsed details block - alongside its source traceability.
+ */
+function PackageEvidenceView({ evidence }: { evidence: PackageEvidence }) {
+  const traceability = (
+    <p className="text-xs text-text-secondary">
+      {evidence.sourceFileName !== undefined ? `${evidence.sourceFileName} ` : ""}
+      {evidence.sourceFileRole !== undefined ? `(${evidence.sourceFileRole}) ` : ""}
+      file <span className="font-mono">{evidence.sourceFileId}</span> | package{" "}
+      <span className="font-mono">{evidence.inputPackageArtifactId}</span>
+    </p>
+  );
+  if (evidence.evidenceKind === "rfp_document_text_chunk") {
+    return (
+      <li
+        data-testid="ep-evidence"
+        className="rounded-button border border-[var(--border)] p-2"
+      >
+        <p className="text-xs font-medium text-text-primary">
+          <span className="font-mono">{evidence.evidenceId}</span> | text | chunk{" "}
+          {evidence.chunkIndex + 1}/{evidence.chunkCount} | {evidence.charCount} chars
+          {evidence.documentMetrics !== undefined
+            ? ` | doc ${evidence.documentMetrics.textCharCount} chars / ${evidence.documentMetrics.tableCount} tables`
+            : ""}
+        </p>
+        {traceability}
+        <details data-testid="ep-evidence-text" className="mt-1">
+          <summary className="cursor-pointer text-xs text-text-secondary">
+            Evidence text
+          </summary>
+          <pre
+            data-testid="ep-evidence-text-body"
+            className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-button bg-bg-card p-2 text-xs text-text-primary"
+          >
+            {evidence.text}
+          </pre>
+        </details>
+      </li>
+    );
+  }
+  return (
+    <li
+      data-testid="ep-evidence"
+      className="rounded-button border border-[var(--border)] p-2"
+    >
+      <p className="text-xs font-medium text-text-primary">
+        <span className="font-mono">{evidence.evidenceId}</span> | table {evidence.tableId}
+        {evidence.pageNumber !== undefined ? ` | page ${evidence.pageNumber}` : ""}
+        {evidence.sheetName !== undefined ? ` | sheet ${evidence.sheetName}` : ""} |{" "}
+        {evidence.rowCount} rows x {evidence.columnCount} cols
+      </p>
+      {traceability}
+      <details data-testid="ep-evidence-table" className="mt-1">
+        <summary className="cursor-pointer text-xs text-text-secondary">
+          Evidence table
+        </summary>
+        <div className="mt-1 max-h-72 overflow-auto">
+          <table className="w-full border-collapse text-xs">
+            <tbody>
+              {evidence.rows.map((row, rowIndex) => (
+                <tr key={rowIndex} data-testid="ep-evidence-table-row">
+                  {row.map((cell, cellIndex) => (
+                    <td
+                      key={cellIndex}
+                      className="border border-[var(--border)] px-2 py-1 text-text-primary"
+                    >
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </li>
+  );
+}
+
 export default function ProjectRfpEvidencePage() {
   const params = useParams();
   const id = params.id as string;
@@ -248,6 +561,22 @@ export default function ProjectRfpEvidencePage() {
   const [generatePending, setGeneratePending] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [generateSuccess, setGenerateSuccess] = useState<string | null>(null);
+
+  const [deltaList, setDeltaList] = useState<ExtractionDeltaListResponse | null>(null);
+  const [deltaListLoading, setDeltaListLoading] = useState(true);
+  const [deltaListError, setDeltaListError] = useState<string | null>(null);
+
+  const [deltaDetail, setDeltaDetail] = useState<ExtractionDeltaDetail | null>(null);
+  const [deltaDetailLoading, setDeltaDetailLoading] = useState(false);
+  const [deltaDetailError, setDeltaDetailError] = useState<string | null>(null);
+
+  const [packageList, setPackageList] = useState<EvidencePackageListResponse | null>(null);
+  const [packageListLoading, setPackageListLoading] = useState(true);
+  const [packageListError, setPackageListError] = useState<string | null>(null);
+
+  const [packageDetail, setPackageDetail] = useState<EvidencePackageDetail | null>(null);
+  const [packageDetailLoading, setPackageDetailLoading] = useState(false);
+  const [packageDetailError, setPackageDetailError] = useState<string | null>(null);
 
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
@@ -332,6 +661,110 @@ export default function ProjectRfpEvidencePage() {
   useEffect(() => {
     void loadBaselineList();
   }, [loadBaselineList]);
+
+  const loadDeltaList = useCallback(async (): Promise<void> => {
+    setDeltaListLoading(true);
+    setDeltaListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/extraction-delta`);
+      const body = (await res.json().catch(() => null)) as ExtractionDeltaListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
+        setDeltaList(null);
+        setDeltaListError(DELTA_LIST_ERROR);
+        return;
+      }
+      setDeltaList(body);
+    } catch {
+      setDeltaList(null);
+      setDeltaListError(DELTA_LIST_ERROR);
+    } finally {
+      setDeltaListLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadDeltaList();
+  }, [loadDeltaList]);
+
+  // Delta candidate bodies and proposals are fetched only here, on Inspect.
+  const loadDeltaDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setDeltaDetail(null);
+      setDeltaDetailError(null);
+      setDeltaDetailLoading(true);
+      try {
+        const res = await fetch(`/api/projects/${id}/rfp/extraction-delta/${artifactId}`);
+        const body = (await res.json().catch(() => null)) as ExtractionDeltaDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.delta === undefined
+        ) {
+          setDeltaDetailError(DELTA_DETAIL_ERROR);
+          return;
+        }
+        setDeltaDetail({ artifact: body.artifact, delta: body.delta });
+      } catch {
+        setDeltaDetailError(DELTA_DETAIL_ERROR);
+      } finally {
+        setDeltaDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  const loadPackageList = useCallback(async (): Promise<void> => {
+    setPackageListLoading(true);
+    setPackageListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/evidence-package`);
+      const body = (await res.json().catch(() => null)) as EvidencePackageListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
+        setPackageList(null);
+        setPackageListError(PACKAGE_LIST_ERROR);
+        return;
+      }
+      setPackageList(body);
+    } catch {
+      setPackageList(null);
+      setPackageListError(PACKAGE_LIST_ERROR);
+    } finally {
+      setPackageListLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadPackageList();
+  }, [loadPackageList]);
+
+  // Final evidence content is fetched only here, on an explicit Inspect click.
+  const loadPackageDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setPackageDetail(null);
+      setPackageDetailError(null);
+      setPackageDetailLoading(true);
+      try {
+        const res = await fetch(`/api/projects/${id}/rfp/evidence-package/${artifactId}`);
+        const body = (await res.json().catch(() => null)) as EvidencePackageDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.package === undefined
+        ) {
+          setPackageDetailError(PACKAGE_DETAIL_ERROR);
+          return;
+        }
+        setPackageDetail({ artifact: body.artifact, package: body.package });
+      } catch {
+        setPackageDetailError(PACKAGE_DETAIL_ERROR);
+      } finally {
+        setPackageDetailLoading(false);
+      }
+    },
+    [id]
+  );
 
   function toggleEvidenceSelection(evidenceId: string): void {
     setSelectedEvidenceIds((prev) =>
@@ -482,6 +915,18 @@ export default function ProjectRfpEvidencePage() {
   }
 
   const content = detail?.content ?? null;
+
+  // Default view focuses on pending work; decided candidates collapse below.
+  const pendingDeltaCandidates: DeltaCandidate[] = deltaDetail
+    ? deltaDetail.delta.candidates.filter(
+        (candidate) => candidate.reviewStatus === "pending_review"
+      )
+    : [];
+  const decidedDeltaCandidates: DeltaCandidate[] = deltaDetail
+    ? deltaDetail.delta.candidates.filter(
+        (candidate) => candidate.reviewStatus !== "pending_review"
+      )
+    : [];
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-6">
@@ -686,6 +1131,257 @@ export default function ProjectRfpEvidencePage() {
             )}
           </div>
         )}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-text-primary">Extraction review</h2>
+
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Extraction deltas
+          </h3>
+          {deltaListError && (
+            <div data-testid="delta-list-error" className={`mt-2 ${ERROR_BOX}`}>
+              {deltaListError}
+            </div>
+          )}
+          {deltaListLoading && (
+            <p data-testid="delta-list-loading" className="mt-1 text-sm text-text-tertiary">
+              Loading extraction deltas...
+            </p>
+          )}
+          {deltaList && (
+            <>
+              <p data-testid="delta-count" className="mt-1 text-xs text-text-secondary">
+                Extraction deltas: {deltaList.artifactCount}
+              </p>
+              {deltaList.artifacts.length === 0 ? (
+                <p data-testid="delta-empty" className="mt-2 text-sm text-text-tertiary">
+                  No extraction delta artifacts yet.
+                </p>
+              ) : (
+                <ol className="mt-2 space-y-1">
+                  {deltaList.artifacts.map((item) => (
+                    <li
+                      key={item.id}
+                      data-testid="delta-row"
+                      className="flex items-start justify-between gap-2 rounded-button border border-[var(--border)] p-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-text-primary">
+                          <span className="font-mono">{item.id}</span> | version {item.version} |{" "}
+                          {item.status}
+                        </p>
+                        <p className="text-xs text-text-secondary">
+                          source {item.payloadSummary.proposalSource} | package{" "}
+                          <span className="font-mono">
+                            {item.payloadSummary.inputPackageArtifactId}
+                          </span>{" "}
+                          | candidates {item.payloadSummary.candidateCount}
+                        </p>
+                        <p className="text-xs text-text-secondary">
+                          pending {item.payloadSummary.pendingCount} | accepted{" "}
+                          {item.payloadSummary.acceptedCount} | rejected{" "}
+                          {item.payloadSummary.rejectedCount} | waived{" "}
+                          {item.payloadSummary.waivedCount}
+                        </p>
+                        <p className="text-xs text-text-tertiary">
+                          source artifacts:{" "}
+                          <span className="font-mono">{item.sourceArtifactIds.join(", ")}</span> |
+                          source files:{" "}
+                          <span className="font-mono">{item.sourceFileIds.join(", ")}</span>
+                        </p>
+                        <p className="text-xs text-text-tertiary">
+                          created {item.createdAt} | updated {item.updatedAt}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid={`delta-inspect-${item.id}`}
+                        disabled={deltaDetailLoading}
+                        onClick={() => void loadDeltaDetail(item.id)}
+                        className={ACTION_BTN}
+                      >
+                        Inspect
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </>
+          )}
+        </div>
+
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Extraction delta detail
+          </h3>
+          {deltaDetailError && (
+            <div data-testid="delta-detail-error" className={`mt-2 ${ERROR_BOX}`}>
+              {deltaDetailError}
+            </div>
+          )}
+          {deltaDetailLoading && (
+            <p data-testid="delta-detail-loading" className="mt-1 text-sm text-text-tertiary">
+              Loading extraction delta detail...
+            </p>
+          )}
+          {!deltaDetail && !deltaDetailLoading && !deltaDetailError && (
+            <p data-testid="delta-detail-empty" className="mt-1 text-xs text-text-tertiary">
+              No extraction delta inspected yet.
+            </p>
+          )}
+          {deltaDetail && (
+            <div
+              data-testid="delta-detail-panel"
+              className="mt-2 rounded-card border border-[var(--border)] p-3"
+            >
+              <p data-testid="delta-detail-meta" className="text-xs text-text-secondary">
+                <span className="font-mono">{deltaDetail.artifact.id}</span> | version{" "}
+                {deltaDetail.artifact.version} | {deltaDetail.artifact.status} | candidates{" "}
+                {deltaDetail.delta.candidateCount} | pending {deltaDetail.delta.pendingCount} |
+                accepted {deltaDetail.delta.acceptedCount} | rejected{" "}
+                {deltaDetail.delta.rejectedCount} | waived {deltaDetail.delta.waivedCount}
+              </p>
+              {pendingDeltaCandidates.length === 0 ? (
+                <p data-testid="delta-pending-empty" className="mt-2 text-xs text-text-tertiary">
+                  No pending candidates.
+                </p>
+              ) : (
+                <ol data-testid="delta-pending-list" className="mt-2 space-y-2">
+                  {pendingDeltaCandidates.map((candidate) => (
+                    <DeltaCandidateRow key={candidate.id} candidate={candidate} />
+                  ))}
+                </ol>
+              )}
+              {decidedDeltaCandidates.length > 0 && (
+                <details data-testid="delta-decided" className="mt-2">
+                  <summary className="cursor-pointer text-xs text-text-secondary">
+                    Decided candidates ({decidedDeltaCandidates.length})
+                  </summary>
+                  <ol className="mt-2 space-y-2">
+                    {decidedDeltaCandidates.map((candidate) => (
+                      <DeltaCandidateRow key={candidate.id} candidate={candidate} />
+                    ))}
+                  </ol>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Final evidence packages
+          </h3>
+          {packageListError && (
+            <div data-testid="ep-list-error" className={`mt-2 ${ERROR_BOX}`}>
+              {packageListError}
+            </div>
+          )}
+          {packageListLoading && (
+            <p data-testid="ep-list-loading" className="mt-1 text-sm text-text-tertiary">
+              Loading final evidence packages...
+            </p>
+          )}
+          {packageList && (
+            <>
+              <p data-testid="ep-count" className="mt-1 text-xs text-text-secondary">
+                Final evidence packages: {packageList.artifactCount}
+              </p>
+              {packageList.artifacts.length === 0 ? (
+                <p data-testid="ep-empty" className="mt-2 text-sm text-text-tertiary">
+                  No final evidence package artifacts yet.
+                </p>
+              ) : (
+                <ol className="mt-2 space-y-1">
+                  {packageList.artifacts.map((item) => (
+                    <li
+                      key={item.id}
+                      data-testid="ep-row"
+                      className="flex items-start justify-between gap-2 rounded-button border border-[var(--border)] p-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-text-primary">
+                          <span className="font-mono">{item.id}</span> | version {item.version} |{" "}
+                          {item.status}
+                        </p>
+                        <p className="text-xs text-text-secondary">
+                          package{" "}
+                          <span className="font-mono">
+                            {item.payloadSummary.inputPackageArtifactId}
+                          </span>{" "}
+                          | evidence {item.payloadSummary.evidenceCount} | text{" "}
+                          {item.payloadSummary.textChunkCount} | tables{" "}
+                          {item.payloadSummary.tableEvidenceCount}
+                        </p>
+                        <p className="text-xs text-text-tertiary">
+                          source artifacts:{" "}
+                          <span className="font-mono">{item.sourceArtifactIds.join(", ")}</span> |
+                          source files:{" "}
+                          <span className="font-mono">{item.sourceFileIds.join(", ")}</span>
+                        </p>
+                        <p className="text-xs text-text-tertiary">
+                          created {item.createdAt} | updated {item.updatedAt}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid={`ep-inspect-${item.id}`}
+                        disabled={packageDetailLoading}
+                        onClick={() => void loadPackageDetail(item.id)}
+                        className={ACTION_BTN}
+                      >
+                        Inspect
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </>
+          )}
+        </div>
+
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Final evidence package detail
+          </h3>
+          {packageDetailError && (
+            <div data-testid="ep-detail-error" className={`mt-2 ${ERROR_BOX}`}>
+              {packageDetailError}
+            </div>
+          )}
+          {packageDetailLoading && (
+            <p data-testid="ep-detail-loading" className="mt-1 text-sm text-text-tertiary">
+              Loading final evidence package detail...
+            </p>
+          )}
+          {!packageDetail && !packageDetailLoading && !packageDetailError && (
+            <p data-testid="ep-detail-empty" className="mt-1 text-xs text-text-tertiary">
+              No final evidence package inspected yet.
+            </p>
+          )}
+          {packageDetail && (
+            <div
+              data-testid="ep-detail-panel"
+              className="mt-2 rounded-card border border-[var(--border)] p-3"
+            >
+              <p data-testid="ep-detail-meta" className="text-xs text-text-secondary">
+                <span className="font-mono">{packageDetail.artifact.id}</span> | version{" "}
+                {packageDetail.artifact.version} | {packageDetail.artifact.status} | package{" "}
+                <span className="font-mono">{packageDetail.package.inputPackageArtifactId}</span> |
+                evidence {packageDetail.package.evidenceCount} | text{" "}
+                {packageDetail.package.textChunkCount} | tables{" "}
+                {packageDetail.package.tableEvidenceCount}
+              </p>
+              <ol className="mt-2 space-y-2">
+                {packageDetail.package.evidence.map((evidence, evidenceIndex) => (
+                  <PackageEvidenceView key={evidenceIndex} evidence={evidence} />
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
       </section>
 
       <section>
