@@ -11,6 +11,7 @@ import type {
   ConfigExpansionRulePack,
   ConfigurationExpansionDraftLine,
   ConfigurationExpansionDraftSummary,
+  ConfigurationExpansionSkuResolutionStatus,
 } from "@/lib/projects/config-expansion-types";
 
 // Exact guard messages; tests assert on these.
@@ -161,7 +162,8 @@ function childAddQuantity(
 function customerLine(
   line: CanonicalBoqLine,
   lineId: string,
-  acceptedSku: string | undefined
+  acceptedSku: string | undefined,
+  skuResolutionStatus: ConfigurationExpansionSkuResolutionStatus | undefined
 ): ConfigurationExpansionDraftLine {
   return {
     lineId,
@@ -175,6 +177,7 @@ function customerLine(
     originalLineNumber: line.originalLineNumber,
     originalSku: line.sku,
     ...(acceptedSku !== undefined ? { acceptedSku } : {}),
+    ...(skuResolutionStatus !== undefined ? { skuResolutionStatus } : {}),
     originalCells: { ...line.originalCells },
   };
 }
@@ -206,12 +209,50 @@ function expansionLine(
 }
 
 /**
- * Walk human-ACCEPTED customer lines in order: a line whose accepted SKU starts a
- * segment per its matched parent rule; each approved child not already present is
- * added after it. This is the canonical gate from reviewed SKU decisions into
- * configuration expansion - only lines whose decision is `accepted` with a non-empty
- * acceptedSku carry forward. Rows with no decision, or `rejected`/`needs_review`/
- * `unresolved`/accepted-without-acceptedSku status, are omitted from the draft.
+ * A preserved customer row: its source line, stable draft line id (preserved-order),
+ * SKU-resolution status (absent for a no-decision row), the orderable acceptedSku
+ * (present ONLY when accepted with a nonblank SKU), and the expansion children
+ * collected under it. A non-orderable row carries no acceptedSku and no children.
+ */
+interface PreservedCustomerRow {
+  line: CanonicalBoqLine;
+  lineId: string;
+  status?: ConfigurationExpansionSkuResolutionStatus;
+  acceptedSku?: string;
+  children: ConfigurationExpansionDraftLine[];
+}
+
+/**
+ * An orderable customer row: a preserved row that is accepted with a nonblank
+ * acceptedSku. This is the ONLY kind of row eligible for parent-rule matching, child
+ * expansion, segment/present-SKU duplicate detection, and the project-wide accepted
+ * quantity maps - exactly the set the accept-only gate used to carry forward.
+ */
+interface OrderableCustomerRow {
+  row: PreservedCustomerRow;
+  acceptedSku: string;
+}
+
+/**
+ * Build a configuration-expansion draft from normalized BoQ lines and reviewed SKU
+ * decisions against an APPROVED rule pack. Every customer row is PRESERVED as a
+ * customer draft line in original order EXCEPT an explicitly `rejected` row: a
+ * rejected row is an explicit human exclusion, omitted from the draft but counted in
+ * the summary so the omission is never silent. Preserved rows keep their source
+ * identity and original cells, and carry their SKU-resolution status when they had a
+ * decision; a no-decision row is preserved with no status and no acceptedSku.
+ * Duplicate-looking rows are preserved as separate lines (never deduped by SKU), and
+ * stable line IDs (`line-1`, `line-2`, ...) follow preserved customer-row order -
+ * identical to the prior behavior when only accepted rows are preserved.
+ *
+ * Only a preserved row that is `accepted` with a nonblank acceptedSku is ORDERABLE: it
+ * carries that acceptedSku and is the only kind of row eligible for parent-rule
+ * matching and child expansion. Manual, out_of_scope, unresolved, needs_review,
+ * accepted-without-acceptedSku, and no-decision rows are visible customer evidence -
+ * preserved and never priced - but never orderable, so they never expand and never
+ * count toward parent-segment duplicate detection or the project-wide accepted
+ * quantity maps. Configuration authority only; never replaces SKUs, prices, or looks
+ * up a catalog. MVP_CANONICAL_PROJECT_STATE.md (11, 11A).
  */
 export function buildConfigurationExpansionDraft(
   input: BuildConfigurationExpansionDraftInput
@@ -223,49 +264,79 @@ export function buildConfigurationExpansionDraft(
   const parentRuleBySku = new Map<string, ConfigExpansionParentRule>();
   for (const parent of rulePack.parentRules) parentRuleBySku.set(parent.parentSku, parent);
 
-  // Canonical accept gate: keep only lines with an accepted, non-empty SKU decision,
-  // preserving original BoQ order. Everything downstream (IDs, segments, quantities,
-  // summary counts) is computed over these carried-forward lines, never the raw input.
-  const accepted: { line: CanonicalBoqLine; acceptedSku: string }[] = [];
+  // Preserve every customer row in original order EXCEPT explicitly rejected rows
+  // (explicit exclusions, counted below). A preserved row records its decision status
+  // and, only when accepted with a nonblank SKU, its orderable acceptedSku. Stable
+  // line IDs follow preserved order. Per-status tallies feed the additive summary.
+  const preserved: PreservedCustomerRow[] = [];
+  const orderable: OrderableCustomerRow[] = [];
+  let rejectedCustomerLineCount = 0;
+  let manualCustomerLineCount = 0;
+  let outOfScopeCustomerLineCount = 0;
+  let unresolvedCustomerLineCount = 0;
+  let needsReviewCustomerLineCount = 0;
+  let acceptedWithoutSkuCustomerLineCount = 0;
+  let noDecisionCustomerLineCount = 0;
+
   for (const line of lines) {
-    const acceptedSku = acceptedSkuFor(decisionByKey.get(decisionKey(line)));
-    if (acceptedSku === undefined) continue;
-    accepted.push({ line, acceptedSku });
+    const decision = decisionByKey.get(decisionKey(line));
+    if (decision?.status === "rejected") {
+      rejectedCustomerLineCount += 1;
+      continue;
+    }
+    const acceptedSku = acceptedSkuFor(decision);
+    const row: PreservedCustomerRow = {
+      line,
+      lineId: `line-${preserved.length + 1}`,
+      ...(decision !== undefined ? { status: decision.status } : {}),
+      ...(acceptedSku !== undefined ? { acceptedSku } : {}),
+      children: [],
+    };
+    preserved.push(row);
+    if (acceptedSku !== undefined) orderable.push({ row, acceptedSku });
+
+    if (decision === undefined) noDecisionCustomerLineCount += 1;
+    else if (decision.status === "accepted") {
+      if (acceptedSku === undefined) acceptedWithoutSkuCustomerLineCount += 1;
+    } else if (decision.status === "manual") manualCustomerLineCount += 1;
+    else if (decision.status === "out_of_scope") outOfScopeCustomerLineCount += 1;
+    else if (decision.status === "unresolved") unresolvedCustomerLineCount += 1;
+    else if (decision.status === "needs_review") needsReviewCustomerLineCount += 1;
   }
 
-  const matchedRules = accepted.map((entry) => parentRuleBySku.get(entry.acceptedSku));
+  // Expansion reasons over ORDERABLE rows only (the same set the accept-only gate
+  // carried forward): segments, present-SKU duplicate checks, the project-wide
+  // accepted quantity map, and the project_sku duplicate policy all ignore preserved
+  // non-orderable rows. Each orderable row keeps its preserved-order line id, so an
+  // expansion line still nests under the exact customer line that produced it.
+  const matchedRules = orderable.map((entry) => parentRuleBySku.get(entry.acceptedSku));
 
-  // Project-wide accepted customer quantity per effective (accepted) SKU, over the
-  // carried-forward lines only. Backs the related-SKU quantity model and the
-  // project_sku duplicate policy, both of which reach beyond a single parent segment.
-  // addedQtyBySku tracks expansion lines so a project-unique SKU is not re-added
-  // across segments.
   const acceptedQtyBySku = new Map<string, number>();
-  for (const entry of accepted) {
-    acceptedQtyBySku.set(entry.acceptedSku, (acceptedQtyBySku.get(entry.acceptedSku) ?? 0) + entry.line.quantity);
+  for (const entry of orderable) {
+    acceptedQtyBySku.set(entry.acceptedSku, (acceptedQtyBySku.get(entry.acceptedSku) ?? 0) + entry.row.line.quantity);
   }
   const addedQtyBySku = new Map<string, number>();
 
-  const draftLines: ConfigurationExpansionDraftLine[] = [];
   let addedLineCount = 0;
   let requiresReviewCount = 0;
   let includedItemCount = 0;
 
-  for (let i = 0; i < accepted.length; i++) {
-    const { line, acceptedSku } = accepted[i];
-    // IDs follow carried-forward order, not the original normalized index.
-    const parentLineId = `line-${i + 1}`;
-    draftLines.push(customerLine(line, parentLineId, acceptedSku));
+  for (let i = 0; i < orderable.length; i++) {
+    const { row } = orderable[i];
+    const { line } = row;
+    const parentLineId = row.lineId;
 
     const rule = matchedRules[i];
     if (!rule) continue;
 
-    // Parent segment: this line through the line before the next parent match, over
-    // carried-forward accepted lines only.
+    // Parent segment: this orderable line through the line before the next orderable
+    // parent match. Computed over orderable rows only; non-orderable rows are invisible
+    // to segment/present-SKU duplicate detection (they are customer evidence, not
+    // orderable configured SKUs).
     let end = i + 1;
-    while (end < accepted.length && matchedRules[end] === undefined) end++;
+    while (end < orderable.length && matchedRules[end] === undefined) end++;
     const present = new Set<string>();
-    for (let k = i; k < end; k++) present.add(accepted[k].acceptedSku);
+    for (let k = i; k < end; k++) present.add(orderable[k].acceptedSku);
 
     let ordinal = 0;
     for (const child of rule.childLines) {
@@ -287,7 +358,7 @@ export function buildConfigurationExpansionDraft(
 
       ordinal += 1;
       const added = expansionLine(child, `${parentLineId}-x${ordinal}`, line, parentLineId, quantity);
-      draftLines.push(added);
+      row.children.push(added);
       addedLineCount += 1;
       requiresReviewCount += 1;
       if (added.includedItem) includedItemCount += 1;
@@ -295,14 +366,32 @@ export function buildConfigurationExpansionDraft(
     }
   }
 
+  // Emit in preserved customer-row order, each orderable row immediately followed by
+  // its auto-added expansion children (customer-then-children order).
+  const draftLines: ConfigurationExpansionDraftLine[] = [];
+  for (const row of preserved) {
+    draftLines.push(customerLine(row.line, row.lineId, row.acceptedSku, row.status));
+    for (const child of row.children) draftLines.push(child);
+  }
+
   return {
     lines: draftLines,
     summary: {
-      customerLineCount: accepted.length,
+      customerLineCount: preserved.length,
       addedLineCount,
-      totalLineCount: accepted.length + addedLineCount,
+      totalLineCount: preserved.length + addedLineCount,
       requiresReviewCount,
       includedItemCount,
+      inputCustomerLineCount: lines.length,
+      acceptedCustomerLineCount: orderable.length,
+      nonAcceptedCustomerLineCount: preserved.length - orderable.length,
+      manualCustomerLineCount,
+      outOfScopeCustomerLineCount,
+      rejectedCustomerLineCount,
+      unresolvedCustomerLineCount,
+      needsReviewCustomerLineCount,
+      acceptedWithoutSkuCustomerLineCount,
+      noDecisionCustomerLineCount,
     },
   };
 }

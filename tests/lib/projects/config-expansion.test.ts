@@ -273,21 +273,64 @@ describe("buildConfigurationExpansionDraft - customer lines", () => {
   });
 });
 
-// --- Accept gate: only accepted decisions carry forward ---------------------
+// --- Customer-row preservation (manual / out_of_scope / no-decision / etc.) --
 
-describe("buildConfigurationExpansionDraft - accept gate", () => {
-  // A row carries forward only when its decision is `accepted` with a non-empty
-  // acceptedSku. Every other state - no decision, rejected, needs_review,
-  // unresolved, or accepted-without-acceptedSku - is omitted from the draft.
-  it("omits a row that has no SKU decision", () => {
+describe("buildConfigurationExpansionDraft - customer-row preservation", () => {
+  // Every customer row is preserved as a customer line EXCEPT an explicitly rejected
+  // row (an explicit human exclusion, counted but not carried). Preserved non-orderable
+  // rows carry their SKU-resolution status (when they had a decision), never an
+  // acceptedSku, and never expansion children. Only an accepted row with a nonblank
+  // acceptedSku is orderable and expands.
+
+  it("preserves a no-decision row with no acceptedSku and no skuResolutionStatus", () => {
     const draft = build({ lines: [line()], decisions: [], rulePack: approvedPack([parent()]) });
-    expect(draft.lines).toHaveLength(0);
-    expect(draft.summary.customerLineCount).toBe(0);
-    expect(draft.summary.totalLineCount).toBe(0);
+    expect(draft.lines).toHaveLength(1);
+    const c = draft.lines[0];
+    expect(c.origin).toBe("customer");
+    expect(c.lineId).toBe("line-1");
+    expect(c.acceptedSku).toBeUndefined();
+    expect(c.skuResolutionStatus).toBeUndefined();
+    expect("skuResolutionStatus" in c).toBe(false);
+    expect(addedLines(draft)).toHaveLength(0);
+    expect(draft.summary.customerLineCount).toBe(1);
+    expect(draft.summary.totalLineCount).toBe(1);
     expect(draft.summary.addedLineCount).toBe(0);
+    expect(draft.summary.noDecisionCustomerLineCount).toBe(1);
+    expect(draft.summary.acceptedCustomerLineCount).toBe(0);
+    expect(draft.summary.nonAcceptedCustomerLineCount).toBe(1);
+    expect(draft.summary.inputCustomerLineCount).toBe(1);
   });
 
-  it("omits a rejected row", () => {
+  it("preserves manual/out_of_scope/unresolved/needs_review rows with status, no acceptedSku, no expansion, and per-status counts", () => {
+    const cases = [
+      { status: "manual", field: "manualCustomerLineCount" },
+      { status: "out_of_scope", field: "outOfScopeCustomerLineCount" },
+      { status: "unresolved", field: "unresolvedCustomerLineCount" },
+      { status: "needs_review", field: "needsReviewCustomerLineCount" },
+    ] as const;
+    for (const { status, field } of cases) {
+      // line() carries sku PARENT-A (a parent SKU), proving a non-orderable row never
+      // expands even when its original SKU matches a rule.
+      const draft = build({
+        lines: [line()],
+        decisions: [accept({ status, acceptedSku: undefined })],
+        rulePack: approvedPack([parent()]),
+      });
+      expect(draft.lines, status).toHaveLength(1);
+      const c = draft.lines[0];
+      expect(c.origin, status).toBe("customer");
+      expect(c.lineId, status).toBe("line-1");
+      expect(c.skuResolutionStatus, status).toBe(status);
+      expect(c.acceptedSku, status).toBeUndefined();
+      expect(addedLines(draft), status).toHaveLength(0);
+      expect(draft.summary.customerLineCount, status).toBe(1);
+      expect(draft.summary.acceptedCustomerLineCount, status).toBe(0);
+      expect(draft.summary.nonAcceptedCustomerLineCount, status).toBe(1);
+      expect(draft.summary[field], status).toBe(1);
+    }
+  });
+
+  it("omits a rejected row but counts it as an explicit exclusion", () => {
     const draft = build({
       lines: [line()],
       decisions: [accept({ status: "rejected", acceptedSku: undefined })],
@@ -295,58 +338,174 @@ describe("buildConfigurationExpansionDraft - accept gate", () => {
     });
     expect(draft.lines).toHaveLength(0);
     expect(draft.summary.customerLineCount).toBe(0);
+    expect(draft.summary.totalLineCount).toBe(0);
+    expect(draft.summary.rejectedCustomerLineCount).toBe(1);
+    expect(draft.summary.inputCustomerLineCount).toBe(1);
+    expect(draft.summary.nonAcceptedCustomerLineCount).toBe(0);
   });
 
-  it("omits needs_review and unresolved rows", () => {
-    for (const status of ["needs_review", "unresolved"] as const) {
-      const draft = build({
-        lines: [line()],
-        decisions: [accept({ status, acceptedSku: undefined })],
-        rulePack: approvedPack([parent()]),
-      });
-      expect(draft.lines, status).toHaveLength(0);
-      expect(draft.summary.customerLineCount, status).toBe(0);
-    }
-  });
-
-  it("omits an accepted row whose acceptedSku is empty or blank", () => {
+  it("preserves an accepted row with a blank acceptedSku, counts it, and does not expand", () => {
     for (const acceptedSku of ["", "   "]) {
+      const label = JSON.stringify(acceptedSku);
       const draft = build({
         lines: [line()],
         decisions: [accept({ acceptedSku })],
         rulePack: approvedPack([parent()]),
       });
-      expect(draft.lines, JSON.stringify(acceptedSku)).toHaveLength(0);
-      expect(draft.summary.customerLineCount, JSON.stringify(acceptedSku)).toBe(0);
+      expect(draft.lines, label).toHaveLength(1);
+      const c = draft.lines[0];
+      expect(c.origin, label).toBe("customer");
+      expect(c.acceptedSku, label).toBeUndefined();
+      // The decision was accepted, so the status is preserved even with no orderable SKU.
+      expect(c.skuResolutionStatus, label).toBe("accepted");
+      expect(addedLines(draft), label).toHaveLength(0);
+      expect(draft.summary.acceptedWithoutSkuCustomerLineCount, label).toBe(1);
+      expect(draft.summary.acceptedCustomerLineCount, label).toBe(0);
+      expect(draft.summary.nonAcceptedCustomerLineCount, label).toBe(1);
+      expect(draft.summary.customerLineCount, label).toBe(1);
     }
   });
 
-  it("carries forward only the accepted rows, in original order, renumbering IDs", () => {
-    // Three rows: row 1 rejected, row 2 accepted, row 3 no decision, row 4 accepted.
-    // Only rows 2 and 4 survive, and they become line-1 / line-2 in draft order.
+  it("preserves duplicate-looking rows with the same SKU as separate customer lines", () => {
     const draft = build({
       lines: [
-        line({ sourceRowNumber: 1, originalLineNumber: "1", sku: "DROP-1", originalCells: { "#": "1", "Part Number": "DROP-1" } }),
-        line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "KEEP-A", originalCells: { "#": "2", "Part Number": "KEEP-A" } }),
-        line({ sourceRowNumber: 3, originalLineNumber: "3", sku: "DROP-2", originalCells: { "#": "3", "Part Number": "DROP-2" } }),
-        line({ sourceRowNumber: 4, originalLineNumber: "4", sku: "KEEP-B", originalCells: { "#": "4", "Part Number": "KEEP-B" } }),
+        line({ sourceRowNumber: 1, originalLineNumber: "1", sku: "DUP", originalCells: { "#": "1", "Part Number": "DUP" } }),
+        line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "DUP", originalCells: { "#": "2", "Part Number": "DUP" } }),
       ],
       decisions: [
-        accept({ sourceRowNumber: 1, originalLineNumber: "1", originalSku: "DROP-1", status: "rejected", acceptedSku: undefined }),
-        accept({ sourceRowNumber: 2, originalLineNumber: "2", originalSku: "KEEP-A", acceptedSku: "KEEP-A" }),
-        accept({ sourceRowNumber: 4, originalLineNumber: "4", originalSku: "KEEP-B", acceptedSku: "KEEP-B" }),
+        accept({ sourceRowNumber: 1, originalLineNumber: "1", originalSku: "DUP", acceptedSku: "DUP" }),
+        accept({ sourceRowNumber: 2, originalLineNumber: "2", originalSku: "DUP", acceptedSku: "DUP" }),
+      ],
+      rulePack: approvedPack([parent()]),
+    });
+    const customer = draft.lines.filter((l) => l.origin === "customer");
+    expect(customer.map((l) => l.lineId)).toEqual(["line-1", "line-2"]);
+    expect(customer.map((l) => l.sourceRowNumber)).toEqual([1, 2]);
+    expect(customer.every((l) => l.sku === "DUP")).toBe(true);
+    expect(draft.summary.customerLineCount).toBe(2);
+  });
+
+  it("drops only the explicitly rejected one of two same-SKU rows", () => {
+    const draft = build({
+      lines: [
+        line({ sourceRowNumber: 1, originalLineNumber: "1", sku: "DUP", originalCells: { "#": "1", "Part Number": "DUP" } }),
+        line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "DUP", originalCells: { "#": "2", "Part Number": "DUP" } }),
+      ],
+      decisions: [
+        accept({ sourceRowNumber: 1, originalLineNumber: "1", originalSku: "DUP", status: "rejected", acceptedSku: undefined }),
+        accept({ sourceRowNumber: 2, originalLineNumber: "2", originalSku: "DUP", acceptedSku: "DUP" }),
+      ],
+      rulePack: approvedPack([parent()]),
+    });
+    const customer = draft.lines.filter((l) => l.origin === "customer");
+    expect(customer).toHaveLength(1);
+    expect(customer[0].sourceRowNumber).toBe(2);
+    expect(customer[0].lineId).toBe("line-1");
+    expect(draft.summary.rejectedCustomerLineCount).toBe(1);
+    expect(draft.summary.customerLineCount).toBe(1);
+  });
+
+  it("preserves mixed accepted/manual/rejected/no-decision rows in order with stable IDs", () => {
+    // row1 accepted, row2 manual, row3 rejected, row4 no decision, row5 accepted.
+    const draft = build({
+      lines: [
+        line({ sourceRowNumber: 1, originalLineNumber: "1", sku: "ACC-A", originalCells: { "#": "1" } }),
+        line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "MAN", originalCells: { "#": "2" } }),
+        line({ sourceRowNumber: 3, originalLineNumber: "3", sku: "REJ", originalCells: { "#": "3" } }),
+        line({ sourceRowNumber: 4, originalLineNumber: "4", sku: "NOD", originalCells: { "#": "4" } }),
+        line({ sourceRowNumber: 5, originalLineNumber: "5", sku: "ACC-B", originalCells: { "#": "5" } }),
+      ],
+      decisions: [
+        accept({ sourceRowNumber: 1, originalLineNumber: "1", originalSku: "ACC-A", acceptedSku: "ACC-A" }),
+        accept({ sourceRowNumber: 2, originalLineNumber: "2", originalSku: "MAN", status: "manual", acceptedSku: undefined }),
+        accept({ sourceRowNumber: 3, originalLineNumber: "3", originalSku: "REJ", status: "rejected", acceptedSku: undefined }),
+        // row 4: no decision
+        accept({ sourceRowNumber: 5, originalLineNumber: "5", originalSku: "ACC-B", acceptedSku: "ACC-B" }),
       ],
       rulePack: approvedPack([parent()]),
     });
 
     const customer = draft.lines.filter((l) => l.origin === "customer");
-    expect(customer.map((l) => l.sku)).toEqual(["KEEP-A", "KEEP-B"]);
-    expect(customer.map((l) => l.lineId)).toEqual(["line-1", "line-2"]);
-    // Source identity is preserved on the carried lines despite the renumbering.
-    expect(customer.map((l) => l.sourceRowNumber)).toEqual([2, 4]);
-    expect(customer.map((l) => l.originalLineNumber)).toEqual(["2", "4"]);
-    expect(draft.summary.customerLineCount).toBe(2);
-    expect(draft.summary.totalLineCount).toBe(2);
+    // The rejected row is excluded; preserved order = ACC-A, MAN, NOD, ACC-B.
+    expect(customer.map((l) => l.sku)).toEqual(["ACC-A", "MAN", "NOD", "ACC-B"]);
+    expect(customer.map((l) => l.lineId)).toEqual(["line-1", "line-2", "line-3", "line-4"]);
+    expect(customer.map((l) => l.skuResolutionStatus)).toEqual(["accepted", "manual", undefined, "accepted"]);
+    expect(customer.map((l) => l.sourceRowNumber)).toEqual([1, 2, 4, 5]);
+    expect(draft.summary.customerLineCount).toBe(4);
+    expect(draft.summary.inputCustomerLineCount).toBe(5);
+    expect(draft.summary.acceptedCustomerLineCount).toBe(2);
+    expect(draft.summary.manualCustomerLineCount).toBe(1);
+    expect(draft.summary.rejectedCustomerLineCount).toBe(1);
+    expect(draft.summary.noDecisionCustomerLineCount).toBe(1);
+    expect(draft.summary.nonAcceptedCustomerLineCount).toBe(2);
+  });
+
+  it("expands an accepted orderable row exactly as before, carrying status accepted", () => {
+    const draft = build({ lines: [line()], decisions: [accept()], rulePack: approvedPack([parent()]) });
+    expect(draft.lines).toHaveLength(2);
+    const [c, exp] = draft.lines;
+    expect(c.origin).toBe("customer");
+    expect(c.lineId).toBe("line-1");
+    expect(c.acceptedSku).toBe("PARENT-A");
+    expect(c.skuResolutionStatus).toBe("accepted");
+    expect(exp.origin).toBe("expansion");
+    expect(exp.parentLineId).toBe("line-1");
+    expect(draft.summary.acceptedCustomerLineCount).toBe(1);
+    expect(draft.summary.nonAcceptedCustomerLineCount).toBe(0);
+    expect(draft.summary.addedLineCount).toBe(1);
+  });
+
+  it("treats a preserved non-orderable row as customer evidence, not a present segment SKU", () => {
+    // PARENT-A expands CHILD-1 and CHILD-2. A MANUAL row carrying CHILD-1 is preserved
+    // but is not orderable, so it does NOT suppress the CHILD-1 expansion line.
+    const draft = build({
+      lines: [
+        line({ sourceRowNumber: 1, originalLineNumber: "1", sku: "PARENT-A" }),
+        line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "CHILD-1" }),
+      ],
+      decisions: [
+        accept({ sourceRowNumber: 1, acceptedSku: "PARENT-A" }),
+        accept({ sourceRowNumber: 2, originalSku: "CHILD-1", status: "manual", acceptedSku: undefined }),
+      ],
+      rulePack: approvedPack([parent({ childLines: [child({ sku: "CHILD-1" }), child({ sku: "CHILD-2" })] })]),
+    });
+    // Both children added; the manual CHILD-1 row is not an orderable sibling.
+    expect(addedLines(draft).map((l) => l.sku)).toEqual(["CHILD-1", "CHILD-2"]);
+    const customer = draft.lines.filter((l) => l.origin === "customer");
+    expect(customer.map((l) => l.sku)).toEqual(["PARENT-A", "CHILD-1"]);
+    expect(customer[1].skuResolutionStatus).toBe("manual");
+    expect(customer[1].acceptedSku).toBeUndefined();
+  });
+
+  it("counts only orderable rows in the project-wide accepted quantity map", () => {
+    // A subscription license whose quantity tracks the related AP total (project scope).
+    // An accepted AP row (qty 8) plus a MANUAL AP row (qty 5): the license tracks 8, not
+    // 13 - the manual row is visible evidence, never an orderable quantity.
+    const licChild = child({
+      sku: "LIC-CW-A",
+      relationshipType: "subscription",
+      sourceRuleId: "rule-sub",
+      quantityRule: "fixed",
+      quantityValue: 99,
+      quantityModel: { type: "same_as_related_sku_total", relatedSku: "CW9178I-CFG", scope: "project" },
+    });
+    const draft = build({
+      lines: [
+        line({ sourceRowNumber: 1, originalLineNumber: "1", sku: "CW9178I-CFG", quantity: 8, originalCells: { "#": "1" } }),
+        line({ sourceRowNumber: 2, originalLineNumber: "2", sku: "CW9178I-CFG", quantity: 5, originalCells: { "#": "2" } }),
+        line({ sourceRowNumber: 3, originalLineNumber: "3", sku: "CISCO-NETWORK-SUB", quantity: 1, originalCells: { "#": "3" } }),
+      ],
+      decisions: [
+        accept({ sourceRowNumber: 1, originalLineNumber: "1", originalSku: "CW9178I-CFG", acceptedSku: "CW9178I-CFG" }),
+        accept({ sourceRowNumber: 2, originalLineNumber: "2", originalSku: "CW9178I-CFG", status: "manual", acceptedSku: undefined }),
+        accept({ sourceRowNumber: 3, originalLineNumber: "3", originalSku: "CISCO-NETWORK-SUB", acceptedSku: "CISCO-NETWORK-SUB" }),
+      ],
+      rulePack: approvedPack([
+        parent({ ruleId: "rule-sub", parentSku: "CISCO-NETWORK-SUB", childLines: [licChild] }),
+      ]),
+    });
+    const lic = addedLines(draft).find((l) => l.sku === "LIC-CW-A");
+    expect(lic?.quantity).toBe(8);
   });
 });
 
@@ -558,6 +717,18 @@ describe("buildConfigurationExpansionDraft - review gate and summary", () => {
       totalLineCount: 3,
       requiresReviewCount: 2,
       includedItemCount: 1,
+      // Additive counts are always populated; an accepted-only row reports an orderable
+      // customer line and zeroes for every non-preserved / non-orderable category.
+      inputCustomerLineCount: 1,
+      acceptedCustomerLineCount: 1,
+      nonAcceptedCustomerLineCount: 0,
+      manualCustomerLineCount: 0,
+      outOfScopeCustomerLineCount: 0,
+      rejectedCustomerLineCount: 0,
+      unresolvedCustomerLineCount: 0,
+      needsReviewCustomerLineCount: 0,
+      acceptedWithoutSkuCustomerLineCount: 0,
+      noDecisionCustomerLineCount: 0,
     });
   });
 });

@@ -42,6 +42,7 @@ import type {
 import type {
   ConfigExpansionQuantityRule,
   ConfigExpansionRelationshipType,
+  ConfigurationExpansionSkuResolutionStatus,
 } from "@/lib/projects/config-expansion-types";
 
 /** Input for {@link loadProjectBoqConfigurationExpansionReviewWorkspaceCore}. */
@@ -87,6 +88,26 @@ export interface ProjectBoqConfigExpansionReviewDraftSummary {
   totalLineCount?: number;
   requiresReviewCount?: number;
   includedItemCount?: number;
+  /** Total input customer rows seen, including rejected and no-decision rows. */
+  inputCustomerLineCount?: number;
+  /** Preserved customer lines accepted with a nonblank acceptedSku. */
+  acceptedCustomerLineCount?: number;
+  /** Preserved customer lines that are not orderable. */
+  nonAcceptedCustomerLineCount?: number;
+  /** Preserved customer lines explicitly classified manual. */
+  manualCustomerLineCount?: number;
+  /** Preserved customer lines explicitly classified out_of_scope. */
+  outOfScopeCustomerLineCount?: number;
+  /** Rejected customer rows: counted but not preserved as draft lines. */
+  rejectedCustomerLineCount?: number;
+  /** Preserved customer lines still unresolved. */
+  unresolvedCustomerLineCount?: number;
+  /** Preserved customer lines still needs_review. */
+  needsReviewCustomerLineCount?: number;
+  /** Preserved accepted customer lines with a blank/missing acceptedSku. */
+  acceptedWithoutSkuCustomerLineCount?: number;
+  /** Preserved customer lines that had no SKU-resolution decision. */
+  noDecisionCustomerLineCount?: number;
 }
 
 /** Lean payload summary: provenance + rule-pack metadata + counts; never the lines. */
@@ -138,6 +159,8 @@ export interface ProjectBoqConfigExpansionReviewLine {
   originalLineNumber?: string;
   originalSku?: string;
   acceptedSku?: string;
+  /** SKU-resolution disposition of a preserved customer line; absent on expansion lines. */
+  skuResolutionStatus?: ConfigurationExpansionSkuResolutionStatus;
   parentLineId?: string;
   parentLineNumber?: string;
   relationshipType?: ConfigExpansionRelationshipType;
@@ -211,6 +234,14 @@ const QUANTITY_RULES: ReadonlySet<string> = new Set([
   "fixed",
   "fixed_per_parent",
 ]);
+const SKU_RESOLUTION_STATUSES: ReadonlySet<string> = new Set([
+  "needs_review",
+  "accepted",
+  "rejected",
+  "unresolved",
+  "manual",
+  "out_of_scope",
+]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -255,6 +286,7 @@ function toReviewLine(raw: unknown): ProjectBoqConfigExpansionReviewLine | null 
     originalLineNumber,
     originalSku,
     acceptedSku,
+    skuResolutionStatus,
     parentLineId,
     parentLineNumber,
     relationshipType,
@@ -288,6 +320,11 @@ function toReviewLine(raw: unknown): ProjectBoqConfigExpansionReviewLine | null 
     ...(typeof originalLineNumber === "string" ? { originalLineNumber } : {}),
     ...(typeof originalSku === "string" ? { originalSku } : {}),
     ...(typeof acceptedSku === "string" ? { acceptedSku } : {}),
+    ...(origin === "customer" &&
+    typeof skuResolutionStatus === "string" &&
+    SKU_RESOLUTION_STATUSES.has(skuResolutionStatus)
+      ? { skuResolutionStatus: skuResolutionStatus as ConfigurationExpansionSkuResolutionStatus }
+      : {}),
     ...(typeof parentLineId === "string" ? { parentLineId } : {}),
     ...(typeof parentLineNumber === "string" ? { parentLineNumber } : {}),
     ...(typeof relationshipType === "string" && RELATIONSHIP_TYPES.has(relationshipType)
@@ -419,6 +456,16 @@ function toDraftSummarySafe(
   if (typeof raw.totalLineCount === "number") out.totalLineCount = raw.totalLineCount;
   if (typeof raw.requiresReviewCount === "number") out.requiresReviewCount = raw.requiresReviewCount;
   if (typeof raw.includedItemCount === "number") out.includedItemCount = raw.includedItemCount;
+  if (typeof raw.inputCustomerLineCount === "number") out.inputCustomerLineCount = raw.inputCustomerLineCount;
+  if (typeof raw.acceptedCustomerLineCount === "number") out.acceptedCustomerLineCount = raw.acceptedCustomerLineCount;
+  if (typeof raw.nonAcceptedCustomerLineCount === "number") out.nonAcceptedCustomerLineCount = raw.nonAcceptedCustomerLineCount;
+  if (typeof raw.manualCustomerLineCount === "number") out.manualCustomerLineCount = raw.manualCustomerLineCount;
+  if (typeof raw.outOfScopeCustomerLineCount === "number") out.outOfScopeCustomerLineCount = raw.outOfScopeCustomerLineCount;
+  if (typeof raw.rejectedCustomerLineCount === "number") out.rejectedCustomerLineCount = raw.rejectedCustomerLineCount;
+  if (typeof raw.unresolvedCustomerLineCount === "number") out.unresolvedCustomerLineCount = raw.unresolvedCustomerLineCount;
+  if (typeof raw.needsReviewCustomerLineCount === "number") out.needsReviewCustomerLineCount = raw.needsReviewCustomerLineCount;
+  if (typeof raw.acceptedWithoutSkuCustomerLineCount === "number") out.acceptedWithoutSkuCustomerLineCount = raw.acceptedWithoutSkuCustomerLineCount;
+  if (typeof raw.noDecisionCustomerLineCount === "number") out.noDecisionCustomerLineCount = raw.noDecisionCustomerLineCount;
   return out;
 }
 

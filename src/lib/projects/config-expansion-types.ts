@@ -302,6 +302,23 @@ export interface ConfigExpansionRulePack {
 }
 
 /**
+ * SKU-resolution disposition copied onto a PRESERVED customer draft line. Declared
+ * here as a local literal union (mirroring SkuResolutionStatus in src/types/project.ts)
+ * so this contract module stays import-free and self-contained. Deterministic
+ * provenance only - NOT pricing or orderability authority: only an "accepted" line
+ * with a nonblank acceptedSku is orderable and eligible for expansion. On a preserved
+ * customer line this is never "rejected" (a rejected row is an explicit exclusion and
+ * is never carried into the draft) and is ABSENT on a row that had no decision at all.
+ */
+export type ConfigurationExpansionSkuResolutionStatus =
+  | "needs_review"
+  | "accepted"
+  | "rejected"
+  | "unresolved"
+  | "manual"
+  | "out_of_scope";
+
+/**
  * One line in a configuration-expansion draft / accepted expanded BoM. Preserved
  * customer lines (`origin: "customer"`) and auto-added expansion lines
  * (`origin: "expansion"`) share this shape. Every line carries a within-draft
@@ -333,6 +350,14 @@ export interface ConfigurationExpansionDraftLine {
   originalSku?: string;
   /** Human-accepted SKU for a preserved customer line, when one was accepted. */
   acceptedSku?: string;
+  /**
+   * SKU-resolution disposition of a preserved customer line, when it had a decision.
+   * Deterministic provenance only (NOT pricing/orderability authority): only an
+   * "accepted" status WITH a nonblank acceptedSku is orderable and expands. Absent on
+   * expansion lines, on customer rows with no decision, and never "rejected" (rejected
+   * rows are excluded from the draft). (section 11A.3)
+   */
+  skuResolutionStatus?: ConfigurationExpansionSkuResolutionStatus;
   /** Verbatim source cells preserved from the customer line. */
   originalCells?: Record<string, string>;
   /** `lineId` of the customer line an expansion line nests under. */
@@ -369,6 +394,33 @@ export interface ConfigurationExpansionDraftSummary {
   requiresReviewCount: number;
   /** Added lines that are included zero-price child components. */
   includedItemCount: number;
+  /*
+   * Additive, backward-compatible roll-ups that make non-preserved and non-orderable
+   * customer rows explicit, so no unsupported / manual / excluded row is silently
+   * dropped. Optional on the contract for backward compatibility; the deterministic
+   * builder always populates them. `customerLineCount` above stays the count of
+   * PRESERVED customer lines, so existing accepted-only consumers are unchanged.
+   */
+  /** Total input customer rows seen, including rejected and no-decision rows. */
+  inputCustomerLineCount?: number;
+  /** Preserved customer lines that are accepted with a nonblank acceptedSku (orderable). */
+  acceptedCustomerLineCount?: number;
+  /** Preserved customer lines that are NOT orderable (preserved minus accepted-with-SKU). */
+  nonAcceptedCustomerLineCount?: number;
+  /** Preserved customer lines explicitly classified manual (non-Cisco / manual commercial). */
+  manualCustomerLineCount?: number;
+  /** Preserved customer lines explicitly classified out_of_scope. */
+  outOfScopeCustomerLineCount?: number;
+  /** Rejected customer rows: explicit exclusions, counted but NOT preserved as draft lines. */
+  rejectedCustomerLineCount?: number;
+  /** Preserved customer lines still unresolved. */
+  unresolvedCustomerLineCount?: number;
+  /** Preserved customer lines still needs_review. */
+  needsReviewCustomerLineCount?: number;
+  /** Preserved accepted customer lines with a blank/missing acceptedSku (not orderable). */
+  acceptedWithoutSkuCustomerLineCount?: number;
+  /** Preserved customer lines that had no SKU-resolution decision at all. */
+  noDecisionCustomerLineCount?: number;
 }
 
 /**

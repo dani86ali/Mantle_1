@@ -463,6 +463,25 @@ describe("buildPricedExpandedBoqDraft", () => {
     expect(draft.summary.notAcceptedCount).toBe(1);
   });
 
+  it("keeps a preserved manual/non-orderable customer line not_accepted, never priced", () => {
+    // A preserved manual line (no acceptedSku, skuResolutionStatus "manual") that reaches
+    // pricing stays not_accepted and unpriced even when a SAR price exists for its SKU:
+    // configuration-expansion preservation never makes a non-orderable line priceable.
+    const draft = buildPricedExpandedBoqDraft({
+      acceptedLines: [
+        customerLine({ sku: "MANUAL-ITEM", acceptedSku: undefined, skuResolutionStatus: "manual" }),
+      ],
+      pricingConfig: config(),
+      unitListPriceSarBySku: { "MANUAL-ITEM": sar(100), "PARENT-A": sar(100) },
+    });
+    expect(draft.lines[0].status).toBe("not_accepted");
+    expect(draft.lines[0].acceptedSku).toBeUndefined();
+    expect(draft.lines[0].amounts).toBeUndefined();
+    expect(draft.lines[0].warning).toBe("SKU is not accepted for pricing.");
+    expect(draft.summary.notAcceptedCount).toBe(1);
+    expect(draft.summary.pricedLineCount).toBe(0);
+  });
+
   it("flags an orderable SKU with no SAR price as missing_price", () => {
     const draft = buildPricedExpandedBoqDraft({
       acceptedLines: [expansionLine({ sku: "NO-PRICE" })],

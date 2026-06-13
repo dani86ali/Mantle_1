@@ -471,6 +471,68 @@ describe("loadProjectBoqConfigurationExpansionReviewWorkspaceCore - summary allo
   });
 });
 
+describe("loadProjectBoqConfigurationExpansionReviewWorkspaceCore - skuResolutionStatus and additive counts", () => {
+  it("projects skuResolutionStatus for preserved customer lines and drops invalid or expansion-line values", async () => {
+    const payload = {
+      ...DRAFT_PAYLOAD,
+      lines: [
+        { ...DRAFT_PAYLOAD.lines[0], lineId: "line-1", skuResolutionStatus: "manual" },
+        { ...DRAFT_PAYLOAD.lines[0], lineId: "line-2", skuResolutionStatus: "bogus_status" },
+        { ...DRAFT_PAYLOAD.lines[1], skuResolutionStatus: "manual" },
+      ],
+    };
+    mockGetArtifact.mockResolvedValue({ ...BASE_ARTIFACT, payload });
+
+    const result = await loadCore();
+    if (result.status !== "ok") throw new Error("expected ok");
+    const byId = new Map(result.review.lines.map((l) => [l.lineId, l]));
+
+    expect(byId.get("line-1")?.skuResolutionStatus).toBe("manual");
+    expect(byId.get("line-2")?.skuResolutionStatus).toBeUndefined();
+    expect(byId.get("line-exp-1")?.skuResolutionStatus).toBeUndefined();
+  });
+
+  it("allowlists additive customer-line summary counts and drops extras", async () => {
+    const payload = {
+      ...DRAFT_PAYLOAD,
+      summary: {
+        ...DRAFT_PAYLOAD.summary,
+        inputCustomerLineCount: 9,
+        acceptedCustomerLineCount: 1,
+        nonAcceptedCustomerLineCount: 5,
+        manualCustomerLineCount: 2,
+        outOfScopeCustomerLineCount: 1,
+        rejectedCustomerLineCount: 1,
+        unresolvedCustomerLineCount: 1,
+        needsReviewCustomerLineCount: 1,
+        acceptedWithoutSkuCustomerLineCount: 1,
+        noDecisionCustomerLineCount: 2,
+        extraCountCanary: 123,
+      },
+    };
+    mockGetArtifact.mockResolvedValue({ ...BASE_ARTIFACT, payload });
+
+    const result = await loadCore();
+    if (result.status !== "ok") throw new Error("expected ok");
+    if (!result.review.payloadSummary) throw new Error("expected payloadSummary");
+    const summary = result.review.payloadSummary.summary;
+
+    expect(summary).toMatchObject({
+      inputCustomerLineCount: 9,
+      acceptedCustomerLineCount: 1,
+      nonAcceptedCustomerLineCount: 5,
+      manualCustomerLineCount: 2,
+      outOfScopeCustomerLineCount: 1,
+      rejectedCustomerLineCount: 1,
+      unresolvedCustomerLineCount: 1,
+      needsReviewCustomerLineCount: 1,
+      acceptedWithoutSkuCustomerLineCount: 1,
+      noDecisionCustomerLineCount: 2,
+    });
+    expect("extraCountCanary" in summary).toBe(false);
+  });
+});
+
 describe("loadProjectBoqConfigurationExpansionReviewWorkspaceCore - reviewed (read-only) projection", () => {
   beforeEach(() => {
     mockGetArtifact.mockReset().mockResolvedValue(REVIEWED_ARTIFACT);
