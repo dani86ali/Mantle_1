@@ -2925,6 +2925,555 @@ describe("Cisco collaboration + industrial recognition scope app chain E2E (test
   });
 });
 
+describe("scoped Cisco comparison workbook app chain E2E (test-only evidence)", () => {
+  // Evidence/regression proof that the deterministic same-SKU recognition scope flows
+  // through the app for the ACTUAL scoped comparison workbook (a mixed Cisco
+  // collaboration + industrial-switching estimate). The workbook item rows are parsed
+  // and emitted as an accepted Quick BoM Format #1 CSV, then four non-Cisco manual
+  // commercial lines are appended. The app runs upload -> normalize -> SKU review ->
+  // SKU approval -> configuration expansion -> configuration approval -> priced_boq
+  // draft, WITHOUT introducing any Cisco pricing authority, catalog lookup,
+  // replacement, or substitution. The active pricing source stays the committed demo
+  // fixture only, so recognized Cisco rows surface as `missing_price` (recognition is
+  // not pricing eligibility). priced_boq is left at needs_review and no export_package
+  // is created.
+  const COMPARISON_WORKBOOK_PATH =
+    "C:\\Pre-Sales\\Benchmarck_Files\\MARAFIQObsolete_Network_Hardware_Replacement.xlsx";
+  const COMPARISON_SHEET_NAME = "EstimateDetails_JL164850184VT";
+  // Comparison workbook column layout (1-based), confirmed from the sheet header row.
+  const WB_COL = {
+    lineNumber: 1,
+    itemName: 2,
+    description: 4,
+    serviceDuration: 6,
+    includedItem: 8,
+    quantity: 9,
+    listPrice: 11,
+    extendedListPrice: 12,
+    serviceType: 15,
+  };
+  const EXPECTED_CISCO_ITEM_ROWS = 44;
+  const EXPECTED_INCLUDED_ITEM_ROWS = 25;
+
+  const CSV_HEADERS = [
+    "Line Number",
+    "Item Name",
+    "Description",
+    "Quantity",
+    "Service Duration (Months)",
+    "Included Item",
+  ];
+  const SERVICE_DURATION_HEADER = "Service Duration (Months)";
+  const INCLUDED_ITEM_HEADER = "Included Item";
+
+  interface ComparisonItemRow {
+    lineNumber: string;
+    sku: string;
+    description: string;
+    quantity: number;
+    serviceDuration: string;
+    includedItem: string;
+    listPrice: number;
+    extended: number;
+    serviceType: string;
+  }
+
+  // Manual / non-Cisco commercial lines appended after the workbook rows: a display and
+  // three cost lines with no Cisco catalog match. They must be classified `manual`
+  // (preserved, non-orderable) and never given an invented SKU.
+  // [lineNumber, sku, description, quantity, serviceDuration, includedItem]
+  const MANUAL_ROWS: ReadonlyArray<readonly [string, string, string, number, string, string]> = [
+    ["9001.0", "LH75QMCEBGCXUE", "Large format display", 2, "N/A", "No"],
+    ["9002.0", "ENGINEERING-PM-COST", "Engineering and project management", 1, "N/A", "No"],
+    ["9003.0", "TRAVEL-COST", "Travel", 1, "N/A", "No"],
+    ["9004.0", "INSURANCE-POLICY", "Insurance policy", 1, "N/A", "No"],
+  ];
+
+  /**
+   * Parse the comparison workbook item rows. An item row needs a Line Number, an Item
+   * Name/SKU, a positive Quantity, and a numeric ListPrice (0 allowed). A blank Extended
+   * ListPrice cell is read as 0.
+   */
+  function parseComparisonItemRows(worksheet: ExcelJS.Worksheet): ComparisonItemRow[] {
+    const rows: ComparisonItemRow[] = [];
+    for (let r = 1; r <= worksheet.rowCount; r += 1) {
+      const wsRow = worksheet.getRow(r);
+      const lineNumber = cellText(wsRow.getCell(WB_COL.lineNumber));
+      const sku = cellText(wsRow.getCell(WB_COL.itemName));
+      const quantity = numericCell(wsRow.getCell(WB_COL.quantity));
+      const listPrice = numericCell(wsRow.getCell(WB_COL.listPrice));
+      if (
+        lineNumber === "" ||
+        sku === "" ||
+        quantity === null ||
+        quantity <= 0 ||
+        listPrice === null
+      ) {
+        continue;
+      }
+      rows.push({
+        lineNumber,
+        sku,
+        description: cellText(wsRow.getCell(WB_COL.description)),
+        quantity,
+        serviceDuration: cellText(wsRow.getCell(WB_COL.serviceDuration)),
+        includedItem: cellText(wsRow.getCell(WB_COL.includedItem)),
+        listPrice,
+        extended: numericCell(wsRow.getCell(WB_COL.extendedListPrice)) ?? 0,
+        serviceType: cellText(wsRow.getCell(WB_COL.serviceType)),
+      });
+    }
+    return rows;
+  }
+
+  /** RFC-4180 CSV escaping; descriptions contain commas and quotes. */
+  function csvEscape(value: string | number): string {
+    const s = String(value);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+
+  function buildAcceptedCsv(ciscoRows: ComparisonItemRow[]): string {
+    const lines: string[] = [CSV_HEADERS.join(",")];
+    for (const row of ciscoRows) {
+      lines.push(
+        [
+          row.lineNumber,
+          row.sku,
+          row.description,
+          row.quantity,
+          row.serviceDuration,
+          row.includedItem,
+        ]
+          .map(csvEscape)
+          .join(",")
+      );
+    }
+    for (const [lineNumber, sku, description, quantity, serviceDuration, includedItem] of MANUAL_ROWS) {
+      lines.push(
+        [lineNumber, sku, description, quantity, serviceDuration, includedItem]
+          .map(csvEscape)
+          .join(",")
+      );
+    }
+    return lines.join("\n");
+  }
+
+  function decisionsOf(artifact: ProjectArtifact): SkuResolutionDecision[] {
+    return (artifact.payload.decisions ?? []) as SkuResolutionDecision[];
+  }
+
+  // The SkuResolutionDecision sanitization the panel POSTs must not leak authority,
+  // tenant, project, artifact, decision-author, pricing, catalog, replacement, or
+  // substitution context.
+  function assertSanitizedSkuAction(action: Record<string, unknown>): void {
+    for (const key of [
+      "tenantId",
+      "projectId",
+      "artifactId",
+      "decidedBy",
+      "decidedAt",
+      "pricing",
+      "catalog",
+      "catalogProfile",
+      "authority",
+      "replacement",
+      "substitution",
+    ]) {
+      expect(action, `action must not carry "${key}"`).not.toHaveProperty(key);
+    }
+  }
+
+  it("recognizes the scoped Cisco comparison workbook SKUs, classifies manual rows, and reaches a Cisco-unpriced priced_boq draft", async () => {
+    // --- 0. Parse the comparison workbook and generate an accepted Quick BoM CSV -----
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(COMPARISON_WORKBOOK_PATH);
+    const worksheet = workbook.getWorksheet(COMPARISON_SHEET_NAME);
+    expect(worksheet, `sheet ${COMPARISON_SHEET_NAME}`).toBeDefined();
+    const ciscoRows = parseComparisonItemRows(worksheet as ExcelJS.Worksheet);
+    expect(ciscoRows).toHaveLength(EXPECTED_CISCO_ITEM_ROWS);
+
+    const ciscoSkuSequence = ciscoRows.map((r) => r.sku);
+    const expectedCiscoQtyBySku: Record<string, number> = {};
+    for (const row of ciscoRows) {
+      expectedCiscoQtyBySku[row.sku] = (expectedCiscoQtyBySku[row.sku] ?? 0) + row.quantity;
+    }
+    expect(expectedCiscoQtyBySku["STK-RACK-DINRAIL="]).toBe(18);
+    // The two DIN-rail rack rows stay two source rows of quantity 9 each.
+    const stkSourceRows = ciscoRows.filter((r) => r.sku === "STK-RACK-DINRAIL=");
+    expect(stkSourceRows).toHaveLength(2);
+    expect(stkSourceRows.every((r) => r.quantity === 9)).toBe(true);
+    // Support rows carry Service Duration (Months) = 60.
+    const support60Skus = ciscoRows
+      .filter((r) => r.serviceDuration === "60")
+      .map((r) => r.sku);
+    expect(support60Skus).toHaveLength(4);
+
+    const generatedCsv = buildAcceptedCsv(ciscoRows);
+    const manualSkus = MANUAL_ROWS.map((r) => r[1]);
+    const totalLineCount = EXPECTED_CISCO_ITEM_ROWS + MANUAL_ROWS.length;
+
+    const project = await createArbitraryProject();
+    const calls = dispatchQuickBomFetch();
+    let view = render(<ProjectQuickBomPage />);
+
+    await screen.findByTestId("project-name");
+
+    // --- 1. Upload + normalize the generated CSV through the UI ----------------------
+    const file = new File([generatedCsv], "scoped-comparison-upload.csv", {
+      type: "text/csv",
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("workflow-upload-file"), {
+        target: { files: [file] },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("workflow-upload-normalize"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-normalized_boq")).toHaveTextContent("generated")
+    );
+
+    const normalizedArtifact = hoisted.store.latestArtifact("normalized_boq");
+    const normalizedLines = (normalizedArtifact.payload.lines ?? []) as CanonicalBoqLine[];
+    expect(normalizedLines).toHaveLength(totalLineCount);
+    const workbookSkuSet = new Set(ciscoSkuSequence);
+    const manualSkuSet = new Set(manualSkus);
+    expect(
+      normalizedLines.filter((l) => workbookSkuSet.has(l.sku))
+    ).toHaveLength(EXPECTED_CISCO_ITEM_ROWS);
+    expect(
+      normalizedLines.filter((l) => manualSkuSet.has(l.sku))
+    ).toHaveLength(MANUAL_ROWS.length);
+
+    // The two DIN-rail rows survive as two distinct source rows of quantity 9 each.
+    const stkLines = normalizedLines.filter((l) => l.sku === "STK-RACK-DINRAIL=");
+    expect(stkLines).toHaveLength(2);
+    expect(stkLines.every((l) => l.quantity === 9)).toBe(true);
+    expect(new Set(stkLines.map((l) => l.sourceRowNumber)).size).toBe(2);
+
+    // Service duration 60 survives in originalCells for the support rows, tied to source.
+    for (const sku of support60Skus) {
+      const line = normalizedLines.find((l) => l.sku === sku);
+      expect(line, `normalized line for ${sku}`).toBeDefined();
+      expect(line?.originalCells[SERVICE_DURATION_HEADER]).toBe("60");
+      expect(typeof line?.sourceRowNumber).toBe("number");
+    }
+
+    // Included-item rows are preserved as customer rows with Included Item = Yes.
+    const includedItemLines = normalizedLines.filter(
+      (l) => l.originalCells[INCLUDED_ITEM_HEADER] === "Yes"
+    );
+    expect(includedItemLines).toHaveLength(EXPECTED_INCLUDED_ITEM_ROWS);
+
+    // --- 2. Create sku_resolution; assert recognition + manual split -----------------
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-sku_resolution"));
+    });
+    expect(await screen.findByTestId("line-review-required-sku_resolution")).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
+
+    const skuCreateCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
+    );
+    expect(skuCreateCalls).toHaveLength(1);
+    expect(skuCreateCalls[0].body).toBeNull();
+
+    const skuDraft = hoisted.store.latestArtifact("sku_resolution");
+    expect(skuDraft.status).toBe("needs_review");
+    const skuSummary = skuDraft.payload.summary as {
+      totalLines: number;
+      needsReviewCount: number;
+      unresolvedCount: number;
+      catalogSource: string;
+    };
+    expect(skuSummary.totalLines).toBe(totalLineCount);
+    expect(skuSummary.needsReviewCount).toBe(EXPECTED_CISCO_ITEM_ROWS);
+    expect(skuSummary.unresolvedCount).toBe(MANUAL_ROWS.length);
+    expect(skuSummary.catalogSource).toBe("default_quick_bom_approved_catalog");
+
+    const draftDecisions = decisionsOf(skuDraft);
+    expect(draftDecisions).toHaveLength(totalLineCount);
+    const ciscoDecisions = draftDecisions.filter(
+      (d) =>
+        d.status === "needs_review" &&
+        d.suggestions.length === 1 &&
+        d.suggestions[0].suggestedSku.trim().toLowerCase() ===
+          d.originalSku.trim().toLowerCase()
+    );
+    expect(ciscoDecisions).toHaveLength(EXPECTED_CISCO_ITEM_ROWS);
+    const unresolvedDecisions = draftDecisions.filter((d) => d.status === "unresolved");
+    expect(unresolvedDecisions).toHaveLength(MANUAL_ROWS.length);
+    for (const d of unresolvedDecisions) {
+      expect(d).not.toHaveProperty("acceptedSku");
+    }
+
+    // --- 3. Load the SKU review panel and submit one batch through the UI ------------
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    expect(await screen.findByTestId("sku-review-summary")).toBeInTheDocument();
+    expect(screen.getAllByTestId("sku-review-line")).toHaveLength(totalLineCount);
+    const checkboxes = screen.getAllByTestId("sku-review-checkbox") as HTMLInputElement[];
+    expect(checkboxes).toHaveLength(EXPECTED_CISCO_ITEM_ROWS);
+    expect(checkboxes.filter((c) => !c.disabled && c.checked)).toHaveLength(
+      EXPECTED_CISCO_ITEM_ROWS
+    );
+    const submitBtn = screen.getByTestId("sku-review-submit");
+    expect(submitBtn).toHaveTextContent(
+      `(${EXPECTED_CISCO_ITEM_ROWS} included / ${MANUAL_ROWS.length} excluded)`
+    );
+    await act(async () => {
+      fireEvent.click(submitBtn);
+    });
+    expect(await screen.findByTestId("approve-sku_resolution")).toBeInTheDocument();
+
+    // Exactly one SKU review POST: 44 accept + 4 manual sanitized actions.
+    const skuReviewPostCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution\/review$/.test(c.url)
+    );
+    expect(skuReviewPostCalls).toHaveLength(1);
+    const batchActions = (skuReviewPostCalls[0].body as {
+      actions: Record<string, unknown>[];
+    }).actions;
+    expect(batchActions).toHaveLength(totalLineCount);
+    const acceptActions = batchActions.filter((a) => a.decision === "accept");
+    const manualActions = batchActions.filter((a) => a.decision === "manual");
+    expect(acceptActions).toHaveLength(EXPECTED_CISCO_ITEM_ROWS);
+    expect(manualActions).toHaveLength(MANUAL_ROWS.length);
+    for (const a of manualActions) {
+      expect(a).not.toHaveProperty("acceptedSku");
+    }
+    for (const a of batchActions) assertSanitizedSkuAction(a);
+
+    // Reviewed sku_resolution: 44 accepted, 4 manual, no replacement/substitution.
+    const reviewedSku = hoisted.store.latestArtifact("sku_resolution");
+    const reviewedDecisions = decisionsOf(reviewedSku);
+    expect(reviewedDecisions.filter((d) => d.status === "accepted")).toHaveLength(
+      EXPECTED_CISCO_ITEM_ROWS
+    );
+    expect(reviewedDecisions.filter((d) => d.status === "manual")).toHaveLength(
+      MANUAL_ROWS.length
+    );
+    for (const d of reviewedDecisions) {
+      expect(d).not.toHaveProperty("replacementFor");
+      expect(d).not.toHaveProperty("substitutedSku");
+    }
+
+    // Accepted Cisco SKU sequence (ordered by source row) exactly matches the parsed
+    // workbook SKU rows in order, preserving the duplicate DIN-rail row.
+    const acceptedInOrder = reviewedDecisions
+      .filter((d) => d.status === "accepted")
+      .sort((a, b) => a.sourceRowNumber - b.sourceRowNumber)
+      .map((d) => d.acceptedSku);
+    expect(acceptedInOrder).toEqual(ciscoSkuSequence);
+
+    // Aggregate accepted Cisco quantity per SKU exactly matches the workbook aggregate.
+    const acceptedQtyBySku: Record<string, number> = {};
+    for (const d of reviewedDecisions) {
+      if (d.status !== "accepted" || d.acceptedSku === undefined) continue;
+      const qty = normalizedLines.find(
+        (l) => l.sourceFileId === d.sourceFileId && l.sourceRowNumber === d.sourceRowNumber
+      )?.quantity;
+      expect(qty, `quantity for accepted row ${d.acceptedSku}`).toBeDefined();
+      acceptedQtyBySku[d.acceptedSku] = (acceptedQtyBySku[d.acceptedSku] ?? 0) + (qty ?? 0);
+    }
+    expect(acceptedQtyBySku).toEqual(expectedCiscoQtyBySku);
+    expect(acceptedQtyBySku["STK-RACK-DINRAIL="]).toBe(18);
+
+    // --- 4. Approve sku_resolution through the UI generic approval path --------------
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-sku_resolution"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-sku_resolution")).toHaveTextContent("approved")
+    );
+
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    // --- 5. Create configuration_expansion; inspect the artifact ---------------------
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-configuration_expansion"));
+    });
+    expect(
+      await screen.findByTestId("line-review-required-configuration_expansion")
+    ).toBeInTheDocument();
+
+    const configDraft = hoisted.store.latestArtifact("configuration_expansion");
+    expect(configDraft.payload.payloadKind).toBe("configuration_expansion_draft");
+    const configLines = (configDraft.payload.lines ?? []) as ConfigurationExpansionDraftLine[];
+    expect(configLines).toHaveLength(totalLineCount);
+    expect(configLines.every((l) => l.origin === "customer")).toBe(true);
+    expect(configLines.some((l) => l.origin === "expansion")).toBe(false);
+    const orderableCount = configLines.filter(
+      (l) => typeof (l as { acceptedSku?: string }).acceptedSku === "string"
+    ).length;
+    const configManualCount = configLines.filter(
+      (l) => (l as { skuResolutionStatus?: string }).skuResolutionStatus === "manual"
+    ).length;
+    expect(orderableCount).toBe(EXPECTED_CISCO_ITEM_ROWS);
+    expect(configManualCount).toBe(MANUAL_ROWS.length);
+    const configSummary = configDraft.payload.summary as {
+      customerLineCount: number;
+      addedLineCount: number;
+      totalLineCount: number;
+      requiresReviewCount: number;
+      acceptedCustomerLineCount: number;
+      nonAcceptedCustomerLineCount: number;
+      manualCustomerLineCount: number;
+    };
+    expect(configSummary.customerLineCount).toBe(totalLineCount);
+    expect(configSummary.addedLineCount).toBe(0);
+    expect(configSummary.totalLineCount).toBe(totalLineCount);
+    expect(configSummary.requiresReviewCount).toBe(0);
+    expect(configSummary.acceptedCustomerLineCount).toBe(EXPECTED_CISCO_ITEM_ROWS);
+    expect(configSummary.nonAcceptedCustomerLineCount).toBe(MANUAL_ROWS.length);
+    expect(configSummary.manualCustomerLineCount).toBe(MANUAL_ROWS.length);
+    assertNoActiveReplacementSubstitutionFields(configDraft.payload);
+
+    // No expansion lines require review; complete with an empty decision batch.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-load"));
+    });
+    expect(await screen.findByTestId("config-review-summary")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("config-review-checkbox")).toHaveLength(0);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-submit"));
+    });
+    await waitFor(
+      () => expect(screen.queryByTestId("config-review-summary")).toBeNull(),
+      { timeout: 3000 }
+    );
+    const configReviewPostCalls = calls.filter(
+      (c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url)
+    );
+    expect(configReviewPostCalls).toHaveLength(1);
+    expect(
+      (configReviewPostCalls[0].body as { decisions: unknown[] }).decisions
+    ).toHaveLength(0);
+
+    // Reviewed configuration_expansion preserves all 48 customer rows: 44 orderable,
+    // 4 manual non-orderable; nothing dropped, no expansion added.
+    const reviewedConfig = hoisted.store.latestArtifact("configuration_expansion");
+    expect(reviewedConfig.payload.payloadKind).not.toBe("configuration_expansion_draft");
+    const acceptedConfigLines = (reviewedConfig.payload.acceptedLines ?? []) as Array<
+      ConfigurationExpansionDraftLine & { acceptedSku?: string; skuResolutionStatus?: string }
+    >;
+    expect(acceptedConfigLines).toHaveLength(totalLineCount);
+    expect(acceptedConfigLines.every((l) => l.origin === "customer")).toBe(true);
+    expect(
+      acceptedConfigLines.filter((l) => typeof l.acceptedSku === "string")
+    ).toHaveLength(EXPECTED_CISCO_ITEM_ROWS);
+    expect(
+      acceptedConfigLines.filter((l) => l.skuResolutionStatus === "manual")
+    ).toHaveLength(MANUAL_ROWS.length);
+    assertNoActiveReplacementSubstitutionFields(reviewedConfig.payload);
+
+    // --- 6. Approve configuration_expansion through the UI generic approval path -----
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+    expect(
+      await screen.findByTestId("approve-configuration_expansion")
+    ).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-configuration_expansion"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-configuration_expansion")).toHaveTextContent("approved")
+    );
+
+    // --- 7. Create priced_boq; load priced review (read-only) ------------------------
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-priced_boq"));
+    });
+    expect(await screen.findByTestId("approve-priced_boq")).toBeInTheDocument();
+
+    const pricedArtifact = hoisted.store.latestArtifact("priced_boq");
+    const pricedLines = (pricedArtifact.payload.lines ?? []) as Array<{ status: string }>;
+    expect(pricedLines).toHaveLength(totalLineCount);
+    expect(pricedLines.filter((l) => l.status === "priced")).toHaveLength(0);
+    expect(pricedLines.filter((l) => l.status === "missing_price")).toHaveLength(
+      EXPECTED_CISCO_ITEM_ROWS
+    );
+    expect(pricedLines.filter((l) => l.status === "not_accepted")).toHaveLength(
+      MANUAL_ROWS.length
+    );
+    const pricedSummary = pricedArtifact.payload.summary as {
+      inputLineCount: number;
+      pricedLineCount: number;
+      missingPriceCount: number;
+      notAcceptedCount: number;
+    };
+    expect(pricedSummary.inputLineCount).toBe(totalLineCount);
+    expect(pricedSummary.pricedLineCount).toBe(0);
+    expect(pricedSummary.missingPriceCount).toBe(EXPECTED_CISCO_ITEM_ROWS);
+    expect(pricedSummary.notAcceptedCount).toBe(MANUAL_ROWS.length);
+
+    // Pricing source remains the committed demo scope; no Cisco pricing authority.
+    const pricingAuthority = pricedArtifact.payload.pricingAuthority as {
+      scope?: string;
+      profileId?: string;
+      activeSource?: string;
+      boundary?: Record<string, boolean>;
+    };
+    expect(pricingAuthority.scope).toBe("honeywell_mvp_demo_only");
+    expect(pricingAuthority.profileId).toBe("honeywell-mvp-demo-pricing-authority-profile");
+    expect(pricingAuthority.activeSource).toBe("committed_honeywell_demo_pricing_fixture");
+    expect(pricingAuthority.boundary?.productionCiscoPricingAuthority).toBe(false);
+    expect(pricingAuthority.boundary?.broadCiscoGeneralPricingAuthority).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("priced-review-load"));
+    });
+    expect(await screen.findByTestId("priced-review-summary")).toBeInTheDocument();
+    expect(screen.getAllByTestId("priced-review-line")).toHaveLength(totalLineCount);
+    const pricedReviewText = screen.getByTestId("priced-review-summary").textContent ?? "";
+    expect(pricedReviewText).toContain(`${totalLineCount} lines`);
+    expect(pricedReviewText).toContain("0 priced");
+    expect(pricedReviewText).toContain(`${EXPECTED_CISCO_ITEM_ROWS} missing price`);
+    // The priced review panel is read-only: it never POSTs.
+    expect(
+      calls.filter((c) => c.method === "POST" && /\/priced-boq\/review$/.test(c.url))
+    ).toHaveLength(0);
+
+    // priced_boq stays at needs_review: NOT approved, and NO export_package created.
+    expect(hoisted.store.latestArtifact("priced_boq").status).toBe("needs_review");
+    expect(calls.some((c) => /\/export-package$/.test(c.url))).toBe(false);
+
+    // --- 8. No leakage of the workbook path, price map, payload internals, runtime
+    // catalog/AI, replacement, or substitution anywhere in the DOM ------------------
+    const dom = document.body.textContent ?? "";
+    expect(dom).not.toContain("scoped-comparison-upload.csv");
+    expect(dom).not.toContain(COMPARISON_WORKBOOK_PATH);
+    expect(dom).not.toContain("MARAFIQObsolete_Network_Hardware_Replacement.xlsx");
+    expect(dom).not.toContain("activeSourceWorkbookPath");
+    expect(dom).not.toContain("unitListPriceSarBySku");
+    expect(dom).not.toContain("broadCiscoGeneralPricingAuthority");
+    expect(dom).not.toContain("runtimeCatalogLookup");
+    expect(dom).not.toContain("replacement");
+    expect(dom).not.toContain("substitution");
+    expect(dom).not.toContain("acceptedLines");
+    expect(dom).not.toContain("originalCells");
+
+    // Recursive final-payload assertion across every persisted artifact.
+    for (const artifactType of [
+      "normalized_boq",
+      "sku_resolution",
+      "configuration_expansion",
+      "priced_boq",
+    ] as const) {
+      assertNoActiveReplacementSubstitutionFields(
+        hoisted.store.latestArtifact(artifactType).payload
+      );
+    }
+
+    view.unmount();
+  });
+});
+
 describe("arbitrary Project Quick BoM app E2E static purity", () => {
   const TEST_PATH = join(
     process.cwd(),
