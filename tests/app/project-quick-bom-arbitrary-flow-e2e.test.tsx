@@ -2502,6 +2502,429 @@ describe("Honeywell SKUs via default catalog full app chain E2E (Prompt 114 / Pr
   });
 });
 
+describe("Cisco collaboration + industrial recognition scope app chain E2E (test-only evidence)", () => {
+  // A mixed Cisco collaboration + industrial-switching BoQ, plus
+  // non-Cisco manual commercial lines, uploaded as a Format #1 CSV (Line Number /
+  // Item Name / Description / Quantity / Service Duration (Months) / Included Item).
+  // This proves the newly approved deterministic same-SKU recognition scope flows
+  // through the app: upload -> normalize -> SKU review -> SKU approval -> configuration
+  // expansion -> configuration approval -> priced_boq draft, WITHOUT introducing any
+  // Cisco pricing authority. The active pricing source stays the committed Honeywell
+  // MVP demo fixture only, so accepted Cisco rows surface as `missing_price` (recognition
+  // is not pricing eligibility). No export_package is created (Cisco pricing authority is
+  // not approved) and priced_boq is left at needs_review.
+  const MIXED_CISCO_HEADER =
+    "Line Number,Item Name,Description,Quantity,Service Duration (Months),Included Item";
+  // [lineNumber, sku, description, quantity, serviceDuration, includedItem]
+  const CISCO_ROWS: ReadonlyArray<readonly [string, string, string, number, string, string]> = [
+    ["1.0", "CS-KIT-EQX-C-K9", "Room Kit EQX Carbon Black", 2, "N/A", "No"],
+    ["1.0.1", "CON-SNT-CSKITEK9", "SNTC support Room Kit EQX", 2, "60", "Yes"],
+    ["1.1", "CS-MIC-TABLE-J", "Table microphone", 6, "N/A", "No"],
+    ["1.1.0.1", "CON-SNT-CS5HEJMI", "SNTC support table microphone", 6, "60", "Yes"],
+    ["1.30", "CS-KIT-EQX-FSK-C", "Room Kit EQX floor stand kit", 2, "N/A", "No"],
+    ["2.0", "IEM-3500-14T2S=", "IE3500 rugged switch", 3, "N/A", "No"],
+    ["2.0.1", "CON-SNT-IEM35B2S", "SNTC support IE3500 switch", 3, "60", "Yes"],
+    ["3.0", "PWR-IE480W-PCAC-L=", "Industrial DIN-rail power supply 480W AC", 3, "N/A", "No"],
+    ["4.0", "IE-1000-4P2S-LM", "IE1000 switch", 6, "N/A", "No"],
+    ["4.0.1", "CON-SNT-I1002SLM", "SNTC support IE1000 switch", 6, "60", "Yes"],
+    ["4.1", "IOT-UTILITIES", "Cisco IoT utilities", 6, "N/A", "No"],
+    ["4.2", "IOT-UTIL-OTHER", "Cisco IoT utilities other", 6, "N/A", "No"],
+    ["5.0", "PWR-IE170W-PC-AC=", "Industrial DIN-rail power supply 170W AC", 6, "N/A", "No"],
+    ["6.0", "CAB-TA-UK=", "AC power cord United Kingdom", 9, "N/A", "No"],
+    ["7.0", "STK-RACK-DINRAIL=", "DIN-rail rack mount kit", 9, "N/A", "No"],
+    ["8.0", "STK-RACK-DINRAIL=", "DIN-rail rack mount kit", 9, "N/A", "No"],
+  ];
+  // Manual / non-Cisco commercial lines: a Samsung display and three cost lines with no
+  // Cisco catalog match. They must be classified `manual` (preserved, non-orderable) and
+  // never given an invented SKU.
+  const MANUAL_ROWS: ReadonlyArray<readonly [string, string, string, number, string, string]> = [
+    ["9.0", "LH75QMCEBGCXUE", "Samsung 75 inch display", 2, "N/A", "No"],
+    ["10.0", "ENGINEERING-PM-COST", "Engineering and project management", 1, "N/A", "No"],
+    ["11.0", "TRAVEL-COST", "Travel", 1, "N/A", "No"],
+    ["12.0", "INSURANCE-POLICY", "Insurance policy", 1, "N/A", "No"],
+  ];
+  const MIXED_CISCO_CSV = [
+    MIXED_CISCO_HEADER,
+    ...[...CISCO_ROWS, ...MANUAL_ROWS].map((r) => r.join(",")),
+  ].join("\n");
+
+  const SERVICE_DURATION_HEADER = "Service Duration (Months)";
+  // Support rows whose Service Duration (Months) = 60 must survive in originalCells.
+  const SUPPORT_60_SKUS = [
+    "CON-SNT-CSKITEK9",
+    "CON-SNT-CS5HEJMI",
+    "CON-SNT-IEM35B2S",
+    "CON-SNT-I1002SLM",
+  ];
+  const CISCO_SKUS = CISCO_ROWS.map((r) => r[1]);
+  // Aggregate accepted Cisco quantity per SKU (STK-RACK-DINRAIL= appears twice => 18).
+  const EXPECTED_CISCO_QTY_BY_SKU: Record<string, number> = (() => {
+    const out: Record<string, number> = {};
+    for (const [, sku, , qty] of CISCO_ROWS) out[sku] = (out[sku] ?? 0) + qty;
+    return out;
+  })();
+
+  function decisionsOf(artifact: ProjectArtifact): SkuResolutionDecision[] {
+    return (artifact.payload.decisions ?? []) as SkuResolutionDecision[];
+  }
+
+  // Sanity-check the SkuResolutionDecision sanitization the panel POSTs (no authority,
+  // tenant, project, pricing, catalog, replacement, or substitution leakage).
+  function assertSanitizedSkuAction(action: Record<string, unknown>): void {
+    for (const key of [
+      "tenantId",
+      "projectId",
+      "artifactId",
+      "decidedBy",
+      "decidedAt",
+      "pricing",
+      "catalog",
+      "catalogProfile",
+      "authority",
+      "replacement",
+      "substitution",
+    ]) {
+      expect(action, `action must not carry "${key}"`).not.toHaveProperty(key);
+    }
+  }
+
+  it("recognizes mixed Cisco SKUs as same-SKU, classifies manual rows, and reaches a Cisco-unpriced priced_boq draft", async () => {
+    const project = await createArbitraryProject();
+    const calls = dispatchQuickBomFetch();
+    let view = render(<ProjectQuickBomPage />);
+
+    await screen.findByTestId("project-name");
+
+    // --- 1. Upload + normalize through the UI; assert 20 normalized rows ----------
+    const file = new File([MIXED_CISCO_CSV], "mixed-cisco-upload.csv", { type: "text/csv" });
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("workflow-upload-file"), {
+        target: { files: [file] },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("workflow-upload-normalize"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-normalized_boq")).toHaveTextContent("generated")
+    );
+
+    const normalizedArtifact = hoisted.store.latestArtifact("normalized_boq");
+    const normalizedLines = (normalizedArtifact.payload.lines ?? []) as CanonicalBoqLine[];
+    expect(normalizedLines).toHaveLength(20);
+
+    // The two STK-RACK-DINRAIL= rows stay two distinct source rows of quantity 9 each.
+    const stkLines = normalizedLines.filter((l) => l.sku === "STK-RACK-DINRAIL=");
+    expect(stkLines).toHaveLength(2);
+    expect(stkLines.every((l) => l.quantity === 9)).toBe(true);
+    expect(new Set(stkLines.map((l) => l.sourceRowNumber)).size).toBe(2);
+
+    // Service duration 60 survives in originalCells for the support rows.
+    for (const sku of SUPPORT_60_SKUS) {
+      const line = normalizedLines.find((l) => l.sku === sku);
+      expect(line, `normalized line for ${sku}`).toBeDefined();
+      expect(line?.originalCells[SERVICE_DURATION_HEADER]).toBe("60");
+    }
+
+    // --- 2. Create sku_resolution through the UI; assert recognition + manual split --
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-sku_resolution"));
+    });
+    expect(await screen.findByTestId("line-review-required-sku_resolution")).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-sku_resolution")).toBeNull();
+
+    // Creation carried no body / no catalog profile (default approved catalog).
+    const skuCreateCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution$/.test(c.url)
+    );
+    expect(skuCreateCalls).toHaveLength(1);
+    expect(skuCreateCalls[0].body).toBeNull();
+
+    const skuDraft = hoisted.store.latestArtifact("sku_resolution");
+    expect(skuDraft.status).toBe("needs_review");
+    const skuSummary = skuDraft.payload.summary as {
+      totalLines: number;
+      needsReviewCount: number;
+      unresolvedCount: number;
+      catalogSource: string;
+    };
+    expect(skuSummary.totalLines).toBe(20);
+    expect(skuSummary.needsReviewCount).toBe(16);
+    expect(skuSummary.unresolvedCount).toBe(4);
+    expect(skuSummary.catalogSource).toBe("default_quick_bom_approved_catalog");
+
+    const draftDecisions = decisionsOf(skuDraft);
+    expect(draftDecisions).toHaveLength(20);
+    // 16 Cisco rows resolve as same-SKU exact needs_review suggestions.
+    const ciscoDecisions = draftDecisions.filter(
+      (d) =>
+        d.status === "needs_review" &&
+        d.suggestions.length === 1 &&
+        d.suggestions[0].suggestedSku.trim().toLowerCase() ===
+          d.originalSku.trim().toLowerCase()
+    );
+    expect(ciscoDecisions).toHaveLength(16);
+    // 4 manual/non-Cisco rows are unresolved (no invented SKU).
+    const unresolvedDecisions = draftDecisions.filter((d) => d.status === "unresolved");
+    expect(unresolvedDecisions).toHaveLength(4);
+    for (const d of unresolvedDecisions) {
+      expect(d).not.toHaveProperty("acceptedSku");
+    }
+    // The two STK rows remain two distinct decisions, not collapsed.
+    const stkDecisions = draftDecisions.filter((d) => d.originalSku === "STK-RACK-DINRAIL=");
+    expect(stkDecisions).toHaveLength(2);
+    expect(new Set(stkDecisions.map((d) => d.sourceRowNumber)).size).toBe(2);
+
+    // --- 3. Load the SKU review panel and submit one batch through the UI ---------
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    expect(await screen.findByTestId("sku-review-summary")).toBeInTheDocument();
+    expect(screen.getAllByTestId("sku-review-line")).toHaveLength(20);
+    // 16 eligible same-SKU Cisco rows render an enabled+checked checkbox; the 4 manual
+    // rows render none and sit in the excluded section.
+    const checkboxes = screen.getAllByTestId("sku-review-checkbox") as HTMLInputElement[];
+    expect(checkboxes).toHaveLength(16);
+    expect(checkboxes.filter((c) => !c.disabled && c.checked)).toHaveLength(16);
+    const submitBtn = screen.getByTestId("sku-review-submit");
+    expect(submitBtn).toHaveTextContent("(16 included / 4 excluded)");
+    await act(async () => {
+      fireEvent.click(submitBtn);
+    });
+    expect(await screen.findByTestId("approve-sku_resolution")).toBeInTheDocument();
+
+    // Exactly one SKU review POST: 16 accept + 4 manual sanitized actions.
+    const skuReviewPostCalls = calls.filter(
+      (c) => c.method === "POST" && /\/sku-resolution\/review$/.test(c.url)
+    );
+    expect(skuReviewPostCalls).toHaveLength(1);
+    const batchActions = (skuReviewPostCalls[0].body as { actions: Record<string, unknown>[] }).actions;
+    expect(batchActions).toHaveLength(20);
+    const acceptActions = batchActions.filter((a) => a.decision === "accept");
+    const manualActions = batchActions.filter((a) => a.decision === "manual");
+    expect(acceptActions).toHaveLength(16);
+    expect(manualActions).toHaveLength(4);
+    for (const a of manualActions) {
+      expect(a).not.toHaveProperty("acceptedSku");
+    }
+    for (const a of batchActions) assertSanitizedSkuAction(a);
+
+    // Reviewed sku_resolution: 16 accepted, 4 manual, no replacement/substitution.
+    const reviewedSku = hoisted.store.latestArtifact("sku_resolution");
+    const reviewedDecisions = decisionsOf(reviewedSku);
+    expect(reviewedDecisions.filter((d) => d.status === "accepted")).toHaveLength(16);
+    expect(reviewedDecisions.filter((d) => d.status === "manual")).toHaveLength(4);
+    for (const d of reviewedDecisions) {
+      expect(d).not.toHaveProperty("replacementFor");
+      expect(d).not.toHaveProperty("substitutedSku");
+    }
+    // Aggregate accepted Cisco quantity per SKU matches the fixture facts; STK = 18.
+    const acceptedQtyBySku: Record<string, number> = {};
+    for (const d of reviewedDecisions) {
+      if (d.status !== "accepted" || d.acceptedSku === undefined) continue;
+      const qty = normalizedLines.find(
+        (l) => l.sourceFileId === d.sourceFileId && l.sourceRowNumber === d.sourceRowNumber
+      )?.quantity;
+      expect(qty, `quantity for accepted row ${d.acceptedSku}`).toBeDefined();
+      acceptedQtyBySku[d.acceptedSku] = (acceptedQtyBySku[d.acceptedSku] ?? 0) + (qty ?? 0);
+    }
+    expect(acceptedQtyBySku).toEqual(EXPECTED_CISCO_QTY_BY_SKU);
+    expect(acceptedQtyBySku["STK-RACK-DINRAIL="]).toBe(18);
+
+    // --- 4. Approve sku_resolution through the UI generic approval path -----------
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-sku_resolution"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-sku_resolution")).toHaveTextContent("approved")
+    );
+
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+
+    // --- 5. Create configuration_expansion through the UI; inspect the artifact ----
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-configuration_expansion"));
+    });
+    expect(
+      await screen.findByTestId("line-review-required-configuration_expansion")
+    ).toBeInTheDocument();
+
+    const configDraft = hoisted.store.latestArtifact("configuration_expansion");
+    expect(configDraft.payload.payloadKind).toBe("configuration_expansion_draft");
+    const configLines = (configDraft.payload.lines ?? []) as ConfigurationExpansionDraftLine[];
+    // All 20 customer rows are preserved; no Cisco expansion children exist (no approved
+    // Cisco configuration rules in this task).
+    expect(configLines).toHaveLength(20);
+    expect(configLines.every((l) => l.origin === "customer")).toBe(true);
+    expect(configLines.some((l) => l.origin === "expansion")).toBe(false);
+    const orderableCount = configLines.filter(
+      (l) => typeof (l as { acceptedSku?: string }).acceptedSku === "string"
+    ).length;
+    const manualCount = configLines.filter(
+      (l) => (l as { skuResolutionStatus?: string }).skuResolutionStatus === "manual"
+    ).length;
+    expect(orderableCount).toBe(16);
+    expect(manualCount).toBe(4);
+    const configSummary = configDraft.payload.summary as {
+      customerLineCount: number;
+      addedLineCount: number;
+      totalLineCount: number;
+      requiresReviewCount: number;
+      acceptedCustomerLineCount: number;
+      nonAcceptedCustomerLineCount: number;
+      manualCustomerLineCount: number;
+    };
+    expect(configSummary.customerLineCount).toBe(20);
+    expect(configSummary.addedLineCount).toBe(0);
+    expect(configSummary.totalLineCount).toBe(20);
+    expect(configSummary.requiresReviewCount).toBe(0);
+    expect(configSummary.acceptedCustomerLineCount).toBe(16);
+    expect(configSummary.nonAcceptedCustomerLineCount).toBe(4);
+    expect(configSummary.manualCustomerLineCount).toBe(4);
+    // No replacement/substitution introduced anywhere in the draft.
+    assertNoActiveReplacementSubstitutionFields(configDraft.payload);
+
+    // There are no expansion lines requiring review; complete the existing review flow
+    // with an empty decision batch (the panel exposes zero checkboxes).
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-load"));
+    });
+    expect(await screen.findByTestId("config-review-summary")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("config-review-checkbox")).toHaveLength(0);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("config-review-submit"));
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("config-review-summary")).toBeNull(),
+      { timeout: 3000 }
+    );
+    const configReviewPostCalls = calls.filter(
+      (c) => c.method === "POST" && /\/configuration-expansion\/review$/.test(c.url)
+    );
+    expect(configReviewPostCalls).toHaveLength(1);
+    expect(
+      (configReviewPostCalls[0].body as { decisions: unknown[] }).decisions
+    ).toHaveLength(0);
+
+    // Reviewed configuration_expansion preserves all 20 customer rows: 16 orderable, 4
+    // manual non-orderable; nothing silently dropped, no expansion added.
+    const reviewedConfig = hoisted.store.latestArtifact("configuration_expansion");
+    expect(reviewedConfig.payload.payloadKind).not.toBe("configuration_expansion_draft");
+    const acceptedConfigLines = (reviewedConfig.payload.acceptedLines ?? []) as Array<
+      ConfigurationExpansionDraftLine & { acceptedSku?: string; skuResolutionStatus?: string }
+    >;
+    expect(acceptedConfigLines).toHaveLength(20);
+    expect(acceptedConfigLines.every((l) => l.origin === "customer")).toBe(true);
+    expect(
+      acceptedConfigLines.filter((l) => typeof l.acceptedSku === "string")
+    ).toHaveLength(16);
+    expect(
+      acceptedConfigLines.filter((l) => l.skuResolutionStatus === "manual")
+    ).toHaveLength(4);
+    assertNoActiveReplacementSubstitutionFields(reviewedConfig.payload);
+
+    // --- 6. Approve configuration_expansion through the UI generic approval path ---
+    view.unmount();
+    view = render(<ProjectQuickBomPage />);
+    await screen.findByTestId("project-name");
+    expect(
+      await screen.findByTestId("approve-configuration_expansion")
+    ).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("approve-configuration_expansion"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("spine-configuration_expansion")).toHaveTextContent("approved")
+    );
+
+    // --- 7. Create priced_boq through the UI; load priced review -------------------
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("workflow-create-priced_boq"));
+    });
+    expect(await screen.findByTestId("approve-priced_boq")).toBeInTheDocument();
+
+    const pricedArtifact = hoisted.store.latestArtifact("priced_boq");
+    const pricedLines = (pricedArtifact.payload.lines ?? []) as Array<{ status: string }>;
+    expect(pricedLines).toHaveLength(20);
+    expect(pricedLines.filter((l) => l.status === "priced")).toHaveLength(0);
+    expect(pricedLines.filter((l) => l.status === "missing_price")).toHaveLength(16);
+    expect(pricedLines.filter((l) => l.status === "not_accepted")).toHaveLength(4);
+    const pricedSummary = pricedArtifact.payload.summary as {
+      inputLineCount: number;
+      pricedLineCount: number;
+      missingPriceCount: number;
+      notAcceptedCount: number;
+    };
+    expect(pricedSummary.inputLineCount).toBe(20);
+    expect(pricedSummary.pricedLineCount).toBe(0);
+    expect(pricedSummary.missingPriceCount).toBe(16);
+    expect(pricedSummary.notAcceptedCount).toBe(4);
+
+    // Pricing source remains the committed Honeywell MVP demo scope; no Cisco pricing
+    // authority is introduced.
+    const pricingAuthority = pricedArtifact.payload.pricingAuthority as {
+      scope?: string;
+      profileId?: string;
+      activeSource?: string;
+      boundary?: Record<string, boolean>;
+    };
+    expect(pricingAuthority.scope).toBe("honeywell_mvp_demo_only");
+    expect(pricingAuthority.profileId).toBe("honeywell-mvp-demo-pricing-authority-profile");
+    expect(pricingAuthority.activeSource).toBe("committed_honeywell_demo_pricing_fixture");
+    expect(pricingAuthority.boundary?.productionCiscoPricingAuthority).toBe(false);
+    expect(pricingAuthority.boundary?.broadCiscoGeneralPricingAuthority).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("priced-review-load"));
+    });
+    expect(await screen.findByTestId("priced-review-summary")).toBeInTheDocument();
+    expect(screen.getAllByTestId("priced-review-line")).toHaveLength(20);
+    const pricedReviewText = screen.getByTestId("priced-review-summary").textContent ?? "";
+    expect(pricedReviewText).toContain("20 lines");
+    expect(pricedReviewText).toContain("0 priced");
+    expect(pricedReviewText).toContain("16 missing price");
+    // The priced review panel is read-only: it never POSTs.
+    expect(
+      calls.filter((c) => c.method === "POST" && /\/priced-boq\/review$/.test(c.url))
+    ).toHaveLength(0);
+
+    // priced_boq stays at needs_review: it is NOT approved and NO export_package is
+    // created in this Cisco-recognition-only evidence test.
+    expect(hoisted.store.latestArtifact("priced_boq").status).toBe("needs_review");
+    expect(calls.some((c) => /\/export-package$/.test(c.url))).toBe(false);
+
+    // --- 8. No leakage of broad pricing, benchmark paths, runtime catalog/AI, or
+    // replacement/substitution anywhere in the DOM ---------------------------------
+    const dom = document.body.textContent ?? "";
+    expect(dom).not.toContain("mixed-cisco-upload.csv");
+    expect(dom).not.toContain("Estimate_NB167337237YA.xlsx");
+    expect(dom).not.toContain("activeSourceWorkbookPath");
+    expect(dom).not.toContain("unitListPriceSarBySku");
+    expect(dom).not.toContain("broadCiscoGeneralPricingAuthority");
+    expect(dom).not.toContain("runtimeCatalogLookup");
+    expect(dom).not.toContain("replacement");
+    expect(dom).not.toContain("substitution");
+    expect(dom).not.toContain("acceptedLines");
+    expect(dom).not.toContain("originalCells");
+
+    // Recursive final-payload assertion across every persisted Cisco-recognition artifact.
+    for (const artifactType of [
+      "normalized_boq",
+      "sku_resolution",
+      "configuration_expansion",
+      "priced_boq",
+    ] as const) {
+      assertNoActiveReplacementSubstitutionFields(
+        hoisted.store.latestArtifact(artifactType).payload
+      );
+    }
+
+    view.unmount();
+  });
+});
+
 describe("arbitrary Project Quick BoM app E2E static purity", () => {
   const TEST_PATH = join(
     process.cwd(),
