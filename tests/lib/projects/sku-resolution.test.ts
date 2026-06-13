@@ -14,6 +14,10 @@ import {
   type CatalogLookupResult,
 } from "@/lib/projects/catalog-lookup";
 import { DEFAULT_QUICK_BOM_CATALOG_SOURCE } from "@/lib/projects/default-quick-bom-catalog";
+import {
+  CISCO_COLLABORATION_APPROVED_SKU_SCOPE_PRICE_LIST_ID,
+  getCiscoCollaborationApprovedSkuScopeItems,
+} from "@/lib/projects/quick-bom-cisco-collaboration-sku-scope";
 import type { CanonicalBoqLine } from "@/types/project";
 
 function makeLine(overrides: Partial<CanonicalBoqLine> = {}): CanonicalBoqLine {
@@ -311,6 +315,84 @@ describe("buildSkuResolutionDraft", () => {
       expect(decision).not.toHaveProperty("replacementFor");
       expect(decision).not.toHaveProperty("substitutedSku");
     }
+  });
+});
+
+describe("buildSkuResolutionDraft - Cisco collaboration scope", () => {
+  // All five approved collaboration SKUs; CS-MIC-TABLE-J and CON-SNT-CS5HEJMI are
+  // already carried by the local mock catalog at a positive price, so the default
+  // catalog keeps those local rows and the zero-price scope only fills the other
+  // three. Assert that exact partition so precedence is explicit.
+  const CISCO_COLLABORATION_SKUS = [
+    "CS-KIT-EQX-C-K9",
+    "CS-KIT-EQX-FSK-C",
+    "CS-MIC-TABLE-J",
+    "CON-SNT-CSKITEK9",
+    "CON-SNT-CS5HEJMI",
+  ] as const;
+  const LOCAL_PRICED_COLLABORATION_SKUS = ["CS-MIC-TABLE-J", "CON-SNT-CS5HEJMI"] as const;
+
+  function collaborationLines(): CanonicalBoqLine[] {
+    return CISCO_COLLABORATION_SKUS.map((sku, i) => ({
+      sourceFormat: "format_1_line_item",
+      sourceFileId: "cisco-collaboration-subset",
+      sourceRowNumber: i + 2,
+      originalLineNumber: String(i + 1),
+      sku,
+      description: sku,
+      quantity: 1,
+      originalCells: {},
+    }));
+  }
+
+  it("default draft resolves the five collaboration SKUs to needs_review exact same-SKU suggestions", () => {
+    const { decisions, summary } = buildSkuResolutionDraft({ lines: collaborationLines() });
+    expect(summary.catalogSource).toBe(DEFAULT_QUICK_BOM_CATALOG_SOURCE);
+    for (let i = 0; i < decisions.length; i++) {
+      const decision = decisions[i];
+      const sku = CISCO_COLLABORATION_SKUS[i];
+      expect(decision.status, sku).toBe("needs_review");
+      expect(decision.suggestions, sku).toHaveLength(1);
+      expect(decision.suggestions[0].source, sku).toBe("exact");
+      expect(decision.suggestions[0].suggestedSku, sku).toBe(sku);
+      // SKU recognition only - never accepts, prices, configures, or replaces.
+      expect(decision.acceptedSku, sku).toBeUndefined();
+      for (const forbidden of [
+        "acceptedSku",
+        "listPrice",
+        "unitPrice",
+        "parentSku",
+        "children",
+        "includedItems",
+        "replacementFor",
+        "substitutedSku",
+      ]) {
+        expect(decision, `${sku}:${forbidden}`).not.toHaveProperty(forbidden);
+      }
+    }
+  });
+
+  it("scope-only catalog reports a zero-price suggestion count of five", () => {
+    const scopeIndex = buildCatalogLookupIndex(
+      getCiscoCollaborationApprovedSkuScopeItems(),
+      CISCO_COLLABORATION_APPROVED_SKU_SCOPE_PRICE_LIST_ID
+    );
+    const { summary } = buildSkuResolutionDraft({
+      lines: collaborationLines(),
+      catalogIndex: scopeIndex,
+    });
+    expect(summary.needsReviewCount).toBe(5);
+    expect(summary.exactSuggestionCount).toBe(5);
+    expect(summary.zeroPriceSuggestionCount).toBe(5);
+  });
+
+  it("default catalog zero-price count respects local precedence (only the three local mock misses)", () => {
+    const { summary } = buildSkuResolutionDraft({ lines: collaborationLines() });
+    const expectedZeroPrice =
+      CISCO_COLLABORATION_SKUS.length - LOCAL_PRICED_COLLABORATION_SKUS.length;
+    expect(expectedZeroPrice).toBe(3);
+    expect(summary.zeroPriceSuggestionCount).toBe(expectedZeroPrice);
+    expect(summary.exactSuggestionCount).toBe(5);
   });
 });
 

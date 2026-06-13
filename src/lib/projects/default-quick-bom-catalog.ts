@@ -2,19 +2,25 @@
  * Canonical default Project Quick BoM SKU lookup catalog.
  *
  * Builds the single default CatalogLookupIndex used by Quick BoM SKU resolution
- * when no explicit catalog index is supplied. It composes three approved
+ * when no explicit catalog index is supplied. It composes four approved
  * deterministic sources only:
  *   1. the committed local STC historical/mock catalog projection already used by
  *      getLocalMockCatalogLookupIndex();
  *   2. the approved Honeywell MVP demo SKU metadata projection from
  *      getHoneywellDemoCatalogItems();
  *   3. the Honeywell known same-SKU metadata for the Batch 4 historical/deferred
- *      replacement-candidate SKUs from getHoneywellKnownSameSkuCatalogItems().
+ *      replacement-candidate SKUs from getHoneywellKnownSameSkuCatalogItems();
+ *   4. the Cisco collaboration / Room Kit EQX approved same-SKU recognition scope
+ *      from getCiscoCollaborationApprovedSkuScopeItems().
  * Local mock entries keep precedence on any shared SKU; the Honeywell demo
  * metadata only adds SKUs the local mock catalog misses (e.g. C9300X-48HX-A,
  * C9300L-24P-4X-A, CW9178I-CFG); the known same-SKU metadata then fills only the
  * remaining missing historical SKUs (e.g. C9300-DNX-A-48-3Y, CON-L1NBX-C9300XY4)
- * as same-SKU recognition rows. This is SKU recognition only - the merged index
+ * as same-SKU recognition rows; the Cisco collaboration scope last fills only the
+ * remaining missing Room Kit EQX SKUs (e.g. CS-KIT-EQX-C-K9, CON-SNT-CSKITEK9)
+ * as zero-price same-SKU recognition rows, never overriding a positive-priced
+ * local row (e.g. CS-MIC-TABLE-J, CON-SNT-CS5HEJMI stay local-priced). This is
+ * SKU recognition only - the merged index
  * is NOT pricing authority, NOT configuration authority, NOT replacement/
  * substitution authority, and NOT broad production Cisco-catalog authority. The
  * known same-SKU rows recognize each historical SKU as ITSELF and never map it to
@@ -23,8 +29,8 @@
  * exist only because CatalogLookupItem carries them for compatibility; pricing
  * stays separate.
  *
- * PURE HELPER: imports only catalog-lookup, honeywell-demo-catalog-fixture, and
- * honeywell-known-sku-catalog. No
+ * PURE HELPER: imports only catalog-lookup, honeywell-demo-catalog-fixture,
+ * honeywell-known-sku-catalog, and quick-bom-cisco-collaboration-sku-scope. No
  * DB, API/UI, auth, env, engine, coordinator, adapter (beyond the local mock-data
  * helper reached via catalog-lookup), pricing/export service, runner, AI/LLM, or
  * network client. Every catalog item is freshly copied so callers can never mutate
@@ -38,6 +44,7 @@ import {
 } from "@/lib/projects/catalog-lookup";
 import { getHoneywellDemoCatalogItems } from "@/lib/projects/honeywell-demo-catalog-fixture";
 import { getHoneywellKnownSameSkuCatalogItems } from "@/lib/projects/honeywell-known-sku-catalog";
+import { getCiscoCollaborationApprovedSkuScopeItems } from "@/lib/projects/quick-bom-cisco-collaboration-sku-scope";
 
 /** Provenance tag for the canonical default Quick BoM approved-catalog lookup index. */
 export const DEFAULT_QUICK_BOM_CATALOG_SOURCE =
@@ -81,6 +88,24 @@ function buildDefaultItems(): Record<string, CatalogLookupItem> {
     const trimmedSku = item.sku.trim();
     if (trimmedSku === "" || trimmedSku in items) continue;
     items[trimmedSku] = { ...item };
+  }
+
+  // Cisco collaboration / Room Kit EQX approved same-SKU recognition scope fills
+  // only the remaining missing collaboration SKUs as zero-price recognition rows;
+  // never overrides a local/demo/known entry (so positive-priced local rows such
+  // as CS-MIC-TABLE-J and CON-SNT-CS5HEJMI keep their local prices), and never
+  // maps a SKU to a replacement. The zero listPrice is a placeholder, not pricing.
+  for (const item of Object.values(getCiscoCollaborationApprovedSkuScopeItems())) {
+    const trimmedSku = item.sku.trim();
+    if (trimmedSku === "" || trimmedSku in items) continue;
+    items[trimmedSku] = {
+      sku: item.sku,
+      description: item.description,
+      listPrice: item.listPrice,
+      currency: item.currency,
+      vendor: item.vendor,
+      priceListId: item.priceListId,
+    };
   }
 
   return items;

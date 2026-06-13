@@ -26,6 +26,17 @@ const HONEYWELL_ONLY_SKUS = ["C9300X-48HX-A", "C9300L-24P-4X-A", "CW9178I-CFG"] 
 // A SKU that lives in the local mock catalog and must keep resolving from it.
 const LOCAL_SKU = "C9300-48P-E";
 const STANDALONE_OPTICS = ["SFP-10G-LR-S=", "SFP-10/25G-LR-S="] as const;
+// All five approved Cisco collaboration / Room Kit EQX SKUs must resolve same-SKU.
+const CISCO_COLLABORATION_SKUS = [
+  "CS-KIT-EQX-C-K9",
+  "CS-KIT-EQX-FSK-C",
+  "CS-MIC-TABLE-J",
+  "CON-SNT-CSKITEK9",
+  "CON-SNT-CS5HEJMI",
+] as const;
+// Of those five, these two already live in the local mock catalog at a positive
+// price and must keep their local row (the zero-price scope must not override).
+const LOCAL_PRICED_COLLABORATION_SKUS = ["CS-MIC-TABLE-J", "CON-SNT-CS5HEJMI"] as const;
 
 function importSpecifiers(source: string): string[] {
   const importRegex = /import\s+(?:type\s+)?[\s\S]*?from\s+["']([^"']+)["']/g;
@@ -66,6 +77,43 @@ describe("getDefaultQuickBomCatalogLookupIndex", () => {
     expect(result.status).toBe("matched");
   });
 
+  it("resolves all five Cisco collaboration SKUs as exact same-SKU matches", () => {
+    const index = getDefaultQuickBomCatalogLookupIndex();
+    for (const sku of CISCO_COLLABORATION_SKUS) {
+      const result = lookupCatalogSku(sku, index);
+      expect(result.status, sku).toBe("matched");
+      if (result.status === "matched") {
+        expect(result.match.source).toBe("exact");
+        expect(result.match.catalogSku).toBe(sku);
+        expect(result.match.catalogSource).toBe(DEFAULT_QUICK_BOM_CATALOG_SOURCE);
+      }
+    }
+  });
+
+  it("keeps positive-priced local rows for collaboration SKUs the local mock already carries", () => {
+    const index = getDefaultQuickBomCatalogLookupIndex();
+    for (const sku of LOCAL_PRICED_COLLABORATION_SKUS) {
+      const result = lookupCatalogSku(sku, index);
+      expect(result.status, sku).toBe("matched");
+      if (result.status === "matched") {
+        expect(result.match.hasPositiveListPrice, sku).toBe(true);
+      }
+    }
+  });
+
+  it("contributes zero-price rows only for collaboration SKUs the local mock misses", () => {
+    const index = getDefaultQuickBomCatalogLookupIndex();
+    const localPriced = new Set<string>(LOCAL_PRICED_COLLABORATION_SKUS);
+    for (const sku of CISCO_COLLABORATION_SKUS) {
+      if (localPriced.has(sku)) continue;
+      const result = lookupCatalogSku(sku, index);
+      expect(result.status, sku).toBe("matched");
+      if (result.status === "matched") {
+        expect(result.match.hasPositiveListPrice, sku).toBe(false);
+      }
+    }
+  });
+
   it("resolves the standalone optics as flat same-SKU matches", () => {
     const index = getDefaultQuickBomCatalogLookupIndex();
     for (const optic of STANDALONE_OPTICS) {
@@ -86,12 +134,13 @@ describe("module hygiene", () => {
     ]);
   });
 
-  it("imports only catalog-lookup, the Honeywell demo catalog fixture, and known SKU catalog", () => {
+  it("imports only catalog-lookup, the Honeywell demo/known SKU catalogs, and the Cisco collaboration scope", () => {
     const source = readFileSync(SOURCE_PATH, "utf8");
     const allowed = new Set([
       "@/lib/projects/catalog-lookup",
       "@/lib/projects/honeywell-demo-catalog-fixture",
       "@/lib/projects/honeywell-known-sku-catalog",
+      "@/lib/projects/quick-bom-cisco-collaboration-sku-scope",
     ]);
     const specifiers = importSpecifiers(source);
     for (const spec of specifiers) {
