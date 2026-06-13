@@ -79,6 +79,13 @@
  * text and table content - the package under human review - in collapsed
  * details with full source traceability. All four extraction-review fetches
  * are default GETs that write nothing, run no extraction, and decide nothing.
+ *
+ * RFP BoQ readiness (Stage 3): on mount the page also GETs the read-only BoQ
+ * workspace from /api/projects/[id]/rfp/boq. It renders BoQ file summaries,
+ * workflow readiness, and latest Quick BoM spine artifact identifiers only.
+ * The approved export-package download is a plain anchor to the dedicated
+ * download route; the page never fetches downloads and never opens payloads,
+ * file paths, storage paths, pricing/configuration internals, or catalog data.
  */
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -103,6 +110,7 @@ import type {
   RfpEvidencePackageInspectionListItem,
   RfpEvidencePackageInspectionPackage,
 } from "@/lib/projects/project-rfp-evidence-package-inspection";
+import type { ProjectRfpBoqWorkspace } from "@/lib/projects/project-rfp-boq-workspace";
 
 type EvidenceKind = RfpEvidenceListItemSummary["kind"];
 type KindFilter = "all" | EvidenceKind;
@@ -253,6 +261,11 @@ interface EvidencePackageDetail {
   package: RfpEvidencePackageInspectionPackage;
 }
 
+/** Read-only response of GET /api/projects/[id]/rfp/boq. */
+interface RfpBoqWorkspaceResponse {
+  workspace?: ProjectRfpBoqWorkspace;
+}
+
 /**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
@@ -300,6 +313,9 @@ const PACKAGE_APPROVE_SUCCESS = "Final evidence package approved.";
 const PACKAGE_REJECT_SUCCESS = "Final evidence package rejected.";
 const PACKAGE_REVIEW_ERROR = "Unable to review final evidence package.";
 
+/** Exact UI copy required for the RFP BoQ readiness failure state. */
+const BOQ_WORKSPACE_ERROR = "Unable to load RFP BoQ readiness.";
+
 const EMPTY_FILTERS: EvidenceFilters = {
   sourceFileId: "",
   inputPackageArtifactId: "",
@@ -314,6 +330,24 @@ const FIELD =
   "mt-1 rounded-button border border-[var(--border)] bg-bg-card px-2 py-1 text-xs text-text-primary";
 const ERROR_BOX =
   "rounded-card border border-destructive/30 bg-destructive-muted p-3 text-sm text-destructive";
+
+type BoqSpineKey = keyof ProjectRfpBoqWorkspace["spineArtifacts"];
+
+const BOQ_SPINE_KEYS: BoqSpineKey[] = [
+  "normalized_boq",
+  "sku_resolution",
+  "configuration_expansion",
+  "priced_boq",
+  "export_package",
+];
+
+const BOQ_SPINE_LABELS: Record<BoqSpineKey, string> = {
+  normalized_boq: "Normalized BoQ",
+  sku_resolution: "SKU resolution",
+  configuration_expansion: "Configuration expansion",
+  priced_boq: "Priced BoQ",
+  export_package: "Export package",
+};
 
 /** Build the list URL; blank filters are omitted so unfiltered = bare URL. */
 function evidenceListUrl(projectId: string, filters: EvidenceFilters): string {
@@ -331,6 +365,14 @@ function evidenceListUrl(projectId: string, filters: EvidenceFilters): string {
 
 function kindLabel(kind: EvidenceKind): string {
   return kind === "rfp_document_text_chunk" ? "text" : "table";
+}
+
+function yesNo(value: boolean): string {
+  return value ? "yes" : "no";
+}
+
+function idList(values: readonly string[]): string {
+  return values.length > 0 ? values.join(", ") : "none";
 }
 
 /** One-line position/size summary for a lean list row; never content. */
@@ -1005,6 +1047,10 @@ export default function ProjectRfpEvidencePage() {
   const [packageReviewError, setPackageReviewError] = useState<string | null>(null);
   const [packageReviewSuccess, setPackageReviewSuccess] = useState<string | null>(null);
 
+  const [boqWorkspace, setBoqWorkspace] = useState<ProjectRfpBoqWorkspace | null>(null);
+  const [boqWorkspaceLoading, setBoqWorkspaceLoading] = useState(true);
+  const [boqWorkspaceError, setBoqWorkspaceError] = useState<string | null>(null);
+
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -1172,6 +1218,30 @@ export default function ProjectRfpEvidencePage() {
   useEffect(() => {
     void loadPackageList();
   }, [loadPackageList]);
+
+  const loadBoqWorkspace = useCallback(async (): Promise<void> => {
+    setBoqWorkspaceLoading(true);
+    setBoqWorkspaceError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/boq`);
+      const body = (await res.json().catch(() => null)) as RfpBoqWorkspaceResponse | null;
+      if (!res.ok || body === null || body.workspace === undefined) {
+        setBoqWorkspace(null);
+        setBoqWorkspaceError(BOQ_WORKSPACE_ERROR);
+        return;
+      }
+      setBoqWorkspace(body.workspace);
+    } catch {
+      setBoqWorkspace(null);
+      setBoqWorkspaceError(BOQ_WORKSPACE_ERROR);
+    } finally {
+      setBoqWorkspaceLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadBoqWorkspace();
+  }, [loadBoqWorkspace]);
 
   // Final evidence content is fetched only here, on an explicit Inspect click.
   const loadPackageDetail = useCallback(
@@ -1464,6 +1534,10 @@ export default function ProjectRfpEvidencePage() {
     const state = deltaDecisions[candidate.id];
     return state !== undefined && state.action !== "";
   }).length;
+  const approvedExportArtifact =
+    boqWorkspace?.spineArtifacts.export_package?.status === "approved"
+      ? boqWorkspace.spineArtifacts.export_package
+      : null;
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-6">
@@ -1658,6 +1732,154 @@ export default function ProjectRfpEvidencePage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+      </section>
+
+      <section
+        data-testid="rfp-boq-readiness"
+        className="rounded-card border border-[var(--border)] p-3"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-text-primary">
+              RFP BoQ readiness
+            </h2>
+            <p className="mt-1 text-xs text-text-secondary">
+              Quick BoM lane status from confirmed BoQ files and approved artifacts.
+            </p>
+          </div>
+          {approvedExportArtifact !== null && (
+            <a
+              data-testid="rfp-boq-export-download"
+              href={`/api/projects/${id}/rfp/artifacts/${approvedExportArtifact.id}/export-package/download`}
+              className={ACTION_BTN}
+            >
+              Download approved export
+            </a>
+          )}
+        </div>
+        {boqWorkspaceError && (
+          <div data-testid="rfp-boq-error" className={`mt-2 ${ERROR_BOX}`}>
+            {boqWorkspaceError}
+          </div>
+        )}
+        {boqWorkspaceLoading && (
+          <p data-testid="rfp-boq-loading" className="mt-2 text-sm text-text-tertiary">
+            Loading RFP BoQ readiness...
+          </p>
+        )}
+        {boqWorkspace !== null && (
+          <div className="mt-3 space-y-3">
+            <div className="grid gap-2 text-xs text-text-secondary md:grid-cols-3">
+              <p data-testid="rfp-boq-status">
+                Status: <span className="font-medium text-text-primary">{boqWorkspace.readiness.status}</span>
+              </p>
+              <p data-testid="rfp-boq-file-count">BoQ files: {boqWorkspace.readiness.boqFileCount}</p>
+              <p data-testid="rfp-boq-next-step">
+                Next Quick BoM step: {boqWorkspace.readiness.quickBomReadiness.nextStepId ?? "none"}
+              </p>
+            </div>
+
+            <div
+              data-testid="rfp-boq-gates"
+              className="grid gap-1 text-xs text-text-secondary md:grid-cols-3"
+            >
+              <p>Normalize: {yesNo(boqWorkspace.readiness.canNormalizeBoq)}</p>
+              <p>SKU review: {yesNo(boqWorkspace.readiness.canCreateSkuResolution)}</p>
+              <p>
+                Configuration review:{" "}
+                {yesNo(boqWorkspace.readiness.canCreateConfigurationExpansion)}
+              </p>
+              <p>Pricing review: {yesNo(boqWorkspace.readiness.canCreatePricedBoq)}</p>
+              <p>Export package: {yesNo(boqWorkspace.readiness.canCreateExportPackage)}</p>
+              <p>
+                Customer deliverable:{" "}
+                {yesNo(boqWorkspace.readiness.isCustomerDeliverableReady)}
+              </p>
+            </div>
+
+            {boqWorkspace.readiness.messages.length > 0 && (
+              <ul className="space-y-1 text-xs text-text-secondary">
+                {boqWorkspace.readiness.messages.map((message, index) => (
+                  <li key={`${index}-${message}`} data-testid="rfp-boq-message">
+                    {message}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <details data-testid="rfp-boq-files" open={boqWorkspace.boqFiles.length <= 2}>
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                BoQ files
+              </summary>
+              {boqWorkspace.boqFiles.length === 0 ? (
+                <p className="mt-2 text-xs text-text-tertiary">No BoQ files uploaded.</p>
+              ) : (
+                <ol className="mt-2 space-y-1">
+                  {boqWorkspace.boqFiles.map((file) => (
+                    <li
+                      key={file.id}
+                      data-testid="rfp-boq-file-row"
+                      className="rounded-button border border-[var(--border)] p-2 text-xs text-text-secondary"
+                    >
+                      <p className="font-medium text-text-primary">
+                        {file.fileName} | <span className="font-mono">{file.id}</span>
+                      </p>
+                      <p>
+                        role {file.fileRole} | uploaded {file.uploadedAt} | retain until{" "}
+                        {file.retainUntil}
+                      </p>
+                      <p>
+                        mime {file.mimeType ?? "unknown"} | size{" "}
+                        {file.sizeBytes !== undefined ? file.sizeBytes : "unknown"}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </details>
+
+            <details data-testid="rfp-boq-spine" open>
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                Quick BoM spine artifacts
+              </summary>
+              <ol className="mt-2 space-y-1">
+                {BOQ_SPINE_KEYS.map((key) => {
+                  const artifact = boqWorkspace.spineArtifacts[key];
+                  const step = boqWorkspace.readiness.quickBomReadiness.steps.find(
+                    (item) => item.stepId === key
+                  );
+                  return (
+                    <li
+                      key={key}
+                      data-testid="rfp-boq-spine-row"
+                      className="rounded-button border border-[var(--border)] p-2 text-xs text-text-secondary"
+                    >
+                      <p className="font-medium text-text-primary">
+                        {BOQ_SPINE_LABELS[key]} | {step?.status ?? "unknown"}
+                      </p>
+                      {artifact === null ? (
+                        <p>No artifact yet.</p>
+                      ) : (
+                        <>
+                          <p>
+                            <span className="font-mono">{artifact.id}</span> | v
+                            {artifact.version} | {artifact.status} | updated{" "}
+                            {artifact.updatedAt}
+                          </p>
+                          <p>
+                            files {idList(artifact.sourceFileIds)} | artifacts{" "}
+                            {idList(artifact.sourceArtifactIds)}
+                          </p>
+                        </>
+                      )}
+                      {step && <p>{step.message}</p>}
+                    </li>
+                  );
+                })}
+              </ol>
+            </details>
           </div>
         )}
       </section>

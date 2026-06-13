@@ -27,6 +27,8 @@ const EVIDENCE_PACKAGE_ARTIFACT_ID = "art-ep-1";
 const EVIDENCE_PACKAGE_DETAIL_URL = `${EVIDENCE_PACKAGE_LIST_URL}/${EVIDENCE_PACKAGE_ARTIFACT_ID}`;
 const EVIDENCE_PACKAGE_REVIEW_URL =
   `/api/projects/${PROJECT_ID}/rfp/artifacts/${EVIDENCE_PACKAGE_ARTIFACT_ID}/evidence-package/review`;
+const RFP_BOQ_WORKSPACE_URL = `/api/projects/${PROJECT_ID}/rfp/boq`;
+const RFP_BOQ_EXPORT_ARTIFACT_ID = "art-export-rfp-1";
 // A second, APPROVED evidence_package: the only kind a requirements baseline
 // draft may be generated from. The default art-ep-1 stays needs_review so the
 // package review/list/detail tests keep their single not-yet-approved row.
@@ -66,6 +68,13 @@ const DELTA_HISTORY_NOTE_CANARY = "DELTA-HISTORY-NOTE-CANARY";
 const PACKAGE_LIST_EVIDENCE_CANARY = "PACKAGE-LIST-EVIDENCE-CANARY";
 const PACKAGE_EVIDENCE_TEXT_CANARY = "PACKAGE-EVIDENCE-TEXT-CANARY";
 const PACKAGE_TABLE_CELL_CANARY = "PACKAGE-TABLE-CELL-CANARY";
+
+// BoQ workspace canaries. The read model should already omit storage/payload
+// fields; these are smuggled into the fixture to prove the page still renders
+// only whitelisted summaries.
+const BOQ_STORAGE_PATH_CANARY = "BOQ-STORAGE-PATH-CANARY";
+const BOQ_FILE_PATH_CANARY = "BOQ-FILE-PATH-CANARY";
+const BOQ_PAYLOAD_CANARY = "BOQ-PAYLOAD-CANARY";
 
 function projectContext(): Record<string, unknown> {
   return {
@@ -748,6 +757,174 @@ function evidencePackageReviewSuccessResponse(
   };
 }
 
+function rfpBoqArtifactSummary(
+  id: string,
+  type: string,
+  stageId: string,
+  status: string,
+  version: number,
+  sourceArtifactIds: string[] = []
+): Record<string, unknown> {
+  return {
+    id,
+    stageId,
+    type,
+    status,
+    version,
+    sourceFileIds: ["file-boq-1"],
+    sourceArtifactIds,
+    createdAt: "2026-06-04T10:00:00.000Z",
+    updatedAt: "2026-06-04T10:30:00.000Z",
+  };
+}
+
+function quickBomReadinessStep(
+  stepId: string,
+  latestArtifactId: string,
+  latestArtifactVersion: number,
+  requiredStatusForNextStep: string = "approved"
+): Record<string, unknown> {
+  return {
+    stepId,
+    artifactType: stepId,
+    status: "approved",
+    requiredStatusForNextStep,
+    latestArtifactId,
+    latestArtifactVersion,
+    latestArtifactStatus: "approved",
+    isPresent: true,
+    isApproved: true,
+    isStale: false,
+    blocksNextStep: false,
+    message: `${stepId} is approved.`,
+  };
+}
+
+function rfpBoqWorkspaceResponse(): Record<string, unknown> {
+  const boqFile = {
+    id: "file-boq-1",
+    projectId: PROJECT_ID,
+    fileRole: "boq",
+    fileName: "stc_boq.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    sizeBytes: 12345,
+    uploadedAt: "2026-06-04T07:00:00.000Z",
+    retainUntil: "2027-06-04T07:00:00.000Z",
+    storagePath: BOQ_STORAGE_PATH_CANARY,
+    filePath: BOQ_FILE_PATH_CANARY,
+    payload: { rows: [BOQ_PAYLOAD_CANARY] },
+  };
+  const normalized = rfpBoqArtifactSummary(
+    "art-normalized-rfp-1",
+    "normalized_boq",
+    "boq_format_validation",
+    "approved",
+    1
+  );
+  const sku = rfpBoqArtifactSummary(
+    "art-sku-rfp-1",
+    "sku_resolution",
+    "sku_resolution",
+    "approved",
+    1,
+    ["art-normalized-rfp-1"]
+  );
+  const config = rfpBoqArtifactSummary(
+    "art-config-rfp-1",
+    "configuration_expansion",
+    "configuration_expansion_review",
+    "approved",
+    2,
+    ["art-sku-rfp-1"]
+  );
+  const priced = rfpBoqArtifactSummary(
+    "art-priced-rfp-1",
+    "priced_boq",
+    "boq_pricing_review",
+    "approved",
+    1,
+    ["art-config-rfp-1"]
+  );
+  const exportArtifact = rfpBoqArtifactSummary(
+    RFP_BOQ_EXPORT_ARTIFACT_ID,
+    "export_package",
+    "export_approval",
+    "approved",
+    1,
+    ["art-priced-rfp-1"]
+  );
+
+  return {
+    workspace: {
+      project: projectContext(),
+      stages: [],
+      boqFiles: [boqFile],
+      artifacts: [normalized, sku, config, priced, exportArtifact],
+      spineArtifacts: {
+        normalized_boq: normalized,
+        sku_resolution: sku,
+        configuration_expansion: config,
+        priced_boq: priced,
+        export_package: exportArtifact,
+      },
+      approvals: [
+        {
+          id: "approval-export-rfp-1",
+          stageId: "export_approval",
+          artifactId: RFP_BOQ_EXPORT_ARTIFACT_ID,
+          artifactVersion: 1,
+          decision: "approved",
+          decidedBy: "user-1",
+          decidedAt: "2026-06-04T11:00:00.000Z",
+        },
+      ],
+      readiness: {
+        projectId: PROJECT_ID,
+        boqFileCount: 1,
+        boqFiles: [boqFile],
+        hasBoqFiles: true,
+        normalizationCandidateFileIds: ["file-boq-1"],
+        quickBomReadiness: {
+          projectId: PROJECT_ID,
+          steps: [
+            quickBomReadinessStep(
+              "normalized_boq",
+              "art-normalized-rfp-1",
+              1,
+              "present_non_stale"
+            ),
+            quickBomReadinessStep("sku_resolution", "art-sku-rfp-1", 1),
+            quickBomReadinessStep("configuration_expansion", "art-config-rfp-1", 2),
+            quickBomReadinessStep("priced_boq", "art-priced-rfp-1", 1),
+            quickBomReadinessStep("export_package", RFP_BOQ_EXPORT_ARTIFACT_ID, 1),
+          ],
+          nextStepId: null,
+          blockingStepId: null,
+          canCreateSkuResolution: true,
+          canCreateConfigurationExpansion: true,
+          canCreatePricedBoq: true,
+          canCreateExportPackage: true,
+          isCustomerDeliverableReady: true,
+          messages: [
+            "Quick BoM customer deliverable is ready: the export package is approved.",
+          ],
+        },
+        canNormalizeBoq: false,
+        canCreateSkuResolution: true,
+        canCreateConfigurationExpansion: true,
+        canCreatePricedBoq: true,
+        canCreateExportPackage: true,
+        isCustomerDeliverableReady: true,
+        status: "customer_deliverable_ready",
+        messages: [
+          "The RFP BoQ lane customer deliverable is ready.",
+          "Quick BoM customer deliverable is ready: the export package is approved.",
+        ],
+      },
+    },
+  };
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -823,6 +1000,7 @@ function stubDefault(): Recorded[] {
     if (url === EXTRACTION_DELTA_DETAIL_URL) return jsonResponse(extractionDeltaDetailResponse());
     if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
     if (url === EVIDENCE_PACKAGE_DETAIL_URL) return jsonResponse(evidencePackageDetailResponse());
+    if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
     if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
     return jsonResponse({}, 404);
   });
@@ -866,6 +1044,7 @@ function stubWithApprovedPackage(): Recorded[] {
       return jsonResponse(evidencePackageListResponseWithApproved());
     }
     if (url === EVIDENCE_PACKAGE_DETAIL_URL) return jsonResponse(evidencePackageDetailResponse());
+    if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
     if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
     return jsonResponse({}, 404);
   });
@@ -888,7 +1067,7 @@ afterEach(() => {
 });
 
 describe("ProjectRfpEvidencePage - list load", () => {
-  it("GETs all four inspection list endpoints on mount and renders context, counts, and lean rows", async () => {
+  it("GETs all five inspection list/workspace endpoints on mount and renders context, counts, and lean rows", async () => {
     const calls = stubDefault();
     render(<ProjectRfpEvidencePage />);
 
@@ -920,15 +1099,80 @@ describe("ProjectRfpEvidencePage - list load", () => {
 
     await screen.findByTestId("delta-row");
     await screen.findByTestId("ep-row");
+    await screen.findByTestId("rfp-boq-status");
 
     const gets = calls.filter((c) => c.method === "GET");
-    expect(gets).toHaveLength(4);
+    expect(gets).toHaveLength(5);
     const urls = gets.map((c) => c.url);
     expect(urls).toContain(LIST_URL);
     expect(urls).toContain(EXTRACTION_DELTA_LIST_URL);
     expect(urls).toContain(EVIDENCE_PACKAGE_LIST_URL);
     expect(urls).toContain(BASELINE_LIST_URL);
+    expect(urls).toContain(RFP_BOQ_WORKSPACE_URL);
     expect(gets.every((c) => c.body === null)).toBe(true);
+  });
+
+  it("renders the read-only RFP BoQ readiness workspace and approved export download link", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+
+    const section = await screen.findByTestId("rfp-boq-readiness");
+    expect(screen.getByTestId("rfp-boq-status")).toHaveTextContent(
+      "customer_deliverable_ready"
+    );
+    expect(screen.getByTestId("rfp-boq-file-count")).toHaveTextContent("BoQ files: 1");
+    expect(screen.getByTestId("rfp-boq-next-step")).toHaveTextContent(
+      "Next Quick BoM step: none"
+    );
+    expect(screen.getByTestId("rfp-boq-gates")).toHaveTextContent(
+      "Customer deliverable: yes"
+    );
+    expect(screen.getAllByTestId("rfp-boq-message")).toHaveLength(2);
+
+    const fileRow = screen.getByTestId("rfp-boq-file-row");
+    expect(fileRow).toHaveTextContent("stc_boq.xlsx");
+    expect(fileRow).toHaveTextContent("file-boq-1");
+    expect(fileRow).toHaveTextContent("role boq");
+
+    const spineRows = screen.getAllByTestId("rfp-boq-spine-row");
+    expect(spineRows).toHaveLength(5);
+    expect(spineRows[0]).toHaveTextContent("Normalized BoQ");
+    expect(spineRows[1]).toHaveTextContent("SKU resolution");
+    expect(spineRows[2]).toHaveTextContent("Configuration expansion");
+    expect(spineRows[3]).toHaveTextContent("Priced BoQ");
+    expect(spineRows[4]).toHaveTextContent("Export package");
+    expect(spineRows[4]).toHaveTextContent(RFP_BOQ_EXPORT_ARTIFACT_ID);
+
+    const link = screen.getByTestId("rfp-boq-export-download");
+    expect(link).toHaveAttribute(
+      "href",
+      `/api/projects/${PROJECT_ID}/rfp/artifacts/${RFP_BOQ_EXPORT_ARTIFACT_ID}/export-package/download`
+    );
+    expect(calls.filter((c) => c.url === RFP_BOQ_WORKSPACE_URL)).toHaveLength(1);
+    expect(calls.some((c) => c.url.includes("/download"))).toBe(false);
+
+    expect(section).not.toHaveTextContent(BOQ_STORAGE_PATH_CANARY);
+    expect(section).not.toHaveTextContent(BOQ_FILE_PATH_CANARY);
+    expect(section).not.toHaveTextContent(BOQ_PAYLOAD_CANARY);
+  });
+
+  it('renders exactly "Unable to load RFP BoQ readiness." when the workspace GET fails', async () => {
+    stubFetch((url) => {
+      if (url === RFP_BOQ_WORKSPACE_URL) {
+        return jsonResponse({ code: "rfp_boq_workspace_failed" }, 500);
+      }
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    expect(await screen.findByTestId("rfp-boq-error")).toHaveTextContent(
+      "Unable to load RFP BoQ readiness."
+    );
+    expect(screen.getByTestId("project-name")).toHaveTextContent("STC Riyadh DC RFP");
   });
 
   it("shows a list loading state while the list GET is pending", async () => {
@@ -945,6 +1189,9 @@ describe("ProjectRfpEvidencePage - list load", () => {
         }
         if (url === EVIDENCE_PACKAGE_LIST_URL) {
           return Promise.resolve(jsonResponse(evidencePackageListResponse()));
+        }
+        if (url === RFP_BOQ_WORKSPACE_URL) {
+          return Promise.resolve(jsonResponse(rfpBoqWorkspaceResponse()));
         }
         return new Promise<Response>((r) => { resolveList = r; });
       })
@@ -2651,7 +2898,7 @@ describe("ProjectRfpEvidencePage - evidence package review", () => {
 });
 
 describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
-  it("issues only default-GET fetches to the four inspection endpoints and never calls write or other RFP endpoints", async () => {
+  it("issues only default-GET fetches to the five inspection endpoints and never calls write or other RFP endpoints", async () => {
     const calls = stubDefault();
     render(<ProjectRfpEvidencePage />);
     await screen.findByTestId("project-name");
@@ -2697,6 +2944,7 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       EXTRACTION_DELTA_DETAIL_URL,
       EVIDENCE_PACKAGE_LIST_URL,
       EVIDENCE_PACKAGE_DETAIL_URL,
+      RFP_BOQ_WORKSPACE_URL,
       BASELINE_LIST_URL,
       BASELINE_DETAIL_URL,
     ]);
@@ -2740,6 +2988,7 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       EXTRACTION_DELTA_DETAIL_URL,
       EVIDENCE_PACKAGE_LIST_URL,
       EVIDENCE_PACKAGE_DETAIL_URL,
+      RFP_BOQ_WORKSPACE_URL,
       BASELINE_LIST_URL,
       BASELINE_DETAIL_URL,
       REVIEW_URL,
@@ -2799,6 +3048,7 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       EXTRACTION_DELTA_DETAIL_URL,
       EVIDENCE_PACKAGE_LIST_URL,
       EVIDENCE_PACKAGE_DETAIL_URL,
+      RFP_BOQ_WORKSPACE_URL,
       BASELINE_LIST_URL,
       BASELINE_DETAIL_URL,
       REVIEW_URL,
@@ -2827,7 +3077,9 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
     expect(source).toContain("useParams");
     expect(source).toContain("/rfp/evidence");
     expect(source).toContain("/rfp/requirements-baseline");
+    expect(source).toContain("/rfp/boq");
     expect(source).toContain("/rfp/artifacts/");
+    expect(source).toContain("export-package/download");
   });
 
   it("imports only react, next/navigation, and the type-only inspection read models", () => {
@@ -2840,6 +3092,7 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
       "@/lib/projects/project-rfp-requirements-baseline-inspection",
       "@/lib/projects/project-rfp-extraction-delta-inspection",
       "@/lib/projects/project-rfp-evidence-package-inspection",
+      "@/lib/projects/project-rfp-boq-workspace",
     ]);
     for (const statement of statements) {
       const m = statement.match(/from\s+"([^"]+)"/);
@@ -2854,7 +3107,7 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
     expect(source).not.toContain("require(");
   });
 
-  it("contains no db/store/route/write/persistence/run/AI/authority tokens and no unexpected mutation methods", () => {
+  it("contains no server imports, extraction/upload/persistence/AI authority, or unexpected mutation methods", () => {
     for (const forbidden of [
       'from "@/lib/db',
       'from "@/app/api',
@@ -2862,6 +3115,12 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
       'from "@/lib/adapters',
       'from "@/lib/agent',
       'from "@/lib/catalog',
+      'from "@/lib/projects/sku-resolution',
+      'from "@/lib/projects/config-expansion',
+      'from "@/lib/projects/priced-boq',
+      'from "@/lib/projects/project-quick-bom',
+      'from "@/lib/projects/project-rfp-boq-export',
+      'from "@/lib/projects/mantle',
       'from "@/coordinator',
       'from "@/engines',
       '"use server"',
@@ -2872,7 +3131,6 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
       "/approvals",
       "/files",
       "/upload",
-      "/download",
       '"PUT"',
       '"PATCH"',
       '"DELETE"',
@@ -2880,13 +3138,6 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
       "storagePath",
       "node:fs",
       "drizzle",
-      "pricing",
-      "priced",
-      "catalog",
-      "configuration-expansion",
-      "config-expansion",
-      "sku-resolution",
-      "export-package",
       "@anthropic-ai",
       "anthropic",
       "openai",
