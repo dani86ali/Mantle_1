@@ -1,17 +1,19 @@
 /**
- * Read-only Quick BoM priced-BoQ review WORKSPACE loader: the Quick BoM lane wrapper
- * over the shared, mode-gated priced-BoQ review-workspace core. It loads ONE
- * `priced_boq` artifact and projects a lean, serializable line-pricing review view for
- * the workspace UI. Source of truth:
+ * Read-only RFP BoQ priced-BoQ review WORKSPACE loader: the RFP lane wrapper over the
+ * shared, mode-gated priced-BoQ review-workspace core. It loads ONE `priced_boq`
+ * artifact and projects a lean, serializable line-pricing review view for the workspace
+ * UI. Source of truth:
  * C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md (section 9, 10, 11A).
  *
- * All deterministic work - project/artifact verification, the exact artifact gates, the
+ * RFP priced_boq artifacts are created by the SAME deterministic pricing core as Quick
+ * BoM, so they are reviewable through this identical read-only projection. All
+ * deterministic work - project/artifact verification, the exact artifact gates, the
  * priced_boq payload parsing, the allowlist line projection, the deterministic counts,
  * and the lean serializable summaries - lives in
  * project-boq-pricing-review-workspace-core. This wrapper only pins the lane's
- * `expectedMode` to "quick_bom" and re-exports the lane's compatible projection type
- * names (the legacy QuickBomPriced* aliases) so callers (the Quick BoM route and review
- * panel) keep a stable surface. A non-quick_bom project therefore returns the same lean
+ * `expectedMode` to "rfp" and re-exports the lane's compatible projection type names
+ * (as RFP-specific aliases over the shared shapes) so callers (the RFP route and review
+ * panel) keep a stable surface. A non-rfp project therefore returns the same lean
  * `wrong_mode` status and reads nothing further. It imports the shared workspace core
  * only and adds no stores, pricing math, pricing-creation service, fixture/catalog/GPL
  * reader, config expansion, export, approval store, runner, AI/LLM, catalog, engine,
@@ -35,69 +37,69 @@ import {
 } from "@/lib/projects/project-boq-pricing-review-workspace-core";
 
 /** Per-line pricing outcome, mirrored from priced-boq.ts (not imported). */
-export type QuickBomPricedReviewLineStatus = ProjectBoqPricedReviewLineStatus;
+export type RfpBoqPricedReviewLineStatus = ProjectBoqPricedReviewLineStatus;
 
 /** Lean project summary for the review header; tenant-scoped projection. */
-export type QuickBomPricedBoqReviewWorkspaceProject =
+export type RfpBoqPricedBoqReviewWorkspaceProject =
   ProjectBoqPricedBoqReviewWorkspaceProject;
 
 /** Serializable artifact summary: ISO dates, copied source arrays, no payload. */
-export type QuickBomPricedBoqReviewWorkspaceArtifact =
+export type RfpBoqPricedBoqReviewWorkspaceArtifact =
   ProjectBoqPricedBoqReviewWorkspaceArtifact;
 
 /** Allowlisted SAR totals over the priced rows. */
-export type QuickBomPricedBoqReviewTotals = ProjectBoqPricedBoqReviewTotals;
+export type RfpBoqPricedBoqReviewTotals = ProjectBoqPricedBoqReviewTotals;
 
 /** Allowlisted priced-BoQ roll-up counts plus SAR totals (no per-line detail). */
-export type QuickBomPricedBoqReviewPricingSummary =
+export type RfpBoqPricedBoqReviewPricingSummary =
   ProjectBoqPricedBoqReviewPricingSummary;
 
 /** Safe pricing-authority provenance summary; no workbook path or sheet name. */
-export type QuickBomPricedBoqReviewPricingAuthoritySummary =
+export type RfpBoqPricedBoqReviewPricingAuthoritySummary =
   ProjectBoqPricedBoqReviewPricingAuthoritySummary;
 
 /** Safe configuration-authority provenance summary; no pricing fields or paths. */
-export type QuickBomPricedBoqReviewConfigurationAuthoritySummary =
+export type RfpBoqPricedBoqReviewConfigurationAuthoritySummary =
   ProjectBoqPricedBoqReviewConfigurationAuthoritySummary;
 
 /** Lean payload summary: provenance + config + counts/totals + safe authority traces. */
-export type QuickBomPricedBoqReviewWorkspacePayload =
+export type RfpBoqPricedBoqReviewWorkspacePayload =
   ProjectBoqPricedBoqReviewWorkspacePayload;
 
 /** Deterministic review-state counts, counted from the projected line statuses. */
-export type QuickBomPricedBoqReviewWorkspaceCounts =
+export type RfpBoqPricedBoqReviewWorkspaceCounts =
   ProjectBoqPricedBoqReviewWorkspaceCounts;
 
 /** Allowlisted per-line SAR amounts; present only on priced lines. */
-export type QuickBomPricedBoqReviewLineAmounts =
+export type RfpBoqPricedBoqReviewLineAmounts =
   ProjectBoqPricedBoqReviewLineAmounts;
 
 /** One priced (or retained-unpriced) BoQ line, projected for review. */
-export type QuickBomPricedBoqReviewLine = ProjectBoqPricedBoqReviewLine;
+export type RfpBoqPricedBoqReviewLine = ProjectBoqPricedBoqReviewLine;
 
 /** The lean, serializable priced-BoQ line-review projection returned on `ok`. */
-export type QuickBomPricedBoqReviewWorkspace = ProjectBoqPricedBoqReviewWorkspace;
+export type RfpBoqPricedBoqReviewWorkspace = ProjectBoqPricedBoqReviewWorkspace;
 
-/** Discriminated result of {@link loadQuickBomPricedBoqReviewWorkspace}. */
-export type LoadQuickBomPricedBoqReviewWorkspaceResult =
+/** Discriminated result of {@link loadRfpBoqPricedBoqReviewWorkspace}. */
+export type LoadRfpBoqPricedBoqReviewWorkspaceResult =
   LoadProjectBoqPricedBoqReviewWorkspaceResult;
 
 /**
- * Load the read-only Quick BoM priced-BoQ line-review projection for one `priced_boq`
- * artifact by delegating to the shared review-workspace core with the Quick BoM
+ * Load the read-only RFP BoQ priced-BoQ line-review projection for one `priced_boq`
+ * artifact by delegating to the shared review-workspace core with the RFP
  * `expectedMode`. Behavior, status order, allowlist projection, deterministic counts,
- * and immutability are exactly the core's; only non-quick_bom projects diverge,
- * returning the lean `wrong_mode` status without reading further.
+ * and immutability are exactly the core's; only non-rfp projects diverge, returning the
+ * lean `wrong_mode` status without reading further.
  */
-export async function loadQuickBomPricedBoqReviewWorkspace(
+export async function loadRfpBoqPricedBoqReviewWorkspace(
   tenantId: string,
   projectId: string,
   artifactId: string
-): Promise<LoadQuickBomPricedBoqReviewWorkspaceResult> {
+): Promise<LoadRfpBoqPricedBoqReviewWorkspaceResult> {
   return loadProjectBoqPricedBoqReviewWorkspaceCore({
     tenantId,
     projectId,
     artifactId,
-    expectedMode: "quick_bom",
+    expectedMode: "rfp",
   });
 }
