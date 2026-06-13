@@ -17,6 +17,11 @@ const BASELINE_ARTIFACT_ID = "art-rb-1";
 const BASELINE_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${BASELINE_ARTIFACT_ID}/requirements-baseline`;
 const REVIEW_URL = `${BASELINE_DETAIL_URL}/review`;
 const GENERATE_URL = `${BASELINE_LIST_URL}/generate`;
+const COMPLIANCE_MATRIX_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/compliance-matrix`;
+const COMPLIANCE_MATRIX_ARTIFACT_ID = "art-cm-1";
+const COMPLIANCE_MATRIX_DETAIL_URL =
+  `/api/projects/${PROJECT_ID}/rfp/artifacts/${COMPLIANCE_MATRIX_ARTIFACT_ID}/compliance-matrix`;
+const COMPLIANCE_MATRIX_REVIEW_URL = `${COMPLIANCE_MATRIX_DETAIL_URL}/review`;
 const EXTRACTION_DELTA_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/extraction-delta`;
 const EXTRACTION_DELTA_ARTIFACT_ID = "art-ed-1";
 const EXTRACTION_DELTA_DETAIL_URL = `${EXTRACTION_DELTA_LIST_URL}/${EXTRACTION_DELTA_ARTIFACT_ID}`;
@@ -52,6 +57,16 @@ const SMUGGLED_KEY_CANARY = "SMUGGLED-KEY-CANARY";
 // Generate-response canary: the page must ignore the generate POST response
 // body entirely, so nothing from it may ever reach the DOM.
 const GENERATE_RESPONSE_CANARY = "GENERATE-RESPONSE-CANARY";
+
+// Compliance-matrix canaries. The list must stay identifier/count only; the
+// detail may render requirement/response text but never raw evidence/table
+// bodies or pricing/config authority fields.
+const COMPLIANCE_LIST_ROW_CANARY = "COMPLIANCE-LIST-ROW-CANARY";
+const COMPLIANCE_REQUIREMENT_TEXT_CANARY = "COMPLIANCE-REQ-TEXT-CANARY";
+const COMPLIANCE_RESPONSE_CANARY = "COMPLIANCE-RESPONSE-CANARY";
+const COMPLIANCE_RAW_EVIDENCE_CANARY = "COMPLIANCE-RAW-EVIDENCE-CANARY";
+const COMPLIANCE_RAW_TABLE_CANARY = "COMPLIANCE-RAW-TABLE-CANARY";
+const COMPLIANCE_PRICE_CANARY = "COMPLIANCE-PRICE-CANARY";
 
 // Extraction-delta canaries. The LIST group is smuggled into the lean list
 // response (which the read model would never carry) and must never reach the
@@ -379,6 +394,168 @@ function generateSuccessResponse(): Record<string, unknown> {
       sourceFileIds: ["file-rfp-1", "file-rfp-2"],
       sourceArtifactIds: ["art-ip-1"],
     },
+  };
+}
+
+function complianceMatrixArtifactSummary(): Record<string, unknown> {
+  return {
+    id: COMPLIANCE_MATRIX_ARTIFACT_ID,
+    projectId: PROJECT_ID,
+    stageId: "compliance_matrix_review",
+    type: "compliance_matrix",
+    status: "needs_review",
+    version: 1,
+    sourceFileIds: ["file-rfp-1", "file-boq-1"],
+    sourceArtifactIds: [
+      BASELINE_ARTIFACT_ID,
+      APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID,
+      "art-config-expansion-1",
+    ],
+    createdAt: "2026-06-12T09:00:00.000Z",
+    updatedAt: "2026-06-12T09:10:00.000Z",
+  };
+}
+
+function complianceMatrixListItem(): Record<string, unknown> {
+  return {
+    ...complianceMatrixArtifactSummary(),
+    payloadSummary: {
+      payloadKind: "rfp_compliance_matrix",
+      sourceRequirementsBaselineArtifactId: BASELINE_ARTIFACT_ID,
+      sourceEvidencePackageArtifactId: APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID,
+      sourceConfigurationExpansionArtifactId: "art-config-expansion-1",
+      createdBy: "user-1",
+      createdAt: "2026-06-12T09:00:00.000Z",
+      rowCount: 2,
+      rowIds: ["RFP-COMP-001", "RFP-COMP-002"],
+      requirementIds: ["RFP-REQ-001", "RFP-REQ-002"],
+      sourceFileIds: ["file-rfp-1", "file-boq-1"],
+      sourceArtifactIds: [
+        BASELINE_ARTIFACT_ID,
+        APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID,
+        "art-config-expansion-1",
+      ],
+      statusCounts: {
+        compliant: 1,
+        partially_compliant: 0,
+        non_compliant: 0,
+        not_applicable: 0,
+        needs_review: 1,
+      },
+      rowBodies: [COMPLIANCE_LIST_ROW_CANARY],
+    },
+    payload: { rows: [{ response: COMPLIANCE_LIST_ROW_CANARY }] },
+    tenantId: TENANT_ID_CANARY,
+    storagePath: STORAGE_PATH_CANARY,
+  };
+}
+
+function complianceMatrixListResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 1,
+    artifacts: [complianceMatrixListItem()],
+  };
+}
+
+function complianceMatrixDetailResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: complianceMatrixArtifactSummary(),
+    matrix: {
+      payloadKind: "rfp_compliance_matrix",
+      sourceRequirementsBaselineArtifactId: BASELINE_ARTIFACT_ID,
+      sourceEvidencePackageArtifactId: APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID,
+      sourceConfigurationExpansionArtifactId: "art-config-expansion-1",
+      createdBy: "user-1",
+      createdAt: "2026-06-12T09:00:00.000Z",
+      sourceFileIds: ["file-rfp-1", "file-boq-1"],
+      sourceArtifactIds: [
+        BASELINE_ARTIFACT_ID,
+        APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID,
+        "art-config-expansion-1",
+      ],
+      rows: [
+        {
+          id: "RFP-COMP-001",
+          requirementId: "RFP-REQ-001",
+          requirementText: COMPLIANCE_REQUIREMENT_TEXT_CANARY,
+          category: "technical",
+          priority: "mandatory",
+          complianceStatus: "needs_review",
+          response: COMPLIANCE_RESPONSE_CANARY,
+          rationale: "Matches the approved evidence package.",
+          notes: "Engineer review required.",
+          rawAnswer: "RAW-COMPLIANCE-AUTHORITY",
+          evidenceReferences: [
+            {
+              evidenceId: "evidence-text-1",
+              sourceFileId: "file-rfp-1",
+              inputPackageArtifactId: APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID,
+              evidenceKind: "rfp_document_text_chunk",
+              chunkIndex: 1,
+              chunkCount: 2,
+              charCount: 64,
+              text: COMPLIANCE_RAW_EVIDENCE_CANARY,
+            },
+            {
+              evidenceId: "evidence-table-1",
+              sourceFileId: "file-boq-1",
+              inputPackageArtifactId: APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID,
+              evidenceKind: "rfp_document_table",
+              tableId: "file-boq-1:table:1",
+              sheetName: "BoQ",
+              rowCount: 2,
+              columnCount: 3,
+              rows: [[COMPLIANCE_RAW_TABLE_CANARY]],
+            },
+          ],
+          configurationReferences: [
+            {
+              configurationExpansionArtifactId: "art-config-expansion-1",
+              lineId: "cfg-line-1",
+              origin: "expansion",
+              sku: "C9300-48P-A",
+              description: "Catalyst access switch",
+              parentLineNumber: "1",
+              sourceFileId: "file-boq-1",
+              sourceRowNumber: 12,
+              originalLineNumber: "1.1",
+              unitPrice: COMPLIANCE_PRICE_CANARY,
+            },
+          ],
+        },
+        {
+          id: "RFP-COMP-002",
+          requirementId: "RFP-REQ-002",
+          requirementText: "Submit compliance statement.",
+          category: "compliance",
+          priority: "preferred",
+          complianceStatus: "compliant",
+          response: "Included in the proposal response.",
+          evidenceReferences: [],
+        },
+      ],
+    },
+  };
+}
+
+function complianceMatrixReviewSuccessResponse(
+  decision: "approved" | "rejected"
+): Record<string, unknown> {
+  return {
+    approval: {
+      id: "appr-cm-1",
+      projectId: PROJECT_ID,
+      artifactId: COMPLIANCE_MATRIX_ARTIFACT_ID,
+      artifactVersion: 1,
+      decision,
+      decidedBy: "user-1",
+      decidedAt: "2026-06-12T10:00:00.000Z",
+    },
+    artifactStatus: decision,
+    stageStatus: decision,
+    artifact: complianceMatrixArtifactSummary(),
   };
 }
 
@@ -979,6 +1156,14 @@ function stubDefault(): Recorded[] {
           : "approved";
       return jsonResponse(baselineReviewSuccessResponse(decision));
     }
+    if (url === COMPLIANCE_MATRIX_REVIEW_URL && init?.method === "POST") {
+      const raw = typeof init.body === "string" ? init.body : "{}";
+      const decision =
+        (JSON.parse(raw) as { decision?: string }).decision === "rejected"
+          ? "rejected"
+          : "approved";
+      return jsonResponse(complianceMatrixReviewSuccessResponse(decision));
+    }
     if (url === EXTRACTION_DELTA_REVIEW_URL && init?.method === "POST") {
       return jsonResponse(extractionDeltaReviewSuccessResponse());
     }
@@ -994,6 +1179,8 @@ function stubDefault(): Recorded[] {
     if (url === `${LIST_URL}/ev-table-1`) return jsonResponse(tableDetailResponse());
     if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
     if (url === BASELINE_DETAIL_URL) return jsonResponse(baselineDetailResponse());
+    if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+    if (url === COMPLIANCE_MATRIX_DETAIL_URL) return jsonResponse(complianceMatrixDetailResponse());
     // The evidence-package endpoints share the /rfp/evidence prefix, so match
     // them by exact url BEFORE the startsWith(LIST_URL) evidence fallback.
     if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
@@ -1023,6 +1210,14 @@ function stubWithApprovedPackage(): Recorded[] {
           : "approved";
       return jsonResponse(baselineReviewSuccessResponse(decision));
     }
+    if (url === COMPLIANCE_MATRIX_REVIEW_URL && init?.method === "POST") {
+      const raw = typeof init.body === "string" ? init.body : "{}";
+      const decision =
+        (JSON.parse(raw) as { decision?: string }).decision === "rejected"
+          ? "rejected"
+          : "approved";
+      return jsonResponse(complianceMatrixReviewSuccessResponse(decision));
+    }
     if (url === EXTRACTION_DELTA_REVIEW_URL && init?.method === "POST") {
       return jsonResponse(extractionDeltaReviewSuccessResponse());
     }
@@ -1038,6 +1233,8 @@ function stubWithApprovedPackage(): Recorded[] {
     if (url === `${LIST_URL}/ev-table-1`) return jsonResponse(tableDetailResponse());
     if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
     if (url === BASELINE_DETAIL_URL) return jsonResponse(baselineDetailResponse());
+    if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+    if (url === COMPLIANCE_MATRIX_DETAIL_URL) return jsonResponse(complianceMatrixDetailResponse());
     if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
     if (url === EXTRACTION_DELTA_DETAIL_URL) return jsonResponse(extractionDeltaDetailResponse());
     if (url === EVIDENCE_PACKAGE_LIST_URL) {
@@ -1067,7 +1264,7 @@ afterEach(() => {
 });
 
 describe("ProjectRfpEvidencePage - list load", () => {
-  it("GETs all five inspection list/workspace endpoints on mount and renders context, counts, and lean rows", async () => {
+  it("GETs all six inspection list/workspace endpoints on mount and renders context, counts, and lean rows", async () => {
     const calls = stubDefault();
     render(<ProjectRfpEvidencePage />);
 
@@ -1099,14 +1296,16 @@ describe("ProjectRfpEvidencePage - list load", () => {
 
     await screen.findByTestId("delta-row");
     await screen.findByTestId("ep-row");
+    await screen.findByTestId("cm-row");
     await screen.findByTestId("rfp-boq-status");
 
     const gets = calls.filter((c) => c.method === "GET");
-    expect(gets).toHaveLength(5);
+    expect(gets).toHaveLength(6);
     const urls = gets.map((c) => c.url);
     expect(urls).toContain(LIST_URL);
     expect(urls).toContain(EXTRACTION_DELTA_LIST_URL);
     expect(urls).toContain(EVIDENCE_PACKAGE_LIST_URL);
+    expect(urls).toContain(COMPLIANCE_MATRIX_LIST_URL);
     expect(urls).toContain(BASELINE_LIST_URL);
     expect(urls).toContain(RFP_BOQ_WORKSPACE_URL);
     expect(gets.every((c) => c.body === null)).toBe(true);
@@ -1162,6 +1361,9 @@ describe("ProjectRfpEvidencePage - list load", () => {
         return jsonResponse({ code: "rfp_boq_workspace_failed" }, 500);
       }
       if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) {
+        return jsonResponse(complianceMatrixListResponse());
+      }
       if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
       if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
       if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
@@ -1183,6 +1385,9 @@ describe("ProjectRfpEvidencePage - list load", () => {
         const url = typeof input === "string" ? input : input.toString();
         if (url === BASELINE_LIST_URL) {
           return Promise.resolve(jsonResponse(baselineListResponse()));
+        }
+        if (url === COMPLIANCE_MATRIX_LIST_URL) {
+          return Promise.resolve(jsonResponse(complianceMatrixListResponse()));
         }
         if (url === EXTRACTION_DELTA_LIST_URL) {
           return Promise.resolve(jsonResponse(extractionDeltaListResponse()));
@@ -1211,6 +1416,7 @@ describe("ProjectRfpEvidencePage - list load", () => {
     render(<ProjectRfpEvidencePage />);
     await screen.findByTestId("project-name");
     await screen.findByTestId("baseline-row");
+    await screen.findByTestId("cm-row");
     await screen.findByTestId("delta-row");
     await screen.findByTestId("ep-row");
 
@@ -1219,6 +1425,9 @@ describe("ProjectRfpEvidencePage - list load", () => {
     expect(body).not.toContain(TEXT_BODY_CANARY);
     expect(body).not.toContain(TABLE_CELL_CANARY);
     expect(body).not.toContain(LIST_REQUIREMENT_TEXT_CANARY);
+    expect(body).not.toContain(COMPLIANCE_LIST_ROW_CANARY);
+    expect(body).not.toContain(COMPLIANCE_REQUIREMENT_TEXT_CANARY);
+    expect(body).not.toContain(COMPLIANCE_RESPONSE_CANARY);
     expect(body).not.toContain(DELTA_LIST_CANDIDATE_CANARY);
     expect(body).not.toContain(PACKAGE_LIST_EVIDENCE_CANARY);
     expect(body).not.toContain(TENANT_ID_CANARY);
@@ -2193,6 +2402,132 @@ describe("ProjectRfpEvidencePage - requirements baseline generation", () => {
   });
 });
 
+describe("ProjectRfpEvidencePage - compliance matrix review", () => {
+  it("renders the compliance matrix list as identifier/count summaries only", async () => {
+    stubDefault();
+    render(<ProjectRfpEvidencePage />);
+
+    const row = await screen.findByTestId("cm-row");
+    expect(row).toHaveTextContent(COMPLIANCE_MATRIX_ARTIFACT_ID);
+    expect(row).toHaveTextContent("version 1");
+    expect(row).toHaveTextContent("needs_review");
+    expect(screen.getByTestId("cm-row-counts")).toHaveTextContent("rows: 2");
+    expect(screen.getByTestId("cm-row-counts")).toHaveTextContent("pending 1");
+    expect(row).toHaveTextContent(BASELINE_ARTIFACT_ID);
+    expect(row).toHaveTextContent(APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID);
+
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(COMPLIANCE_LIST_ROW_CANARY);
+    expect(body).not.toContain(COMPLIANCE_REQUIREMENT_TEXT_CANARY);
+    expect(body).not.toContain(COMPLIANCE_RESPONSE_CANARY);
+    expect(body).not.toContain(TENANT_ID_CANARY);
+    expect(body).not.toContain(STORAGE_PATH_CANARY);
+  });
+
+  it("Inspect GETs the exact compliance matrix detail endpoint and renders traceable sanitized rows", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId(`cm-inspect-${COMPLIANCE_MATRIX_ARTIFACT_ID}`);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`cm-inspect-${COMPLIANCE_MATRIX_ARTIFACT_ID}`));
+    });
+
+    const panel = await screen.findByTestId("cm-detail-panel");
+    expect(panel).toHaveTextContent(COMPLIANCE_MATRIX_ARTIFACT_ID);
+    expect(panel).toHaveTextContent(BASELINE_ARTIFACT_ID);
+    expect(panel).toHaveTextContent(APPROVED_EVIDENCE_PACKAGE_ARTIFACT_ID);
+    expect(screen.getAllByTestId("cm-detail-requirement-text")[0]).toHaveTextContent(
+      COMPLIANCE_REQUIREMENT_TEXT_CANARY
+    );
+    expect(screen.getAllByTestId("cm-detail-response")[0]).toHaveTextContent(
+      COMPLIANCE_RESPONSE_CANARY
+    );
+    expect(screen.getAllByTestId("cm-detail-evidence-reference")[0]).toHaveTextContent(
+      "evidence-text-1"
+    );
+    expect(screen.getByTestId("cm-detail-configuration-references")).toHaveTextContent(
+      "cfg-line-1"
+    );
+    expect(screen.getByTestId("cm-decided-rows")).toHaveTextContent("Decided rows (1)");
+
+    const detailCall = calls.find((c) => c.url === COMPLIANCE_MATRIX_DETAIL_URL);
+    expect(detailCall).toBeDefined();
+    expect(detailCall!.method).toBe("GET");
+    expect(detailCall!.body).toBeNull();
+
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(COMPLIANCE_RAW_EVIDENCE_CANARY);
+    expect(body).not.toContain(COMPLIANCE_RAW_TABLE_CANARY);
+    expect(body).not.toContain(COMPLIANCE_PRICE_CANARY);
+    expect(body).not.toContain("RAW-COMPLIANCE-AUTHORITY");
+  });
+
+  it("Approve POSTs exactly { decision, note }, applies the status, and reloads the compliance list", async () => {
+    const calls = stubDefault();
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId(`cm-inspect-${COMPLIANCE_MATRIX_ARTIFACT_ID}`);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`cm-inspect-${COMPLIANCE_MATRIX_ARTIFACT_ID}`));
+    });
+    await screen.findByTestId("cm-detail-panel");
+    fireEvent.change(screen.getByTestId("cm-review-note"), {
+      target: { value: " approve after row review " },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cm-review-approve"));
+    });
+
+    expect(await screen.findByTestId("cm-review-success")).toHaveTextContent(
+      "Compliance matrix approved."
+    );
+    expect(screen.getByTestId("cm-detail-meta")).toHaveTextContent("approved");
+    const posts = calls.filter((c) => c.method === "POST");
+    const reviewPost = posts.find((c) => c.url === COMPLIANCE_MATRIX_REVIEW_URL);
+    expect(reviewPost).toBeDefined();
+    expect(reviewPost!.body).toEqual({
+      decision: "approved",
+      note: "approve after row review",
+    });
+    expect(reviewPost!.contentType).toBe("application/json");
+    expect(
+      calls.filter((c) => c.url === COMPLIANCE_MATRIX_LIST_URL && c.method === "GET")
+        .length
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it('renders exactly "Unable to review compliance matrix." on review failure', async () => {
+    stubFetch((url, init) => {
+      if (url === COMPLIANCE_MATRIX_REVIEW_URL && init?.method === "POST") {
+        return jsonResponse({ code: "compliance_matrix_review_failed" }, 500);
+      }
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === COMPLIANCE_MATRIX_DETAIL_URL) return jsonResponse(complianceMatrixDetailResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(extractionDeltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      if (url.startsWith(LIST_URL)) return jsonResponse(listResponse());
+      return jsonResponse({}, 404);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId(`cm-inspect-${COMPLIANCE_MATRIX_ARTIFACT_ID}`);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`cm-inspect-${COMPLIANCE_MATRIX_ARTIFACT_ID}`));
+    });
+    await screen.findByTestId("cm-detail-panel");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cm-review-approve"));
+    });
+
+    expect(await screen.findByTestId("cm-review-error")).toHaveTextContent(
+      "Unable to review compliance matrix."
+    );
+  });
+});
+
 describe("ProjectRfpEvidencePage - extraction delta list", () => {
   it("GETs the extraction delta list on mount and renders the count and a lean artifact row", async () => {
     const calls = stubDefault();
@@ -2898,7 +3233,7 @@ describe("ProjectRfpEvidencePage - evidence package review", () => {
 });
 
 describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
-  it("issues only default-GET fetches to the five inspection endpoints and never calls write or other RFP endpoints", async () => {
+  it("issues only default-GET fetches to the inspection endpoints and never calls write or other RFP endpoints", async () => {
     const calls = stubDefault();
     render(<ProjectRfpEvidencePage />);
     await screen.findByTestId("project-name");
@@ -2922,6 +3257,10 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       fireEvent.click(screen.getByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`));
     });
     await screen.findByTestId("baseline-detail-panel");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`cm-inspect-${COMPLIANCE_MATRIX_ARTIFACT_ID}`));
+    });
+    await screen.findByTestId("cm-detail-panel");
 
     await waitFor(() => expect(calls.length).toBeGreaterThanOrEqual(6));
     for (const call of calls) {
@@ -2947,6 +3286,8 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       RFP_BOQ_WORKSPACE_URL,
       BASELINE_LIST_URL,
       BASELINE_DETAIL_URL,
+      COMPLIANCE_MATRIX_LIST_URL,
+      COMPLIANCE_MATRIX_DETAIL_URL,
     ]);
     for (const call of calls) {
       const ok = allowedExact.has(call.url) || call.url.startsWith(`${LIST_URL}?`);
@@ -2991,6 +3332,7 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       RFP_BOQ_WORKSPACE_URL,
       BASELINE_LIST_URL,
       BASELINE_DETAIL_URL,
+      COMPLIANCE_MATRIX_LIST_URL,
       REVIEW_URL,
     ]);
     for (const call of calls) {
@@ -3051,6 +3393,7 @@ describe("ProjectRfpEvidencePage - read-only fetch boundary", () => {
       RFP_BOQ_WORKSPACE_URL,
       BASELINE_LIST_URL,
       BASELINE_DETAIL_URL,
+      COMPLIANCE_MATRIX_LIST_URL,
       REVIEW_URL,
       GENERATE_URL,
     ]);
@@ -3077,6 +3420,7 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
     expect(source).toContain("useParams");
     expect(source).toContain("/rfp/evidence");
     expect(source).toContain("/rfp/requirements-baseline");
+    expect(source).toContain("/rfp/compliance-matrix");
     expect(source).toContain("/rfp/boq");
     expect(source).toContain("/rfp/artifacts/");
     expect(source).toContain("export-package/download");
@@ -3090,6 +3434,7 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
       "next/navigation",
       "@/lib/projects/project-rfp-evidence-inspection",
       "@/lib/projects/project-rfp-requirements-baseline-inspection",
+      "@/lib/projects/project-rfp-compliance-matrix-inspection",
       "@/lib/projects/project-rfp-extraction-delta-inspection",
       "@/lib/projects/project-rfp-evidence-package-inspection",
       "@/lib/projects/project-rfp-boq-workspace",
@@ -3147,22 +3492,25 @@ describe("ProjectRfpEvidencePage - static source purity", () => {
     }
   });
 
-  it("permits exactly four POSTs - baseline generate, baseline review, extraction-delta review, and evidence-package review - and no other write path", () => {
-    expect((source.match(/"POST"/g) ?? []).length).toBe(4);
-    expect((source.match(/method:/g) ?? []).length).toBe(4);
-    // Every /review occurrence is one of the three explicit review endpoints
+  it("permits exactly five POSTs - baseline generate plus the four human review endpoints - and no other write path", () => {
+    expect((source.match(/"POST"/g) ?? []).length).toBe(5);
+    expect((source.match(/method:/g) ?? []).length).toBe(5);
+    // Every /review occurrence is one of the four explicit review endpoints
     // and every /generate occurrence is the requirements-baseline generate
     // endpoint; no arbitrary review, approvals, or generation path appears
     // anywhere in the page.
     const reviewMentions = source.match(/\/review/g) ?? [];
     const baselineReviewMentions = source.match(/requirements-baseline\/review/g) ?? [];
+    const complianceReviewMentions = source.match(/compliance-matrix\/review/g) ?? [];
     const deltaReviewMentions = source.match(/extraction-delta\/review/g) ?? [];
     const packageReviewMentions = source.match(/evidence-package\/review/g) ?? [];
     expect(baselineReviewMentions.length).toBeGreaterThanOrEqual(1);
+    expect(complianceReviewMentions.length).toBeGreaterThanOrEqual(1);
     expect(deltaReviewMentions.length).toBeGreaterThanOrEqual(1);
     expect(packageReviewMentions.length).toBeGreaterThanOrEqual(1);
     expect(reviewMentions.length).toBe(
       baselineReviewMentions.length +
+        complianceReviewMentions.length +
         deltaReviewMentions.length +
         packageReviewMentions.length
     );

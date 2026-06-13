@@ -101,6 +101,11 @@ import type {
   RfpRequirementsBaselineInspectionListItem,
 } from "@/lib/projects/project-rfp-requirements-baseline-inspection";
 import type {
+  RfpComplianceMatrixInspectionArtifactSummary,
+  RfpComplianceMatrixInspectionListItem,
+  RfpComplianceMatrixInspectionMatrix,
+} from "@/lib/projects/project-rfp-compliance-matrix-inspection";
+import type {
   RfpExtractionDeltaInspectionArtifactSummary,
   RfpExtractionDeltaInspectionDetail,
   RfpExtractionDeltaInspectionListItem,
@@ -173,6 +178,44 @@ type BaselineRequirement =
   RfpRequirementsBaselineInspectionBaseline["requirements"][number];
 type BaselineEvidenceReference =
   BaselineRequirement["evidenceReferences"][number];
+
+/** Lean list response of GET /api/projects/[id]/rfp/compliance-matrix. */
+interface ComplianceMatrixListResponse {
+  artifactCount: number;
+  artifacts: RfpComplianceMatrixInspectionListItem[];
+}
+
+/**
+ * Detail response of
+ * GET /api/projects/[id]/rfp/artifacts/[artifactId]/compliance-matrix.
+ */
+interface ComplianceMatrixDetailResponse {
+  artifact?: RfpComplianceMatrixInspectionArtifactSummary;
+  matrix?: RfpComplianceMatrixInspectionMatrix;
+}
+
+/** Loaded compliance detail: the artifact summary plus sanitized matrix. */
+interface ComplianceMatrixDetail {
+  artifact: RfpComplianceMatrixInspectionArtifactSummary;
+  matrix: RfpComplianceMatrixInspectionMatrix;
+}
+
+/**
+ * Fields the page reads from the success response of
+ * POST /api/projects/[id]/rfp/artifacts/[artifactId]/compliance-matrix/review.
+ */
+interface ComplianceMatrixReviewResponse {
+  artifactStatus?: RfpComplianceMatrixInspectionArtifactSummary["status"];
+  artifact?: RfpComplianceMatrixInspectionArtifactSummary;
+}
+
+type ComplianceMatrixReviewDecision = "approved" | "rejected";
+type ComplianceMatrixRow = RfpComplianceMatrixInspectionMatrix["rows"][number];
+type ComplianceMatrixEvidenceReference =
+  ComplianceMatrixRow["evidenceReferences"][number];
+type ComplianceMatrixConfigurationReference = NonNullable<
+  ComplianceMatrixRow["configurationReferences"]
+>[number];
 
 /** Lean list response of GET /api/projects/[id]/rfp/extraction-delta. */
 interface ExtractionDeltaListResponse {
@@ -296,6 +339,13 @@ const BASELINE_REVIEW_ERROR = "Unable to review requirements baseline.";
 const GENERATE_SUCCESS = "Requirements baseline draft generated.";
 const GENERATE_ERROR = "Unable to generate requirements baseline.";
 
+/** Exact UI copy required for compliance-matrix list, detail, and review states. */
+const COMPLIANCE_LIST_ERROR = "Unable to load compliance matrices.";
+const COMPLIANCE_DETAIL_ERROR = "Unable to load compliance matrix detail.";
+const COMPLIANCE_APPROVE_SUCCESS = "Compliance matrix approved.";
+const COMPLIANCE_REJECT_SUCCESS = "Compliance matrix rejected.";
+const COMPLIANCE_REVIEW_ERROR = "Unable to review compliance matrix.";
+
 /** Exact UI copy required for the extraction-delta failure states. */
 const DELTA_LIST_ERROR = "Unable to load extraction deltas.";
 const DELTA_DETAIL_ERROR = "Unable to load extraction delta detail.";
@@ -390,9 +440,7 @@ function summaryLine(item: RfpEvidenceListItemSummary): string {
 }
 
 /** Only these artifact statuses may still receive a human review decision. */
-function isReviewableStatus(
-  status: RfpRequirementsBaselineInspectionArtifactSummary["status"]
-): boolean {
+function isReviewableStatus(status: string): boolean {
   return status === "needs_review" || status === "generated";
 }
 
@@ -404,6 +452,46 @@ function referenceLine(ref: BaselineEvidenceReference): string {
     return `table ${ref.tableId}${page}${sheet} | ${ref.rowCount} rows x ${ref.columnCount} cols`;
   }
   return `chunk ${ref.chunkIndex + 1}/${ref.chunkCount} | ${ref.charCount} chars`;
+}
+
+/** One-line locator summary for one compliance evidence reference. */
+function complianceReferenceLine(
+  ref: ComplianceMatrixEvidenceReference
+): string {
+  if (ref.evidenceKind === "rfp_document_table") {
+    const page = ref.pageNumber !== undefined ? ` | page ${ref.pageNumber}` : "";
+    const sheet = ref.sheetName !== undefined ? ` | sheet ${ref.sheetName}` : "";
+    return `table ${ref.tableId}${page}${sheet} | ${ref.rowCount} rows x ${ref.columnCount} cols`;
+  }
+  return `chunk ${ref.chunkIndex + 1}/${ref.chunkCount} | ${ref.charCount} chars`;
+}
+
+function complianceStatusCounts(
+  item: RfpComplianceMatrixInspectionListItem
+): string {
+  const counts = item.payloadSummary.statusCounts;
+  return [
+    `pending ${counts.needs_review}`,
+    `compliant ${counts.compliant}`,
+    `partial ${counts.partially_compliant}`,
+    `non-compliant ${counts.non_compliant}`,
+    `not applicable ${counts.not_applicable}`,
+  ].join(" | ");
+}
+
+function configurationReferenceLine(
+  ref: ComplianceMatrixConfigurationReference
+): string {
+  const parts = [
+    `line ${ref.lineId}`,
+    ref.origin !== undefined ? `origin ${ref.origin}` : "",
+    ref.sku !== undefined ? `sku ${ref.sku}` : "",
+    ref.description !== undefined ? ref.description : "",
+    ref.parentLineNumber !== undefined ? `parent ${ref.parentLineNumber}` : "",
+    ref.sourceRowNumber !== undefined ? `row ${ref.sourceRowNumber}` : "",
+    ref.originalLineNumber !== undefined ? `original ${ref.originalLineNumber}` : "",
+  ].filter((part) => part !== "");
+  return parts.join(" | ");
 }
 
 /** One-line locator summary for one delta evidence reference; never content. */
@@ -982,6 +1070,77 @@ function PackageEvidenceView({ evidence }: { evidence: PackageEvidence }) {
   );
 }
 
+function ComplianceMatrixRowView({ row }: { row: ComplianceMatrixRow }) {
+  return (
+    <li
+      data-testid="cm-detail-row"
+      className="rounded-button border border-[var(--border)] p-2"
+    >
+      <p className="text-xs font-medium text-text-primary">
+        <span className="font-mono">{row.id}</span> |{" "}
+        <span className="font-mono">{row.requirementId}</span> | {row.category} |{" "}
+        {row.priority} | {row.complianceStatus}
+      </p>
+      <p
+        data-testid="cm-detail-requirement-text"
+        className="mt-1 whitespace-pre-wrap text-xs text-text-primary"
+      >
+        {row.requirementText}
+      </p>
+      <p
+        data-testid="cm-detail-response"
+        className="mt-1 whitespace-pre-wrap text-xs text-text-primary"
+      >
+        {row.response}
+      </p>
+      {row.rationale !== undefined && (
+        <p className="mt-1 text-xs text-text-secondary">
+          Rationale: {row.rationale}
+        </p>
+      )}
+      {row.notes !== undefined && (
+        <p className="mt-1 text-xs text-text-secondary">Notes: {row.notes}</p>
+      )}
+      <ul className="mt-1 space-y-0.5">
+        {row.evidenceReferences.map((ref, refIndex) => (
+          <li
+            key={refIndex}
+            data-testid="cm-detail-evidence-reference"
+            className="text-xs text-text-tertiary"
+          >
+            <span className="font-mono">{ref.evidenceId}</span> |{" "}
+            {kindLabel(ref.evidenceKind)} | {complianceReferenceLine(ref)} | file{" "}
+            <span className="font-mono">{ref.sourceFileId}</span> | package{" "}
+            <span className="font-mono">{ref.inputPackageArtifactId}</span>
+          </li>
+        ))}
+      </ul>
+      {row.configurationReferences !== undefined &&
+        row.configurationReferences.length > 0 && (
+          <details data-testid="cm-detail-configuration-references" className="mt-1">
+            <summary className="cursor-pointer text-xs text-text-secondary">
+              Configuration references ({row.configurationReferences.length})
+            </summary>
+            <ul className="mt-1 space-y-0.5">
+              {row.configurationReferences.map((ref, refIndex) => (
+                <li
+                  key={refIndex}
+                  data-testid="cm-detail-configuration-reference"
+                  className="text-xs text-text-tertiary"
+                >
+                  <span className="font-mono">
+                    {ref.configurationExpansionArtifactId}
+                  </span>{" "}
+                  | {configurationReferenceLine(ref)}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+    </li>
+  );
+}
+
 export default function ProjectRfpEvidencePage() {
   const params = useParams();
   const id = params.id as string;
@@ -1010,6 +1169,25 @@ export default function ProjectRfpEvidencePage() {
   const [reviewPending, setReviewPending] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
+
+  const [complianceList, setComplianceList] =
+    useState<ComplianceMatrixListResponse | null>(null);
+  const [complianceLoading, setComplianceLoading] = useState(true);
+  const [complianceError, setComplianceError] = useState<string | null>(null);
+  const [complianceDetail, setComplianceDetail] =
+    useState<ComplianceMatrixDetail | null>(null);
+  const [complianceDetailLoading, setComplianceDetailLoading] = useState(false);
+  const [complianceDetailError, setComplianceDetailError] = useState<
+    string | null
+  >(null);
+  const [complianceReviewNote, setComplianceReviewNote] = useState("");
+  const [complianceReviewPending, setComplianceReviewPending] = useState(false);
+  const [complianceReviewError, setComplianceReviewError] = useState<
+    string | null
+  >(null);
+  const [complianceReviewSuccess, setComplianceReviewSuccess] = useState<
+    string | null
+  >(null);
 
   const [selectedEvidencePackageId, setSelectedEvidencePackageId] = useState<
     string | null
@@ -1125,6 +1303,32 @@ export default function ProjectRfpEvidencePage() {
   useEffect(() => {
     void loadBaselineList();
   }, [loadBaselineList]);
+
+  const loadComplianceList = useCallback(async (): Promise<void> => {
+    setComplianceLoading(true);
+    setComplianceError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/compliance-matrix`);
+      const body = (await res
+        .json()
+        .catch(() => null)) as ComplianceMatrixListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
+        setComplianceList(null);
+        setComplianceError(COMPLIANCE_LIST_ERROR);
+        return;
+      }
+      setComplianceList(body);
+    } catch {
+      setComplianceList(null);
+      setComplianceError(COMPLIANCE_LIST_ERROR);
+    } finally {
+      setComplianceLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadComplianceList();
+  }, [loadComplianceList]);
 
   const loadDeltaList = useCallback(async (): Promise<void> => {
     setDeltaListLoading(true);
@@ -1351,6 +1555,40 @@ export default function ProjectRfpEvidencePage() {
     [id]
   );
 
+  const loadComplianceDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setComplianceDetail(null);
+      setComplianceDetailError(null);
+      setComplianceReviewNote("");
+      setComplianceReviewError(null);
+      setComplianceReviewSuccess(null);
+      setComplianceDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/compliance-matrix`
+        );
+        const body = (await res
+          .json()
+          .catch(() => null)) as ComplianceMatrixDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.matrix === undefined
+        ) {
+          setComplianceDetailError(COMPLIANCE_DETAIL_ERROR);
+          return;
+        }
+        setComplianceDetail({ artifact: body.artifact, matrix: body.matrix });
+      } catch {
+        setComplianceDetailError(COMPLIANCE_DETAIL_ERROR);
+      } finally {
+        setComplianceDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
   // The page's review write: record one human approve/reject decision for
   // the exact inspected requirements_baseline artifact. The body carries only
   // decision plus a trimmed nonblank note - never a tenant, project, version,
@@ -1405,6 +1643,61 @@ export default function ProjectRfpEvidencePage() {
       }
     },
     [baselineDetail, id, loadBaselineList, reviewNote, reviewPending]
+  );
+
+  const submitComplianceReview = useCallback(
+    async (decision: ComplianceMatrixReviewDecision): Promise<void> => {
+      if (complianceDetail === null || complianceReviewPending) return;
+      setComplianceReviewPending(true);
+      setComplianceReviewError(null);
+      setComplianceReviewSuccess(null);
+      try {
+        const note = complianceReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${complianceDetail.artifact.id}/compliance-matrix/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(note === "" ? { decision } : { decision, note }),
+          }
+        );
+        const body = (await res
+          .json()
+          .catch(() => null)) as ComplianceMatrixReviewResponse | null;
+        if (!res.ok) {
+          setComplianceReviewError(COMPLIANCE_REVIEW_ERROR);
+          return;
+        }
+        const responseArtifact = body?.artifact;
+        const responseStatus = body?.artifactStatus;
+        setComplianceDetail((prev) => {
+          if (prev === null) return prev;
+          const artifact = responseArtifact ?? prev.artifact;
+          return {
+            artifact: { ...artifact, status: responseStatus ?? artifact.status },
+            matrix: prev.matrix,
+          };
+        });
+        setComplianceReviewNote("");
+        setComplianceReviewSuccess(
+          decision === "approved"
+            ? COMPLIANCE_APPROVE_SUCCESS
+            : COMPLIANCE_REJECT_SUCCESS
+        );
+        void loadComplianceList();
+      } catch {
+        setComplianceReviewError(COMPLIANCE_REVIEW_ERROR);
+      } finally {
+        setComplianceReviewPending(false);
+      }
+    },
+    [
+      complianceDetail,
+      complianceReviewNote,
+      complianceReviewPending,
+      id,
+      loadComplianceList,
+    ]
   );
 
   const submitDeltaReview = useCallback(async (): Promise<void> => {
@@ -1534,6 +1827,16 @@ export default function ProjectRfpEvidencePage() {
     const state = deltaDecisions[candidate.id];
     return state !== undefined && state.action !== "";
   }).length;
+  const pendingComplianceRows: ComplianceMatrixRow[] = complianceDetail
+    ? complianceDetail.matrix.rows.filter(
+        (row) => row.complianceStatus === "needs_review"
+      )
+    : [];
+  const decidedComplianceRows: ComplianceMatrixRow[] = complianceDetail
+    ? complianceDetail.matrix.rows.filter(
+        (row) => row.complianceStatus !== "needs_review"
+      )
+    : [];
   const approvedExportArtifact =
     boqWorkspace?.spineArtifacts.export_package?.status === "approved"
       ? boqWorkspace.spineArtifacts.export_package
@@ -2492,6 +2795,211 @@ export default function ProjectRfpEvidencePage() {
                   className="text-xs text-text-tertiary"
                 >
                   Status {baselineDetail.artifact.status} is not reviewable.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-sm font-semibold text-text-primary">Compliance matrix</h2>
+        {complianceError && (
+          <div data-testid="cm-error" className={`mt-2 ${ERROR_BOX}`}>
+            {complianceError}
+          </div>
+        )}
+        {complianceLoading && (
+          <p data-testid="cm-loading" className="mt-1 text-sm text-text-tertiary">
+            Loading compliance matrices...
+          </p>
+        )}
+        {complianceList && (
+          <>
+            <p data-testid="cm-count" className="mt-1 text-xs text-text-secondary">
+              Compliance matrix artifacts: {complianceList.artifactCount}
+            </p>
+            {complianceList.artifacts.length === 0 ? (
+              <p data-testid="cm-empty" className="mt-2 text-sm text-text-tertiary">
+                No compliance matrix artifacts yet.
+              </p>
+            ) : (
+              <ol className="mt-2 space-y-1">
+                {complianceList.artifacts.map((item) => (
+                  <li
+                    key={item.id}
+                    data-testid="cm-row"
+                    className="flex items-start justify-between gap-2 rounded-button border border-[var(--border)] p-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-text-primary">
+                        <span className="font-mono">{item.id}</span> | version {item.version} |{" "}
+                        {item.status}
+                      </p>
+                      <p
+                        data-testid="cm-row-counts"
+                        className="text-xs text-text-secondary"
+                      >
+                        rows: {item.payloadSummary.rowCount} |{" "}
+                        {complianceStatusCounts(item)}
+                      </p>
+                      <p className="text-xs text-text-secondary">
+                        requirement ids:{" "}
+                        <span className="font-mono">
+                          {idList(item.payloadSummary.requirementIds)}
+                        </span>
+                      </p>
+                      <p className="text-xs text-text-tertiary">
+                        baseline{" "}
+                        <span className="font-mono">
+                          {item.payloadSummary.sourceRequirementsBaselineArtifactId}
+                        </span>{" "}
+                        | evidence package{" "}
+                        <span className="font-mono">
+                          {item.payloadSummary.sourceEvidencePackageArtifactId}
+                        </span>
+                        {item.payloadSummary.sourceConfigurationExpansionArtifactId !== undefined
+                          ? ` | configuration ${item.payloadSummary.sourceConfigurationExpansionArtifactId}`
+                          : ""}
+                      </p>
+                      <p className="text-xs text-text-tertiary">
+                        source files:{" "}
+                        <span className="font-mono">
+                          {idList(item.payloadSummary.sourceFileIds)}
+                        </span>{" "}
+                        | source artifacts:{" "}
+                        <span className="font-mono">
+                          {idList(item.payloadSummary.sourceArtifactIds)}
+                        </span>
+                      </p>
+                      <p className="text-xs text-text-tertiary">
+                        created {item.createdAt} | updated {item.updatedAt}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      data-testid={`cm-inspect-${item.id}`}
+                      disabled={complianceDetailLoading}
+                      onClick={() => void loadComplianceDetail(item.id)}
+                      className={ACTION_BTN}
+                    >
+                      Inspect
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-sm font-semibold text-text-primary">
+          Compliance matrix detail
+        </h2>
+        {complianceDetailError && (
+          <div data-testid="cm-detail-error" className={`mt-2 ${ERROR_BOX}`}>
+            {complianceDetailError}
+          </div>
+        )}
+        {complianceDetailLoading && (
+          <p data-testid="cm-detail-loading" className="mt-1 text-sm text-text-tertiary">
+            Loading compliance matrix detail...
+          </p>
+        )}
+        {!complianceDetail &&
+          !complianceDetailLoading &&
+          !complianceDetailError && (
+            <p data-testid="cm-detail-empty" className="mt-1 text-xs text-text-tertiary">
+              Click Inspect on a compliance matrix artifact to review rows.
+            </p>
+          )}
+        {complianceReviewError && (
+          <div data-testid="cm-review-error" className={`mt-2 ${ERROR_BOX}`}>
+            {complianceReviewError}
+          </div>
+        )}
+        {complianceReviewSuccess && (
+          <p data-testid="cm-review-success" className="mt-2 text-xs text-text-secondary">
+            {complianceReviewSuccess}
+          </p>
+        )}
+        {complianceDetail && (
+          <div
+            data-testid="cm-detail-panel"
+            className="mt-2 rounded-card border border-[var(--border)] p-3"
+          >
+            <p data-testid="cm-detail-meta" className="text-xs text-text-secondary">
+              <span className="font-mono">{complianceDetail.artifact.id}</span> | version{" "}
+              {complianceDetail.artifact.version} | {complianceDetail.artifact.status} |
+              baseline{" "}
+              <span className="font-mono">
+                {complianceDetail.matrix.sourceRequirementsBaselineArtifactId}
+              </span>{" "}
+              | evidence package{" "}
+              <span className="font-mono">
+                {complianceDetail.matrix.sourceEvidencePackageArtifactId}
+              </span>
+              {complianceDetail.matrix.sourceConfigurationExpansionArtifactId !== undefined
+                ? ` | configuration ${complianceDetail.matrix.sourceConfigurationExpansionArtifactId}`
+                : ""}{" "}
+              | rows {complianceDetail.matrix.rows.length}
+            </p>
+            <ol className="mt-2 space-y-2">
+              {pendingComplianceRows.map((row) => (
+                <ComplianceMatrixRowView key={row.id} row={row} />
+              ))}
+            </ol>
+            {decidedComplianceRows.length > 0 && (
+              <details data-testid="cm-decided-rows" className="mt-2">
+                <summary className="cursor-pointer text-xs text-text-secondary">
+                  Decided rows ({decidedComplianceRows.length})
+                </summary>
+                <ol className="mt-2 space-y-2">
+                  {decidedComplianceRows.map((row) => (
+                    <ComplianceMatrixRowView key={row.id} row={row} />
+                  ))}
+                </ol>
+              </details>
+            )}
+            <div className="mt-3 border-t border-[var(--border)] pt-3">
+              {isReviewableStatus(complianceDetail.artifact.status) ? (
+                <>
+                  <label className="flex flex-col text-xs text-text-tertiary">
+                    Review note (optional)
+                    <textarea
+                      data-testid="cm-review-note"
+                      value={complianceReviewNote}
+                      onChange={(e) => setComplianceReviewNote(e.target.value)}
+                      disabled={complianceReviewPending}
+                      rows={3}
+                      className={FIELD}
+                    />
+                  </label>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      data-testid="cm-review-approve"
+                      disabled={complianceReviewPending}
+                      onClick={() => void submitComplianceReview("approved")}
+                      className={ACTION_BTN}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="cm-review-reject"
+                      disabled={complianceReviewPending}
+                      onClick={() => void submitComplianceReview("rejected")}
+                      className={PLAIN_BTN}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p data-testid="cm-review-readonly" className="text-xs text-text-tertiary">
+                  Status {complianceDetail.artifact.status} is not reviewable.
                 </p>
               )}
             </div>
