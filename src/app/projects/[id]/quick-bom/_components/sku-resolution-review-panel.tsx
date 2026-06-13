@@ -12,14 +12,17 @@
  *    original SKU, no reject/defer guidance) plus already-accepted rows. Eligible rows
  *    render a checkbox, checked by default - submitting accepts that exact same SKU
  *    (never a substitution).
- *  - "Excluded before pricing": deferred/non-priced rows and any other non-same-SKU
+ *  - "Excluded before pricing": deferred/non-priced rows, unresolved manual/third-party
+ *    rows (Samsung displays, services, travel, insurance), and any other non-same-SKU
  *    row. These render NO checkbox (not even a disabled one) and are impossible to
- *    approve; submitting rejects them with their internal note carried in the payload
- *    but never shown in the UI.
+ *    approve; submitting reject/manual carries any internal note in the payload but
+ *    never shows it in the UI.
  * The split is presentation only; the submit decision still keys off isApprovableLine.
  * One "Submit review decisions" action records an explicit decision for EVERY review
- * row in a single POST: included+checked -> accept (the same SKU), everything else ->
- * reject. Nothing is auto-accepted, replaced, or substituted.
+ * row (every `needs_review` AND `unresolved` line) in a single POST: included+checked
+ * -> accept (the same SKU), unresolved -> manual (classified for manual/third-party
+ * handling, never an invented SKU), everything else -> reject. Nothing is auto-accepted,
+ * replaced, substituted, or silently dropped.
  *
  * A successful POST mints a NEW sku_resolution version (new artifact id). When the
  * minted artifact still needs_review the panel auto-refreshes against the returned id;
@@ -65,6 +68,29 @@ function isApprovableLine(line: QuickBomSkuResolutionReviewLine): boolean {
 /** A row carries an explicit deferred/non-priced reject recommendation. */
 function isDeferredLine(line: QuickBomSkuResolutionReviewLine): boolean {
   return line.status === "needs_review" && line.reviewGuidance?.action === "reject";
+}
+
+/**
+ * A still-`unresolved` row: a non-Cisco / third-party / manual-commercial line (Samsung
+ * displays, services, travel, insurance) with no catalog match. Submitting classifies it
+ * as `manual` (preserved downstream for manual/third-party handling) rather than rejecting
+ * or dropping it. No accepted SKU is ever invented for it.
+ */
+function isUnresolvedManualLine(line: QuickBomSkuResolutionReviewLine): boolean {
+  return line.status === "unresolved";
+}
+
+/**
+ * A row that the excluded section should describe as needing manual / third-party
+ * handling rather than as a Cisco catalog row: still-unresolved rows that will be
+ * classified manual, plus rows already decided manual/out_of_scope.
+ */
+function isManualHandlingLine(line: QuickBomSkuResolutionReviewLine): boolean {
+  return (
+    line.status === "unresolved" ||
+    line.status === "manual" ||
+    line.status === "out_of_scope"
+  );
 }
 
 /**
@@ -179,20 +205,33 @@ export function SkuResolutionReviewPanel({
     [projectId, artifactId, onReviewSubmitted, loadSkuReview]
   );
 
-  // Build one explicit decision per `needs_review` row and POST them together. A
-  // checked (approvable) row accepts its same-SKU suggestion (never invented); every
-  // other review row is rejected, carrying the advisory defer note when deferred. No
-  // authority/pricing/catalog/replacement field is ever attached.
+  // Build one explicit decision per reviewable row (every `needs_review` AND
+  // `unresolved` row) and POST them together. A checked (approvable) row accepts its
+  // same-SKU suggestion (never invented); an unresolved non-Cisco/manual row is
+  // classified `manual` (no invented SKU); every other needs_review row is rejected,
+  // carrying the advisory defer note when deferred. No authority/pricing/catalog/
+  // replacement field is ever attached.
   function onSubmitReview(review: QuickBomSkuResolutionReviewWorkspace): void {
     const actions = review.lines
-      .filter((line) => line.status === "needs_review")
+      .filter((line) => line.status === "needs_review" || line.status === "unresolved")
       .map((line) => {
-        if (isApprovableLine(line) && selected[lineKey(line)]) {
+        if (
+          line.status === "needs_review" &&
+          isApprovableLine(line) &&
+          selected[lineKey(line)]
+        ) {
           return {
             decision: "accept",
             sourceFileId: line.sourceFileId,
             sourceRowNumber: line.sourceRowNumber,
             acceptedSku: line.suggestions[0].suggestedSku,
+          };
+        }
+        if (isUnresolvedManualLine(line)) {
+          return {
+            decision: "manual",
+            sourceFileId: line.sourceFileId,
+            sourceRowNumber: line.sourceRowNumber,
           };
         }
         const note = isDeferredLine(line) ? line.reviewGuidance?.note : undefined;
@@ -212,8 +251,12 @@ export function SkuResolutionReviewPanel({
   }
 
   const reviewable = skuReview?.artifact.status === "needs_review";
+  // Every row that gets an explicit decision on submit: needs_review (accept/reject) plus
+  // unresolved (classified manual). Drives the submit-disabled guard and the excluded count.
   const reviewRowCount = skuReview
-    ? skuReview.lines.filter((line) => line.status === "needs_review").length
+    ? skuReview.lines.filter(
+        (line) => line.status === "needs_review" || line.status === "unresolved"
+      ).length
     : 0;
   const approveCount = skuReview
     ? skuReview.lines.filter(
@@ -341,7 +384,9 @@ export function SkuResolutionReviewPanel({
                         Source row {line.sourceRowNumber}
                       </p>
                       <p className="mt-0.5 text-xs text-text-secondary">
-                        {line.originalSku} is not available in the active pricing catalog.
+                        {isManualHandlingLine(line)
+                          ? `${line.originalSku} requires manual or third-party handling and is not priced as a Cisco catalog line.`
+                          : `${line.originalSku} is not available in the active pricing catalog.`}
                       </p>
                       <SkuRelatedConfiguredNote items={line.relatedConfiguredItems} />
                     </li>

@@ -1314,6 +1314,161 @@ describe("ProjectQuickBomPage - SKU line review panel", () => {
     expect(actions.every((a) => a.decision === "reject")).toBe(true);
   });
 
+  // One eligible same-SKU row plus one still-unresolved non-Cisco/manual row (a Samsung
+  // display). The unresolved row must be preserved as a manual/third-party line, not
+  // silently rejected or dropped.
+  function manualSkuReview(): Record<string, unknown> {
+    return skuReviewOkResponse({
+      reviewSummary: {
+        totalLineCount: 2, needsReviewCount: 1, acceptedCount: 0, rejectedCount: 0,
+        unresolvedCount: 1, manualCount: 0, outOfScopeCount: 0,
+      },
+      lines: [
+        {
+          sourceFileId: "file-1", sourceRowNumber: 2, originalLineNumber: "L-002",
+          originalSku: "C9300X-48HX-A", status: "needs_review",
+          suggestions: [{ suggestedSku: "C9300X-48HX-A", source: "exact" }],
+        },
+        {
+          sourceFileId: "file-1", sourceRowNumber: 3, originalLineNumber: "L-003",
+          originalSku: "SAMSUNG-QB65R", status: "unresolved", suggestions: [],
+        },
+      ],
+    });
+  }
+
+  it("renders an unresolved non-Cisco row in the excluded manual-handling section and counts it for submit", async () => {
+    stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(manualSkuReview());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    // The eligible row is included; the unresolved Samsung row is excluded but still
+    // counted (1 included / 1 excluded), never dropped from the review batch.
+    expect(screen.getByTestId("sku-review-submit")).toHaveTextContent("(1 included / 1 excluded)");
+    const excluded = screen.getByTestId("sku-review-excluded");
+    expect(excluded).toHaveTextContent(
+      "SAMSUNG-QB65R requires manual or third-party handling and is not priced as a Cisco catalog line."
+    );
+    // The unresolved row is described as manual/third-party, never as a Cisco catalog row.
+    expect(excluded).not.toHaveTextContent(
+      "SAMSUNG-QB65R is not available in the active pricing catalog."
+    );
+    expect(within(excluded).queryByTestId("sku-review-checkbox")).toBeNull();
+  });
+
+  it("submits accept for the eligible row and manual for the unresolved row, with no acceptedSku on manual", async () => {
+    const calls = stubFetch((url, init) => {
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (init?.method === "GET" || !init?.method)) {
+        return jsonResponse(manualSkuReview());
+      }
+      if (SKU_REVIEW_ROUTE_RE.test(url) && init?.method === "POST") {
+        return jsonResponse(skuReviewPostOkResponse());
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: baseWorkspace() });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    await screen.findByTestId("sku-review-summary");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-submit"));
+    });
+    await waitFor(() =>
+      expect(calls.some((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")).toBe(true)
+    );
+
+    const post = calls.find((c) => SKU_REVIEW_ROUTE_RE.test(c.url) && c.method === "POST")!;
+    const actions = (post.body as { actions: Record<string, unknown>[] }).actions;
+    expect(actions).toHaveLength(2);
+    const byRow = (n: number) => actions.find((a) => a.sourceRowNumber === n)!;
+    expect(byRow(2).decision).toBe("accept");
+    expect(byRow(2).acceptedSku).toBe("C9300X-48HX-A");
+    // Unresolved non-Cisco row: classified manual, never an invented SKU.
+    expect(byRow(3).decision).toBe("manual");
+    expect("acceptedSku" in byRow(3)).toBe(false);
+
+    // Every action stays sanitized; no authority/pricing/catalog/replacement fields.
+    for (const action of actions) {
+      for (const forbidden of [
+        "tenantId", "projectId", "artifactId", "skuResolutionArtifactId", "decidedBy",
+        "decidedAt", "pricing", "catalog", "catalogProfile", "replacement", "substitution",
+        "authority", "configuration", "approval", "relatedConfiguredItems", "parentSku",
+      ]) {
+        expect(forbidden in action, forbidden).toBe(false);
+      }
+    }
+  });
+
+  it("keeps manual and out_of_scope decisions visible in the read-only view without leaking internal fields", async () => {
+    const decidedReview = skuReviewOkResponse({
+      artifact: {
+        id: SKU_ARTIFACT_ID, projectId: PROJECT_ID, stageId: "sku_resolution",
+        type: "sku_resolution", status: "approved", version: 3,
+        sourceFileIds: [], sourceArtifactIds: [],
+        createdAt: "2026-06-01T10:00:00.000Z", updatedAt: "2026-06-01T10:00:00.000Z",
+      },
+      reviewSummary: {
+        totalLineCount: 2, needsReviewCount: 0, acceptedCount: 0, rejectedCount: 0,
+        unresolvedCount: 0, manualCount: 1, outOfScopeCount: 1,
+      },
+      lines: [
+        {
+          sourceFileId: "file-1", sourceRowNumber: 2, originalLineNumber: "L-002",
+          originalSku: "SAMSUNG-QB65R", status: "manual", note: "Samsung display - third party",
+          suggestions: [],
+        },
+        {
+          sourceFileId: "file-1", sourceRowNumber: 3, originalLineNumber: "L-003",
+          originalSku: "TRAVEL-001", status: "out_of_scope", note: "travel and insurance",
+          suggestions: [],
+        },
+      ],
+    });
+    stubFetch((url, init) => {
+      const ws = baseWorkspace();
+      (spineOf(ws).sku_resolution as Record<string, unknown>).status = "approved";
+      if (SKU_REVIEW_ROUTE_RE.test(url) && (!init?.method || init.method === "GET")) {
+        return jsonResponse(decidedReview);
+      }
+      if (url.endsWith("/quick-bom")) return jsonResponse({ workspace: ws });
+      return jsonResponse({}, 404);
+    });
+
+    render(<ProjectQuickBomPage />);
+    await screen.findByTestId("sku-review-load");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("sku-review-load"));
+    });
+    const readonly = await screen.findByTestId("sku-review-readonly");
+
+    // Both decisions stay visible with their status and safe note text.
+    expect(readonly).toHaveTextContent("SAMSUNG-QB65R");
+    expect(readonly).toHaveTextContent("Samsung display - third party");
+    expect(readonly).toHaveTextContent("TRAVEL-001");
+    expect(readonly).toHaveTextContent("travel and insurance");
+    // No review controls and no internal canary leak.
+    expect(screen.queryByTestId("sku-review-submit")).toBeNull();
+    expect(screen.queryByTestId("sku-review-checkbox")).toBeNull();
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(SKU_REVIEW_CANARY);
+  });
+
   it("auto-refreshes the panel against the returned new artifact id while still needs_review (no re-Load click)", async () => {
     const v3Calls: string[] = [];
     stubFetch((url, init) => {

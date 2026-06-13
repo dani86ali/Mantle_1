@@ -9,8 +9,9 @@
  * invalid_sku_resolution_payload -> 409, ok -> 200 { review }. An unexpected loader
  * error maps to a controlled 500 that never exposes the thrown error.
  *
- * POST (Prompt 89) applies explicit per-line human accept/reject decisions to one
- * `needs_review` sku_resolution artifact. session.tenantId is the only tenant
+ * POST (Prompt 89; extended Prompt 305) applies explicit per-line human accept/
+ * reject/manual/out_of_scope decisions to one `needs_review` sku_resolution
+ * artifact. session.tenantId is the only tenant
  * authority, session.userId is the only decidedBy authority, and the route params
  * id/artifactId are the only project/artifact authority. The request body supplies
  * ONLY the `actions` array; any tenantId/projectId/artifactId/skuResolutionArtifactId
@@ -56,8 +57,9 @@ function isPositiveInteger(value: unknown): value is number {
  * Validate the request body and extract a sanitized, non-empty actions array, or
  * null when anything is invalid. Reads ONLY each action's decision/sourceFileId/
  * sourceRowNumber/acceptedSku/note - never any tenant/project/artifact/decidedBy/
- * decidedAt authority field. Accept requires a nonblank acceptedSku; reject must
- * not include an acceptedSku key; note, when present, must be a string.
+ * decidedAt authority field. Accept requires a nonblank acceptedSku; reject, manual,
+ * and out_of_scope must NOT include an acceptedSku key (including a null one); note,
+ * when present, must be a string.
  */
 function parseReviewActions(
   body: unknown
@@ -70,7 +72,14 @@ function parseReviewActions(
   for (const raw of body.actions) {
     if (!isRecord(raw)) return null;
     const { decision, sourceFileId, sourceRowNumber, acceptedSku, note } = raw;
-    if (decision !== "accept" && decision !== "reject") return null;
+    if (
+      decision !== "accept" &&
+      decision !== "reject" &&
+      decision !== "manual" &&
+      decision !== "out_of_scope"
+    ) {
+      return null;
+    }
     if (!isNonBlankString(sourceFileId)) return null;
     if (!isPositiveInteger(sourceRowNumber)) return null;
     if (note !== undefined && typeof note !== "string") return null;
@@ -84,15 +93,19 @@ function parseReviewActions(
         acceptedSku,
         ...(note !== undefined ? { note } : {}),
       });
-    } else {
-      if ("acceptedSku" in raw) return null;
-      parsed.push({
-        decision: "reject",
-        sourceFileId,
-        sourceRowNumber,
-        ...(note !== undefined ? { note } : {}),
-      });
+      continue;
     }
+
+    // reject / manual / out_of_scope: never carry an acceptedSku (not even null).
+    if ("acceptedSku" in raw) return null;
+    const base = {
+      sourceFileId,
+      sourceRowNumber,
+      ...(note !== undefined ? { note } : {}),
+    };
+    if (decision === "reject") parsed.push({ decision: "reject", ...base });
+    else if (decision === "manual") parsed.push({ decision: "manual", ...base });
+    else parsed.push({ decision: "out_of_scope", ...base });
   }
   return parsed;
 }

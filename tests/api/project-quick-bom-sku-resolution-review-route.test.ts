@@ -69,11 +69,13 @@ const PAYLOAD_SUMMARY = {
 };
 
 const REVIEW_SUMMARY = {
-  appliedCount: 2,
+  appliedCount: 4,
   needsReviewCount: 0,
   acceptedCount: 1,
   rejectedCount: 1,
   unresolvedCount: 0,
+  manualCount: 1,
+  outOfScopeCount: 1,
 };
 
 const NOT_REVIEWABLE_ARTIFACT = {
@@ -229,6 +231,10 @@ describe("POST .../sku-resolution/review - request validation", () => {
     ["accept non-string acceptedSku", { actions: [{ decision: "accept", sourceFileId: "f", sourceRowNumber: 1, acceptedSku: 7 }] }],
     ["reject carrying acceptedSku", { actions: [{ decision: "reject", sourceFileId: "f", sourceRowNumber: 1, acceptedSku: "S" }] }],
     ["reject carrying null acceptedSku", { actions: [{ decision: "reject", sourceFileId: "f", sourceRowNumber: 1, acceptedSku: null }] }],
+    ["manual carrying acceptedSku", { actions: [{ decision: "manual", sourceFileId: "f", sourceRowNumber: 1, acceptedSku: "S" }] }],
+    ["manual carrying null acceptedSku", { actions: [{ decision: "manual", sourceFileId: "f", sourceRowNumber: 1, acceptedSku: null }] }],
+    ["out_of_scope carrying acceptedSku", { actions: [{ decision: "out_of_scope", sourceFileId: "f", sourceRowNumber: 1, acceptedSku: "S" }] }],
+    ["out_of_scope carrying null acceptedSku", { actions: [{ decision: "out_of_scope", sourceFileId: "f", sourceRowNumber: 1, acceptedSku: null }] }],
     ["non-string note", { actions: [{ decision: "reject", sourceFileId: "f", sourceRowNumber: 1, note: 5 }] }],
     ["null note", { actions: [{ decision: "reject", sourceFileId: "f", sourceRowNumber: 1, note: null }] }],
   ];
@@ -291,6 +297,47 @@ describe("POST .../sku-resolution/review - authority", () => {
     expect(arg.actions).toEqual([
       { decision: "accept", sourceFileId: "file-1", sourceRowNumber: 2, acceptedSku: "SKU-A", note: "ok" },
       { decision: "reject", sourceFileId: "file-1", sourceRowNumber: 3 },
+    ]);
+  });
+
+  it("forwards a mixed accept/reject/manual/out_of_scope batch with only sanitized fields", async () => {
+    const body = {
+      actions: [
+        { decision: "accept", sourceFileId: "file-1", sourceRowNumber: 2, acceptedSku: "SKU-A" },
+        { decision: "reject", sourceFileId: "file-1", sourceRowNumber: 3 },
+        { decision: "manual", sourceFileId: "file-1", sourceRowNumber: 4 },
+        { decision: "out_of_scope", sourceFileId: "file-1", sourceRowNumber: 5 },
+      ],
+    };
+
+    await POST(req(body), PARAMS);
+
+    const arg = mockReview.mock.calls[0][0];
+    expect(arg.actions).toEqual([
+      { decision: "accept", sourceFileId: "file-1", sourceRowNumber: 2, acceptedSku: "SKU-A" },
+      { decision: "reject", sourceFileId: "file-1", sourceRowNumber: 3 },
+      { decision: "manual", sourceFileId: "file-1", sourceRowNumber: 4 },
+      { decision: "out_of_scope", sourceFileId: "file-1", sourceRowNumber: 5 },
+    ]);
+    // No manual/out_of_scope action ever carries an acceptedSku key.
+    expect("acceptedSku" in arg.actions[2]).toBe(false);
+    expect("acceptedSku" in arg.actions[3]).toBe(false);
+  });
+
+  it("preserves an optional note on manual and out_of_scope actions", async () => {
+    const body = {
+      actions: [
+        { decision: "manual", sourceFileId: "file-1", sourceRowNumber: 4, note: "Samsung display - third party" },
+        { decision: "out_of_scope", sourceFileId: "file-1", sourceRowNumber: 5, note: "travel and insurance" },
+      ],
+    };
+
+    await POST(req(body), PARAMS);
+
+    const arg = mockReview.mock.calls[0][0];
+    expect(arg.actions).toEqual([
+      { decision: "manual", sourceFileId: "file-1", sourceRowNumber: 4, note: "Samsung display - third party" },
+      { decision: "out_of_scope", sourceFileId: "file-1", sourceRowNumber: 5, note: "travel and insurance" },
     ]);
   });
 });
@@ -448,6 +495,9 @@ describe("POST .../sku-resolution/review - result mapping", () => {
       payloadSummary: PAYLOAD_SUMMARY,
       reviewSummary: REVIEW_SUMMARY,
     });
+    // The forwarded review summary can carry manual/out_of_scope counts.
+    expect(body.reviewSummary.manualCount).toBe(1);
+    expect(body.reviewSummary.outOfScopeCount).toBe(1);
     expect("status" in body).toBe(false);
   });
 });
