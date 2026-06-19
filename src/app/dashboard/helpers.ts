@@ -58,7 +58,9 @@ const STAGE_LABELS: Record<ProjectStageId, string> = {
 };
 
 export function projectLink(row: Pick<ProjectRow, "id" | "mode">): string {
-  return row.mode === "quick_bom" ? `/projects/${row.id}/quick-bom` : `/projects/${row.id}`;
+  return row.mode === "quick_bom"
+    ? `/projects/${row.id}/quick-bom`
+    : `/projects/${row.id}/rfp`;
 }
 
 export function modeLabel(mode: ProjectMode): string {

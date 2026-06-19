@@ -1,95 +1,31 @@
 "use client";
 
 /**
- * Read-only RFP inspection page (Milestone 1 evidence + Milestone 2
- * requirements baseline).
+ * Guided RFP operator workflow (Stage 4.5).
  *
- * GETs the lean evidence list from /api/projects/[id]/rfp/evidence (optional
- * sourceFileId / inputPackageArtifactId / kind query filters) and renders
- * identifiers, counts, and ISO dates only - the list never renders a
- * persisted text body or table cells. Clicking Inspect on one row GETs
- * /api/projects/[id]/rfp/evidence/[evidenceId], and only the detail panel
- * renders the sanitized persisted content (text chunk body or table rows)
- * that the detail API returned. Every evidence fetch is a default GET: the
- * evidence views write nothing, run no extraction, read no file bytes, and
- * decide nothing - they only display what the read-only inspection APIs
- * return. Types come via `import type` from the inspection read models,
- * erased at compile time, so no server or DB code reaches the client.
+ * The page renders the Project-centered RFP chain as intake, evidence review,
+ * requirements baseline, compliance matrix, and collapsed history. Primary
+ * actions infer the latest approved upstream artifacts instead of asking the
+ * engineer to select artifact ids. Detail drawers fetch sanitized inspection
+ * payloads on demand and keep audit ids under collapsed technical details.
  *
- * Requirements baseline (Milestone 2): on mount the page also GETs the lean
- * requirements_baseline artifact list from
- * /api/projects/[id]/rfp/requirements-baseline - identifiers, ISO dates,
- * counts, requirement ids, and source ids only, never requirement text.
- * Clicking Inspect on one artifact GETs
- * /api/projects/[id]/rfp/artifacts/[artifactId]/requirements-baseline and
- * only the baseline detail panel renders the sanitized reviewable payload:
- * requirement text plus locator-only evidence references (identifiers,
- * counts, positions - never raw evidence text, never table rows, never a
- * tenant id, never a storage path, never an arbitrary payload key). Every
- * baseline inspection fetch is a default GET.
- *
- * Requirements baseline review (Milestone 2): when the loaded baseline
- * detail has a reviewable status (needs_review or generated) the detail
- * panel shows an optional note plus Approve and Reject buttons. A click
- * sends exactly one POST to
- * /api/projects/[id]/rfp/artifacts/[artifactId]/requirements-baseline/review
- * with { decision } plus a trimmed nonblank note only; it never sends a
- * tenant, project, version, decidedBy, status, payload, requirement, or
- * evidence field. On success the panel applies the post-decision
- * artifactStatus from the response, shows fixed success copy, and reloads
- * the read-only baseline list; on failure it shows fixed error copy and
- * keeps the loaded detail. The POST records one human decision and nothing
- * else: no auto-approval, no extraction, no other side effect.
- *
- * Requirements baseline generation (Milestone 2): the approved final
- * evidence_package is the only evidence authority a baseline draft may be
- * generated from, so generation selects ONE approved evidence_package artifact
- * from the final evidence package list (the raw evidence rows are read-only and
- * carry no generation control). Only an approved package row is selectable; a
- * non-approved package row stays read-only and cannot be picked. A compact
- * control under the requirements baseline heading names the selected package
- * and carries a Generate button, disabled until one approved package is
- * selected and while a generation is in flight. Clicking Generate sends one
- * POST to /api/projects/[id]/rfp/requirements-baseline/generate whose JSON body
- * is exactly { evidencePackageArtifactId } - never raw evidence ids or text,
- * table rows, tenant or project or user authority, status, payload, artifact,
- * or approval fields. The server drafts candidate requirements from that
- * approved package and stores ONE needs_review draft; nothing generates on
- * mount, the created draft is never auto-inspected, and nothing is
- * auto-approved - the draft still goes through the human review above. On
- * success the control shows fixed success copy, clears the selected package,
- * and reloads only the read-only baseline list; on failure it shows fixed error
- * copy, keeps the selected package, and reloads nothing. Whenever the package
- * list reloads, a selected package that is gone or no longer approved is
- * cleared. Generation and the human reviews are the page's only writes, each on
- * its own endpoint.
- *
- * Extraction review (Stage 1A): on mount the page also GETs two lean,
- * read-only artifact lists - the extraction_delta list from
- * /api/projects/[id]/rfp/extraction-delta and the evidence_package list from
- * /api/projects/[id]/rfp/evidence-package - rendering identifiers, ISO dates,
- * counts, and source ids only, never a candidate body, proposed evidence,
- * final evidence text or table rows, a tenant id, or a storage path. Clicking
- * Inspect on a delta row GETs .../extraction-delta/[artifactId] and shows
- * pending candidates first with their locator-only evidence references and the
- * AI/engineer proposed evidence (a proposal surfaced for review, never
- * authority), keeping decided candidates and review history in collapsed
- * details. Clicking Inspect on an evidence_package row GETs
- * .../evidence-package/[artifactId] and renders the sanitized final evidence
- * text and table content - the package under human review - in collapsed
- * details with full source traceability. All four extraction-review fetches
- * are default GETs that write nothing, run no extraction, and decide nothing.
- *
- * RFP BoQ readiness (Stage 3): on mount the page also GETs the read-only BoQ
- * workspace from /api/projects/[id]/rfp/boq. It renders BoQ file summaries,
- * workflow readiness, and latest Quick BoM spine artifact identifiers only.
- * The approved export-package download is a plain anchor to the dedicated
- * download route; the page never fetches downloads and never opens payloads,
- * file paths, storage paths, pricing/configuration internals, or catalog data.
+ * Client-side writes stay on existing human-gated Project endpoints: upload,
+ * input-package review, evidence preparation, evidence-package review,
+ * requirements generation/review, and compliance generation/review. The page
+ * imports only read-model types plus the pure workflow helper; it does not load
+ * server stores, provider SDKs, pricing/configuration authority, or raw files.
  */
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
+import {
+  buildRfpOperatorWorkflow,
+  type RfpArtifactHistoryEntry,
+  type RfpArtifactState,
+  type RfpArtifactSummaryInput,
+  type RfpArtifactTrack,
+  type RfpExtractionDeltaSummaryInput,
+} from "@/lib/projects/project-rfp-operator-workflow";
 import type {
   RfpEvidenceDetail,
   RfpEvidenceInspectionProjectSummary,
@@ -116,6 +52,11 @@ import type {
   RfpEvidencePackageInspectionPackage,
 } from "@/lib/projects/project-rfp-evidence-package-inspection";
 import type { ProjectRfpBoqWorkspace } from "@/lib/projects/project-rfp-boq-workspace";
+import type {
+  ProjectArtifactStatus,
+  ProjectArtifactType,
+  ProjectFileRole,
+} from "@/types/project";
 
 type EvidenceKind = RfpEvidenceListItemSummary["kind"];
 type KindFilter = "all" | EvidenceKind;
@@ -324,6 +265,25 @@ type EvidencePackageReviewDecision = "approved" | "rejected";
 
 type PackageEvidence = RfpEvidencePackageInspectionPackage["evidence"][number];
 
+type DrawerKind =
+  | "evidence"
+  | "delta"
+  | "evidence-package"
+  | "requirements"
+  | "compliance";
+
+interface DrawerState {
+  kind: DrawerKind;
+  activeId: string;
+}
+
+type PrimaryActionStatus = "idle" | "success" | "warning" | "error";
+
+interface PrimaryActionMessage {
+  status: PrimaryActionStatus;
+  text: string;
+}
+
 /** Exact UI copy required for the list/detail failure states. */
 const LIST_ERROR = "Unable to load RFP evidence.";
 const DETAIL_ERROR = "Unable to load evidence detail.";
@@ -366,6 +326,13 @@ const PACKAGE_REVIEW_ERROR = "Unable to review final evidence package.";
 /** Exact UI copy required for the RFP BoQ readiness failure state. */
 const BOQ_WORKSPACE_ERROR = "Unable to load RFP BoQ readiness.";
 
+const UPLOAD_ERROR = "Unable to upload RFP file.";
+const INPUT_PACKAGE_ERROR = "Unable to create input package.";
+const INPUT_PACKAGE_REVIEW_ERROR = "Unable to review input package.";
+const PREPARE_EVIDENCE_ERROR = "Unable to prepare evidence review.";
+const COMPLIANCE_GENERATE_SUCCESS = "Compliance matrix draft generated.";
+const COMPLIANCE_GENERATE_ERROR = "Unable to generate compliance matrix.";
+
 const EMPTY_FILTERS: EvidenceFilters = {
   sourceFileId: "",
   inputPackageArtifactId: "",
@@ -373,13 +340,38 @@ const EMPTY_FILTERS: EvidenceFilters = {
 };
 
 const ACTION_BTN =
-  "rounded-button bg-accent px-3 py-1 text-xs font-medium text-text-primary hover:bg-accent-hover disabled:opacity-50";
+  "inline-flex items-center justify-center gap-1 rounded-button bg-accent px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50";
 const PLAIN_BTN =
-  "rounded-button border border-[var(--border)] px-3 py-1 text-xs font-medium text-text-secondary hover:bg-bg-card disabled:opacity-50";
+  "inline-flex items-center justify-center gap-1 rounded-button border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-card disabled:cursor-not-allowed disabled:opacity-50";
 const FIELD =
-  "mt-1 rounded-button border border-[var(--border)] bg-bg-card px-2 py-1 text-xs text-text-primary";
+  "mt-1 rounded-button border border-[var(--border)] bg-bg-card px-2 py-1.5 text-xs text-text-primary";
 const ERROR_BOX =
   "rounded-card border border-destructive/30 bg-destructive-muted p-3 text-sm text-destructive";
+const CARD =
+  "rounded-card border border-[var(--border)] bg-bg-card p-4";
+const SUBTLE_CARD =
+  "rounded-card border border-[var(--border)] bg-bg-primary p-3";
+const MUTED_TEXT = "text-xs text-text-secondary";
+const TECHNICAL_DETAILS_CLASS =
+  "mt-2 rounded-button border border-[var(--border)] bg-bg-primary p-2";
+
+const FILE_ROLES: ProjectFileRole[] = [
+  "rfp",
+  "scope_of_work",
+  "compliance",
+  "addendum",
+  "boq",
+  "other",
+];
+
+const FILE_ROLE_LABELS: Record<ProjectFileRole, string> = {
+  rfp: "Main RFP",
+  scope_of_work: "Scope of work",
+  compliance: "Compliance attachment",
+  addendum: "Addendum",
+  boq: "BoQ / pricing workbook",
+  other: "Other supporting file",
+};
 
 type BoqSpineKey = keyof ProjectRfpBoqWorkspace["spineArtifacts"];
 
@@ -423,6 +415,104 @@ function yesNo(value: boolean): string {
 
 function idList(values: readonly string[]): string {
   return values.length > 0 ? values.join(", ") : "none";
+}
+
+function displayId(value: string): string {
+  if (value.length <= 12) return value;
+  return `${value.slice(0, 8)}...${value.slice(-4)}`;
+}
+
+function statusLabel(status: ProjectArtifactStatus): string {
+  return status.replaceAll("_", " ");
+}
+
+function statusBadgeClass(status: ProjectArtifactStatus): string {
+  if (status === "approved") {
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+  }
+  if (status === "needs_review" || status === "generated") {
+    return "border-amber-500/30 bg-amber-500/10 text-amber-200";
+  }
+  if (status === "rejected" || status === "failed") {
+    return "border-destructive/30 bg-destructive-muted text-destructive";
+  }
+  return "border-[var(--border)] bg-bg-primary text-text-secondary";
+}
+
+function fileRoleLabel(role: string): string {
+  return role in FILE_ROLE_LABELS
+    ? FILE_ROLE_LABELS[role as ProjectFileRole]
+    : role;
+}
+
+function StatusBadge({ status }: { status: ProjectArtifactStatus }) {
+  return (
+    <span
+      className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize ${statusBadgeClass(status)}`}
+    >
+      {statusLabel(status)}
+    </span>
+  );
+}
+
+function toWorkflowArtifactInput(item: {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+}): RfpArtifactSummaryInput {
+  return { id: item.id, status: item.status, version: item.version };
+}
+
+function toWorkflowExtractionDeltaInput(
+  item: RfpExtractionDeltaInspectionListItem
+): RfpExtractionDeltaSummaryInput {
+  return {
+    id: item.id,
+    status: item.status,
+    version: item.version,
+    payloadSummary: {
+      candidateCount: item.payloadSummary.candidateCount,
+      pendingCount: item.payloadSummary.pendingCount,
+      acceptedCount: item.payloadSummary.acceptedCount,
+      rejectedCount: item.payloadSummary.rejectedCount,
+      waivedCount: item.payloadSummary.waivedCount,
+    },
+  };
+}
+
+function workspaceArtifactsByType(
+  workspace: ProjectRfpBoqWorkspace | null,
+  type: ProjectArtifactType
+): RfpArtifactSummaryInput[] {
+  return (
+    workspace?.artifacts
+      .filter((artifact) => artifact.type === type)
+      .map(toWorkflowArtifactInput) ?? []
+  );
+}
+
+function latestApprovedArtifactId(
+  artifacts: readonly { id: string; status: ProjectArtifactStatus; version: number }[]
+): string | null {
+  let latest: { id: string; version: number } | null = null;
+  for (const artifact of artifacts) {
+    if (artifact.status !== "approved") continue;
+    if (latest === null || artifact.version > latest.version) {
+      latest = { id: artifact.id, version: artifact.version };
+    }
+  }
+  return latest?.id ?? null;
+}
+
+function primaryActionMessageClass(status: PrimaryActionStatus): string {
+  if (status === "success") {
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
+  }
+  if (status === "warning") {
+    return "border-amber-500/30 bg-amber-500/10 text-amber-100";
+  }
+  if (status === "error") return ERROR_BOX;
+  return "border-[var(--border)] bg-bg-primary text-text-secondary";
 }
 
 /** One-line position/size summary for a lean list row; never content. */
@@ -1136,8 +1226,258 @@ function ComplianceMatrixRowView({ row }: { row: ComplianceMatrixRow }) {
               ))}
             </ul>
           </details>
-        )}
+      )}
     </li>
+  );
+}
+
+function TechnicalDetails({
+  children,
+  label = "Technical details",
+  testId,
+}: {
+  children: ReactNode;
+  label?: string;
+  testId?: string;
+}) {
+  return (
+    <details data-testid={testId} className={TECHNICAL_DETAILS_CLASS}>
+      <summary className="cursor-pointer text-xs font-medium text-text-tertiary">
+        {label}
+      </summary>
+      <div className="mt-2 space-y-1 text-xs text-text-tertiary">{children}</div>
+    </details>
+  );
+}
+
+function WorkflowStep({
+  number,
+  title,
+  state,
+  summary,
+  active,
+  children,
+}: {
+  number: number;
+  title: string;
+  state: "ready" | "current" | "blocked" | "complete";
+  summary: string;
+  active: boolean;
+  children: ReactNode;
+}) {
+  const stateClass =
+    state === "complete"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+      : state === "current"
+        ? "border-accent/40 bg-accent-muted text-accent"
+        : state === "blocked"
+          ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
+          : "border-[var(--border)] bg-bg-primary text-text-secondary";
+  return (
+    <section
+      data-testid={`workflow-step-${number}`}
+      className={`${CARD} ${active ? "ring-1 ring-accent/50" : ""}`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-xs font-semibold text-text-secondary">
+              {number}
+            </span>
+            <h2 className="text-base font-semibold text-text-primary">{title}</h2>
+          </div>
+          <p className="mt-1 text-sm text-text-secondary">{summary}</p>
+        </div>
+        <span
+          className={`rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize ${stateClass}`}
+        >
+          {state}
+        </span>
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function ArtifactStatusCard({
+  label,
+  artifact,
+  actionLabel,
+  onInspect,
+}: {
+  label: string;
+  artifact?: RfpArtifactState;
+  actionLabel?: string;
+  onInspect?: (artifactId: string) => void;
+}) {
+  return (
+    <div className={SUBTLE_CARD}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            {label}
+          </p>
+          {artifact === undefined ? (
+            <p className="mt-1 text-sm text-text-secondary">Not created yet.</p>
+          ) : (
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <StatusBadge status={artifact.status} />
+              <span className="text-xs text-text-secondary">Version {artifact.version}</span>
+            </div>
+          )}
+        </div>
+        {artifact !== undefined && onInspect !== undefined && (
+          <button
+            type="button"
+            className={PLAIN_BTN}
+            onClick={() => onInspect(artifact.id)}
+          >
+            {actionLabel ?? "Inspect"}
+          </button>
+        )}
+      </div>
+      {artifact !== undefined && (
+        <TechnicalDetails testId={`${label.toLowerCase().replaceAll(" ", "-")}-technical`}>
+          <p>Artifact ID: {artifact.id}</p>
+          <p>Status: {artifact.status}</p>
+          <p>Version: {artifact.version}</p>
+        </TechnicalDetails>
+      )}
+    </div>
+  );
+}
+
+function ReviewHistory({
+  track,
+  onInspect,
+}: {
+  track: RfpArtifactTrack;
+  onInspect?: (artifactId: string) => void;
+}) {
+  const entries: RfpArtifactHistoryEntry[] = track.history;
+  return (
+    <details data-testid="review-history" className="mt-3">
+      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+        Review history ({entries.length})
+      </summary>
+      {entries.length === 0 ? (
+        <p className="mt-2 text-xs text-text-tertiary">No previous versions.</p>
+      ) : (
+        <ol className="mt-2 space-y-2">
+          {entries.map((entry) => (
+            <li key={entry.id} className={SUBTLE_CARD}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={entry.status} />
+                  <span className="text-xs text-text-secondary">
+                    Version {entry.version} - {entry.reason.replaceAll("_", " ")}
+                  </span>
+                </div>
+                {onInspect !== undefined && (
+                  <button
+                    type="button"
+                    className={PLAIN_BTN}
+                    onClick={() => onInspect(entry.id)}
+                  >
+                    Inspect
+                  </button>
+                )}
+              </div>
+              {entry.reviewCounts !== undefined && (
+                <p className="mt-1 text-xs text-text-secondary">
+                  Candidates {entry.reviewCounts.candidateCount}, pending{" "}
+                  {entry.reviewCounts.pendingCount}, accepted{" "}
+                  {entry.reviewCounts.acceptedCount}, rejected{" "}
+                  {entry.reviewCounts.rejectedCount}, waived{" "}
+                  {entry.reviewCounts.waivedCount}
+                </p>
+              )}
+              <TechnicalDetails>
+                <p>Artifact ID: {entry.id}</p>
+                <p>Status: {entry.status}</p>
+              </TechnicalDetails>
+            </li>
+          ))}
+        </ol>
+      )}
+    </details>
+  );
+}
+
+function EmptyState({ children }: { children: ReactNode }) {
+  return <p className="text-sm text-text-tertiary">{children}</p>;
+}
+
+function ReviewDrawer({
+  title,
+  subtitle,
+  loading,
+  error,
+  onClose,
+  onPrevious,
+  onNext,
+  previousDisabled,
+  nextDisabled,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  previousDisabled: boolean;
+  nextDisabled: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div data-testid="review-drawer" className="fixed inset-0 z-50">
+      <button
+        type="button"
+        aria-label="Close review drawer"
+        className="absolute inset-0 cursor-default bg-black/40"
+        onClick={onClose}
+      />
+      <aside className="absolute right-0 top-0 flex h-full w-full max-w-3xl flex-col border-l border-[var(--border)] bg-bg-primary shadow-xl">
+        <header className="border-b border-[var(--border)] p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
+              {subtitle !== undefined && (
+                <p className="mt-1 text-sm text-text-secondary">{subtitle}</p>
+              )}
+            </div>
+            <button type="button" className={PLAIN_BTN} onClick={onClose}>
+              Close
+            </button>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              className={PLAIN_BTN}
+              disabled={previousDisabled}
+              onClick={onPrevious}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className={PLAIN_BTN}
+              disabled={nextDisabled}
+              onClick={onNext}
+            >
+              Next
+            </button>
+          </div>
+        </header>
+        <div className="flex-1 overflow-auto p-4">
+          {error !== null && <div className={ERROR_BOX}>{error}</div>}
+          {loading && <p className="text-sm text-text-tertiary">Loading detail...</p>}
+          {!loading && error === null && children}
+        </div>
+      </aside>
+    </div>
   );
 }
 
@@ -1148,10 +1488,6 @@ export default function ProjectRfpEvidencePage() {
   const [data, setData] = useState<EvidenceListResponse | null>(null);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
-
-  const [sourceFileIdInput, setSourceFileIdInput] = useState("");
-  const [artifactIdInput, setArtifactIdInput] = useState("");
-  const [kindInput, setKindInput] = useState<KindFilter>("all");
 
   const [detail, setDetail] = useState<RfpEvidenceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -1189,12 +1525,43 @@ export default function ProjectRfpEvidencePage() {
     string | null
   >(null);
 
-  const [selectedEvidencePackageId, setSelectedEvidencePackageId] = useState<
-    string | null
-  >(null);
   const [generatePending, setGeneratePending] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [generateSuccess, setGenerateSuccess] = useState<string | null>(null);
+
+  const [uploadRole, setUploadRole] = useState<ProjectFileRole>("rfp");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPending, setUploadPending] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+
+  const [inputPackagePending, setInputPackagePending] = useState(false);
+  const [inputPackageError, setInputPackageError] = useState<string | null>(null);
+  const [inputPackageSuccess, setInputPackageSuccess] = useState<string | null>(null);
+  const [inputPackageReviewNote, setInputPackageReviewNote] = useState("");
+  const [inputPackageNewVersionReason, setInputPackageNewVersionReason] =
+    useState("");
+  const [inputPackageNewVersionOpen, setInputPackageNewVersionOpen] =
+    useState(false);
+  const [inputPackageReviewPending, setInputPackageReviewPending] = useState(false);
+  const [inputPackageReviewError, setInputPackageReviewError] = useState<
+    string | null
+  >(null);
+  const [inputPackageReviewSuccess, setInputPackageReviewSuccess] = useState<
+    string | null
+  >(null);
+
+  const [prepareEvidencePending, setPrepareEvidencePending] = useState(false);
+  const [prepareEvidenceMessage, setPrepareEvidenceMessage] =
+    useState<PrimaryActionMessage | null>(null);
+
+  const [complianceGeneratePending, setComplianceGeneratePending] = useState(false);
+  const [complianceGenerateError, setComplianceGenerateError] =
+    useState<string | null>(null);
+  const [complianceGenerateSuccess, setComplianceGenerateSuccess] =
+    useState<string | null>(null);
+
+  const [drawer, setDrawer] = useState<DrawerState | null>(null);
 
   const [deltaList, setDeltaList] = useState<ExtractionDeltaListResponse | null>(null);
   const [deltaListLoading, setDeltaListLoading] = useState(true);
@@ -1395,24 +1762,12 @@ export default function ProjectRfpEvidencePage() {
       const body = (await res.json().catch(() => null)) as EvidencePackageListResponse | null;
       if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
         setPackageList(null);
-        setSelectedEvidencePackageId(null);
         setPackageListError(PACKAGE_LIST_ERROR);
         return;
       }
       setPackageList(body);
-      // Generation selection tracks the visible approved packages only: a
-      // reload drops a selection whose package is gone or no longer approved.
-      setSelectedEvidencePackageId((prev) =>
-        prev !== null &&
-        body.artifacts.some(
-          (item) => item.id === prev && item.status === "approved"
-        )
-          ? prev
-          : null
-      );
     } catch {
       setPackageList(null);
-      setSelectedEvidencePackageId(null);
       setPackageListError(PACKAGE_LIST_ERROR);
     } finally {
       setPackageListLoading(false);
@@ -1478,22 +1833,18 @@ export default function ProjectRfpEvidencePage() {
     [id]
   );
 
-  function toggleEvidencePackageSelection(artifactId: string): void {
-    setSelectedEvidencePackageId((prev) =>
-      prev === artifactId ? null : artifactId
-    );
-  }
-
   // The page's generation write: ask the server to draft ONE reviewable
-  // needs_review requirements_baseline artifact from the selected APPROVED
+  // needs_review requirements_baseline artifact from the latest approved
   // final evidence_package. The body carries only that package artifact id -
   // never raw evidence ids or content, tenant/project/user authority, status,
   // payload, artifact, or approval fields; the route derives all authority
-  // server-side. Success clears the selected package and reloads only the
-  // read-only baseline list; the new draft is never auto-inspected or
-  // auto-approved. Failure keeps the selected package and reloads nothing.
+  // server-side. Success reloads only the read-only baseline list; the new
+  // draft is never auto-inspected or auto-approved.
   const submitGenerate = useCallback(async (): Promise<void> => {
-    if (selectedEvidencePackageId === null || generatePending) return;
+    const evidencePackageArtifactId = latestApprovedArtifactId(
+      packageList?.artifacts ?? []
+    );
+    if (evidencePackageArtifactId === null || generatePending) return;
     setGeneratePending(true);
     setGenerateError(null);
     setGenerateSuccess(null);
@@ -1504,7 +1855,7 @@ export default function ProjectRfpEvidencePage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            evidencePackageArtifactId: selectedEvidencePackageId,
+            evidencePackageArtifactId,
           }),
         }
       );
@@ -1513,14 +1864,13 @@ export default function ProjectRfpEvidencePage() {
         return;
       }
       setGenerateSuccess(GENERATE_SUCCESS);
-      setSelectedEvidencePackageId(null);
       void loadBaselineList();
     } catch {
       setGenerateError(GENERATE_ERROR);
     } finally {
       setGeneratePending(false);
     }
-  }, [generatePending, id, loadBaselineList, selectedEvidencePackageId]);
+  }, [generatePending, id, loadBaselineList, packageList]);
 
   // Baseline payload content is fetched only here, on an explicit Inspect.
   const loadBaselineDetail = useCallback(
@@ -1791,19 +2141,364 @@ export default function ProjectRfpEvidencePage() {
     ]
   );
 
-  function onApply(): void {
-    void loadList({
-      sourceFileId: sourceFileIdInput,
-      inputPackageArtifactId: artifactIdInput,
-      kind: kindInput,
-    });
+  const workflow = useMemo(
+    () =>
+      buildRfpOperatorWorkflow({
+        uploadedFileCount: boqWorkspace?.boqFiles.length ?? 0,
+        inputPackages: workspaceArtifactsByType(boqWorkspace, "input_package"),
+        extractionDeltas:
+          deltaList?.artifacts.map(toWorkflowExtractionDeltaInput) ?? [],
+        evidencePackages:
+          packageList?.artifacts.map(toWorkflowArtifactInput) ?? [],
+        requirementsBaselines:
+          baselineList?.artifacts.map(toWorkflowArtifactInput) ?? [],
+        complianceMatrices:
+          complianceList?.artifacts.map(toWorkflowArtifactInput) ?? [],
+        configurationExpansions: workspaceArtifactsByType(
+          boqWorkspace,
+          "configuration_expansion"
+        ),
+        evidence:
+          data === null
+            ? undefined
+            : {
+                evidenceCount: data.evidenceCount,
+                textChunkCount: data.textChunkCount,
+                tableEvidenceCount: data.tableEvidenceCount,
+              },
+      }),
+    [baselineList, boqWorkspace, complianceList, data, deltaList, packageList]
+  );
+
+  const hasApprovedInputPackage =
+    workflow.inputPackage.latestApproved !== undefined;
+  const hasCurrentInputPackage = workflow.inputPackage.current !== undefined;
+  const latestApprovedInputPackageId =
+    workflow.inputPackage.latestApproved?.id ?? null;
+  const autoEvidencePackageId =
+    workflow.generationInputs.requirementsBaseline.evidencePackageArtifactId ??
+    null;
+  const complianceInputs = workflow.generationInputs.complianceMatrix;
+
+  const refreshRfpLists = useCallback((): void => {
+    void loadBoqWorkspace();
+    void loadList(EMPTY_FILTERS);
+    void loadDeltaList();
+    void loadPackageList();
+    void loadBaselineList();
+    void loadComplianceList();
+  }, [
+    loadBaselineList,
+    loadBoqWorkspace,
+    loadComplianceList,
+    loadDeltaList,
+    loadList,
+    loadPackageList,
+  ]);
+
+  const submitUpload = useCallback(async (): Promise<void> => {
+    if (uploadFile === null || uploadPending) return;
+    setUploadPending(true);
+    setUploadError(null);
+    setUploadSuccess(null);
+    try {
+      const form = new FormData();
+      form.append("file", uploadFile);
+      form.append("fileRole", uploadRole);
+      const res = await fetch(`/api/projects/${id}/rfp/files`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        setUploadError(UPLOAD_ERROR);
+        return;
+      }
+      setUploadFile(null);
+      setUploadSuccess("File uploaded. Create the input package when all roles are ready.");
+      void loadBoqWorkspace();
+    } catch {
+      setUploadError(UPLOAD_ERROR);
+    } finally {
+      setUploadPending(false);
+    }
+  }, [id, loadBoqWorkspace, uploadFile, uploadPending, uploadRole]);
+
+  const submitCreateInputPackage = useCallback(async (): Promise<void> => {
+    if (inputPackagePending || hasCurrentInputPackage) return;
+    const newVersionReason = inputPackageNewVersionReason.trim();
+    const creatingNewVersion = hasApprovedInputPackage;
+    if (creatingNewVersion && newVersionReason === "") {
+      setInputPackageError("Add a new-version reason before creating another package draft.");
+      return;
+    }
+    setInputPackagePending(true);
+    setInputPackageError(null);
+    setInputPackageSuccess(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/input-package`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        setInputPackageError(INPUT_PACKAGE_ERROR);
+        return;
+      }
+      if (creatingNewVersion) {
+        setInputPackageReviewNote(newVersionReason);
+        setInputPackageNewVersionReason("");
+        setInputPackageNewVersionOpen(false);
+      }
+      setInputPackageSuccess(
+        creatingNewVersion
+          ? "New input package version created for review."
+          : "Input package draft created for review."
+      );
+      void loadBoqWorkspace();
+    } catch {
+      setInputPackageError(INPUT_PACKAGE_ERROR);
+    } finally {
+      setInputPackagePending(false);
+    }
+  }, [
+    id,
+    inputPackageNewVersionReason,
+    inputPackagePending,
+    loadBoqWorkspace,
+    hasApprovedInputPackage,
+    hasCurrentInputPackage,
+  ]);
+
+  const submitInputPackageReview = useCallback(
+    async (decision: "approved" | "rejected"): Promise<void> => {
+      const artifactId = workflow.inputPackage.current?.id;
+      if (artifactId === undefined || inputPackageReviewPending) return;
+      setInputPackageReviewPending(true);
+      setInputPackageReviewError(null);
+      setInputPackageReviewSuccess(null);
+      try {
+        const note = inputPackageReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/input-package/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(note === "" ? { decision } : { decision, note }),
+          }
+        );
+        if (!res.ok) {
+          setInputPackageReviewError(INPUT_PACKAGE_REVIEW_ERROR);
+          return;
+        }
+        setInputPackageReviewNote("");
+        setInputPackageReviewSuccess(
+          decision === "approved"
+            ? "Input package approved."
+            : "Input package rejected."
+        );
+        void loadBoqWorkspace();
+      } catch {
+        setInputPackageReviewError(INPUT_PACKAGE_REVIEW_ERROR);
+      } finally {
+        setInputPackageReviewPending(false);
+      }
+    },
+    [
+      id,
+      inputPackageReviewNote,
+      inputPackageReviewPending,
+      loadBoqWorkspace,
+      workflow.inputPackage.current?.id,
+    ]
+  );
+
+  const submitPrepareEvidenceReview = useCallback(async (): Promise<void> => {
+    if (prepareEvidencePending) return;
+    const inputPackageArtifactId = latestApprovedInputPackageId;
+    if (workflow.evidencePackage.current !== undefined) {
+      setDrawer({
+        kind: "evidence-package",
+        activeId: workflow.evidencePackage.current.id,
+      });
+      void loadPackageDetail(workflow.evidencePackage.current.id);
+      return;
+    }
+    if (inputPackageArtifactId === null) {
+      setPrepareEvidenceMessage({
+        status: "error",
+        text: "Approve the input package before preparing evidence review.",
+      });
+      return;
+    }
+
+    setPrepareEvidencePending(true);
+    setPrepareEvidenceMessage(null);
+    try {
+      const evidenceRes = await fetch(
+        `/api/projects/${id}/rfp/artifacts/${inputPackageArtifactId}/evidence`,
+        { method: "POST" }
+      );
+      if (!evidenceRes.ok) {
+        const body = (await evidenceRes.json().catch(() => null)) as
+          | { code?: string }
+          | null;
+        if (body?.code !== "rfp_evidence_already_exists") {
+          setPrepareEvidenceMessage({
+            status: "error",
+            text: PREPARE_EVIDENCE_ERROR,
+          });
+          return;
+        }
+      }
+
+      let warning: string | null = null;
+      if (workflow.extractionDelta.current === undefined) {
+        const deltaRes = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${inputPackageArtifactId}/extraction-delta/generate`,
+          { method: "POST" }
+        );
+        if (!deltaRes.ok) {
+          const body = (await deltaRes.json().catch(() => null)) as
+            | { code?: string }
+            | null;
+          warning =
+            body?.code === "rfp_extraction_delta_candidate_drafting_unavailable"
+              ? "AI-assisted extraction comparison is not configured, so this review uses deterministic evidence only."
+              : "AI-assisted extraction comparison could not be prepared; deterministic evidence remains available.";
+        }
+      }
+
+      const packageRes = await fetch(
+        `/api/projects/${id}/rfp/artifacts/${inputPackageArtifactId}/evidence-package`,
+        { method: "POST" }
+      );
+      if (!packageRes.ok) {
+        setPrepareEvidenceMessage({
+          status: "error",
+          text: PREPARE_EVIDENCE_ERROR,
+        });
+        return;
+      }
+
+      setPrepareEvidenceMessage({
+        status: warning === null ? "success" : "warning",
+        text:
+          warning === null
+            ? "Evidence review prepared. Review the compiled evidence package."
+            : `${warning} Evidence review package was prepared.`,
+      });
+      refreshRfpLists();
+    } catch {
+      setPrepareEvidenceMessage({
+        status: "error",
+        text: PREPARE_EVIDENCE_ERROR,
+      });
+    } finally {
+      setPrepareEvidencePending(false);
+    }
+  }, [
+    id,
+    latestApprovedInputPackageId,
+    loadPackageDetail,
+    prepareEvidencePending,
+    refreshRfpLists,
+    workflow.evidencePackage.current,
+    workflow.extractionDelta.current,
+  ]);
+
+  const submitGenerateCompliance = useCallback(async (): Promise<void> => {
+    if (complianceGeneratePending || !complianceInputs.ready) return;
+    setComplianceGeneratePending(true);
+    setComplianceGenerateError(null);
+    setComplianceGenerateSuccess(null);
+    try {
+      const body = {
+        requirementsBaselineArtifactId:
+          complianceInputs.requirementsBaselineArtifactId,
+        evidencePackageArtifactId: complianceInputs.evidencePackageArtifactId,
+        ...(complianceInputs.configurationExpansionArtifactId !== undefined
+          ? {
+              configurationExpansionArtifactId:
+                complianceInputs.configurationExpansionArtifactId,
+            }
+          : {}),
+      };
+      const res = await fetch(`/api/projects/${id}/rfp/compliance-matrix/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        setComplianceGenerateError(COMPLIANCE_GENERATE_ERROR);
+        return;
+      }
+      setComplianceGenerateSuccess(COMPLIANCE_GENERATE_SUCCESS);
+      void loadComplianceList();
+    } catch {
+      setComplianceGenerateError(COMPLIANCE_GENERATE_ERROR);
+    } finally {
+      setComplianceGeneratePending(false);
+    }
+  }, [
+    complianceGeneratePending,
+    complianceInputs,
+    id,
+    loadComplianceList,
+  ]);
+
+  function openEvidenceDrawer(evidenceId: string): void {
+    setDrawer({ kind: "evidence", activeId: evidenceId });
+    void loadDetail(evidenceId);
   }
 
-  function onReset(): void {
-    setSourceFileIdInput("");
-    setArtifactIdInput("");
-    setKindInput("all");
-    void loadList(EMPTY_FILTERS);
+  function openDeltaDrawer(artifactId: string): void {
+    setDrawer({ kind: "delta", activeId: artifactId });
+    void loadDeltaDetail(artifactId);
+  }
+
+  function openPackageDrawer(artifactId: string): void {
+    setDrawer({ kind: "evidence-package", activeId: artifactId });
+    void loadPackageDetail(artifactId);
+  }
+
+  function openBaselineDrawer(artifactId: string): void {
+    setDrawer({ kind: "requirements", activeId: artifactId });
+    void loadBaselineDetail(artifactId);
+  }
+
+  function openComplianceDrawer(artifactId: string): void {
+    setDrawer({ kind: "compliance", activeId: artifactId });
+    void loadComplianceDetail(artifactId);
+  }
+
+  function drawerIds(): string[] {
+    if (drawer === null) return [];
+    if (drawer.kind === "evidence") return data?.evidence.map((item) => item.id) ?? [];
+    if (drawer.kind === "delta") {
+      return deltaList?.artifacts.map((item) => item.id) ?? [];
+    }
+    if (drawer.kind === "evidence-package") {
+      return packageList?.artifacts.map((item) => item.id) ?? [];
+    }
+    if (drawer.kind === "requirements") {
+      return baselineList?.artifacts.map((item) => item.id) ?? [];
+    }
+    return complianceList?.artifacts.map((item) => item.id) ?? [];
+  }
+
+  function openDrawerItem(kind: DrawerKind, activeId: string): void {
+    if (kind === "evidence") openEvidenceDrawer(activeId);
+    else if (kind === "delta") openDeltaDrawer(activeId);
+    else if (kind === "evidence-package") openPackageDrawer(activeId);
+    else if (kind === "requirements") openBaselineDrawer(activeId);
+    else openComplianceDrawer(activeId);
+  }
+
+  function moveDrawer(direction: -1 | 1): void {
+    if (drawer === null) return;
+    const ids = drawerIds();
+    const index = ids.indexOf(drawer.activeId);
+    const next = index < 0 ? -1 : index + direction;
+    if (next < 0 || next >= ids.length) return;
+    openDrawerItem(drawer.kind, ids[next]);
   }
 
   const content = detail?.content ?? null;
@@ -1842,1170 +2537,1131 @@ export default function ProjectRfpEvidencePage() {
       ? boqWorkspace.spineArtifacts.export_package
       : null;
 
-  return (
-    <main className="mx-auto max-w-5xl space-y-4 p-6">
-      <header>
-        <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">
-          RFP evidence inspection
-        </p>
-        {data && (
-          <>
-            <h1 data-testid="project-name" className="text-lg font-semibold text-text-primary">
-              {data.project.name}
-            </h1>
-            {data.project.customerName && (
-              <p data-testid="customer-name" className="mt-1 text-sm text-text-secondary">
-                Customer: {data.project.customerName}
-              </p>
-            )}
-            <p data-testid="project-mode" className="text-xs text-text-tertiary">
-              Mode: {data.project.mode} | Project:{" "}
-              <span className="font-mono">{data.project.id}</span>
-            </p>
-          </>
-        )}
-      </header>
+  const drawerIdList = drawerIds();
+  const drawerIndex =
+    drawer === null ? -1 : drawerIdList.indexOf(drawer.activeId);
 
-      <section className="rounded-card border border-[var(--border)] p-3">
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col text-xs text-text-tertiary">
-            Source file id
-            <input
-              data-testid="filter-source-file-id"
-              type="text"
-              value={sourceFileIdInput}
-              onChange={(e) => setSourceFileIdInput(e.target.value)}
-              className={FIELD}
-            />
-          </label>
-          <label className="flex flex-col text-xs text-text-tertiary">
-            Input package artifact id
-            <input
-              data-testid="filter-artifact-id"
-              type="text"
-              value={artifactIdInput}
-              onChange={(e) => setArtifactIdInput(e.target.value)}
-              className={FIELD}
-            />
-          </label>
-          <label className="flex flex-col text-xs text-text-tertiary">
-            Kind
-            <select
-              data-testid="filter-kind"
-              value={kindInput}
-              onChange={(e) => setKindInput(e.target.value as KindFilter)}
-              className={FIELD}
-            >
-              <option value="all">all</option>
-              <option value="rfp_document_text_chunk">text</option>
-              <option value="rfp_document_table">table</option>
-            </select>
-          </label>
-          <button type="button" data-testid="filter-apply" disabled={listLoading} onClick={onApply} className={ACTION_BTN}>
-            Apply
-          </button>
-          <button type="button" data-testid="filter-reset" disabled={listLoading} onClick={onReset} className={PLAIN_BTN}>
-            Reset
-          </button>
+  function renderEvidenceDrawerContent(): ReactNode {
+    if (detail === null || content === null) return null;
+    return (
+      <div data-testid="detail-panel" className="space-y-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            {kindLabel(detail.kind)} evidence
+          </p>
+          <p className="mt-1 text-sm font-medium text-text-primary">
+            {content.sourceFileName} ({content.sourceFileRole})
+          </p>
+          <p className={MUTED_TEXT}>
+            {content.evidenceKind === "rfp_document_text_chunk"
+              ? `Chunk ${content.chunkIndex + 1} of ${content.chunkCount} - ${content.charCount} chars`
+              : `Table${content.sheetName !== undefined ? ` - ${content.sheetName}` : ""} - ${content.rowCount} rows x ${content.columnCount} columns`}
+          </p>
         </div>
-      </section>
+        {content.evidenceKind === "rfp_document_text_chunk" ? (
+          <pre
+            data-testid="detail-text-body"
+            className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-button bg-bg-card p-3 text-sm leading-6 text-text-primary"
+          >
+            {content.text}
+          </pre>
+        ) : (
+          <div data-testid="detail-table" className="max-h-[60vh] overflow-auto">
+            <table className="w-full border-collapse text-sm">
+              <tbody>
+                {content.rows.map((row, rowIndex) => (
+                  <tr key={rowIndex} data-testid="detail-table-row">
+                    {row.map((cell, cellIndex) => (
+                      <td
+                        key={cellIndex}
+                        className="border border-[var(--border)] px-3 py-2 text-text-primary"
+                      >
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <TechnicalDetails>
+          <p>Evidence ID: {detail.id}</p>
+          <p>Source file ID: {detail.sourceFileId}</p>
+          <p>Input package artifact ID: {content.inputPackageArtifactId}</p>
+          <p>Extracted: {detail.extractedAt}</p>
+          <p>Retained until: {detail.retainUntil}</p>
+        </TechnicalDetails>
+      </div>
+    );
+  }
 
-      {listError && (
-        <div data-testid="list-error" className={ERROR_BOX}>
-          {listError}
+  function renderDeltaDrawerContent(): ReactNode {
+    if (deltaDetail === null) return null;
+    return (
+      <div data-testid="delta-detail-panel" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <p className="text-sm font-medium text-text-primary">
+            Extraction refinement candidates
+          </p>
+          <p className={MUTED_TEXT}>
+            Candidates {deltaDetail.delta.candidateCount}, pending{" "}
+            {deltaDetail.delta.pendingCount}, accepted {deltaDetail.delta.acceptedCount},
+            rejected {deltaDetail.delta.rejectedCount}, waived{" "}
+            {deltaDetail.delta.waivedCount}
+          </p>
+          <TechnicalDetails>
+            <p>Artifact ID: {deltaDetail.artifact.id}</p>
+            <p>Version: {deltaDetail.artifact.version}</p>
+            <p>Status: {deltaDetail.artifact.status}</p>
+          </TechnicalDetails>
         </div>
-      )}
-      {listLoading && (
-        <p data-testid="list-loading" className="text-sm text-text-tertiary">
-          Loading evidence...
-        </p>
-      )}
-
-      {data && (
-        <section>
-          <h2 className="text-sm font-semibold text-text-primary">Evidence</h2>
-          <p data-testid="evidence-counts" className="mt-1 text-xs text-text-secondary">
-            Evidence: {data.evidenceCount} total | text chunks: {data.textChunkCount} | tables:{" "}
-            {data.tableEvidenceCount}
-          </p>
-          {data.evidence.length === 0 ? (
-            <p data-testid="evidence-empty" className="mt-2 text-sm text-text-tertiary">
-              No evidence rows match.
+        {deltaReviewError && <div className={ERROR_BOX}>{deltaReviewError}</div>}
+        {deltaReviewSuccess && (
+          <p className="text-xs text-text-secondary">{deltaReviewSuccess}</p>
+        )}
+        {pendingDeltaCandidates.length === 0 ? (
+          <EmptyState>No pending candidates.</EmptyState>
+        ) : (
+          <ol data-testid="delta-pending-list" className="space-y-2">
+            {pendingDeltaCandidates.map((candidate) => (
+              <DeltaCandidateRow key={candidate.id} candidate={candidate}>
+                {deltaReviewable && deltaDecisions[candidate.id] !== undefined && (
+                  <DeltaPendingCandidateControls
+                    candidate={candidate}
+                    state={deltaDecisions[candidate.id]}
+                    disabled={deltaReviewPending}
+                    onChange={(next) =>
+                      setDeltaDecisions((prev) => ({
+                        ...prev,
+                        [candidate.id]: next,
+                      }))
+                    }
+                  />
+                )}
+              </DeltaCandidateRow>
+            ))}
+          </ol>
+        )}
+        {deltaReviewable && (
+          <div className="sticky bottom-0 mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--border)] bg-bg-primary pt-3">
+            <p className="text-xs text-text-secondary">
+              Selected decisions: {selectedDeltaDecisionCount}
             </p>
-          ) : (
-            <ol className="mt-2 space-y-1">
-              {data.evidence.map((item) => (
-                <li
-                  key={item.id}
-                  data-testid="evidence-row"
-                  className="flex items-start justify-between gap-2 rounded-button border border-[var(--border)] p-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-text-primary">
-                      <span className="font-mono">{item.id}</span> | {kindLabel(item.kind)}
-                    </p>
-                    <p className="text-xs text-text-secondary">
-                      {item.contentSummary.sourceFileName} ({item.contentSummary.sourceFileRole}) |
-                      file <span className="font-mono">{item.sourceFileId}</span>
-                    </p>
-                    <p className="text-xs text-text-secondary">{summaryLine(item)}</p>
-                    <p className="text-xs text-text-tertiary">
-                      package{" "}
-                      <span className="font-mono">{item.contentSummary.inputPackageArtifactId}</span>{" "}
-                      | extracted {item.extractedAt}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    data-testid={`inspect-${item.id}`}
-                    disabled={detailLoading}
-                    onClick={() => void loadDetail(item.id)}
-                    className={ACTION_BTN}
-                  >
-                    Inspect
-                  </button>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-      )}
-
-      <section>
-        <h2 className="text-sm font-semibold text-text-primary">Evidence detail</h2>
-        {detailError && (
-          <div data-testid="detail-error" className={`mt-2 ${ERROR_BOX}`}>
-            {detailError}
-          </div>
-        )}
-        {detailLoading && (
-          <p data-testid="detail-loading" className="mt-1 text-sm text-text-tertiary">
-            Loading evidence detail...
-          </p>
-        )}
-        {!detail && !detailLoading && !detailError && (
-          <p data-testid="detail-empty" className="mt-1 text-xs text-text-tertiary">
-            Click Inspect on an evidence row to view its persisted content.
-          </p>
-        )}
-        {detail && content && (
-          <div data-testid="detail-panel" className="mt-2 rounded-card border border-[var(--border)] p-3">
-            <p data-testid="detail-meta" className="text-xs text-text-secondary">
-              <span className="font-mono">{detail.id}</span> | {kindLabel(detail.kind)} | file{" "}
-              <span className="font-mono">{detail.sourceFileId}</span> | extracted{" "}
-              {detail.extractedAt} | retained until {detail.retainUntil}
-            </p>
-            {content.evidenceKind === "rfp_document_text_chunk" ? (
-              <div data-testid="detail-text">
-                <p className="mt-1 text-xs text-text-secondary">
-                  {content.sourceFileName} ({content.sourceFileRole}) | chunk{" "}
-                  {content.chunkIndex + 1}/{content.chunkCount} | {content.charCount} chars |
-                  package <span className="font-mono">{content.inputPackageArtifactId}</span>
-                </p>
-                <pre
-                  data-testid="detail-text-body"
-                  className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-button bg-bg-card p-2 text-xs text-text-primary"
-                >
-                  {content.text}
-                </pre>
-              </div>
-            ) : (
-              <div data-testid="detail-table">
-                <p className="mt-1 text-xs text-text-secondary">
-                  {content.sourceFileName} ({content.sourceFileRole}) | table {content.tableId}
-                  {content.pageNumber !== undefined ? ` | page ${content.pageNumber}` : ""}
-                  {content.sheetName !== undefined ? ` | sheet ${content.sheetName}` : ""} |{" "}
-                  {content.rowCount} rows x {content.columnCount} cols | package{" "}
-                  <span className="font-mono">{content.inputPackageArtifactId}</span>
-                </p>
-                <div className="mt-2 max-h-96 overflow-auto">
-                  <table className="w-full border-collapse text-xs">
-                    <tbody>
-                      {content.rows.map((row, rowIndex) => (
-                        <tr key={rowIndex} data-testid="detail-table-row">
-                          {row.map((cell, cellIndex) => (
-                            <td key={cellIndex} className="border border-[var(--border)] px-2 py-1 text-text-primary">
-                              {cell}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      <section
-        data-testid="rfp-boq-readiness"
-        className="rounded-card border border-[var(--border)] p-3"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-text-primary">
-              RFP BoQ readiness
-            </h2>
-            <p className="mt-1 text-xs text-text-secondary">
-              Quick BoM lane status from confirmed BoQ files and approved artifacts.
-            </p>
-          </div>
-          {approvedExportArtifact !== null && (
-            <a
-              data-testid="rfp-boq-export-download"
-              href={`/api/projects/${id}/rfp/artifacts/${approvedExportArtifact.id}/export-package/download`}
+            <button
+              type="button"
+              data-testid="delta-review-submit"
+              disabled={deltaReviewPending || selectedDeltaDecisionCount === 0}
+              onClick={() => void submitDeltaReview()}
               className={ACTION_BTN}
             >
-              Download approved export
-            </a>
-          )}
-        </div>
-        {boqWorkspaceError && (
-          <div data-testid="rfp-boq-error" className={`mt-2 ${ERROR_BOX}`}>
-            {boqWorkspaceError}
+              Record decisions
+            </button>
           </div>
         )}
-        {boqWorkspaceLoading && (
-          <p data-testid="rfp-boq-loading" className="mt-2 text-sm text-text-tertiary">
-            Loading RFP BoQ readiness...
+        {decidedDeltaCandidates.length > 0 && (
+          <details data-testid="delta-decided" className={TECHNICAL_DETAILS_CLASS}>
+            <summary className="cursor-pointer text-xs text-text-secondary">
+              Review history ({decidedDeltaCandidates.length})
+            </summary>
+            <ol className="mt-2 space-y-2">
+              {decidedDeltaCandidates.map((candidate) => (
+                <DeltaCandidateRow key={candidate.id} candidate={candidate} />
+              ))}
+            </ol>
+          </details>
+        )}
+      </div>
+    );
+  }
+
+  function renderPackageDrawerContent(): ReactNode {
+    if (packageDetail === null) return null;
+    return (
+      <div data-testid="ep-detail-panel" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={packageDetail.artifact.status} />
+            <span className="text-xs text-text-secondary">
+              Version {packageDetail.artifact.version}
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-text-primary">
+            {packageDetail.package.evidenceCount} evidence items,{" "}
+            {packageDetail.package.textChunkCount} text chunks,{" "}
+            {packageDetail.package.tableEvidenceCount} tables
+          </p>
+          <TechnicalDetails>
+            <p>Artifact ID: {packageDetail.artifact.id}</p>
+            <p>Input package artifact ID: {packageDetail.package.inputPackageArtifactId}</p>
+          </TechnicalDetails>
+        </div>
+        {packageReviewError && <div className={ERROR_BOX}>{packageReviewError}</div>}
+        {packageReviewSuccess && (
+          <p className="text-xs text-text-secondary">{packageReviewSuccess}</p>
+        )}
+        <ol className="space-y-2">
+          {packageDetail.package.evidence.map((evidence, evidenceIndex) => (
+            <PackageEvidenceView key={evidenceIndex} evidence={evidence} />
+          ))}
+        </ol>
+        {packageDetail.artifact.status === "needs_review" ? (
+          <div className="sticky bottom-0 border-t border-[var(--border)] bg-bg-primary pt-3">
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Review note (optional)
+              <textarea
+                data-testid="ep-review-note"
+                value={packageReviewNote}
+                onChange={(e) => setPackageReviewNote(e.target.value)}
+                disabled={packageReviewPending}
+                rows={3}
+                className={FIELD}
+              />
+            </label>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                data-testid="ep-review-approve"
+                disabled={packageReviewPending}
+                onClick={() => void submitPackageReview("approved")}
+                className={ACTION_BTN}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="ep-review-reject"
+                disabled={packageReviewPending}
+                onClick={() => void submitPackageReview("rejected")}
+                className={PLAIN_BTN}
+              >
+                Request changes
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p data-testid="ep-review-readonly" className="text-xs text-text-tertiary">
+            This evidence package is {statusLabel(packageDetail.artifact.status)}.
           </p>
         )}
-        {boqWorkspace !== null && (
-          <div className="mt-3 space-y-3">
-            <div className="grid gap-2 text-xs text-text-secondary md:grid-cols-3">
-              <p data-testid="rfp-boq-status">
-                Status: <span className="font-medium text-text-primary">{boqWorkspace.readiness.status}</span>
-              </p>
-              <p data-testid="rfp-boq-file-count">BoQ files: {boqWorkspace.readiness.boqFileCount}</p>
-              <p data-testid="rfp-boq-next-step">
-                Next Quick BoM step: {boqWorkspace.readiness.quickBomReadiness.nextStepId ?? "none"}
-              </p>
-            </div>
+      </div>
+    );
+  }
 
-            <div
-              data-testid="rfp-boq-gates"
-              className="grid gap-1 text-xs text-text-secondary md:grid-cols-3"
-            >
-              <p>Normalize: {yesNo(boqWorkspace.readiness.canNormalizeBoq)}</p>
-              <p>SKU review: {yesNo(boqWorkspace.readiness.canCreateSkuResolution)}</p>
-              <p>
-                Configuration review:{" "}
-                {yesNo(boqWorkspace.readiness.canCreateConfigurationExpansion)}
-              </p>
-              <p>Pricing review: {yesNo(boqWorkspace.readiness.canCreatePricedBoq)}</p>
-              <p>Export package: {yesNo(boqWorkspace.readiness.canCreateExportPackage)}</p>
-              <p>
-                Customer deliverable:{" "}
-                {yesNo(boqWorkspace.readiness.isCustomerDeliverableReady)}
-              </p>
-            </div>
-
-            {boqWorkspace.readiness.messages.length > 0 && (
-              <ul className="space-y-1 text-xs text-text-secondary">
-                {boqWorkspace.readiness.messages.map((message, index) => (
-                  <li key={`${index}-${message}`} data-testid="rfp-boq-message">
-                    {message}
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <details data-testid="rfp-boq-files" open={boqWorkspace.boqFiles.length <= 2}>
-              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-                BoQ files
-              </summary>
-              {boqWorkspace.boqFiles.length === 0 ? (
-                <p className="mt-2 text-xs text-text-tertiary">No BoQ files uploaded.</p>
-              ) : (
-                <ol className="mt-2 space-y-1">
-                  {boqWorkspace.boqFiles.map((file) => (
-                    <li
-                      key={file.id}
-                      data-testid="rfp-boq-file-row"
-                      className="rounded-button border border-[var(--border)] p-2 text-xs text-text-secondary"
-                    >
-                      <p className="font-medium text-text-primary">
-                        {file.fileName} | <span className="font-mono">{file.id}</span>
-                      </p>
-                      <p>
-                        role {file.fileRole} | uploaded {file.uploadedAt} | retain until{" "}
-                        {file.retainUntil}
-                      </p>
-                      <p>
-                        mime {file.mimeType ?? "unknown"} | size{" "}
-                        {file.sizeBytes !== undefined ? file.sizeBytes : "unknown"}
-                      </p>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </details>
-
-            <details data-testid="rfp-boq-spine" open>
-              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-                Quick BoM spine artifacts
-              </summary>
-              <ol className="mt-2 space-y-1">
-                {BOQ_SPINE_KEYS.map((key) => {
-                  const artifact = boqWorkspace.spineArtifacts[key];
-                  const step = boqWorkspace.readiness.quickBomReadiness.steps.find(
-                    (item) => item.stepId === key
-                  );
-                  return (
-                    <li
-                      key={key}
-                      data-testid="rfp-boq-spine-row"
-                      className="rounded-button border border-[var(--border)] p-2 text-xs text-text-secondary"
-                    >
-                      <p className="font-medium text-text-primary">
-                        {BOQ_SPINE_LABELS[key]} | {step?.status ?? "unknown"}
-                      </p>
-                      {artifact === null ? (
-                        <p>No artifact yet.</p>
-                      ) : (
-                        <>
-                          <p>
-                            <span className="font-mono">{artifact.id}</span> | v
-                            {artifact.version} | {artifact.status} | updated{" "}
-                            {artifact.updatedAt}
-                          </p>
-                          <p>
-                            files {idList(artifact.sourceFileIds)} | artifacts{" "}
-                            {idList(artifact.sourceArtifactIds)}
-                          </p>
-                        </>
-                      )}
-                      {step && <p>{step.message}</p>}
-                    </li>
-                  );
-                })}
-              </ol>
-            </details>
+  function renderBaselineDrawerContent(): ReactNode {
+    if (baselineDetail === null) return null;
+    return (
+      <div data-testid="baseline-detail-panel" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={baselineDetail.artifact.status} />
+            <span className="text-xs text-text-secondary">
+              Version {baselineDetail.artifact.version}
+            </span>
           </div>
+          <p className="mt-2 text-sm text-text-primary">
+            {baselineDetail.baseline.requirementCount} requirements with{" "}
+            {baselineDetail.baseline.evidenceCount} evidence references
+          </p>
+          <TechnicalDetails>
+            <p>Artifact ID: {baselineDetail.artifact.id}</p>
+            <p>Created by: {baselineDetail.baseline.createdBy}</p>
+            <p>Created: {baselineDetail.baseline.createdAt}</p>
+          </TechnicalDetails>
+        </div>
+        {reviewError && <div className={ERROR_BOX}>{reviewError}</div>}
+        {reviewSuccess && (
+          <p className="text-xs text-text-secondary">{reviewSuccess}</p>
         )}
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-text-primary">Extraction review</h2>
-
-        <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-            Extraction deltas
-          </h3>
-          {deltaListError && (
-            <div data-testid="delta-list-error" className={`mt-2 ${ERROR_BOX}`}>
-              {deltaListError}
-            </div>
-          )}
-          {deltaListLoading && (
-            <p data-testid="delta-list-loading" className="mt-1 text-sm text-text-tertiary">
-              Loading extraction deltas...
-            </p>
-          )}
-          {deltaList && (
-            <>
-              <p data-testid="delta-count" className="mt-1 text-xs text-text-secondary">
-                Extraction deltas: {deltaList.artifactCount}
-              </p>
-              {deltaList.artifacts.length === 0 ? (
-                <p data-testid="delta-empty" className="mt-2 text-sm text-text-tertiary">
-                  No extraction delta artifacts yet.
+        <ol className="space-y-2">
+          {baselineDetail.baseline.requirements.map((req) => (
+            <li
+              key={req.id}
+              data-testid="baseline-detail-requirement"
+              className={SUBTLE_CARD}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium text-text-primary">
+                  {req.title ?? req.id}
                 </p>
-              ) : (
-                <ol className="mt-2 space-y-1">
-                  {deltaList.artifacts.map((item) => (
+                <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px] text-text-secondary">
+                  {req.category}
+                </span>
+                <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px] text-text-secondary">
+                  {req.priority}
+                </span>
+              </div>
+              <p
+                data-testid="baseline-detail-requirement-text"
+                className="mt-2 whitespace-pre-wrap text-sm leading-6 text-text-primary"
+              >
+                {req.text}
+              </p>
+              {req.notes !== undefined && (
+                <p className="mt-1 text-xs text-text-secondary">Notes: {req.notes}</p>
+              )}
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs text-text-secondary">
+                  Evidence references ({req.evidenceReferences.length})
+                </summary>
+                <ul className="mt-1 space-y-1">
+                  {req.evidenceReferences.map((ref, refIndex) => (
                     <li
-                      key={item.id}
-                      data-testid="delta-row"
-                      className="flex items-start justify-between gap-2 rounded-button border border-[var(--border)] p-2"
+                      key={refIndex}
+                      data-testid="baseline-detail-reference"
+                      className="text-xs text-text-tertiary"
                     >
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-text-primary">
-                          <span className="font-mono">{item.id}</span> | version {item.version} |{" "}
-                          {item.status}
-                        </p>
-                        <p className="text-xs text-text-secondary">
-                          source {item.payloadSummary.proposalSource} | package{" "}
-                          <span className="font-mono">
-                            {item.payloadSummary.inputPackageArtifactId}
-                          </span>{" "}
-                          | candidates {item.payloadSummary.candidateCount}
-                        </p>
-                        <p className="text-xs text-text-secondary">
-                          pending {item.payloadSummary.pendingCount} | accepted{" "}
-                          {item.payloadSummary.acceptedCount} | rejected{" "}
-                          {item.payloadSummary.rejectedCount} | waived{" "}
-                          {item.payloadSummary.waivedCount}
-                        </p>
-                        <p className="text-xs text-text-tertiary">
-                          source artifacts:{" "}
-                          <span className="font-mono">{item.sourceArtifactIds.join(", ")}</span> |
-                          source files:{" "}
-                          <span className="font-mono">{item.sourceFileIds.join(", ")}</span>
-                        </p>
-                        <p className="text-xs text-text-tertiary">
-                          created {item.createdAt} | updated {item.updatedAt}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        data-testid={`delta-inspect-${item.id}`}
-                        disabled={deltaDetailLoading}
-                        onClick={() => void loadDeltaDetail(item.id)}
-                        className={ACTION_BTN}
-                      >
-                        Inspect
-                      </button>
+                      {kindLabel(ref.evidenceKind)} - {referenceLine(ref)}
                     </li>
                   ))}
-                </ol>
-              )}
-            </>
-          )}
-        </div>
+                </ul>
+              </details>
+              <TechnicalDetails>
+                <p>Requirement ID: {req.id}</p>
+                {req.evidenceReferences.map((ref, refIndex) => (
+                  <p key={refIndex}>
+                    Evidence {refIndex + 1}: {ref.evidenceId}, file {ref.sourceFileId},
+                    package {ref.inputPackageArtifactId}
+                  </p>
+                ))}
+              </TechnicalDetails>
+            </li>
+          ))}
+        </ol>
+        {isReviewableStatus(baselineDetail.artifact.status) ? (
+          <div className="sticky bottom-0 border-t border-[var(--border)] bg-bg-primary pt-3">
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Review note (optional)
+              <textarea
+                data-testid="baseline-review-note"
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+                rows={3}
+                className={FIELD}
+              />
+            </label>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                data-testid="baseline-review-approve"
+                disabled={reviewPending}
+                onClick={() => void submitReview("approved")}
+                className={ACTION_BTN}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="baseline-review-reject"
+                disabled={reviewPending}
+                onClick={() => void submitReview("rejected")}
+                className={PLAIN_BTN}
+              >
+                Request changes
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p data-testid="baseline-review-readonly" className="text-xs text-text-tertiary">
+            This baseline is {statusLabel(baselineDetail.artifact.status)}.
+          </p>
+        )}
+      </div>
+    );
+  }
 
-        <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-            Extraction delta detail
-          </h3>
-          {deltaDetailError && (
-            <div data-testid="delta-detail-error" className={`mt-2 ${ERROR_BOX}`}>
-              {deltaDetailError}
+  function renderComplianceDrawerContent(): ReactNode {
+    if (complianceDetail === null) return null;
+    return (
+      <div data-testid="cm-detail-panel" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={complianceDetail.artifact.status} />
+            <span className="text-xs text-text-secondary">
+              Version {complianceDetail.artifact.version}
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-text-primary">
+            {complianceDetail.matrix.rows.length} compliance rows
+          </p>
+          <TechnicalDetails>
+            <p>Artifact ID: {complianceDetail.artifact.id}</p>
+            <p>
+              Requirements baseline artifact ID:{" "}
+              {complianceDetail.matrix.sourceRequirementsBaselineArtifactId}
+            </p>
+            <p>
+              Evidence package artifact ID:{" "}
+              {complianceDetail.matrix.sourceEvidencePackageArtifactId}
+            </p>
+            {complianceDetail.matrix.sourceConfigurationExpansionArtifactId !==
+              undefined && (
+              <p>
+                Configuration expansion artifact ID:{" "}
+                {complianceDetail.matrix.sourceConfigurationExpansionArtifactId}
+              </p>
+            )}
+          </TechnicalDetails>
+        </div>
+        {complianceReviewError && <div className={ERROR_BOX}>{complianceReviewError}</div>}
+        {complianceReviewSuccess && (
+          <p className="text-xs text-text-secondary">{complianceReviewSuccess}</p>
+        )}
+        <ol className="space-y-2">
+          {pendingComplianceRows.map((row) => (
+            <ComplianceMatrixRowView key={row.id} row={row} />
+          ))}
+        </ol>
+        {decidedComplianceRows.length > 0 && (
+          <details data-testid="cm-decided-rows" className={TECHNICAL_DETAILS_CLASS}>
+            <summary className="cursor-pointer text-xs text-text-secondary">
+              Review history ({decidedComplianceRows.length})
+            </summary>
+            <ol className="mt-2 space-y-2">
+              {decidedComplianceRows.map((row) => (
+                <ComplianceMatrixRowView key={row.id} row={row} />
+              ))}
+            </ol>
+          </details>
+        )}
+        {isReviewableStatus(complianceDetail.artifact.status) ? (
+          <div className="sticky bottom-0 border-t border-[var(--border)] bg-bg-primary pt-3">
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Review note (optional)
+              <textarea
+                data-testid="cm-review-note"
+                value={complianceReviewNote}
+                onChange={(e) => setComplianceReviewNote(e.target.value)}
+                disabled={complianceReviewPending}
+                rows={3}
+                className={FIELD}
+              />
+            </label>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                data-testid="cm-review-approve"
+                disabled={complianceReviewPending}
+                onClick={() => void submitComplianceReview("approved")}
+                className={ACTION_BTN}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="cm-review-reject"
+                disabled={complianceReviewPending}
+                onClick={() => void submitComplianceReview("rejected")}
+                className={PLAIN_BTN}
+              >
+                Request changes
+              </button>
             </div>
-          )}
-          {deltaDetailLoading && (
-            <p data-testid="delta-detail-loading" className="mt-1 text-sm text-text-tertiary">
-              Loading extraction delta detail...
-            </p>
-          )}
-          {deltaReviewError && (
-            <div data-testid="delta-review-error" className={`mt-2 ${ERROR_BOX}`}>
-              {deltaReviewError}
+          </div>
+        ) : (
+          <p data-testid="cm-review-readonly" className="text-xs text-text-tertiary">
+            This compliance matrix is {statusLabel(complianceDetail.artifact.status)}.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  function renderDrawerContent(): ReactNode {
+    if (drawer === null) return null;
+    if (drawer.kind === "evidence") return renderEvidenceDrawerContent();
+    if (drawer.kind === "delta") return renderDeltaDrawerContent();
+    if (drawer.kind === "evidence-package") return renderPackageDrawerContent();
+    if (drawer.kind === "requirements") return renderBaselineDrawerContent();
+    return renderComplianceDrawerContent();
+  }
+
+  const drawerTitle =
+    drawer?.kind === "evidence"
+      ? "Evidence detail"
+      : drawer?.kind === "delta"
+        ? "Extraction refinement"
+        : drawer?.kind === "evidence-package"
+          ? "Compiled evidence package"
+          : drawer?.kind === "requirements"
+            ? "Requirements baseline"
+            : "Compliance matrix";
+  const drawerLoading =
+    drawer?.kind === "evidence"
+      ? detailLoading
+      : drawer?.kind === "delta"
+        ? deltaDetailLoading
+        : drawer?.kind === "evidence-package"
+          ? packageDetailLoading
+          : drawer?.kind === "requirements"
+            ? baselineDetailLoading
+            : complianceDetailLoading;
+  const drawerError =
+    drawer?.kind === "evidence"
+      ? detailError
+      : drawer?.kind === "delta"
+        ? deltaDetailError
+        : drawer?.kind === "evidence-package"
+          ? packageDetailError
+          : drawer?.kind === "requirements"
+            ? baselineDetailError
+            : complianceDetailError;
+
+  return (
+    <main className="min-h-screen bg-bg-primary px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-5">
+        <header className={CARD}>
+          <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">
+            RFP operator workflow
+          </p>
+          <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h1
+                data-testid="project-name"
+                className="text-2xl font-semibold text-text-primary"
+              >
+                {data?.project.name ?? boqWorkspace?.project.name ?? "RFP Project"}
+              </h1>
+              {(data?.project.customerName ?? boqWorkspace?.project.customerName) && (
+                <p data-testid="customer-name" className="mt-1 text-sm text-text-secondary">
+                  {data?.project.customerName ?? boqWorkspace?.project.customerName}
+                </p>
+              )}
             </div>
-          )}
-          {deltaReviewSuccess && (
-            <p data-testid="delta-review-success" className="mt-2 text-xs text-text-secondary">
-              {deltaReviewSuccess}
-            </p>
-          )}
-          {!deltaDetail && !deltaDetailLoading && !deltaDetailError && (
-            <p data-testid="delta-detail-empty" className="mt-1 text-xs text-text-tertiary">
-              No extraction delta inspected yet.
-            </p>
-          )}
-          {deltaDetail && (
             <div
-              data-testid="delta-detail-panel"
-              className="mt-2 rounded-card border border-[var(--border)] p-3"
+              data-testid="next-action"
+              className="max-w-md rounded-card border border-accent/40 bg-accent-muted p-3"
             >
-              <p data-testid="delta-detail-meta" className="text-xs text-text-secondary">
-                <span className="font-mono">{deltaDetail.artifact.id}</span> | version{" "}
-                {deltaDetail.artifact.version} | {deltaDetail.artifact.status} | candidates{" "}
-                {deltaDetail.delta.candidateCount} | pending {deltaDetail.delta.pendingCount} |
-                accepted {deltaDetail.delta.acceptedCount} | rejected{" "}
-                {deltaDetail.delta.rejectedCount} | waived {deltaDetail.delta.waivedCount}
+              <p className="text-xs font-semibold uppercase tracking-wide text-accent">
+                Next required action
               </p>
-              {pendingDeltaCandidates.length === 0 ? (
-                <p data-testid="delta-pending-empty" className="mt-2 text-xs text-text-tertiary">
-                  No pending candidates.
-                </p>
-              ) : (
-                <ol data-testid="delta-pending-list" className="mt-2 space-y-2">
-                  {pendingDeltaCandidates.map((candidate) => (
-                    <DeltaCandidateRow key={candidate.id} candidate={candidate}>
-                      {deltaReviewable && deltaDecisions[candidate.id] !== undefined && (
-                        <DeltaPendingCandidateControls
-                          candidate={candidate}
-                          state={deltaDecisions[candidate.id]}
-                          disabled={deltaReviewPending}
-                          onChange={(next) =>
-                            setDeltaDecisions((prev) => ({
-                              ...prev,
-                              [candidate.id]: next,
-                            }))
-                          }
-                        />
-                      )}
-                    </DeltaCandidateRow>
-                  ))}
-                </ol>
-              )}
-              {deltaReviewable ? (
-                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
-                  <p
-                    data-testid="delta-review-selected-count"
-                    className="text-xs text-text-secondary"
-                  >
-                    Selected decisions: {selectedDeltaDecisionCount}
-                  </p>
-                  <button
-                    type="button"
-                    data-testid="delta-review-submit"
-                    disabled={
-                      deltaReviewPending || selectedDeltaDecisionCount === 0
-                    }
-                    onClick={() => void submitDeltaReview()}
-                    className={ACTION_BTN}
-                  >
-                    Record decisions
-                  </button>
-                </div>
-              ) : (
-                pendingDeltaCandidates.length > 0 && (
-                  <p
-                    data-testid="delta-review-readonly"
-                    className="mt-2 text-xs text-text-tertiary"
-                  >
-                    Status {deltaDetail.artifact.status} is not reviewable.
-                  </p>
-                )
-              )}
-              {decidedDeltaCandidates.length > 0 && (
-                <details data-testid="delta-decided" className="mt-2">
-                  <summary className="cursor-pointer text-xs text-text-secondary">
-                    Decided candidates ({decidedDeltaCandidates.length})
-                  </summary>
-                  <ol className="mt-2 space-y-2">
-                    {decidedDeltaCandidates.map((candidate) => (
-                      <DeltaCandidateRow key={candidate.id} candidate={candidate} />
-                    ))}
-                  </ol>
-                </details>
-              )}
+              <p className="mt-1 text-sm font-semibold text-text-primary">
+                {workflow.nextAction.label}
+              </p>
+              <p className="mt-1 text-xs text-text-secondary">
+                {workflow.nextAction.reason}
+              </p>
             </div>
-          )}
-        </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+            <ArtifactStatusCard
+              label="Evidence package"
+              artifact={workflow.evidencePackage.latestApproved}
+              actionLabel="Inspect"
+              onInspect={openPackageDrawer}
+            />
+            <ArtifactStatusCard
+              label="Requirements baseline"
+              artifact={workflow.requirementsBaseline.latestApproved}
+              actionLabel="Inspect"
+              onInspect={openBaselineDrawer}
+            />
+            <ArtifactStatusCard
+              label="Compliance matrix"
+              artifact={workflow.complianceMatrix.latestApproved}
+              actionLabel="Inspect"
+              onInspect={openComplianceDrawer}
+            />
+            <div className={SUBTLE_CARD}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                Stage 5 readiness
+              </p>
+              <p className="mt-1 text-sm text-text-secondary">
+                {workflow.nextAction.id === "stage_5_ready"
+                  ? "Ready after final verification."
+                  : "Not ready yet."}
+              </p>
+            </div>
+          </div>
+        </header>
 
-        <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-            Final evidence packages
-          </h3>
-          {packageListError && (
-            <div data-testid="ep-list-error" className={`mt-2 ${ERROR_BOX}`}>
-              {packageListError}
-            </div>
-          )}
-          {packageListLoading && (
-            <p data-testid="ep-list-loading" className="mt-1 text-sm text-text-tertiary">
-              Loading final evidence packages...
-            </p>
-          )}
-          {packageList && (
-            <>
-              <p data-testid="ep-count" className="mt-1 text-xs text-text-secondary">
-                Final evidence packages: {packageList.artifactCount}
+        <WorkflowStep
+          number={1}
+          title="Intake"
+          state={
+            workflow.inputPackage.latestApproved !== undefined
+              ? "complete"
+              : workflow.inputPackage.current !== undefined
+                ? "current"
+                : "ready"
+          }
+          active={workflow.nextAction.stage === "input_package"}
+          summary="Upload RFP files, assign roles, and approve one input package before evidence preparation."
+        >
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+            <div className={SUBTLE_CARD}>
+              <h3 className="text-sm font-semibold text-text-primary">Upload files</h3>
+              <p className="mt-1 text-xs text-text-secondary">
+                Role and filename matching is enforced by the upload route.
               </p>
-              {packageList.artifacts.length === 0 ? (
-                <p data-testid="ep-empty" className="mt-2 text-sm text-text-tertiary">
-                  No final evidence package artifacts yet.
-                </p>
-              ) : (
-                <ol className="mt-2 space-y-1">
-                  {packageList.artifacts.map((item) => (
-                    <li
-                      key={item.id}
-                      data-testid="ep-row"
-                      className="flex items-start justify-between gap-2 rounded-button border border-[var(--border)] p-2"
+              <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+                <label className="flex flex-col text-xs text-text-tertiary">
+                  File
+                  <input
+                    data-testid="rfp-file-input"
+                    type="file"
+                    onChange={(event) =>
+                      setUploadFile(event.target.files?.item(0) ?? null)
+                    }
+                    className={FIELD}
+                  />
+                </label>
+                <label className="flex flex-col text-xs text-text-tertiary">
+                  Role
+                  <select
+                    data-testid="rfp-file-role"
+                    value={uploadRole}
+                    onChange={(event) =>
+                      setUploadRole(event.target.value as ProjectFileRole)
+                    }
+                    className={FIELD}
+                  >
+                    {FILE_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {FILE_ROLE_LABELS[role]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="rfp-upload-submit"
+                  className={ACTION_BTN}
+                  disabled={uploadPending || uploadFile === null}
+                  onClick={() => void submitUpload()}
+                >
+                  Upload
+                </button>
+                <button
+                  type="button"
+                  data-testid={
+                    hasApprovedInputPackage && !hasCurrentInputPackage
+                      ? "open-input-package-new-version"
+                      : "create-input-package"
+                  }
+                  className={PLAIN_BTN}
+                  disabled={inputPackagePending || hasCurrentInputPackage}
+                  onClick={() => {
+                    if (hasApprovedInputPackage && !hasCurrentInputPackage) {
+                      setInputPackageNewVersionOpen((value) => !value);
+                      return;
+                    }
+                    void submitCreateInputPackage();
+                  }}
+                >
+                  {hasCurrentInputPackage
+                    ? "Review current package"
+                    : hasApprovedInputPackage
+                      ? "Create new version"
+                    : "Create input package"}
+                </button>
+              </div>
+              {hasApprovedInputPackage && !hasCurrentInputPackage && inputPackageNewVersionOpen && (
+                <div
+                  data-testid="input-package-new-version-panel"
+                  className="mt-3 rounded-card border border-[var(--border)] bg-surface p-3"
+                >
+                  <p className="text-sm font-medium text-text-primary">
+                    Create a new input package version
+                  </p>
+                  <p className="mt-1 text-xs text-text-secondary">
+                    Use this only after uploading changed or additional files. Old
+                    decisions remain in Review History.
+                  </p>
+                  <label className="mt-3 flex flex-col text-xs text-text-tertiary">
+                    Reason for new version
+                    <textarea
+                      data-testid="input-package-new-version-reason"
+                      value={inputPackageNewVersionReason}
+                      onChange={(event) =>
+                        setInputPackageNewVersionReason(event.target.value)
+                      }
+                      disabled={inputPackagePending}
+                      rows={3}
+                      className={FIELD}
+                    />
+                  </label>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      data-testid="create-input-package"
+                      className={ACTION_BTN}
+                      disabled={
+                        inputPackagePending ||
+                        inputPackageNewVersionReason.trim() === ""
+                      }
+                      onClick={() => void submitCreateInputPackage()}
                     >
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-text-primary">
-                          <span className="font-mono">{item.id}</span> | version {item.version} |{" "}
-                          {item.status}
-                        </p>
-                        <p className="text-xs text-text-secondary">
-                          package{" "}
-                          <span className="font-mono">
-                            {item.payloadSummary.inputPackageArtifactId}
-                          </span>{" "}
-                          | evidence {item.payloadSummary.evidenceCount} | text{" "}
-                          {item.payloadSummary.textChunkCount} | tables{" "}
-                          {item.payloadSummary.tableEvidenceCount}
-                        </p>
-                        <p className="text-xs text-text-tertiary">
-                          source artifacts:{" "}
-                          <span className="font-mono">{item.sourceArtifactIds.join(", ")}</span> |
-                          source files:{" "}
-                          <span className="font-mono">{item.sourceFileIds.join(", ")}</span>
-                        </p>
-                        <p className="text-xs text-text-tertiary">
-                          created {item.createdAt} | updated {item.updatedAt}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        {item.status === "approved" ? (
-                          <button
-                            type="button"
-                            data-testid={`ep-select-${item.id}`}
-                            aria-pressed={selectedEvidencePackageId === item.id}
-                            onClick={() =>
-                              toggleEvidencePackageSelection(item.id)
-                            }
-                            className={
-                              selectedEvidencePackageId === item.id
-                                ? ACTION_BTN
-                                : PLAIN_BTN
-                            }
-                          >
-                            {selectedEvidencePackageId === item.id
-                              ? "Selected for generation"
-                              : "Select for generation"}
-                          </button>
-                        ) : (
-                          <span
-                            data-testid={`ep-select-readonly-${item.id}`}
-                            className="text-xs text-text-tertiary"
-                          >
-                            Approve to use for generation
-                          </span>
-                        )}
+                      Create new version
+                    </button>
+                    <button
+                      type="button"
+                      className={PLAIN_BTN}
+                      disabled={inputPackagePending}
+                      onClick={() => {
+                        setInputPackageNewVersionOpen(false);
+                        setInputPackageNewVersionReason("");
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+              {uploadError && <div className={`mt-3 ${ERROR_BOX}`}>{uploadError}</div>}
+              {uploadSuccess && (
+                <p className="mt-3 text-xs text-text-secondary">{uploadSuccess}</p>
+              )}
+              {inputPackageError && (
+                <div className={`mt-3 ${ERROR_BOX}`}>{inputPackageError}</div>
+              )}
+              {inputPackageSuccess && (
+                <p className="mt-3 text-xs text-text-secondary">
+                  {inputPackageSuccess}
+                </p>
+              )}
+            </div>
+            <div className={SUBTLE_CARD}>
+              <h3 className="text-sm font-semibold text-text-primary">
+                Package review
+              </h3>
+              <div className="mt-3 grid gap-2">
+                <ArtifactStatusCard
+                  label="Current package"
+                  artifact={workflow.inputPackage.current}
+                />
+                <ArtifactStatusCard
+                  label="Approved package"
+                  artifact={workflow.inputPackage.latestApproved}
+                />
+              </div>
+              {workflow.inputPackage.current !== undefined && (
+                <div className="mt-3 border-t border-[var(--border)] pt-3">
+                  <label className="flex flex-col text-xs text-text-tertiary">
+                    Review note (optional)
+                    <textarea
+                      data-testid="input-package-review-note"
+                      value={inputPackageReviewNote}
+                      onChange={(event) =>
+                        setInputPackageReviewNote(event.target.value)
+                      }
+                      disabled={inputPackageReviewPending}
+                      rows={3}
+                      className={FIELD}
+                    />
+                  </label>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      data-testid="input-package-approve"
+                      className={ACTION_BTN}
+                      disabled={inputPackageReviewPending}
+                      onClick={() => void submitInputPackageReview("approved")}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="input-package-reject"
+                      className={PLAIN_BTN}
+                      disabled={inputPackageReviewPending}
+                      onClick={() => void submitInputPackageReview("rejected")}
+                    >
+                      Request changes
+                    </button>
+                  </div>
+                </div>
+              )}
+              {inputPackageReviewError && (
+                <div className={`mt-3 ${ERROR_BOX}`}>{inputPackageReviewError}</div>
+              )}
+              {inputPackageReviewSuccess && (
+                <p className="mt-3 text-xs text-text-secondary">
+                  {inputPackageReviewSuccess}
+                </p>
+              )}
+              <ReviewHistory track={workflow.inputPackage} />
+            </div>
+          </div>
+        </WorkflowStep>
+
+        <WorkflowStep
+          number={2}
+          title="Evidence Review"
+          state={
+            workflow.evidencePackage.latestApproved !== undefined
+              ? "complete"
+              : workflow.inputPackage.latestApproved === undefined
+                ? "blocked"
+                : workflow.evidencePackage.current !== undefined
+                  ? "current"
+                  : "ready"
+          }
+          active={workflow.nextAction.stage === "evidence"}
+          summary="Prepare and review one compiled evidence package. Raw chunks and IDs stay behind inspection."
+        >
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+            <div className={SUBTLE_CARD}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-text-primary">
+                    Compiled evidence review
+                  </h3>
+                  <p data-testid="evidence-counts" className="mt-1 text-xs text-text-secondary">
+                    {workflow.evidence.evidenceCount} evidence items -{" "}
+                    {workflow.evidence.textChunkCount} text chunks -{" "}
+                    {workflow.evidence.tableEvidenceCount} tables
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  data-testid="prepare-evidence-review"
+                  className={ACTION_BTN}
+                  disabled={
+                    prepareEvidencePending ||
+                    workflow.inputPackage.latestApproved === undefined
+                  }
+                  onClick={() => void submitPrepareEvidenceReview()}
+                >
+                  {workflow.evidencePackage.current !== undefined
+                    ? "Review evidence package"
+                    : "Prepare Evidence Review"}
+                </button>
+              </div>
+              {prepareEvidenceMessage !== null && (
+                <div
+                  data-testid="prepare-evidence-message"
+                  className={`mt-3 rounded-card border p-3 text-sm ${primaryActionMessageClass(prepareEvidenceMessage.status)}`}
+                >
+                  {prepareEvidenceMessage.text}
+                </div>
+              )}
+              {listError && <div className={`mt-3 ${ERROR_BOX}`}>{listError}</div>}
+              {listLoading && (
+                <p className="mt-3 text-sm text-text-tertiary">Loading evidence...</p>
+              )}
+              {data && data.evidence.length > 0 ? (
+                <ol className="mt-3 grid gap-2">
+                  {data.evidence.map((item) => (
+                    <li key={item.id} data-testid="evidence-row" className={SUBTLE_CARD}>
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-text-primary">
+                            {item.contentSummary.sourceFileName}
+                          </p>
+                          <p className={MUTED_TEXT}>
+                            {fileRoleLabel(item.contentSummary.sourceFileRole)}{" "}
+                            - {kindLabel(item.kind)} - {summaryLine(item)}
+                          </p>
+                        </div>
                         <button
                           type="button"
-                          data-testid={`ep-inspect-${item.id}`}
-                          disabled={packageDetailLoading}
-                          onClick={() => void loadPackageDetail(item.id)}
-                          className={ACTION_BTN}
+                          data-testid={`inspect-${item.id}`}
+                          disabled={detailLoading}
+                          onClick={() => openEvidenceDrawer(item.id)}
+                          className={PLAIN_BTN}
                         >
                           Inspect
                         </button>
                       </div>
+                      <TechnicalDetails>
+                        <p>Evidence ID: {item.id}</p>
+                        <p>Source file ID: {item.sourceFileId}</p>
+                        <p>
+                          Input package artifact ID:{" "}
+                          {item.contentSummary.inputPackageArtifactId}
+                        </p>
+                        <p>Extracted: {item.extractedAt}</p>
+                      </TechnicalDetails>
                     </li>
                   ))}
                 </ol>
+              ) : (
+                !listLoading && <EmptyState>No persisted evidence yet.</EmptyState>
               )}
-            </>
-          )}
-        </div>
+            </div>
+            <div className="space-y-3">
+              <ArtifactStatusCard
+                label="Current evidence package"
+                artifact={workflow.evidencePackage.current}
+                actionLabel="Review"
+                onInspect={openPackageDrawer}
+              />
+              <ArtifactStatusCard
+                label="Approved evidence package"
+                artifact={workflow.evidencePackage.latestApproved}
+                actionLabel="Inspect"
+                onInspect={openPackageDrawer}
+              />
+              <ArtifactStatusCard
+                label="Extraction refinement"
+                artifact={workflow.extractionDelta.current}
+                actionLabel="Review"
+                onInspect={openDeltaDrawer}
+              />
+              <ReviewHistory track={workflow.extractionDelta} onInspect={openDeltaDrawer} />
+              <ReviewHistory track={workflow.evidencePackage} onInspect={openPackageDrawer} />
+            </div>
+          </div>
+        </WorkflowStep>
 
-        <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-            Final evidence package detail
-          </h3>
-          {packageDetailError && (
-            <div data-testid="ep-detail-error" className={`mt-2 ${ERROR_BOX}`}>
-              {packageDetailError}
-            </div>
-          )}
-          {packageDetailLoading && (
-            <p data-testid="ep-detail-loading" className="mt-1 text-sm text-text-tertiary">
-              Loading final evidence package detail...
-            </p>
-          )}
-          {packageReviewError && (
-            <div data-testid="ep-review-error" className={`mt-2 ${ERROR_BOX}`}>
-              {packageReviewError}
-            </div>
-          )}
-          {packageReviewSuccess && (
-            <p data-testid="ep-review-success" className="mt-2 text-xs text-text-secondary">
-              {packageReviewSuccess}
-            </p>
-          )}
-          {!packageDetail && !packageDetailLoading && !packageDetailError && (
-            <p data-testid="ep-detail-empty" className="mt-1 text-xs text-text-tertiary">
-              No final evidence package inspected yet.
-            </p>
-          )}
-          {packageDetail && (
-            <div
-              data-testid="ep-detail-panel"
-              className="mt-2 rounded-card border border-[var(--border)] p-3"
-            >
-              <p data-testid="ep-detail-meta" className="text-xs text-text-secondary">
-                <span className="font-mono">{packageDetail.artifact.id}</span> | version{" "}
-                {packageDetail.artifact.version} | {packageDetail.artifact.status} | package{" "}
-                <span className="font-mono">{packageDetail.package.inputPackageArtifactId}</span> |
-                evidence {packageDetail.package.evidenceCount} | text{" "}
-                {packageDetail.package.textChunkCount} | tables{" "}
-                {packageDetail.package.tableEvidenceCount}
-              </p>
-              <ol className="mt-2 space-y-2">
-                {packageDetail.package.evidence.map((evidence, evidenceIndex) => (
-                  <PackageEvidenceView key={evidenceIndex} evidence={evidence} />
-                ))}
-              </ol>
-              <div className="mt-3 border-t border-[var(--border)] pt-3">
-                {packageDetail.artifact.status === "needs_review" ? (
-                  <>
-                    <label className="flex flex-col text-xs text-text-tertiary">
-                      Review note (optional)
-                      <textarea
-                        data-testid="ep-review-note"
-                        value={packageReviewNote}
-                        onChange={(e) => setPackageReviewNote(e.target.value)}
-                        disabled={packageReviewPending}
-                        rows={3}
-                        className={FIELD}
-                      />
-                    </label>
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        type="button"
-                        data-testid="ep-review-approve"
-                        disabled={packageReviewPending}
-                        onClick={() => void submitPackageReview("approved")}
-                        className={ACTION_BTN}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="ep-review-reject"
-                        disabled={packageReviewPending}
-                        onClick={() => void submitPackageReview("rejected")}
-                        className={PLAIN_BTN}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <p data-testid="ep-review-readonly" className="text-xs text-text-tertiary">
-                    Status {packageDetail.artifact.status} is not reviewable.
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section>
-        <h2 className="text-sm font-semibold text-text-primary">Requirements baseline</h2>
-        <div
-          data-testid="generate-control"
-          className="mt-2 flex flex-wrap items-center gap-2 rounded-card border border-[var(--border)] p-3"
+        <WorkflowStep
+          number={3}
+          title="Requirements Baseline"
+          state={
+            workflow.requirementsBaseline.latestApproved !== undefined
+              ? "complete"
+              : workflow.evidencePackage.latestApproved === undefined
+                ? "blocked"
+                : workflow.requirementsBaseline.current !== undefined
+                  ? "current"
+                  : "ready"
+          }
+          active={workflow.nextAction.stage === "requirements"}
+          summary="Generate from the approved evidence package automatically, then review readable requirement cards."
         >
-          <p
-            data-testid="generate-selected-package"
-            className="min-w-0 flex-1 text-xs text-text-secondary"
-          >
-            {selectedEvidencePackageId === null
-              ? "Selected evidence package: none (select an approved final evidence package above)"
-              : `Selected evidence package: ${selectedEvidencePackageId}`}
-          </p>
-          <button
-            type="button"
-            data-testid="generate-baseline"
-            disabled={selectedEvidencePackageId === null || generatePending}
-            onClick={() => void submitGenerate()}
-            className={ACTION_BTN}
-          >
-            Generate draft
-          </button>
-        </div>
-        {generateError && (
-          <div data-testid="generate-error" className={`mt-2 ${ERROR_BOX}`}>
-            {generateError}
-          </div>
-        )}
-        {generateSuccess && (
-          <p data-testid="generate-success" className="mt-2 text-xs text-text-secondary">
-            {generateSuccess}
-          </p>
-        )}
-        {baselineError && (
-          <div data-testid="baseline-error" className={`mt-2 ${ERROR_BOX}`}>
-            {baselineError}
-          </div>
-        )}
-        {baselineLoading && (
-          <p data-testid="baseline-loading" className="mt-1 text-sm text-text-tertiary">
-            Loading requirements baseline...
-          </p>
-        )}
-        {baselineList && (
-          <>
-            <p data-testid="baseline-count" className="mt-1 text-xs text-text-secondary">
-              Baseline artifacts: {baselineList.artifactCount}
-            </p>
-            {baselineList.artifacts.length === 0 ? (
-              <p data-testid="baseline-empty" className="mt-2 text-sm text-text-tertiary">
-                No requirements baseline artifacts yet.
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p data-testid="generate-selected-package" className={MUTED_TEXT}>
+                Upstream evidence:{" "}
+                {autoEvidencePackageId === null
+                  ? "waiting for approved evidence package"
+                  : "latest approved evidence package"}
               </p>
-            ) : (
-              <ol className="mt-2 space-y-1">
-                {baselineList.artifacts.map((item) => (
-                  <li
-                    key={item.id}
-                    data-testid="baseline-row"
-                    className="flex items-start justify-between gap-2 rounded-button border border-[var(--border)] p-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-text-primary">
-                        <span className="font-mono">{item.id}</span> | version {item.version} |{" "}
-                        {item.status}
-                      </p>
-                      <p className="text-xs text-text-secondary">
-                        requirements: {item.payloadSummary.requirementCount} | evidence refs:{" "}
-                        {item.payloadSummary.evidenceCount}
-                      </p>
-                      <p className="text-xs text-text-secondary">
-                        requirement ids:{" "}
-                        <span className="font-mono">
-                          {item.payloadSummary.requirementIds.join(", ")}
+            </div>
+            <button
+              type="button"
+              data-testid="generate-baseline"
+              disabled={
+                generatePending ||
+                workflow.requirementsBaseline.current !== undefined ||
+                autoEvidencePackageId === null
+              }
+              onClick={() => void submitGenerate()}
+              className={ACTION_BTN}
+            >
+              {workflow.requirementsBaseline.current !== undefined
+                ? "Review current baseline"
+                : "Generate requirements baseline"}
+            </button>
+          </div>
+          {generateError && <div className={`mt-3 ${ERROR_BOX}`}>{generateError}</div>}
+          {generateSuccess && (
+            <p className="mt-3 text-xs text-text-secondary">{generateSuccess}</p>
+          )}
+          {baselineError && <div className={`mt-3 ${ERROR_BOX}`}>{baselineError}</div>}
+          {baselineLoading && (
+            <p className="mt-3 text-sm text-text-tertiary">
+              Loading requirements baseline...
+            </p>
+          )}
+          {baselineList && baselineList.artifacts.length > 0 ? (
+            <ol className="mt-3 grid gap-2 md:grid-cols-2">
+              {baselineList.artifacts.map((item) => (
+                <li key={item.id} data-testid="baseline-row" className={SUBTLE_CARD}>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusBadge status={item.status} />
+                        <span className="text-xs text-text-secondary">
+                          Version {item.version}
                         </span>
+                      </div>
+                      <p className="mt-2 text-sm text-text-primary">
+                        {item.payloadSummary.requirementCount} requirements
                       </p>
-                      <p className="text-xs text-text-tertiary">
-                        source artifacts:{" "}
-                        <span className="font-mono">{item.sourceArtifactIds.join(", ")}</span> |
-                        source files:{" "}
-                        <span className="font-mono">{item.sourceFileIds.join(", ")}</span>
-                      </p>
-                      <p className="text-xs text-text-tertiary">
-                        created {item.createdAt} | updated {item.updatedAt}
+                      <p className={MUTED_TEXT}>
+                        {item.payloadSummary.evidenceCount} evidence references
                       </p>
                     </div>
                     <button
                       type="button"
                       data-testid={`baseline-inspect-${item.id}`}
                       disabled={baselineDetailLoading}
-                      onClick={() => void loadBaselineDetail(item.id)}
-                      className={ACTION_BTN}
+                      onClick={() => openBaselineDrawer(item.id)}
+                      className={PLAIN_BTN}
                     >
                       Inspect
                     </button>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-sm font-semibold text-text-primary">
-          Requirements baseline detail
-        </h2>
-        {baselineDetailError && (
-          <div data-testid="baseline-detail-error" className={`mt-2 ${ERROR_BOX}`}>
-            {baselineDetailError}
-          </div>
-        )}
-        {baselineDetailLoading && (
-          <p data-testid="baseline-detail-loading" className="mt-1 text-sm text-text-tertiary">
-            Loading requirements baseline detail...
-          </p>
-        )}
-        {!baselineDetail && !baselineDetailLoading && !baselineDetailError && (
-          <p data-testid="baseline-detail-empty" className="mt-1 text-xs text-text-tertiary">
-            Click Inspect on a baseline artifact to view its reviewable requirements.
-          </p>
-        )}
-        {baselineDetail && (
-          <div
-            data-testid="baseline-detail-panel"
-            className="mt-2 rounded-card border border-[var(--border)] p-3"
-          >
-            <p data-testid="baseline-detail-meta" className="text-xs text-text-secondary">
-              <span className="font-mono">{baselineDetail.artifact.id}</span> | version{" "}
-              {baselineDetail.artifact.version} | {baselineDetail.artifact.status} | created by{" "}
-              {baselineDetail.baseline.createdBy} | created {baselineDetail.baseline.createdAt} |
-              requirements: {baselineDetail.baseline.requirementCount} | evidence refs:{" "}
-              {baselineDetail.baseline.evidenceCount}
-            </p>
-            <ol className="mt-2 space-y-2">
-              {baselineDetail.baseline.requirements.map((req) => (
-                <li
-                  key={req.id}
-                  data-testid="baseline-detail-requirement"
-                  className="rounded-button border border-[var(--border)] p-2"
-                >
-                  <p className="text-xs font-medium text-text-primary">
-                    <span className="font-mono">{req.id}</span> | {req.category} | {req.priority}
-                    {req.title !== undefined ? ` | ${req.title}` : ""}
-                  </p>
-                  <p
-                    data-testid="baseline-detail-requirement-text"
-                    className="mt-1 whitespace-pre-wrap text-xs text-text-primary"
-                  >
-                    {req.text}
-                  </p>
-                  {req.notes !== undefined && (
-                    <p className="mt-1 text-xs text-text-secondary">Notes: {req.notes}</p>
-                  )}
-                  <ul className="mt-1 space-y-0.5">
-                    {req.evidenceReferences.map((ref, refIndex) => (
-                      <li
-                        key={refIndex}
-                        data-testid="baseline-detail-reference"
-                        className="text-xs text-text-tertiary"
-                      >
-                        <span className="font-mono">{ref.evidenceId}</span> |{" "}
-                        {kindLabel(ref.evidenceKind)} | {referenceLine(ref)} | file{" "}
-                        <span className="font-mono">{ref.sourceFileId}</span> | package{" "}
-                        <span className="font-mono">{ref.inputPackageArtifactId}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  </div>
+                  <TechnicalDetails>
+                    <p>Artifact ID: {item.id}</p>
+                    <p>Source artifacts: {idList(item.sourceArtifactIds)}</p>
+                    <p>Source files: {idList(item.sourceFileIds)}</p>
+                    <p>Updated: {item.updatedAt}</p>
+                  </TechnicalDetails>
                 </li>
               ))}
             </ol>
-            <div className="mt-3 border-t border-[var(--border)] pt-3">
-              {reviewError && (
-                <div data-testid="baseline-review-error" className={`mb-2 ${ERROR_BOX}`}>
-                  {reviewError}
-                </div>
-              )}
-              {reviewSuccess && (
-                <p
-                  data-testid="baseline-review-success"
-                  className="mb-2 text-xs text-text-secondary"
-                >
-                  {reviewSuccess}
-                </p>
-              )}
-              {isReviewableStatus(baselineDetail.artifact.status) ? (
-                <>
-                  <label className="flex flex-col text-xs text-text-tertiary">
-                    Review note (optional)
-                    <textarea
-                      data-testid="baseline-review-note"
-                      value={reviewNote}
-                      onChange={(e) => setReviewNote(e.target.value)}
-                      rows={3}
-                      className={FIELD}
-                    />
-                  </label>
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      type="button"
-                      data-testid="baseline-review-approve"
-                      disabled={reviewPending}
-                      onClick={() => void submitReview("approved")}
-                      className={ACTION_BTN}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="baseline-review-reject"
-                      disabled={reviewPending}
-                      onClick={() => void submitReview("rejected")}
-                      className={PLAIN_BTN}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <p
-                  data-testid="baseline-review-readonly"
-                  className="text-xs text-text-tertiary"
-                >
-                  Status {baselineDetail.artifact.status} is not reviewable.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-      </section>
+          ) : (
+            !baselineLoading && <EmptyState>No requirements baseline yet.</EmptyState>
+          )}
+          <ReviewHistory track={workflow.requirementsBaseline} onInspect={openBaselineDrawer} />
+        </WorkflowStep>
 
-      <section>
-        <h2 className="text-sm font-semibold text-text-primary">Compliance matrix</h2>
-        {complianceError && (
-          <div data-testid="cm-error" className={`mt-2 ${ERROR_BOX}`}>
-            {complianceError}
-          </div>
-        )}
-        {complianceLoading && (
-          <p data-testid="cm-loading" className="mt-1 text-sm text-text-tertiary">
-            Loading compliance matrices...
-          </p>
-        )}
-        {complianceList && (
-          <>
-            <p data-testid="cm-count" className="mt-1 text-xs text-text-secondary">
-              Compliance matrix artifacts: {complianceList.artifactCount}
+        <WorkflowStep
+          number={4}
+          title="Compliance Matrix"
+          state={
+            workflow.complianceMatrix.latestApproved !== undefined
+              ? "complete"
+              : workflow.requirementsBaseline.latestApproved === undefined
+                ? "blocked"
+                : workflow.complianceMatrix.current !== undefined
+                  ? "current"
+                  : "ready"
+          }
+          active={workflow.nextAction.stage === "compliance"}
+          summary="Generate from the approved requirements baseline and evidence package without manual artifact selection."
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className={MUTED_TEXT}>
+              Upstream baseline and evidence:{" "}
+              {complianceInputs.ready ? "latest approved artifacts" : "waiting for approvals"}
             </p>
-            {complianceList.artifacts.length === 0 ? (
-              <p data-testid="cm-empty" className="mt-2 text-sm text-text-tertiary">
-                No compliance matrix artifacts yet.
-              </p>
-            ) : (
-              <ol className="mt-2 space-y-1">
-                {complianceList.artifacts.map((item) => (
-                  <li
-                    key={item.id}
-                    data-testid="cm-row"
-                    className="flex items-start justify-between gap-2 rounded-button border border-[var(--border)] p-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-text-primary">
-                        <span className="font-mono">{item.id}</span> | version {item.version} |{" "}
-                        {item.status}
-                      </p>
-                      <p
-                        data-testid="cm-row-counts"
-                        className="text-xs text-text-secondary"
-                      >
-                        rows: {item.payloadSummary.rowCount} |{" "}
-                        {complianceStatusCounts(item)}
-                      </p>
-                      <p className="text-xs text-text-secondary">
-                        requirement ids:{" "}
-                        <span className="font-mono">
-                          {idList(item.payloadSummary.requirementIds)}
+            <button
+              type="button"
+              data-testid="generate-compliance"
+              disabled={
+                complianceGeneratePending ||
+                workflow.complianceMatrix.current !== undefined ||
+                !complianceInputs.ready
+              }
+              onClick={() => void submitGenerateCompliance()}
+              className={ACTION_BTN}
+            >
+              {workflow.complianceMatrix.current !== undefined
+                ? "Review current matrix"
+                : "Generate compliance matrix"}
+            </button>
+          </div>
+          {complianceGenerateError && (
+            <div className={`mt-3 ${ERROR_BOX}`}>{complianceGenerateError}</div>
+          )}
+          {complianceGenerateSuccess && (
+            <p className="mt-3 text-xs text-text-secondary">
+              {complianceGenerateSuccess}
+            </p>
+          )}
+          {complianceError && <div className={`mt-3 ${ERROR_BOX}`}>{complianceError}</div>}
+          {complianceLoading && (
+            <p className="mt-3 text-sm text-text-tertiary">
+              Loading compliance matrices...
+            </p>
+          )}
+          {complianceList && complianceList.artifacts.length > 0 ? (
+            <ol className="mt-3 grid gap-2 md:grid-cols-2">
+              {complianceList.artifacts.map((item) => (
+                <li key={item.id} data-testid="cm-row" className={SUBTLE_CARD}>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusBadge status={item.status} />
+                        <span className="text-xs text-text-secondary">
+                          Version {item.version}
                         </span>
+                      </div>
+                      <p data-testid="cm-row-counts" className="mt-2 text-sm text-text-primary">
+                        {item.payloadSummary.rowCount} rows
                       </p>
-                      <p className="text-xs text-text-tertiary">
-                        baseline{" "}
-                        <span className="font-mono">
-                          {item.payloadSummary.sourceRequirementsBaselineArtifactId}
-                        </span>{" "}
-                        | evidence package{" "}
-                        <span className="font-mono">
-                          {item.payloadSummary.sourceEvidencePackageArtifactId}
-                        </span>
-                        {item.payloadSummary.sourceConfigurationExpansionArtifactId !== undefined
-                          ? ` | configuration ${item.payloadSummary.sourceConfigurationExpansionArtifactId}`
-                          : ""}
-                      </p>
-                      <p className="text-xs text-text-tertiary">
-                        source files:{" "}
-                        <span className="font-mono">
-                          {idList(item.payloadSummary.sourceFileIds)}
-                        </span>{" "}
-                        | source artifacts:{" "}
-                        <span className="font-mono">
-                          {idList(item.payloadSummary.sourceArtifactIds)}
-                        </span>
-                      </p>
-                      <p className="text-xs text-text-tertiary">
-                        created {item.createdAt} | updated {item.updatedAt}
-                      </p>
+                      <p className={MUTED_TEXT}>{complianceStatusCounts(item)}</p>
                     </div>
                     <button
                       type="button"
                       data-testid={`cm-inspect-${item.id}`}
                       disabled={complianceDetailLoading}
-                      onClick={() => void loadComplianceDetail(item.id)}
-                      className={ACTION_BTN}
+                      onClick={() => openComplianceDrawer(item.id)}
+                      className={PLAIN_BTN}
                     >
                       Inspect
                     </button>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-sm font-semibold text-text-primary">
-          Compliance matrix detail
-        </h2>
-        {complianceDetailError && (
-          <div data-testid="cm-detail-error" className={`mt-2 ${ERROR_BOX}`}>
-            {complianceDetailError}
-          </div>
-        )}
-        {complianceDetailLoading && (
-          <p data-testid="cm-detail-loading" className="mt-1 text-sm text-text-tertiary">
-            Loading compliance matrix detail...
-          </p>
-        )}
-        {!complianceDetail &&
-          !complianceDetailLoading &&
-          !complianceDetailError && (
-            <p data-testid="cm-detail-empty" className="mt-1 text-xs text-text-tertiary">
-              Click Inspect on a compliance matrix artifact to review rows.
-            </p>
-          )}
-        {complianceReviewError && (
-          <div data-testid="cm-review-error" className={`mt-2 ${ERROR_BOX}`}>
-            {complianceReviewError}
-          </div>
-        )}
-        {complianceReviewSuccess && (
-          <p data-testid="cm-review-success" className="mt-2 text-xs text-text-secondary">
-            {complianceReviewSuccess}
-          </p>
-        )}
-        {complianceDetail && (
-          <div
-            data-testid="cm-detail-panel"
-            className="mt-2 rounded-card border border-[var(--border)] p-3"
-          >
-            <p data-testid="cm-detail-meta" className="text-xs text-text-secondary">
-              <span className="font-mono">{complianceDetail.artifact.id}</span> | version{" "}
-              {complianceDetail.artifact.version} | {complianceDetail.artifact.status} |
-              baseline{" "}
-              <span className="font-mono">
-                {complianceDetail.matrix.sourceRequirementsBaselineArtifactId}
-              </span>{" "}
-              | evidence package{" "}
-              <span className="font-mono">
-                {complianceDetail.matrix.sourceEvidencePackageArtifactId}
-              </span>
-              {complianceDetail.matrix.sourceConfigurationExpansionArtifactId !== undefined
-                ? ` | configuration ${complianceDetail.matrix.sourceConfigurationExpansionArtifactId}`
-                : ""}{" "}
-              | rows {complianceDetail.matrix.rows.length}
-            </p>
-            <ol className="mt-2 space-y-2">
-              {pendingComplianceRows.map((row) => (
-                <ComplianceMatrixRowView key={row.id} row={row} />
+                  </div>
+                  <TechnicalDetails>
+                    <p>Artifact ID: {item.id}</p>
+                    <p>
+                      Requirements baseline artifact ID:{" "}
+                      {item.payloadSummary.sourceRequirementsBaselineArtifactId}
+                    </p>
+                    <p>
+                      Evidence package artifact ID:{" "}
+                      {item.payloadSummary.sourceEvidencePackageArtifactId}
+                    </p>
+                    <p>Source artifacts: {idList(item.payloadSummary.sourceArtifactIds)}</p>
+                    <p>Source files: {idList(item.payloadSummary.sourceFileIds)}</p>
+                  </TechnicalDetails>
+                </li>
               ))}
             </ol>
-            {decidedComplianceRows.length > 0 && (
-              <details data-testid="cm-decided-rows" className="mt-2">
-                <summary className="cursor-pointer text-xs text-text-secondary">
-                  Decided rows ({decidedComplianceRows.length})
-                </summary>
-                <ol className="mt-2 space-y-2">
-                  {decidedComplianceRows.map((row) => (
-                    <ComplianceMatrixRowView key={row.id} row={row} />
-                  ))}
-                </ol>
-              </details>
-            )}
-            <div className="mt-3 border-t border-[var(--border)] pt-3">
-              {isReviewableStatus(complianceDetail.artifact.status) ? (
-                <>
-                  <label className="flex flex-col text-xs text-text-tertiary">
-                    Review note (optional)
-                    <textarea
-                      data-testid="cm-review-note"
-                      value={complianceReviewNote}
-                      onChange={(e) => setComplianceReviewNote(e.target.value)}
-                      disabled={complianceReviewPending}
-                      rows={3}
-                      className={FIELD}
-                    />
-                  </label>
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      type="button"
-                      data-testid="cm-review-approve"
-                      disabled={complianceReviewPending}
-                      onClick={() => void submitComplianceReview("approved")}
-                      className={ACTION_BTN}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="cm-review-reject"
-                      disabled={complianceReviewPending}
-                      onClick={() => void submitComplianceReview("rejected")}
-                      className={PLAIN_BTN}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <p data-testid="cm-review-readonly" className="text-xs text-text-tertiary">
-                  Status {complianceDetail.artifact.status} is not reviewable.
-                </p>
-              )}
+          ) : (
+            !complianceLoading && <EmptyState>No compliance matrix yet.</EmptyState>
+          )}
+          <ReviewHistory track={workflow.complianceMatrix} onInspect={openComplianceDrawer} />
+        </WorkflowStep>
+
+        <section className={CARD}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-text-primary">
+                BoQ / Configuration Readiness
+              </h2>
+              <p className="mt-1 text-sm text-text-secondary">
+                Quick BoM remains the pricing and configuration path.
+              </p>
             </div>
+            {approvedExportArtifact !== null && (
+              <a
+                data-testid="rfp-boq-export-download"
+                href={`/api/projects/${id}/rfp/artifacts/${approvedExportArtifact.id}/export-package/download`}
+                className={ACTION_BTN}
+              >
+                Download approved export
+              </a>
+            )}
           </div>
-        )}
-      </section>
+          {boqWorkspaceError && (
+            <div data-testid="rfp-boq-error" className={`mt-3 ${ERROR_BOX}`}>
+              {boqWorkspaceError}
+            </div>
+          )}
+          {boqWorkspaceLoading && (
+            <p className="mt-3 text-sm text-text-tertiary">
+              Loading RFP BoQ readiness...
+            </p>
+          )}
+          {boqWorkspace !== null && (
+            <div data-testid="rfp-boq-readiness" className="mt-3 grid gap-2 md:grid-cols-3">
+              <p data-testid="rfp-boq-status" className={MUTED_TEXT}>
+                Status: <span className="text-text-primary">{boqWorkspace.readiness.status}</span>
+              </p>
+              <p data-testid="rfp-boq-file-count" className={MUTED_TEXT}>
+                BoQ files: {boqWorkspace.readiness.boqFileCount}
+              </p>
+              <p data-testid="rfp-boq-next-step" className={MUTED_TEXT}>
+                Next Quick BoM step:{" "}
+                {boqWorkspace.readiness.quickBomReadiness.nextStepId ?? "none"}
+              </p>
+            </div>
+          )}
+        </section>
+      </div>
+
+      {drawer !== null && (
+        <ReviewDrawer
+          title={drawerTitle}
+          subtitle={`Item ${drawerIndex >= 0 ? drawerIndex + 1 : 1} of ${drawerIdList.length || 1}`}
+          loading={drawerLoading}
+          error={drawerError}
+          onClose={() => setDrawer(null)}
+          onPrevious={() => moveDrawer(-1)}
+          onNext={() => moveDrawer(1)}
+          previousDisabled={drawerIndex <= 0}
+          nextDisabled={drawerIndex < 0 || drawerIndex >= drawerIdList.length - 1}
+        >
+          {renderDrawerContent()}
+        </ReviewDrawer>
+      )}
     </main>
   );
 }

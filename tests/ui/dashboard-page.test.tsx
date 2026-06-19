@@ -93,7 +93,7 @@ describe("DashboardPage", () => {
     expect(
       screen
         .getAllByRole("link", { name: "Beta RFP" })
-        .some((link) => link.getAttribute("href") === "/projects/proj-rfp")
+        .some((link) => link.getAttribute("href") === "/projects/proj-rfp/rfp")
     ).toBe(true);
     expect(calls).toEqual(["/api/projects"]);
     expect(calls.some((url) => url.includes("/api/estimates"))).toBe(false);

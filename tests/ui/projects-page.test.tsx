@@ -92,7 +92,7 @@ describe("ProjectsPage", () => {
     );
     expect(screen.getByRole("link", { name: "Beta RFP" })).toHaveAttribute(
       "href",
-      "/projects/proj-rfp"
+      "/projects/proj-rfp/rfp"
     );
     expect(calls).toEqual(["/api/projects"]);
     expect(calls.some((url) => url.includes("/api/estimates"))).toBe(false);
