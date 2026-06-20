@@ -1320,12 +1320,51 @@ function citationLine(
 }
 
 /**
+ * True for a generic extraction-position passage label such as "Passage 1 of 4"
+ * or "Text passage 2 of 13". These read as raw chunk positions, so they are
+ * dropped from downstream requirement/compliance reference labels. A human
+ * section/clause/topic passage label (e.g. "Section 1.1") is NOT generic.
+ */
+function isGenericPassageLabel(label: string): boolean {
+  return /^(?:text\s+)?passage\s+\d+\s+of\s+\d+$/i.test(label.trim());
+}
+
+/**
+ * Human label for one finding citation in a DOWNSTREAM requirement/compliance
+ * reference. Same human labels as {@link citationLine}, but a generic
+ * extraction-position passage label ("Passage N of M") is dropped because it is
+ * too close to a raw chunk position for the primary workflow. Human source
+ * labels - document, page, sheet, table, and section/clause-style passage
+ * labels - are kept. Returns "" when nothing human-readable remains.
+ */
+function downstreamCitationLine(
+  citation: CompiledEvidenceFinding["citations"][number]
+): string {
+  const passageLabel =
+    citation.passageLabel !== undefined &&
+    !isGenericPassageLabel(citation.passageLabel)
+      ? citation.passageLabel
+      : undefined;
+  return [
+    citation.documentLabel,
+    passageLabel,
+    citation.pageLabel,
+    citation.sheetLabel,
+    citation.tableLabel,
+  ]
+    .filter((part): part is string => part !== undefined && part !== "")
+    .join(" | ");
+}
+
+/**
  * Human reference label for one compiled finding, reused as the primary label
  * for a requirement/compliance evidence reference: the source document and its
  * human role, then the finding's topic/title/clean-summary descriptor, then its
  * compiled citation labels. Carries only human labels - never a raw
- * evidence/file/package/table id, the word "chunk", a char count, or the
- * deterministic "Text passage N of M" extraction locator.
+ * evidence/file/package/table id, the word "chunk", a char count, or a generic
+ * extraction-position passage locator ("Passage N of M" / "Text passage N of
+ * M"). Human page/sheet/table and section/clause-style passage citation labels
+ * are kept.
  */
 function compiledFindingReferenceLabel(
   finding: CompiledEvidenceFinding
@@ -1339,7 +1378,7 @@ function compiledFindingReferenceLabel(
     finding.cleanSummary;
   if (descriptor !== undefined && descriptor !== "") segments.push(descriptor);
   const citations = finding.citations
-    .map((citation) => citationLine(citation))
+    .map((citation) => downstreamCitationLine(citation))
     .filter((line) => line !== "");
   if (citations.length > 0) segments.push(citations.join("; "));
   return segments.join(" - ");
@@ -2243,6 +2282,23 @@ export default function ProjectRfpEvidencePage() {
     [id]
   );
 
+  // Keep the latest approved evidence package's compiled review loaded for the
+  // requirement/compliance reference labels whenever one of those drawers is
+  // open, WITHOUT opening the evidence-package drawer. This also covers the
+  // race where a drawer opens before the evidence-package list has finished
+  // loading: once the latest approved package id becomes known the labels load.
+  // A no-op when none is approved yet (references keep their document-locator
+  // fallback) or when that approved package is already loaded.
+  useEffect(() => {
+    if (drawer?.kind !== "requirements" && drawer?.kind !== "compliance") {
+      return;
+    }
+    const approvedId = latestApprovedArtifactId(packageList?.artifacts ?? []);
+    if (approvedId === null) return;
+    if (referenceCompiledReview?.artifactId === approvedId) return;
+    void loadReferenceEvidencePackage(approvedId);
+  }, [drawer, packageList, referenceCompiledReview, loadReferenceEvidencePackage]);
+
   // The page's generation write: ask the server to draft ONE reviewable
   // needs_review requirements_baseline artifact from the latest approved
   // final evidence_package. The body carries only that package artifact id -
@@ -2918,27 +2974,17 @@ export default function ProjectRfpEvidencePage() {
     void loadPackageDetail(artifactId);
   }
 
-  // Ensure the latest approved evidence package's compiled review is loaded for
-  // requirement/compliance reference labels, WITHOUT opening its drawer. A
-  // no-op when none is approved yet (references keep their fallback) or when it
-  // is already loaded.
-  function ensureReferenceEvidencePackage(): void {
-    const approvedId = latestApprovedArtifactId(packageList?.artifacts ?? []);
-    if (approvedId === null) return;
-    if (referenceCompiledReview?.artifactId === approvedId) return;
-    void loadReferenceEvidencePackage(approvedId);
-  }
-
+  // The latest approved evidence package's compiled review is loaded lazily for
+  // the reference labels by the effect above, so opening a requirements or
+  // compliance drawer only sets the drawer and loads its own detail.
   function openBaselineDrawer(artifactId: string): void {
     setDrawer({ kind: "requirements", activeId: artifactId });
     void loadBaselineDetail(artifactId);
-    ensureReferenceEvidencePackage();
   }
 
   function openComplianceDrawer(artifactId: string): void {
     setDrawer({ kind: "compliance", activeId: artifactId });
     void loadComplianceDetail(artifactId);
-    ensureReferenceEvidencePackage();
   }
 
   function drawerIds(): string[] {

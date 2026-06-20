@@ -741,9 +741,10 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     const reference = screen.getByTestId("baseline-detail-reference");
     expect(reference).toHaveTextContent("rfp-main.pdf");
     expect(reference).toHaveTextContent("Main RFP");
-    // The deterministic extraction-position label must not return as a primary
-    // requirement reference.
+    // Neither generic extraction-position passage locator may return as a
+    // primary requirement reference; only the human source labels survive.
     expect(reference).not.toHaveTextContent("Text passage 1 of 4");
+    expect(reference).not.toHaveTextContent("Passage 1 of 4");
 
     const card = screen.getByTestId("baseline-detail-requirement");
     const primary = card.cloneNode(true) as HTMLElement;
@@ -752,6 +753,8 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
       .forEach((node) => node.remove());
     const primaryText = primary.textContent ?? "";
     expect(primaryText).not.toMatch(/chunk/i);
+    expect(primaryText).not.toContain("Text passage 1 of 4");
+    expect(primaryText).not.toContain("Passage 1 of 4");
     expect(primaryText).not.toContain("ev-text-1");
     expect(primaryText).not.toContain("file-rfp-1");
     expect(primaryText).not.toContain(INPUT_PACKAGE_ARTIFACT_ID);
@@ -799,9 +802,10 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(primaryText).toContain("rfp-main.pdf");
     expect(primaryText).toContain("Main RFP");
     expect(primaryText).toContain(COMPILED_SUMMARY_CANARY);
-    // The deterministic extraction-position label must not return as a primary
-    // compliance reference.
+    // Neither generic extraction-position passage locator may return as a
+    // primary compliance reference; only the human source labels survive.
     expect(primaryText).not.toContain("Text passage 1 of 4");
+    expect(primaryText).not.toContain("Passage 1 of 4");
     expect(primaryText).not.toContain("CM-001");
     expect(primaryText).not.toContain("RFP-REQ-001");
     expect(primaryText).not.toContain("ev-text-1");
@@ -818,6 +822,78 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(audit).toHaveTextContent("file-rfp-1");
     expect(audit).toHaveTextContent(INPUT_PACKAGE_ARTIFACT_ID);
     expect(audit.textContent ?? "").toMatch(/chunk/i);
+  });
+
+  it("keeps human source citation labels (table/sheet) on a downstream requirement reference", async () => {
+    // A requirement whose evidence is a table: its compiled finding carries
+    // rich human citation labels (Table N, Sheet: ...). Those must survive in
+    // the primary reference even though generic passage locators are dropped.
+    const tableBaselineDetail = {
+      project: projectContext(),
+      artifact: artifact(BASELINE_ARTIFACT_ID, "requirements_baseline", "needs_review", 1, [
+        EVIDENCE_PACKAGE_APPROVED_ID,
+      ]),
+      baseline: {
+        payloadKind: "rfp_requirements_baseline",
+        sourceEvidencePackageArtifactId: EVIDENCE_PACKAGE_APPROVED_ID,
+        createdBy: "user-1",
+        createdAt: "2026-06-04T09:00:00.000Z",
+        requirementCount: 1,
+        evidenceCount: 1,
+        requirements: [
+          {
+            id: "RFP-REQ-009",
+            title: "Scope table",
+            category: "technical",
+            priority: "high",
+            text: "Supplier shall deliver the scope-of-work line items.",
+            evidenceReferences: [
+              {
+                evidenceId: "ev-table-1",
+                evidenceKind: "rfp_document_table",
+                sourceFileId: "file-rfp-2",
+                inputPackageArtifactId: INPUT_PACKAGE_ARTIFACT_ID,
+                tableId: "tbl-1",
+                sheetName: "Scope",
+                rowCount: 12,
+                columnCount: 5,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    stubFetch((url) => {
+      if (url === BASELINE_DETAIL_URL) return jsonResponse(tableBaselineDetail);
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === `${EVIDENCE_PACKAGE_LIST_URL}/${EVIDENCE_PACKAGE_APPROVED_ID}`) {
+        return jsonResponse(evidencePackageDetailResponse(EVIDENCE_PACKAGE_APPROVED_ID, "approved"));
+      }
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("baseline-card-review");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("baseline-card-review"));
+    });
+    await screen.findByTestId("review-drawer");
+    await screen.findByTestId("baseline-detail-reference");
+
+    // The compiled table finding's rich human citation labels survive.
+    await waitFor(() => {
+      expect(screen.getByTestId("baseline-detail-reference")).toHaveTextContent("Table 1");
+    });
+    const reference = screen.getByTestId("baseline-detail-reference");
+    expect(reference).toHaveTextContent("Sheet: Scope");
+    expect(reference).toHaveTextContent("rfp-scope.xlsx");
+    // The generic extraction-position passage locator stays out of the primary.
+    expect(reference).not.toHaveTextContent("Passage 1 of 4");
   });
 
   it("auto-generates requirements from the latest approved evidence package without a primary selection", async () => {
