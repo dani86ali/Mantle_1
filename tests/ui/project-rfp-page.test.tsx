@@ -385,7 +385,17 @@ function deltaDetailResponse(): Record<string, unknown> {
           confidence: 0.75,
           rationale: "RFP mentions SLA in section 4.",
           reviewStatus: "pending_review",
-          evidenceReferences: [],
+          evidenceReferences: [
+            {
+              evidenceId: "ev-text-1",
+              evidenceKind: "rfp_document_text_chunk",
+              sourceFileId: "file-rfp-1",
+              inputPackageArtifactId: INPUT_PACKAGE_ARTIFACT_ID,
+              chunkIndex: 0,
+              chunkCount: 4,
+              charCount: 1810,
+            },
+          ],
           proposedEvidence: {
             evidenceKind: "rfp_document_text_chunk",
             sourceFileName: "rfp-main.pdf",
@@ -1462,6 +1472,67 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(decided.tagName).toBe("DETAILS");
     expect(decided).toHaveTextContent("Review history (1)");
     expect(decided.hasAttribute("open")).toBe(false);
+  });
+
+  it("renders delta candidates human-first with raw machine metadata only under collapsed technical/audit details", async () => {
+    stubFetch((url) => {
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse("rejected"));
+      if (url === EXTRACTION_DELTA_DETAIL_URL) return jsonResponse(deltaDetailResponse());
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const step2 = await screen.findByTestId("workflow-step-2");
+    const extractionHistory = within(step2)
+      .getByText(/Extraction refinement history/)
+      .closest("details") as HTMLElement;
+    await act(async () => {
+      fireEvent.click(within(extractionHistory).getByRole("button", { name: "Inspect" }));
+    });
+    await screen.findByTestId("review-drawer");
+
+    // The pending candidate leads with human-reviewable content only.
+    const summary = (await screen.findAllByTestId("delta-candidate-summary"))[0];
+    expect(summary).toHaveTextContent("Missing service SLA");
+    expect(summary).toHaveTextContent("RFP mentions SLA in section 4.");
+    // No machine metadata leaks into the primary summary.
+    expect(summary).not.toHaveTextContent("cand-1");
+    expect(summary).not.toHaveTextContent("file-rfp-1");
+    expect(summary).not.toHaveTextContent("ev-text-1");
+    expect(summary).not.toHaveTextContent(INPUT_PACKAGE_ARTIFACT_ID);
+    expect(summary).not.toHaveTextContent("tbl-1");
+    expect(summary.textContent ?? "").not.toMatch(/chunk/i);
+    expect(summary.textContent ?? "").not.toMatch(/chars/i);
+
+    // The collapsed candidate audit keeps the raw candidate id and the raw
+    // evidence/source/package locator data.
+    const audit = (await screen.findAllByTestId("delta-candidate-audit"))[0];
+    expect(audit.tagName).toBe("DETAILS");
+    expect(audit.hasAttribute("open")).toBe(false);
+    expect(audit).toHaveTextContent("cand-1");
+    expect(audit).toHaveTextContent("file-rfp-1");
+    expect(audit).toHaveTextContent("ev-text-1");
+    expect(audit).toHaveTextContent(INPUT_PACKAGE_ARTIFACT_ID);
+    expect(audit.textContent ?? "").toMatch(/chunk/i);
+
+    // Proposed evidence shows the reviewable body but hides raw chunk/char
+    // locators from its primary metadata, keeping them in the collapsed audit.
+    const proposedMeta = screen.getByTestId("delta-proposed-text-meta");
+    expect(proposedMeta.textContent ?? "").not.toMatch(/chunk/i);
+    expect(proposedMeta.textContent ?? "").not.toMatch(/chars/i);
+    expect(screen.getByTestId("delta-proposed-text-body")).toHaveTextContent(
+      "Service SLA must be provided."
+    );
+    const proposedAudit = screen.getByTestId("delta-proposed-audit");
+    expect(proposedAudit.tagName).toBe("DETAILS");
+    expect(proposedAudit.hasAttribute("open")).toBe(false);
+    expect(proposedAudit.textContent ?? "").toMatch(/chunk/i);
+    expect(proposedAudit).toHaveTextContent("42 chars");
   });
 
   it("opens the current evidence package drawer without preparing another package", async () => {

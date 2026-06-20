@@ -745,7 +745,10 @@ function deltaReferenceLine(ref: DeltaEvidenceReference): string {
 /**
  * One AI/engineer proposed-evidence block, surfaced for review only - a
  * proposal, never authority. Text proposals show the body; table proposals
- * show the fresh row matrix. Both carry their proposal-side metadata.
+ * show the fresh row matrix. The primary metadata carries only human-readable
+ * source labels (document name/role, sheet/page); the raw proposal locators
+ * (tableId, chunk position, char count) stay under a collapsed technical
+ * disclosure so the reviewable content leads.
  */
 function DeltaProposedEvidenceView({
   proposed,
@@ -753,16 +756,22 @@ function DeltaProposedEvidenceView({
   proposed: DeltaProposedEvidence;
 }) {
   if (proposed.evidenceKind === "rfp_document_text_chunk") {
+    const technical: string[] = [];
+    if (proposed.chunkIndex !== undefined && proposed.chunkCount !== undefined) {
+      technical.push(`chunk ${proposed.chunkIndex + 1}/${proposed.chunkCount}`);
+    }
+    if (proposed.charCount !== undefined) {
+      technical.push(`${proposed.charCount} chars`);
+    }
     return (
       <div data-testid="delta-proposed-text">
-        <p className="mt-1 text-xs text-text-secondary">
+        <p
+          data-testid="delta-proposed-text-meta"
+          className="mt-1 text-xs text-text-secondary"
+        >
           text proposal
           {proposed.sourceFileName !== undefined ? ` | ${proposed.sourceFileName}` : ""}
           {proposed.sourceFileRole !== undefined ? ` (${proposed.sourceFileRole})` : ""}
-          {proposed.chunkIndex !== undefined && proposed.chunkCount !== undefined
-            ? ` | chunk ${proposed.chunkIndex + 1}/${proposed.chunkCount}`
-            : ""}
-          {proposed.charCount !== undefined ? ` | ${proposed.charCount} chars` : ""}
         </p>
         <pre
           data-testid="delta-proposed-text-body"
@@ -770,19 +779,28 @@ function DeltaProposedEvidenceView({
         >
           {proposed.text}
         </pre>
+        {technical.length > 0 && (
+          <TechnicalDetails testId="delta-proposed-audit">
+            <p>{technical.join(" | ")}</p>
+          </TechnicalDetails>
+        )}
       </div>
     );
   }
+  const technical: string[] = [];
+  if (proposed.tableId !== undefined) technical.push(`table ${proposed.tableId}`);
+  if (proposed.rowCount !== undefined && proposed.columnCount !== undefined) {
+    technical.push(`${proposed.rowCount} rows x ${proposed.columnCount} cols`);
+  }
   return (
     <div data-testid="delta-proposed-table">
-      <p className="mt-1 text-xs text-text-secondary">
+      <p
+        data-testid="delta-proposed-table-meta"
+        className="mt-1 text-xs text-text-secondary"
+      >
         table proposal
-        {proposed.tableId !== undefined ? ` ${proposed.tableId}` : ""}
         {proposed.sheetName !== undefined ? ` | sheet ${proposed.sheetName}` : ""}
         {proposed.pageNumber !== undefined ? ` | page ${proposed.pageNumber}` : ""}
-        {proposed.rowCount !== undefined && proposed.columnCount !== undefined
-          ? ` | ${proposed.rowCount} rows x ${proposed.columnCount} cols`
-          : ""}
       </p>
       <div className="mt-1 max-h-72 overflow-auto">
         <table className="w-full border-collapse text-xs">
@@ -802,15 +820,23 @@ function DeltaProposedEvidenceView({
           </tbody>
         </table>
       </div>
+      {technical.length > 0 && (
+        <TechnicalDetails testId="delta-proposed-audit">
+          <p>{technical.join(" | ")}</p>
+        </TechnicalDetails>
+      )}
     </div>
   );
 }
 
 /**
- * One delta candidate: identity/display fields, the source file, locator-only
- * evidence references, the proposed evidence (expandable, proposal-only), and
- * the engineer review history (expandable). Reused for pending and decided
- * candidates; the caller collapses the decided group.
+ * One delta candidate, rendered human-first: the reviewable title, review
+ * metadata (kind/severity/status/confidence), description, and rationale lead
+ * in the primary summary; the proposed evidence (expandable, proposal-only) and
+ * engineer review history (expandable) follow; and the raw machine metadata -
+ * candidate id, source file id, and the locator-only evidence references - sits
+ * only under a collapsed technical/audit disclosure. Reused for pending and
+ * decided candidates; the caller collapses the decided group.
  */
 function DeltaCandidateRow({
   candidate,
@@ -824,41 +850,23 @@ function DeltaCandidateRow({
       data-testid="delta-candidate"
       className="rounded-button border border-[var(--border)] p-2"
     >
-      <p className="text-xs font-medium text-text-primary">
-        <span className="font-mono">{candidate.id}</span> | {candidate.kind} |{" "}
-        {candidate.severity} | {candidate.reviewStatus}
-        {candidate.confidence !== undefined
-          ? ` | confidence ${candidate.confidence}`
-          : ""}
-      </p>
-      <p className="text-xs font-medium text-text-primary">{candidate.title}</p>
-      <p className="mt-1 whitespace-pre-wrap text-xs text-text-primary">
-        {candidate.description}
-      </p>
-      {candidate.rationale !== undefined && (
-        <p className="mt-1 text-xs text-text-secondary">
-          Rationale: {candidate.rationale}
+      <div data-testid="delta-candidate-summary">
+        <p className="text-xs font-medium text-text-primary">{candidate.title}</p>
+        <p className="text-xs text-text-secondary">
+          {candidate.kind} | {candidate.severity} | {candidate.reviewStatus}
+          {candidate.confidence !== undefined
+            ? ` | confidence ${candidate.confidence}`
+            : ""}
         </p>
-      )}
-      <p className="text-xs text-text-tertiary">
-        source file <span className="font-mono">{candidate.sourceFileId}</span>
-      </p>
-      {candidate.evidenceReferences.length > 0 && (
-        <ul className="mt-1 space-y-0.5">
-          {candidate.evidenceReferences.map((ref, refIndex) => (
-            <li
-              key={refIndex}
-              data-testid="delta-reference"
-              className="text-xs text-text-tertiary"
-            >
-              <span className="font-mono">{ref.evidenceId}</span> |{" "}
-              {kindLabel(ref.evidenceKind)} | {deltaReferenceLine(ref)} | file{" "}
-              <span className="font-mono">{ref.sourceFileId}</span> | package{" "}
-              <span className="font-mono">{ref.inputPackageArtifactId}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+        <p className="mt-1 whitespace-pre-wrap text-xs text-text-primary">
+          {candidate.description}
+        </p>
+        {candidate.rationale !== undefined && (
+          <p className="mt-1 text-xs text-text-secondary">
+            Rationale: {candidate.rationale}
+          </p>
+        )}
+      </div>
       {candidate.proposedEvidence !== undefined && (
         <details data-testid="delta-proposed-evidence" className="mt-1">
           <summary className="cursor-pointer text-xs text-text-secondary">
@@ -889,6 +897,26 @@ function DeltaCandidateRow({
           </ul>
         </details>
       )}
+      <TechnicalDetails testId="delta-candidate-audit" label="Technical and audit details">
+        <p>
+          candidate <span className="font-mono">{candidate.id}</span>
+        </p>
+        <p>
+          source file <span className="font-mono">{candidate.sourceFileId}</span>
+        </p>
+        {candidate.evidenceReferences.length > 0 && (
+          <ul className="mt-1 space-y-0.5">
+            {candidate.evidenceReferences.map((ref, refIndex) => (
+              <li key={refIndex} data-testid="delta-reference">
+                <span className="font-mono">{ref.evidenceId}</span> |{" "}
+                {kindLabel(ref.evidenceKind)} | {deltaReferenceLine(ref)} | file{" "}
+                <span className="font-mono">{ref.sourceFileId}</span> | package{" "}
+                <span className="font-mono">{ref.inputPackageArtifactId}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </TechnicalDetails>
       {children}
     </li>
   );
