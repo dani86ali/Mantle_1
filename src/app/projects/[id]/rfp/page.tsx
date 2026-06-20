@@ -1304,21 +1304,6 @@ function PackageEvidenceView({ evidence }: { evidence: PackageEvidence }) {
   );
 }
 
-/** Human label for one finding citation: document/passage/page/sheet/table. */
-function citationLine(
-  citation: CompiledEvidenceFinding["citations"][number]
-): string {
-  return [
-    citation.documentLabel,
-    citation.passageLabel,
-    citation.pageLabel,
-    citation.sheetLabel,
-    citation.tableLabel,
-  ]
-    .filter((part): part is string => part !== undefined && part !== "")
-    .join(" | ");
-}
-
 /**
  * True for a generic extraction-position passage label such as "Passage 1 of 4"
  * or "Text passage 2 of 13". These read as raw chunk positions, so they are
@@ -1330,14 +1315,14 @@ function isGenericPassageLabel(label: string): boolean {
 }
 
 /**
- * Human label for one finding citation in a DOWNSTREAM requirement/compliance
- * reference. Same human labels as {@link citationLine}, but a generic
- * extraction-position passage label ("Passage N of M") is dropped because it is
- * too close to a raw chunk position for the primary workflow. Human source
- * labels - document, page, sheet, table, and section/clause-style passage
- * labels - are kept. Returns "" when nothing human-readable remains.
+ * Human label for one finding citation, used both in the primary compiled
+ * evidence review and in downstream requirement/compliance references. Carries
+ * the human source labels - document, page, sheet, table, and section/clause-
+ * style passage labels - but drops a generic extraction-position passage label
+ * ("Passage N of M" / "Text passage N of M") because it reads as a raw chunk
+ * position. Returns "" when nothing human-readable remains.
  */
-function downstreamCitationLine(
+function readableCitationLine(
   citation: CompiledEvidenceFinding["citations"][number]
 ): string {
   const passageLabel =
@@ -1378,7 +1363,7 @@ function compiledFindingReferenceLabel(
     finding.cleanSummary;
   if (descriptor !== undefined && descriptor !== "") segments.push(descriptor);
   const citations = finding.citations
-    .map((citation) => downstreamCitationLine(citation))
+    .map((citation) => readableCitationLine(citation))
     .filter((line) => line !== "");
   if (citations.length > 0) segments.push(citations.join("; "));
   return segments.join(" - ");
@@ -1424,12 +1409,17 @@ function primaryEvidenceReferenceLabel(
 
 /**
  * One primary compiled evidence finding. Only human labels render here - the
- * finding title, source document/role, citation labels, and the grouped text
- * body or readable table - plus presentation flags. Raw machine ids and chunk
- * locators stay in the drawer audit trail, and there is no per-finding
- * technical dropdown.
+ * finding title, source document/role, human citation labels, and the grouped
+ * text body or readable table - plus presentation flags. Generic extraction-
+ * position passage citations ("Passage N of M") are dropped as too close to a
+ * raw chunk position; a finding left with no human citation renders none. Raw
+ * machine ids and chunk locators stay in the drawer audit trail, and there is
+ * no per-finding technical dropdown.
  */
 function CompiledFindingView({ finding }: { finding: CompiledEvidenceFinding }) {
+  const citationLines = finding.citations
+    .map((citation) => readableCitationLine(citation))
+    .filter((line) => line !== "");
   return (
     <li
       data-testid="ep-finding"
@@ -1498,15 +1488,15 @@ function CompiledFindingView({ finding }: { finding: CompiledEvidenceFinding }) 
           {finding.cleanSummary}
         </p>
       )}
-      {finding.citations.length > 0 && (
+      {citationLines.length > 0 && (
         <ul className="mt-1 space-y-0.5">
-          {finding.citations.map((citation, citationIndex) => (
+          {citationLines.map((line, citationIndex) => (
             <li
               key={citationIndex}
               data-testid="ep-finding-citation"
               className="text-xs text-text-tertiary"
             >
-              {citationLine(citation)}
+              {line}
             </li>
           ))}
         </ul>

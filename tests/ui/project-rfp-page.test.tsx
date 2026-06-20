@@ -660,7 +660,13 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(within(compiled).getAllByTestId("ep-finding").length).toBeGreaterThanOrEqual(2);
     expect(compiled).toHaveTextContent("network design");
     expect(compiled).toHaveTextContent(TABLE_CELL_CANARY);
-    expect(compiled).toHaveTextContent("Passage 1 of 4");
+    // The table finding keeps its human source citation labels in the primary.
+    expect(compiled).toHaveTextContent("Table 1");
+    expect(compiled).toHaveTextContent("Sheet: Scope");
+    // The generic extraction-position passage citation ("Passage 1 of 4") reads
+    // as a raw chunk position, so it is dropped from the primary compiled review.
+    expect(compiled).not.toHaveTextContent("Passage 1 of 4");
+    expect(compiled).not.toHaveTextContent("Text passage 1 of 4");
 
     // The drawer renders the RETURNED compiled review (clean summary + flag),
     // proving it does not recompile from package.evidence (which has neither).
@@ -676,12 +682,14 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(compiled).not.toHaveTextContent("tbl-1");
     expect(compiled.textContent ?? "").not.toMatch(/chunk/i);
 
-    // Raw machine data lives only in the collapsed audit/debug disclosure.
+    // Raw machine data - ids and chunk positions - lives only in the collapsed
+    // audit/debug disclosure, never the primary compiled review.
     const rawAudit = screen.getByTestId("ep-raw-audit");
     expect(rawAudit.tagName).toBe("DETAILS");
     expect(rawAudit.hasAttribute("open")).toBe(false);
     expect(rawAudit).toHaveTextContent("ev-text-1");
     expect(rawAudit).toHaveTextContent("tbl-1");
+    expect(rawAudit.textContent ?? "").toMatch(/chunk/i);
   });
 
   it("describes step 2 with source-record language, not raw chunks", async () => {
