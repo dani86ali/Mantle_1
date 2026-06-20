@@ -540,8 +540,16 @@ function isReviewableStatus(status: string): boolean {
   return status === "needs_review" || status === "generated";
 }
 
-/** One-line locator summary for one evidence reference; never content. */
-function referenceLine(ref: BaselineEvidenceReference): string {
+/** Requirement and compliance references share one locator-only shape. */
+type ReadableEvidenceReference =
+  | BaselineEvidenceReference
+  | ComplianceMatrixEvidenceReference;
+
+/**
+ * Exact locator summary for the collapsed audit only - carries the machine
+ * tableId and the literal word "chunk". Never render this in a primary card.
+ */
+function evidenceLocatorLine(ref: ReadableEvidenceReference): string {
   if (ref.evidenceKind === "rfp_document_table") {
     const page = ref.pageNumber !== undefined ? ` | page ${ref.pageNumber}` : "";
     const sheet = ref.sheetName !== undefined ? ` | sheet ${ref.sheetName}` : "";
@@ -550,16 +558,29 @@ function referenceLine(ref: BaselineEvidenceReference): string {
   return `chunk ${ref.chunkIndex + 1}/${ref.chunkCount} | ${ref.charCount} chars`;
 }
 
-/** One-line locator summary for one compliance evidence reference. */
-function complianceReferenceLine(
-  ref: ComplianceMatrixEvidenceReference
-): string {
+/**
+ * Human-readable label for one evidence reference in a primary card or the
+ * nontechnical disclosure. Never the word "chunk", a machine tableId, or any
+ * id - text references read as a passage position, tables as a readable
+ * sheet/page/row-column locator.
+ */
+function readableEvidenceReferenceLabel(ref: ReadableEvidenceReference): string {
   if (ref.evidenceKind === "rfp_document_table") {
-    const page = ref.pageNumber !== undefined ? ` | page ${ref.pageNumber}` : "";
-    const sheet = ref.sheetName !== undefined ? ` | sheet ${ref.sheetName}` : "";
-    return `table ${ref.tableId}${page}${sheet} | ${ref.rowCount} rows x ${ref.columnCount} cols`;
+    const parts = ["Table"];
+    if (ref.sheetName !== undefined) parts.push(`sheet ${ref.sheetName}`);
+    if (ref.pageNumber !== undefined) parts.push(`page ${ref.pageNumber}`);
+    parts.push(`${ref.rowCount} rows x ${ref.columnCount} cols`);
+    return parts.join(" - ");
   }
-  return `chunk ${ref.chunkIndex + 1}/${ref.chunkCount} | ${ref.charCount} chars`;
+  return `Text passage ${ref.chunkIndex + 1} of ${ref.chunkCount}`;
+}
+
+/**
+ * Full raw audit line for one evidence reference: every machine id plus the
+ * exact locator. Collapsed audit/details only.
+ */
+function rawEvidenceReferenceLine(ref: ReadableEvidenceReference): string {
+  return `${ref.evidenceId} | ${kindLabel(ref.evidenceKind)} | ${evidenceLocatorLine(ref)} | file ${ref.sourceFileId} | package ${ref.inputPackageArtifactId}`;
 }
 
 function complianceStatusCounts(
@@ -575,6 +596,7 @@ function complianceStatusCounts(
   ].join(" | ");
 }
 
+/** Full raw configuration-reference audit line: artifact id + line id + fields. */
 function configurationReferenceLine(
   ref: ComplianceMatrixConfigurationReference
 ): string {
@@ -588,6 +610,70 @@ function configurationReferenceLine(
     ref.originalLineNumber !== undefined ? `original ${ref.originalLineNumber}` : "",
   ].filter((part) => part !== "");
   return parts.join(" | ");
+}
+
+/**
+ * Business-readable configuration label for a primary compliance row: origin,
+ * SKU, description, and source positions only. Never the artifact id or the
+ * internal line id (those stay in the collapsed audit).
+ */
+function readableConfigurationReferenceLabel(
+  ref: ComplianceMatrixConfigurationReference
+): string {
+  const parts = [
+    ref.origin !== undefined ? ref.origin : "",
+    ref.sku !== undefined ? `SKU ${ref.sku}` : "",
+    ref.description !== undefined ? ref.description : "",
+    ref.parentLineNumber !== undefined ? `parent ${ref.parentLineNumber}` : "",
+    ref.sourceRowNumber !== undefined ? `row ${ref.sourceRowNumber}` : "",
+  ].filter((part) => part !== "");
+  return parts.length > 0 ? parts.join(" | ") : "Configuration line";
+}
+
+/** One grouped compiled-review section keyed by document + role + topic. */
+interface CompiledFindingGroup {
+  key: string;
+  documentName: string;
+  role?: string;
+  topic?: string;
+  findings: CompiledEvidenceFinding[];
+}
+
+/**
+ * Group compiled findings into human review sections by document name, role,
+ * and topic, preserving first-seen order both across and within groups. Pure
+ * presentation grouping - it never reorders or drops findings.
+ */
+function groupCompiledFindings(
+  findings: readonly CompiledEvidenceFinding[]
+): CompiledFindingGroup[] {
+  const groups: CompiledFindingGroup[] = [];
+  const byKey = new Map<string, CompiledFindingGroup>();
+  for (const finding of findings) {
+    const key = `${finding.documentName}|${finding.role ?? ""}|${finding.topic ?? ""}`;
+    let group = byKey.get(key);
+    if (group === undefined) {
+      group = {
+        key,
+        documentName: finding.documentName,
+        ...(finding.role !== undefined ? { role: finding.role } : {}),
+        ...(finding.topic !== undefined ? { topic: finding.topic } : {}),
+        findings: [],
+      };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    group.findings.push(finding);
+  }
+  return groups;
+}
+
+/** Human heading for one grouped compiled-review section. */
+function compiledFindingGroupLabel(group: CompiledFindingGroup): string {
+  const parts = [group.documentName];
+  if (group.role !== undefined) parts.push(`(${fileRoleLabel(group.role)})`);
+  const head = parts.join(" ");
+  return group.topic !== undefined ? `${head} | ${group.topic}` : head;
 }
 
 /** One-line locator summary for one delta evidence reference; never content. */
@@ -1309,9 +1395,7 @@ function ComplianceMatrixRowView({ row }: { row: ComplianceMatrixRow }) {
       className="rounded-button border border-[var(--border)] p-2"
     >
       <p className="text-xs font-medium text-text-primary">
-        <span className="font-mono">{row.id}</span> |{" "}
-        <span className="font-mono">{row.requirementId}</span> | {row.category} |{" "}
-        {row.priority} | {row.complianceStatus}
+        {row.category} | {row.priority} | {row.complianceStatus}
       </p>
       <p
         data-testid="cm-detail-requirement-text"
@@ -1340,10 +1424,7 @@ function ComplianceMatrixRowView({ row }: { row: ComplianceMatrixRow }) {
             data-testid="cm-detail-evidence-reference"
             className="text-xs text-text-tertiary"
           >
-            <span className="font-mono">{ref.evidenceId}</span> |{" "}
-            {kindLabel(ref.evidenceKind)} | {complianceReferenceLine(ref)} | file{" "}
-            <span className="font-mono">{ref.sourceFileId}</span> | package{" "}
-            <span className="font-mono">{ref.inputPackageArtifactId}</span>
+            {readableEvidenceReferenceLabel(ref)}
           </li>
         ))}
       </ul>
@@ -1360,15 +1441,28 @@ function ComplianceMatrixRowView({ row }: { row: ComplianceMatrixRow }) {
                   data-testid="cm-detail-configuration-reference"
                   className="text-xs text-text-tertiary"
                 >
-                  <span className="font-mono">
-                    {ref.configurationExpansionArtifactId}
-                  </span>{" "}
-                  | {configurationReferenceLine(ref)}
+                  {readableConfigurationReferenceLabel(ref)}
                 </li>
               ))}
             </ul>
           </details>
       )}
+      <TechnicalDetails testId="cm-detail-audit">
+        <p>Row ID: {row.id}</p>
+        <p>Requirement ID: {row.requirementId}</p>
+        {row.evidenceReferences.map((ref, refIndex) => (
+          <p key={refIndex}>
+            Evidence {refIndex + 1}: {rawEvidenceReferenceLine(ref)}
+          </p>
+        ))}
+        {row.configurationReferences !== undefined &&
+          row.configurationReferences.map((ref, refIndex) => (
+            <p key={refIndex}>
+              Configuration {refIndex + 1}:{" "}
+              {ref.configurationExpansionArtifactId} | {configurationReferenceLine(ref)}
+            </p>
+          ))}
+      </TechnicalDetails>
     </li>
   );
 }
@@ -2903,11 +2997,30 @@ export default function ProjectRfpEvidencePage() {
           <p className="text-xs text-text-secondary">{packageReviewSuccess}</p>
         )}
         {compiledReview.findings.length > 0 ? (
-          <ol data-testid="ep-compiled-review" className="space-y-2">
-            {compiledReview.findings.map((finding) => (
-              <CompiledFindingView key={finding.findingId} finding={finding} />
+          <div data-testid="ep-compiled-review" className="space-y-3">
+            {groupCompiledFindings(compiledReview.findings).map((group) => (
+              <section
+                key={group.key}
+                data-testid="ep-review-section"
+                className={SUBTLE_CARD}
+              >
+                <p
+                  data-testid="ep-review-section-label"
+                  className="text-xs font-semibold uppercase tracking-wide text-text-tertiary"
+                >
+                  {compiledFindingGroupLabel(group)}
+                </p>
+                <ol className="mt-2 space-y-2">
+                  {group.findings.map((finding) => (
+                    <CompiledFindingView
+                      key={finding.findingId}
+                      finding={finding}
+                    />
+                  ))}
+                </ol>
+              </section>
             ))}
-          </ol>
+          </div>
         ) : (
           <p
             data-testid="ep-compiled-review"
@@ -3033,17 +3146,16 @@ export default function ProjectRfpEvidencePage() {
                       data-testid="baseline-detail-reference"
                       className="text-xs text-text-tertiary"
                     >
-                      {kindLabel(ref.evidenceKind)} - {referenceLine(ref)}
+                      {readableEvidenceReferenceLabel(ref)}
                     </li>
                   ))}
                 </ul>
               </details>
-              <TechnicalDetails>
+              <TechnicalDetails testId="baseline-detail-audit">
                 <p>Requirement ID: {req.id}</p>
                 {req.evidenceReferences.map((ref, refIndex) => (
                   <p key={refIndex}>
-                    Evidence {refIndex + 1}: {ref.evidenceId}, file {ref.sourceFileId},
-                    package {ref.inputPackageArtifactId}
+                    Evidence {refIndex + 1}: {rawEvidenceReferenceLine(ref)}
                   </p>
                 ))}
               </TechnicalDetails>
@@ -3608,7 +3720,7 @@ export default function ProjectRfpEvidencePage() {
                   : "ready"
           }
           active={workflow.nextAction.stage === "evidence"}
-          summary="Prepare and review one compiled evidence package. Raw chunks and IDs stay behind inspection."
+          summary="Prepare and review one compiled evidence package. Source records and identifiers stay behind the collapsed audit trail."
         >
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
             <div data-testid="compiled-evidence-review" className={SUBTLE_CARD}>

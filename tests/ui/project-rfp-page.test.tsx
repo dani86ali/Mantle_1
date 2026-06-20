@@ -684,6 +684,106 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(rawAudit).toHaveTextContent("tbl-1");
   });
 
+  it("describes step 2 with source-record language, not raw chunks", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const step2 = await screen.findByTestId("workflow-step-2");
+    expect(step2).not.toHaveTextContent("Raw chunks");
+    expect(step2).toHaveTextContent("audit trail");
+  });
+
+  it("groups the compiled evidence review into labeled sections and keeps raw ids out of the grouped primary", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const prepare = await screen.findByTestId("prepare-evidence-review");
+    await act(async () => {
+      fireEvent.click(prepare);
+    });
+
+    const compiled = await screen.findByTestId("ep-compiled-review");
+    const sections = within(compiled).getAllByTestId("ep-review-section");
+    expect(sections.length).toBeGreaterThanOrEqual(2);
+    expect(within(compiled).getAllByTestId("ep-review-section-label")).toHaveLength(
+      sections.length
+    );
+    // Sections are labeled with human document names, not machine ids.
+    expect(compiled).toHaveTextContent("rfp-main.pdf");
+
+    // The grouped primary still excludes raw ids and the word chunk.
+    expect(compiled).not.toHaveTextContent("ev-text-1");
+    expect(compiled).not.toHaveTextContent("tbl-1");
+    expect(compiled.textContent ?? "").not.toMatch(/chunk/i);
+  });
+
+  it("shows readable requirement evidence labels and keeps raw ids in the collapsed audit", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`));
+    });
+    await screen.findByTestId("review-drawer");
+
+    const reference = await screen.findByTestId("baseline-detail-reference");
+    expect(reference).toHaveTextContent("Text passage 1 of 4");
+
+    const card = screen.getByTestId("baseline-detail-requirement");
+    const primary = card.cloneNode(true) as HTMLElement;
+    primary
+      .querySelectorAll('[data-testid="baseline-detail-audit"]')
+      .forEach((node) => node.remove());
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).not.toMatch(/chunk/i);
+    expect(primaryText).not.toContain("ev-text-1");
+    expect(primaryText).not.toContain("file-rfp-1");
+    expect(primaryText).not.toContain(INPUT_PACKAGE_ARTIFACT_ID);
+
+    const audit = within(card).getByTestId("baseline-detail-audit");
+    expect(audit).toHaveTextContent("ev-text-1");
+    expect(audit).toHaveTextContent("file-rfp-1");
+    expect(audit).toHaveTextContent(INPUT_PACKAGE_ARTIFACT_ID);
+    expect(audit.textContent ?? "").toMatch(/chunk/i);
+  });
+
+  it("renders business-readable compliance rows and confines raw ids to the row audit", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("review-drawer");
+
+    const row = await screen.findByTestId("cm-detail-row");
+    const primary = row.cloneNode(true) as HTMLElement;
+    primary
+      .querySelectorAll('[data-testid="cm-detail-audit"]')
+      .forEach((node) => node.remove());
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).toContain(
+      "Supplier shall provide a complete network design."
+    );
+    expect(primaryText).toContain("Text passage 1 of 4");
+    expect(primaryText).not.toContain("CM-001");
+    expect(primaryText).not.toContain("RFP-REQ-001");
+    expect(primaryText).not.toContain("ev-text-1");
+    expect(primaryText).not.toContain("file-rfp-1");
+    expect(primaryText).not.toContain(INPUT_PACKAGE_ARTIFACT_ID);
+    expect(primaryText).not.toMatch(/chunk/i);
+
+    const audit = within(row).getByTestId("cm-detail-audit");
+    expect(audit).toHaveTextContent("CM-001");
+    expect(audit).toHaveTextContent("RFP-REQ-001");
+    expect(audit).toHaveTextContent("ev-text-1");
+    expect(audit).toHaveTextContent("file-rfp-1");
+    expect(audit).toHaveTextContent(INPUT_PACKAGE_ARTIFACT_ID);
+    expect(audit.textContent ?? "").toMatch(/chunk/i);
+  });
+
   it("auto-generates requirements from the latest approved evidence package without a primary selection", async () => {
     const calls = stubFetch((url) => {
       if (url === EVIDENCE_PACKAGE_LIST_URL) {
