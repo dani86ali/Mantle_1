@@ -11,18 +11,25 @@ import type {
 // evidence list); the draft service's validation, gating, filtering,
 // sanitization, and summaries stay real. No DB, file bytes, parser, or AI
 // module is touched anywhere in this suite.
-const { mockGetProject, mockGetArtifact, mockCreateArtifact, mockListEvidence } =
-  vi.hoisted(() => ({
-    mockGetProject: vi.fn(),
-    mockGetArtifact: vi.fn(),
-    mockCreateArtifact: vi.fn(),
-    mockListEvidence: vi.fn(),
-  }));
+const {
+  mockGetProject,
+  mockGetArtifact,
+  mockCreateArtifact,
+  mockListEvidence,
+  mockListArtifactsByType,
+} = vi.hoisted(() => ({
+  mockGetProject: vi.fn(),
+  mockGetArtifact: vi.fn(),
+  mockCreateArtifact: vi.fn(),
+  mockListEvidence: vi.fn(),
+  mockListArtifactsByType: vi.fn(),
+}));
 
 vi.mock("@/lib/db/project-store", () => ({ getProjectById: mockGetProject }));
 vi.mock("@/lib/db/project-artifact-store", () => ({
   getProjectArtifactById: mockGetArtifact,
   createProjectArtifactVersion: mockCreateArtifact,
+  listProjectArtifactsByType: mockListArtifactsByType,
 }));
 vi.mock("@/lib/db/project-evidence-store", () => ({
   listProjectEvidenceItems: mockListEvidence,
@@ -48,6 +55,9 @@ const CREATED_ARTIFACT = "art-evidence-package-1";
 const FILE_RFP = "file-rfp-1";
 const FILE_BOQ = "file-boq-1";
 const FILE_SOW = "file-sow-1";
+const DELTA_1 = "art-extraction-delta-1";
+const DELTA_2 = "art-extraction-delta-2";
+const DELTA_OTHER = "art-extraction-delta-other";
 const EV_TEXT_1 = "evidence-text-1";
 const EV_TEXT_2 = "evidence-text-2";
 const EV_TABLE_1 = "evidence-table-1";
@@ -168,6 +178,39 @@ function makeInputPackageArtifact(
   };
 }
 
+/**
+ * One stored extraction_delta artifact version. Defaults to a resolved
+ * (every candidate accepted/rejected/waived) delta for PACKAGE_A; overrides
+ * tune version, payload, type, or stage for the eligibility tests.
+ */
+function makeExtractionDeltaArtifact(
+  id: string,
+  overrides: Partial<ProjectArtifact> = {}
+): ProjectArtifact {
+  return {
+    id,
+    projectId: PROJECT,
+    stageId: "intake_package_review",
+    type: "extraction_delta",
+    status: "needs_review",
+    version: 1,
+    payload: {
+      payloadKind: "rfp_extraction_delta",
+      inputPackageArtifactId: PACKAGE_A,
+      candidates: [
+        { id: "cand-1", reviewStatus: "accepted" },
+        { id: "cand-2", reviewStatus: "rejected" },
+        { id: "cand-3", reviewStatus: "waived" },
+      ],
+    },
+    sourceFileIds: [FILE_RFP, FILE_BOQ],
+    sourceArtifactIds: [PACKAGE_A],
+    createdAt: TS1,
+    updatedAt: TS2,
+    ...overrides,
+  };
+}
+
 /** The shape the artifact create store receives. */
 interface CreateArtifactCall {
   projectId: string;
@@ -231,6 +274,7 @@ const LEAN_PACKAGE_A_SUMMARY = {
 
 let evidenceRows: ProjectEvidenceItem[];
 let artifactById: Map<string, ProjectArtifact>;
+let deltaArtifacts: ProjectArtifact[];
 
 beforeEach(() => {
   // Listed order is the deterministic payload order: text 1, table 1, text 2.
@@ -253,6 +297,8 @@ beforeEach(() => {
     }),
   ];
   artifactById = new Map([[PACKAGE_A, makeInputPackageArtifact(PACKAGE_A)]]);
+  // Deterministic-only by default: no extraction_delta provenance source.
+  deltaArtifacts = [];
   mockGetProject.mockReset().mockResolvedValue(makeProject());
   mockGetArtifact
     .mockReset()
@@ -261,6 +307,9 @@ beforeEach(() => {
         artifactById.get(artifactId) ?? null
     );
   mockListEvidence.mockReset().mockImplementation(async () => evidenceRows);
+  mockListArtifactsByType
+    .mockReset()
+    .mockImplementation(async () => deltaArtifacts);
   mockCreateArtifact
     .mockReset()
     .mockImplementation(async (call: CreateArtifactCall) =>
@@ -773,6 +822,164 @@ describe("success", () => {
   });
 });
 
+describe("extraction_delta provenance source", () => {
+  function createdSourceArtifactIds(): unknown {
+    return mockCreateArtifact.mock.calls[0][0].sourceArtifactIds;
+  }
+  function createdPayloadSourceArtifactIds(): unknown {
+    return mockCreateArtifact.mock.calls[0][0].payload.sourceArtifactIds;
+  }
+
+  it("keeps deterministic-only sourceArtifactIds when no delta exists", async () => {
+    deltaArtifacts = [];
+
+    const result = await draft();
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(mockListArtifactsByType).toHaveBeenCalledWith(
+      TENANT,
+      PROJECT,
+      "extraction_delta"
+    );
+    expect(createdSourceArtifactIds()).toEqual([PACKAGE_A]);
+    expect(createdPayloadSourceArtifactIds()).toEqual([PACKAGE_A]);
+    expect(result.payloadSummary.sourceArtifactIds).toEqual([PACKAGE_A]);
+    expect(result.artifact.sourceArtifactIds).toEqual([PACKAGE_A]);
+  });
+
+  it("includes the latest resolved same-package delta in payload, create call, and summary", async () => {
+    deltaArtifacts = [
+      makeExtractionDeltaArtifact(DELTA_1, { version: 4 }),
+      // The highest-version resolved same-package delta wins.
+      makeExtractionDeltaArtifact(DELTA_2, { version: 7 }),
+    ];
+
+    const result = await draft();
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(createdSourceArtifactIds()).toEqual([PACKAGE_A, DELTA_2]);
+    expect(createdPayloadSourceArtifactIds()).toEqual([PACKAGE_A, DELTA_2]);
+    expect(result.payloadSummary.sourceArtifactIds).toEqual([
+      PACKAGE_A,
+      DELTA_2,
+    ]);
+    expect(result.artifact.sourceArtifactIds).toEqual([PACKAGE_A, DELTA_2]);
+  });
+
+  it("ignores pending, malformed, wrong-stage/type, and wrong-package deltas without blocking", async () => {
+    deltaArtifacts = [
+      // Highest version, but a candidate is still pending_review.
+      makeExtractionDeltaArtifact("delta-pending", {
+        version: 99,
+        payload: {
+          payloadKind: "rfp_extraction_delta",
+          inputPackageArtifactId: PACKAGE_A,
+          candidates: [
+            { id: "c1", reviewStatus: "accepted" },
+            { id: "c2", reviewStatus: "pending_review" },
+          ],
+        },
+      }),
+      // Malformed candidates array.
+      makeExtractionDeltaArtifact("delta-malformed-array", {
+        version: 98,
+        payload: {
+          payloadKind: "rfp_extraction_delta",
+          inputPackageArtifactId: PACKAGE_A,
+          candidates: "not-an-array",
+        },
+      }),
+      // Malformed candidate entry (not a plain object).
+      makeExtractionDeltaArtifact("delta-malformed-entry", {
+        version: 97,
+        payload: {
+          payloadKind: "rfp_extraction_delta",
+          inputPackageArtifactId: PACKAGE_A,
+          candidates: [{ id: "c1", reviewStatus: "accepted" }, "nope"],
+        },
+      }),
+      // Unknown review status.
+      makeExtractionDeltaArtifact("delta-unknown-status", {
+        version: 96,
+        payload: {
+          payloadKind: "rfp_extraction_delta",
+          inputPackageArtifactId: PACKAGE_A,
+          candidates: [{ id: "c1", reviewStatus: "superseded" }],
+        },
+      }),
+      // Wrong payload kind.
+      makeExtractionDeltaArtifact("delta-wrong-kind", {
+        version: 95,
+        payload: {
+          payloadKind: "rfp_evidence_package",
+          inputPackageArtifactId: PACKAGE_A,
+          candidates: [],
+        },
+      }),
+      // Wrong stage.
+      makeExtractionDeltaArtifact("delta-wrong-stage", {
+        version: 94,
+        stageId: "requirements_baseline_review",
+      }),
+      // Wrong type.
+      makeExtractionDeltaArtifact("delta-wrong-type", {
+        version: 93,
+        type: "evidence_package",
+      }),
+      // Resolved, but for another input package.
+      makeExtractionDeltaArtifact(DELTA_OTHER, {
+        version: 92,
+        payload: {
+          payloadKind: "rfp_extraction_delta",
+          inputPackageArtifactId: PACKAGE_B,
+          candidates: [{ id: "c1", reviewStatus: "accepted" }],
+        },
+      }),
+      // The only eligible delta, at a lower version than all the ignored ones.
+      makeExtractionDeltaArtifact(DELTA_1, { version: 2 }),
+    ];
+
+    const result = await draft();
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(createdSourceArtifactIds()).toEqual([PACKAGE_A, DELTA_1]);
+    expect(result.payloadSummary.sourceArtifactIds).toEqual([
+      PACKAGE_A,
+      DELTA_1,
+    ]);
+  });
+
+  it("stays deterministic-only when every delta is ineligible", async () => {
+    deltaArtifacts = [
+      makeExtractionDeltaArtifact("delta-pending", {
+        version: 5,
+        payload: {
+          payloadKind: "rfp_extraction_delta",
+          inputPackageArtifactId: PACKAGE_A,
+          candidates: [{ id: "c1", reviewStatus: "pending_review" }],
+        },
+      }),
+      makeExtractionDeltaArtifact(DELTA_OTHER, {
+        version: 6,
+        payload: {
+          payloadKind: "rfp_extraction_delta",
+          inputPackageArtifactId: PACKAGE_B,
+          candidates: [{ id: "c1", reviewStatus: "accepted" }],
+        },
+      }),
+    ];
+
+    const result = await draft();
+
+    expect(result.status).toBe("ok");
+    expect(createdSourceArtifactIds()).toEqual([PACKAGE_A]);
+    expect(mockCreateArtifact).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("module purity (static source check)", () => {
   const SRC_PATH = join(
     process.cwd(),
@@ -792,6 +999,10 @@ describe("module purity (static source check)", () => {
       "@/lib/db/project-evidence-store",
       "@/types/project",
     ]);
+  });
+
+  it("reads extraction_delta provenance via listProjectArtifactsByType only", () => {
+    expect(source).toContain("listProjectArtifactsByType");
   });
 
   it("performs no store mutation except createProjectArtifactVersion", () => {
@@ -818,6 +1029,8 @@ describe("module purity (static source check)", () => {
       'from "@/lib/projects/project-rfp-evidence-persistence"',
       'from "@/lib/projects/project-rfp-evidence-run"',
       'from "@/lib/projects/project-rfp-evidence-inspection"',
+      'from "@/lib/projects/project-rfp-extraction-delta"',
+      'from "@/lib/projects/project-rfp-extraction-delta-review"',
       'from "@/lib/projects/project-rfp-extraction-run"',
       'from "@/lib/projects/rfp-document-extraction"',
       'from "@/lib/projects/project-rfp-requirements',

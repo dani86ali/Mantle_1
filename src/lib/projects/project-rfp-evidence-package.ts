@@ -36,6 +36,7 @@ import { getProjectById } from "@/lib/db/project-store";
 import {
   createProjectArtifactVersion,
   getProjectArtifactById,
+  listProjectArtifactsByType,
 } from "@/lib/db/project-artifact-store";
 import { listProjectEvidenceItems } from "@/lib/db/project-evidence-store";
 import type {
@@ -57,6 +58,26 @@ const EVIDENCE_PACKAGE_STAGE_ID: ProjectArtifact["stageId"] =
 const INPUT_PACKAGE_ARTIFACT_TYPE: ProjectArtifact["type"] = "input_package";
 const INPUT_PACKAGE_STAGE_ID: ProjectArtifact["stageId"] =
   "intake_package_review";
+
+/**
+ * The extraction_delta provenance source this draft may add after the input
+ * package. The discriminator, payload kind, and resolved review vocabulary
+ * are declared locally on purpose: importing the extraction-delta modules
+ * would pull their AI/persistence graph into this deterministic draft
+ * service. A delta is an eligible source only when its payload is a valid
+ * rfp_extraction_delta for THIS input package whose every candidate is
+ * resolved (accepted, rejected, or waived - never pending_review).
+ */
+const EXTRACTION_DELTA_ARTIFACT_TYPE: ProjectArtifact["type"] =
+  "extraction_delta";
+const EXTRACTION_DELTA_STAGE_ID: ProjectArtifact["stageId"] =
+  "intake_package_review";
+const RFP_EXTRACTION_DELTA_PAYLOAD_KIND = "rfp_extraction_delta";
+const RFP_RESOLVED_CANDIDATE_STATUSES = [
+  "accepted",
+  "rejected",
+  "waived",
+] as const;
 
 /**
  * The two persisted RFP extraction evidence kinds this package assembles.
@@ -292,6 +313,63 @@ function toTableRows(value: unknown): string[][] {
   );
 }
 
+/**
+ * True only for a loaded extraction_delta artifact that is an eligible
+ * provenance source for THIS input package: it sits at the extraction_delta
+ * type within the intake_package_review stage, its payload is a plain
+ * non-array object stamped rfp_extraction_delta whose inputPackageArtifactId
+ * strictly equals the requested package id, and its candidates are a plain
+ * array in which every entry is a plain object whose reviewStatus is one of
+ * the resolved values (accepted, rejected, or waived). A pending_review,
+ * missing, or unknown status, a malformed candidate entry, a malformed
+ * candidates array, the wrong payload kind, the wrong type/stage, or the
+ * wrong input package makes the delta ineligible. The artifact is read
+ * only; nothing is mutated.
+ */
+function isResolvedExtractionDeltaForPackage(
+  artifact: ProjectArtifact,
+  inputPackageArtifactId: string
+): boolean {
+  if (
+    artifact.type !== EXTRACTION_DELTA_ARTIFACT_TYPE ||
+    artifact.stageId !== EXTRACTION_DELTA_STAGE_ID
+  ) {
+    return false;
+  }
+  const payload = artifact.payload;
+  if (
+    payload === null ||
+    typeof payload !== "object" ||
+    Array.isArray(payload)
+  ) {
+    return false;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.payloadKind !== RFP_EXTRACTION_DELTA_PAYLOAD_KIND) return false;
+  if (record.inputPackageArtifactId !== inputPackageArtifactId) return false;
+  const candidates = record.candidates;
+  if (!Array.isArray(candidates)) return false;
+  for (const candidate of candidates) {
+    if (
+      candidate === null ||
+      typeof candidate !== "object" ||
+      Array.isArray(candidate)
+    ) {
+      return false;
+    }
+    const reviewStatus = (candidate as Record<string, unknown>).reviewStatus;
+    if (
+      typeof reviewStatus !== "string" ||
+      !RFP_RESOLVED_CANDIDATE_STATUSES.includes(
+        reviewStatus as (typeof RFP_RESOLVED_CANDIDATE_STATUSES)[number]
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Lean wrong-mode Project projection; tenantId is never surfaced. */
 function toProjectSummary(project: Project): RfpEvidencePackageProjectSummary {
   return {
@@ -390,7 +468,10 @@ function toTableEvidence(
  * listing every uncovered file id in package order - neither creates
  * anything. On success exactly one needs_review evidence_package version
  * is created at intake_package_review whose sourceFileIds copy the package
- * list in order and whose sourceArtifactIds are exactly the package id;
+ * list in order and whose sourceArtifactIds are the package id, followed by
+ * the latest resolved extraction_delta source for that package when one
+ * exists (its candidates all accepted, rejected, or waived); unresolved,
+ * malformed, or wrong-package deltas are ignored and never block creation;
  * the payload carries the discriminator, trimmed createdBy, ISO createdAt,
  * counts, the copied id arrays, and the sanitized entries in listed
  * evidence-row order. The ok result surfaces lean artifact and payload
@@ -483,6 +564,29 @@ export async function createRfpEvidencePackageDraft(
   ).length;
   const tableEvidenceCount = evidence.length - textChunkCount;
 
+  // Provenance: after the deterministic gates pass, add the latest resolved
+  // extraction_delta source for THIS input package when one exists. The
+  // highest-version eligible delta wins; unresolved, malformed, or
+  // wrong-package deltas are ignored and never block draft creation.
+  const deltaArtifacts = await listProjectArtifactsByType(
+    tenantId,
+    projectId,
+    EXTRACTION_DELTA_ARTIFACT_TYPE
+  );
+  let selectedDelta: ProjectArtifact | null = null;
+  for (const delta of deltaArtifacts) {
+    if (!isResolvedExtractionDeltaForPackage(delta, inputPackageArtifactId)) {
+      continue;
+    }
+    if (selectedDelta === null || delta.version > selectedDelta.version) {
+      selectedDelta = delta;
+    }
+  }
+  const sourceArtifactIds =
+    selectedDelta === null
+      ? [inputPackageArtifactId]
+      : [inputPackageArtifactId, selectedDelta.id];
+
   const createdAt = new Date().toISOString();
   const payload: RfpEvidencePackagePayload = {
     payloadKind: RFP_EVIDENCE_PACKAGE_PAYLOAD_KIND,
@@ -493,7 +597,7 @@ export async function createRfpEvidencePackageDraft(
     textChunkCount,
     tableEvidenceCount,
     sourceFileIds: inputPackage.sourceFileIds.slice(),
-    sourceArtifactIds: [inputPackageArtifactId],
+    sourceArtifactIds: sourceArtifactIds.slice(),
     evidence,
   };
 
@@ -505,7 +609,7 @@ export async function createRfpEvidencePackageDraft(
     status: "needs_review",
     payload,
     sourceFileIds: inputPackage.sourceFileIds.slice(),
-    sourceArtifactIds: [inputPackageArtifactId],
+    sourceArtifactIds: sourceArtifactIds.slice(),
   });
 
   return {
@@ -520,7 +624,7 @@ export async function createRfpEvidencePackageDraft(
       textChunkCount,
       tableEvidenceCount,
       sourceFileIds: inputPackage.sourceFileIds.slice(),
-      sourceArtifactIds: [inputPackageArtifactId],
+      sourceArtifactIds: sourceArtifactIds.slice(),
     },
   };
 }
