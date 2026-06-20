@@ -35,6 +35,13 @@ const HEADER_MAX_LENGTH = 60;
 /** Suppressed previews are truncated to this many characters for audit. */
 const PREVIEW_MAX_LENGTH = 80;
 
+/**
+ * Visible delimiter joining document + role + topic into a grouping key. It is
+ * a plain escaped string literal (no raw control characters in source); the
+ * unlikely vertical-bar run keeps distinct documents from colliding.
+ */
+const GROUP_KEY_DELIMITER = "|||||";
+
 /** Whitelisted finite numeric metrics of one extracted document. */
 export interface CompiledEvidenceDocumentMetrics {
   textCharCount: number;
@@ -94,9 +101,25 @@ export interface CompiledEvidenceRepairedTableInput {
   rows: string[][];
 }
 
+/**
+ * One caller-provided per-evidence refinement (presentation only, no live AI
+ * call here). Matched to the deterministic record it refines by evidenceId; for
+ * a grouped text finding a match on any contributing record refines the group.
+ * A refinement only adds display data and flags - it never drops the underlying
+ * deterministic record, so the accounting balance is preserved.
+ */
+export interface CompiledEvidenceEvidenceRefinementInput {
+  evidenceId: string;
+  cleanSummary?: string;
+  readableContent?: string;
+  lowConfidence?: boolean;
+  conflict?: boolean;
+}
+
 /** Caller-provided presentation refinement (no live AI call here). */
 export interface CompiledEvidenceRefinementInput {
   repairedTables?: CompiledEvidenceRepairedTableInput[];
+  evidenceRefinements?: CompiledEvidenceEvidenceRefinementInput[];
 }
 
 /** One caller-provided missing candidate (a proposal, never authority). */
@@ -128,11 +151,46 @@ export interface CompiledEvidenceCitation {
   tableLabel?: string;
 }
 
-/** Presentation flags carried by one finding. */
+/**
+ * Presentation flags carried by one finding. All booleans are always present
+ * so a consumer never has to guess a default. `duplicate`/`boilerplate` mark a
+ * finding the deterministic pass folded together or treated as boilerplate;
+ * `lowConfidence`/`conflict` are caller-provided refinement signals;
+ * `aiRefined` is set whenever any caller refinement touched the finding;
+ * `tableRepaired` and `missingFromDeterministic` mark the two proposal kinds.
+ */
 export interface CompiledEvidenceFindingFlags {
-  tableRepaired: boolean;
+  duplicate: boolean;
+  boilerplate: boolean;
+  lowConfidence: boolean;
   aiRefined: boolean;
+  tableRepaired: boolean;
   missingFromDeterministic: boolean;
+  conflict: boolean;
+}
+
+/** The seven flag names, used for the all-false default and the summary. */
+const FLAG_NAMES = [
+  "duplicate",
+  "boilerplate",
+  "lowConfidence",
+  "aiRefined",
+  "tableRepaired",
+  "missingFromDeterministic",
+  "conflict",
+] as const;
+
+/** A fresh flags object with every flag false. */
+function defaultFlags(): CompiledEvidenceFindingFlags {
+  return {
+    duplicate: false,
+    boilerplate: false,
+    lowConfidence: false,
+    aiRefined: false,
+    tableRepaired: false,
+    missingFromDeterministic: false,
+    conflict: false,
+  };
 }
 
 /** Raw machine traceability for ONE deterministic input; audit-only. */
@@ -165,7 +223,12 @@ export interface CompiledEvidenceFinding {
   title: string;
   documentName: string;
   role?: string;
+  /** Grouping category/topic, when the source records carried one. */
+  topic?: string;
+  /** Caller-provided one-line clean summary; never a raw machine string. */
+  cleanSummary?: string;
   citations: CompiledEvidenceCitation[];
+  /** Normalized readable content/body (caller readableContent overrides it). */
   body?: string;
   table?: { rows: string[][] };
   flags: CompiledEvidenceFindingFlags;
@@ -188,6 +251,12 @@ export interface CompiledEvidenceSuppressedEntry {
   audit: CompiledEvidenceAuditEntry;
 }
 
+/** Count of primary findings carrying each presentation flag. */
+export type CompiledEvidenceFlagSummary = Record<
+  keyof CompiledEvidenceFindingFlags,
+  number
+>;
+
 /** Counts that prove deterministic inputs balance across primary + suppressed. */
 export interface CompiledEvidenceAccounting {
   deterministicInputCount: number;
@@ -201,6 +270,8 @@ export interface CompiledEvidenceAccounting {
   accountedInPrimaryCount: number;
   suppressedCount: number;
   suppressedByReason: Record<CompiledEvidenceSuppressionReason, number>;
+  /** How many primary findings carry each presentation flag. */
+  flagSummary: CompiledEvidenceFlagSummary;
   balanced: boolean;
 }
 
@@ -356,6 +427,17 @@ export function compileCompiledEvidenceReview(
     repeated_header: 0,
   };
 
+  // Caller-provided per-evidence refinement, read by evidenceId only (never
+  // iterated) to stay ES target agnostic. Refinement adds display data and
+  // flags; it never drops a deterministic record, so the balance is preserved.
+  const refinementByEvidenceId = new Map<
+    string,
+    CompiledEvidenceEvidenceRefinementInput
+  >();
+  for (const refinement of input.refinement?.evidenceRefinements ?? []) {
+    refinementByEvidenceId.set(refinement.evidenceId, refinement);
+  }
+
   // Group surviving text inputs by document + role + topic, source order kept.
   const seenBodies = new Set<string>();
   const groups: TextGroup[] = [];
@@ -372,7 +454,7 @@ export function compileCompiledEvidenceReview(
       continue;
     }
     const documentName = documentNameOf(entry.sourceFileName);
-    const key = `${documentName} ${entry.sourceFileRole ?? ""} ${entry.topic ?? ""}`;
+    const key = `${documentName}${GROUP_KEY_DELIMITER}${entry.sourceFileRole ?? ""}${GROUP_KEY_DELIMITER}${entry.topic ?? ""}`;
     let group = groupByKey.get(key);
     if (group === undefined) {
       group = {
@@ -397,19 +479,32 @@ export function compileCompiledEvidenceReview(
 
   const findings: CompiledEvidenceFinding[] = [];
   groups.forEach((group, index) => {
+    // A grouped finding is refined if ANY contributing record carries one.
+    const refs = group.audit
+      .map((entry) => refinementByEvidenceId.get(entry.evidenceId))
+      .filter(
+        (ref): ref is CompiledEvidenceEvidenceRefinementInput =>
+          ref !== undefined
+      );
+    const cleanSummary = refs.find((ref) => ref.cleanSummary !== undefined)
+      ?.cleanSummary;
+    const readableContent = refs.find((ref) => ref.readableContent !== undefined)
+      ?.readableContent;
+    const flags = defaultFlags();
+    flags.aiRefined = refs.length > 0;
+    flags.lowConfidence = refs.some((ref) => ref.lowConfidence === true);
+    flags.conflict = refs.some((ref) => ref.conflict === true);
     findings.push({
       findingId: `text-finding-${index + 1}`,
       kind: "text",
       title: group.topic ?? group.documentName,
       documentName: group.documentName,
       ...(group.role !== undefined ? { role: group.role } : {}),
+      ...(group.topic !== undefined ? { topic: group.topic } : {}),
+      ...(cleanSummary !== undefined ? { cleanSummary } : {}),
       citations: group.citations,
-      body: group.bodies.join("\n\n"),
-      flags: {
-        tableRepaired: false,
-        aiRefined: false,
-        missingFromDeterministic: false,
-      },
+      body: readableContent ?? group.bodies.join("\n\n"),
+      flags,
       audit: group.audit,
     });
   });
@@ -436,6 +531,12 @@ export function compileCompiledEvidenceReview(
     }
     const sheetName = repair?.sheetName ?? entry.sheetName;
     const pageNumber = repair?.pageNumber ?? entry.pageNumber;
+    const ref = refinementByEvidenceId.get(entry.evidenceId);
+    const flags = defaultFlags();
+    flags.tableRepaired = repair !== undefined;
+    flags.aiRefined = repair !== undefined || ref !== undefined;
+    flags.lowConfidence = ref?.lowConfidence === true;
+    flags.conflict = ref?.conflict === true;
     findings.push({
       findingId: `table-finding-${index + 1}`,
       kind: "table",
@@ -449,6 +550,9 @@ export function compileCompiledEvidenceReview(
       ...(entry.sourceFileRole !== undefined
         ? { role: entry.sourceFileRole }
         : {}),
+      ...(ref?.cleanSummary !== undefined
+        ? { cleanSummary: ref.cleanSummary }
+        : {}),
       citations: [
         {
           tableLabel: `Table ${perDocument}`,
@@ -456,12 +560,9 @@ export function compileCompiledEvidenceReview(
           ...(sheetName !== undefined ? { sheetLabel: `Sheet: ${sheetName}` } : {}),
         },
       ],
+      ...(ref?.readableContent !== undefined ? { body: ref.readableContent } : {}),
       table: { rows: repair !== undefined ? repair.rows : entry.rows },
-      flags: {
-        tableRepaired: repair !== undefined,
-        aiRefined: repair !== undefined,
-        missingFromDeterministic: false,
-      },
+      flags,
       audit: [tableAudit(entry)],
     });
   });
@@ -497,11 +598,7 @@ export function compileCompiledEvidenceReview(
         },
       ],
       table: { rows: repair.rows },
-      flags: {
-        tableRepaired: true,
-        aiRefined: true,
-        missingFromDeterministic: false,
-      },
+      flags: { ...defaultFlags(), tableRepaired: true, aiRefined: true },
       audit: [],
     });
   });
@@ -537,7 +634,7 @@ export function compileCompiledEvidenceReview(
         ? { body: candidate.description }
         : {}),
       flags: {
-        tableRepaired: false,
+        ...defaultFlags(),
         aiRefined: true,
         missingFromDeterministic: true,
       },
@@ -556,6 +653,13 @@ export function compileCompiledEvidenceReview(
   );
   const suppressedCount = suppressed.length;
 
+  // Per-flag counts across primary findings, so the operator can see how many
+  // findings the caller marked low-confidence, conflicting, AI-refined, etc.
+  const flagSummary = FLAG_NAMES.reduce((summary, flag) => {
+    summary[flag] = findings.filter((finding) => finding.flags[flag]).length;
+    return summary;
+  }, {} as CompiledEvidenceFlagSummary);
+
   return {
     findings,
     suppressed,
@@ -571,6 +675,7 @@ export function compileCompiledEvidenceReview(
       accountedInPrimaryCount,
       suppressedCount,
       suppressedByReason,
+      flagSummary,
       balanced:
         accountedInPrimaryCount + suppressedCount === deterministicInputCount,
     },

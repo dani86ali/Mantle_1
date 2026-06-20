@@ -4,6 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import ProjectRfpEvidencePage from "@/app/projects/[id]/rfp/page";
+import {
+  compileCompiledEvidenceReview,
+  type CompiledEvidenceDeterministicInput,
+} from "@/lib/projects/project-rfp-compiled-evidence-review";
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "proj-rfp-1" }),
@@ -36,6 +40,9 @@ const CONFIG_EXPANSION_ARTIFACT_ID = "art-config-1";
 
 const TEXT_BODY_CANARY = "TEXT-BODY-CANARY";
 const TABLE_CELL_CANARY = "TABLE-CELL-CANARY";
+// A sentinel only present if the page renders the RETURNED compiledReview and
+// not a fresh recompile of package.evidence (which carries no refinement).
+const COMPILED_SUMMARY_CANARY = "COMPILED-SUMMARY-CANARY";
 
 interface FetchCall {
   url: string;
@@ -453,10 +460,59 @@ function evidencePackageApprovedOnlyResponse(): Record<string, unknown> {
   };
 }
 
+function evidencePackageDetailEvidence(): CompiledEvidenceDeterministicInput[] {
+  return [
+    {
+      evidenceId: "ev-text-1",
+      evidenceKind: "rfp_document_text_chunk",
+      sourceFileId: "file-rfp-1",
+      inputPackageArtifactId: INPUT_PACKAGE_ARTIFACT_ID,
+      sourceFileName: "rfp-main.pdf",
+      sourceFileRole: "rfp",
+      chunkIndex: 0,
+      chunkCount: 4,
+      text: "The supplier shall provide a network design.",
+      charCount: 1810,
+    },
+    {
+      evidenceId: "ev-table-1",
+      evidenceKind: "rfp_document_table",
+      sourceFileId: "file-rfp-2",
+      inputPackageArtifactId: INPUT_PACKAGE_ARTIFACT_ID,
+      sourceFileName: "rfp-scope.xlsx",
+      sourceFileRole: "scope_of_work",
+      tableId: "tbl-1",
+      sheetName: "Scope",
+      rowCount: 2,
+      columnCount: 2,
+      rows: [
+        ["Item", "Qty"],
+        [TABLE_CELL_CANARY, "4"],
+      ],
+    },
+  ];
+}
+
 function evidencePackageDetailResponse(
   id = EVIDENCE_PACKAGE_ARTIFACT_ID,
   status = "needs_review"
 ): Record<string, unknown> {
+  const evidence = evidencePackageDetailEvidence();
+  // The inspection read model returns compiledReview; here it carries a caller
+  // refinement (clean summary + low-confidence flag) the raw evidence lacks, so
+  // a test can prove the page renders the RETURNED review, not a recompile.
+  const compiledReview = compileCompiledEvidenceReview({
+    deterministicEvidence: evidence,
+    refinement: {
+      evidenceRefinements: [
+        {
+          evidenceId: "ev-text-1",
+          cleanSummary: COMPILED_SUMMARY_CANARY,
+          lowConfidence: true,
+        },
+      ],
+    },
+  });
   return {
     project: projectContext(),
     artifact: artifact(id, "evidence_package", status, id === EVIDENCE_PACKAGE_ARTIFACT_ID ? 2 : 1),
@@ -466,36 +522,8 @@ function evidencePackageDetailResponse(
       evidenceCount: 2,
       textChunkCount: 1,
       tableEvidenceCount: 1,
-      evidence: [
-        {
-          evidenceId: "ev-text-1",
-          evidenceKind: "rfp_document_text_chunk",
-          sourceFileId: "file-rfp-1",
-          inputPackageArtifactId: INPUT_PACKAGE_ARTIFACT_ID,
-          sourceFileName: "rfp-main.pdf",
-          sourceFileRole: "rfp",
-          chunkIndex: 0,
-          chunkCount: 4,
-          text: "The supplier shall provide a network design.",
-          charCount: 1810,
-        },
-        {
-          evidenceId: "ev-table-1",
-          evidenceKind: "rfp_document_table",
-          sourceFileId: "file-rfp-2",
-          inputPackageArtifactId: INPUT_PACKAGE_ARTIFACT_ID,
-          sourceFileName: "rfp-scope.xlsx",
-          sourceFileRole: "scope_of_work",
-          tableId: "tbl-1",
-          sheetName: "Scope",
-          rowCount: 2,
-          columnCount: 2,
-          rows: [
-            ["Item", "Qty"],
-            [TABLE_CELL_CANARY, "4"],
-          ],
-        },
-      ],
+      evidence,
+      compiledReview,
     },
   };
 }
@@ -632,6 +660,15 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(compiled).toHaveTextContent("network design");
     expect(compiled).toHaveTextContent(TABLE_CELL_CANARY);
     expect(compiled).toHaveTextContent("Passage 1 of 4");
+
+    // The drawer renders the RETURNED compiled review (clean summary + flag),
+    // proving it does not recompile from package.evidence (which has neither).
+    expect(within(compiled).getByTestId("ep-finding-summary")).toHaveTextContent(
+      COMPILED_SUMMARY_CANARY
+    );
+    expect(
+      within(compiled).getByTestId("ep-finding-flag-low-confidence")
+    ).toBeInTheDocument();
 
     // Raw ids and the word chunk never appear in the primary compiled review.
     expect(compiled).not.toHaveTextContent("ev-text-1");

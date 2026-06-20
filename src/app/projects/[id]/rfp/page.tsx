@@ -51,10 +51,7 @@ import type {
   RfpEvidencePackageInspectionListItem,
   RfpEvidencePackageInspectionPackage,
 } from "@/lib/projects/project-rfp-evidence-package-inspection";
-import {
-  compileCompiledEvidenceReview,
-  type CompiledEvidenceFinding,
-} from "@/lib/projects/project-rfp-compiled-evidence-review";
+import type { CompiledEvidenceFinding } from "@/lib/projects/project-rfp-compiled-evidence-review";
 import type { ProjectRfpBoqWorkspace } from "@/lib/projects/project-rfp-boq-workspace";
 import type {
   ProjectArtifactStatus,
@@ -1190,6 +1187,38 @@ function CompiledFindingView({ finding }: { finding: CompiledEvidenceFinding }) 
             proposed addition
           </span>
         )}
+        {finding.flags.duplicate && (
+          <span
+            data-testid="ep-finding-flag-duplicate"
+            className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px] text-text-secondary"
+          >
+            duplicate
+          </span>
+        )}
+        {finding.flags.boilerplate && (
+          <span
+            data-testid="ep-finding-flag-boilerplate"
+            className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px] text-text-secondary"
+          >
+            boilerplate
+          </span>
+        )}
+        {finding.flags.lowConfidence && (
+          <span
+            data-testid="ep-finding-flag-low-confidence"
+            className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200"
+          >
+            low confidence
+          </span>
+        )}
+        {finding.flags.conflict && (
+          <span
+            data-testid="ep-finding-flag-conflict"
+            className="rounded-full border border-destructive/30 bg-destructive-muted px-2 py-0.5 text-[11px] text-destructive"
+          >
+            conflict
+          </span>
+        )}
         {finding.flags.aiRefined && (
           <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px] text-text-secondary">
             AI refined
@@ -1199,7 +1228,16 @@ function CompiledFindingView({ finding }: { finding: CompiledEvidenceFinding }) 
       <p className="text-xs text-text-secondary">
         {finding.documentName}
         {finding.role !== undefined ? ` (${fileRoleLabel(finding.role)})` : ""}
+        {finding.topic !== undefined ? ` | ${finding.topic}` : ""}
       </p>
+      {finding.cleanSummary !== undefined && (
+        <p
+          data-testid="ep-finding-summary"
+          className="mt-1 text-xs text-text-primary"
+        >
+          {finding.cleanSummary}
+        </p>
+      )}
       {finding.citations.length > 0 && (
         <ul className="mt-1 space-y-0.5">
           {finding.citations.map((citation, citationIndex) => (
@@ -2762,11 +2800,11 @@ export default function ProjectRfpEvidencePage() {
 
   function renderPackageDrawerContent(): ReactNode {
     if (packageDetail === null) return null;
-    // The compiled review is derived deterministically from the sanitized
-    // evidence records; the raw records stay the persisted authority below.
-    const compiledReview = compileCompiledEvidenceReview({
-      deterministicEvidence: packageDetail.package.evidence,
-    });
+    // The compiled review is returned by the inspection read model (derived
+    // deterministically from the sanitized evidence records); the raw records
+    // stay the persisted authority in the collapsed audit below. The page never
+    // recompiles it from package.evidence.
+    const compiledReview = packageDetail.package.compiledReview;
     const { accounting } = compiledReview;
     return (
       <div data-testid="ep-detail-panel" className="space-y-3">

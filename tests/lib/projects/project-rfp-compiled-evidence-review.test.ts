@@ -214,9 +214,13 @@ describe("compileCompiledEvidenceReview - tables", () => {
       ],
     });
     expect(table.flags).toEqual({
-      tableRepaired: false,
+      duplicate: false,
+      boilerplate: false,
+      lowConfidence: false,
       aiRefined: false,
+      tableRepaired: false,
       missingFromDeterministic: false,
+      conflict: false,
     });
     expect(table.audit[0].tableId).toBe("file-uuid-ccc:table:7");
 
@@ -271,9 +275,13 @@ describe("compileCompiledEvidenceReview - refinement and missing candidates", ()
     expect(review.findings).toHaveLength(1);
     const table = review.findings[0];
     expect(table.flags).toEqual({
-      tableRepaired: true,
+      duplicate: false,
+      boilerplate: false,
+      lowConfidence: false,
       aiRefined: true,
+      tableRepaired: true,
       missingFromDeterministic: false,
+      conflict: false,
     });
     expect(table.table?.rows[1][1]).toBe("2 (repaired)");
     // The deterministic table is still accounted for in the audit.
@@ -325,9 +333,13 @@ describe("compileCompiledEvidenceReview - refinement and missing candidates", ()
     expect(missing.body).toBe("RFP section 4 requires an SLA.");
     expect(missing.citations).toEqual([{ passageLabel: "Section 4" }]);
     expect(missing.flags).toEqual({
-      tableRepaired: false,
+      duplicate: false,
+      boilerplate: false,
+      lowConfidence: false,
       aiRefined: true,
+      tableRepaired: false,
       missingFromDeterministic: true,
+      conflict: false,
     });
     expect(missing.audit).toEqual([]);
     expect(review.accounting.missingCandidateFindingCount).toBe(1);
@@ -335,6 +347,125 @@ describe("compileCompiledEvidenceReview - refinement and missing candidates", ()
     expect(review.accounting.deterministicInputCount).toBe(1);
     expect(review.accounting.accountedInPrimaryCount).toBe(1);
     expect(review.accounting.balanced).toBe(true);
+  });
+});
+
+describe("compileCompiledEvidenceReview - per-evidence AI refinement", () => {
+  it("applies a caller cleanSummary and readableContent to the grouped text finding and flags aiRefined", () => {
+    const review = compile({
+      deterministicEvidence: [
+        textInput({ evidenceId: "t1", chunkIndex: 0, chunkCount: 2, text: "Raw clause one." }),
+        textInput({ evidenceId: "t2", chunkIndex: 1, chunkCount: 2, text: "Raw clause two." }),
+      ],
+      refinement: {
+        evidenceRefinements: [
+          {
+            evidenceId: "t1",
+            cleanSummary: "Two SLA clauses, normalized.",
+            readableContent: "Clause one and clause two, cleaned.",
+          },
+        ],
+      },
+    });
+
+    expect(review.findings).toHaveLength(1);
+    const finding = review.findings[0];
+    expect(finding.cleanSummary).toBe("Two SLA clauses, normalized.");
+    // Caller readableContent overrides the raw joined body.
+    expect(finding.body).toBe("Clause one and clause two, cleaned.");
+    expect(finding.flags.aiRefined).toBe(true);
+    // Refinement must never remove deterministic evidence: both inputs balance.
+    expect(finding.audit).toHaveLength(2);
+    expect(review.accounting.accountedInPrimaryCount).toBe(2);
+    expect(review.accounting.deterministicInputCount).toBe(2);
+    expect(review.accounting.balanced).toBe(true);
+  });
+
+  it("carries caller lowConfidence and conflict flags onto a table finding and into the flag summary", () => {
+    const review = compile({
+      deterministicEvidence: [tableInput({ evidenceId: "tbl-ev-1" })],
+      refinement: {
+        evidenceRefinements: [
+          { evidenceId: "tbl-ev-1", lowConfidence: true, conflict: true },
+        ],
+      },
+    });
+
+    const table = review.findings[0];
+    expect(table.flags.lowConfidence).toBe(true);
+    expect(table.flags.conflict).toBe(true);
+    expect(table.flags.aiRefined).toBe(true);
+    expect(table.flags.tableRepaired).toBe(false);
+    expect(review.accounting.flagSummary.lowConfidence).toBe(1);
+    expect(review.accounting.flagSummary.conflict).toBe(1);
+    expect(review.accounting.flagSummary.aiRefined).toBe(1);
+    // The deterministic table is still accounted for - refinement adds no risk.
+    expect(table.audit[0].evidenceId).toBe("tbl-ev-1");
+    expect(review.accounting.balanced).toBe(true);
+  });
+});
+
+describe("compileCompiledEvidenceReview - suppression and flag summaries", () => {
+  it("keeps boilerplate and duplicate items audit-only yet exposes the suppression accounting and an all-flag summary", () => {
+    const LONG_BODY =
+      "The contractor shall maintain ninety nine point nine percent service availability for the duration of the contract.";
+    const review = compile({
+      deterministicEvidence: [
+        textInput({ evidenceId: "k1", text: LONG_BODY }),
+        textInput({ evidenceId: "dup", text: LONG_BODY }),
+        textInput({ evidenceId: "bp", text: "Copyright 2026 STC. All rights reserved." }),
+      ],
+    });
+
+    // The boilerplate and duplicate inputs are suppressed, never findings.
+    expect(review.findings).toHaveLength(1);
+    expect(review.findings[0].audit).toHaveLength(1);
+    expect(review.suppressed.map((entry) => entry.audit.evidenceId).sort()).toEqual(
+      ["bp", "dup"]
+    );
+
+    // The suppression accounting still shows the operator what was removed.
+    expect(review.accounting.suppressedByReason.duplicate_body).toBe(1);
+    expect(review.accounting.suppressedByReason.proprietary_notice).toBe(1);
+    expect(review.accounting.suppressedCount).toBe(2);
+
+    // The flag summary carries all seven keys so consumers never guess.
+    expect(Object.keys(review.accounting.flagSummary).sort()).toEqual(
+      [
+        "aiRefined",
+        "boilerplate",
+        "conflict",
+        "duplicate",
+        "lowConfidence",
+        "missingFromDeterministic",
+        "tableRepaired",
+      ]
+    );
+
+    // Every deterministic input still balances across primary + suppressed.
+    expect(review.accounting.accountedInPrimaryCount).toBe(1);
+    expect(review.accounting.deterministicInputCount).toBe(3);
+    expect(
+      review.accounting.accountedInPrimaryCount + review.accounting.suppressedCount
+    ).toBe(review.accounting.deterministicInputCount);
+    expect(review.accounting.balanced).toBe(true);
+  });
+
+  it("includes every flag key on each finding so presentation booleans are exhaustive", () => {
+    const review = compile({
+      deterministicEvidence: [textInput({ evidenceId: "t1", text: "A clause." })],
+    });
+    expect(Object.keys(review.findings[0].flags).sort()).toEqual(
+      [
+        "aiRefined",
+        "boilerplate",
+        "conflict",
+        "duplicate",
+        "lowConfidence",
+        "missingFromDeterministic",
+        "tableRepaired",
+      ]
+    );
   });
 });
 
@@ -363,5 +494,13 @@ describe("compileCompiledEvidenceReview - purity (static source check)", () => {
   it("keeps the source and test files ASCII-only", () => {
     expect(/[^\x00-\x7F]/.test(source)).toBe(false);
     expect(/[^\x00-\x7F]/.test(readFileSync(TEST_PATH, "utf8"))).toBe(false);
+  });
+
+  it("contains no raw control characters in source (no NUL/control delimiters)", () => {
+    // ASCII-only still permits control chars (0x00-0x1F); a literal NUL or other
+    // control char used as a delimiter must never sit in the source bytes.
+    const control = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+    expect(control.test(source)).toBe(false);
+    expect(control.test(readFileSync(TEST_PATH, "utf8"))).toBe(false);
   });
 });

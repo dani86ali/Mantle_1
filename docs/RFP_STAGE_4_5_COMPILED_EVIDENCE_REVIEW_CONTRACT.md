@@ -35,6 +35,12 @@ Input:
   entries).
 - `refinement?.repairedTables`: caller-provided readable table repairs, matched
   to a deterministic table by `evidenceId`.
+- `refinement?.evidenceRefinements`: caller-provided per-evidence presentation
+  refinement matched by `evidenceId` - an optional clean summary, normalized
+  readable content, and the `lowConfidence` / `conflict` flags. For a grouped
+  text finding, a match on any contributing record refines the whole group.
+  Refinement is presentation only and adds no live AI call; it only adds display
+  data and flags and never drops a deterministic record, so the balance holds.
 - `missingCandidates?`: caller-provided proposals for evidence missing from the
   deterministic extraction.
 
@@ -44,6 +50,20 @@ Output `CompiledEvidenceReview`:
 - `suppressed`: deterministic records removed from primary findings, retained
   for collapsed audit/history with raw traceability and a short preview.
 - `accounting`: counts that prove the deterministic balance.
+
+### Finding fields and flags
+
+Each finding carries human labels (`title`, `documentName`, `role`,
+`topic`/category), an optional caller `cleanSummary`, the normalized readable
+`body` (caller `readableContent` overrides the joined passages), `table` rows
+where applicable, human `citations`, the `audit` array, and a `flags` object.
+`flags` always carries all seven presentation booleans: `duplicate`,
+`boilerplate`, `lowConfidence`, `aiRefined`, `tableRepaired`,
+`missingFromDeterministic`, and `conflict`. Suppressed boilerplate / duplicate /
+tiny / page-only records stay audit-only (never findings), but the review still
+exposes them through `accounting.suppressedByReason`, and
+`accounting.flagSummary` reports how many primary findings carry each flag, so
+the operator can see that suppression and refinement happened.
 
 ### Findings
 
@@ -110,10 +130,14 @@ module stays read-only: no store mutation, no evidence-store/file reads, no AI.
   `source-evidence-audit` block (counts + explanatory copy only). It no longer
   renders raw persisted evidence rows (`evidence-row`) in the normal workflow.
 - The evidence package drawer renders the grouped compiled findings first
-  (`ep-compiled-review`). The full raw package evidence array, if retained,
-  sits behind a collapsed audit/debug disclosure (`ep-raw-audit`). Primary
-  compiled finding cards carry no per-finding technical dropdown; raw machine
-  data stays in the drawer audit trail only.
-- The page compiles findings from the package evidence with the shared pure
-  model; it imports no DB, store, provider SDK, pricing, catalog, or
-  configuration authority.
+  (`ep-compiled-review`), consuming `packageDetail.package.compiledReview`
+  returned by the inspection read model. It does **not** recompile from
+  `packageDetail.package.evidence`. The full raw package evidence array, if
+  retained, sits behind a collapsed audit/debug disclosure (`ep-raw-audit`).
+  Primary compiled finding cards surface the clean summary, category/topic, and
+  the presentation flags (table repaired, proposed addition, duplicate,
+  boilerplate, low confidence, conflict, AI refined); raw machine data stays in
+  the drawer audit trail only, with no per-finding technical dropdown.
+- The page imports only the compiled-review finding type (type-only); it imports
+  no DB, store, provider SDK, pricing, catalog, or configuration authority, and
+  performs no live AI call.

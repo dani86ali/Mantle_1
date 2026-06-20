@@ -231,9 +231,13 @@ function expectedCompiledReview() {
         citations: [{ passageLabel: "Passage 1 of 2" }],
         body: TEXT_BODY,
         flags: {
-          tableRepaired: false,
+          duplicate: false,
+          boilerplate: false,
+          lowConfidence: false,
           aiRefined: false,
+          tableRepaired: false,
           missingFromDeterministic: false,
+          conflict: false,
         },
         audit: [
           {
@@ -263,9 +267,13 @@ function expectedCompiledReview() {
           ],
         },
         flags: {
-          tableRepaired: false,
+          duplicate: false,
+          boilerplate: false,
+          lowConfidence: false,
           aiRefined: false,
+          tableRepaired: false,
           missingFromDeterministic: false,
+          conflict: false,
         },
         audit: [
           {
@@ -301,6 +309,15 @@ function expectedCompiledReview() {
         page_only: 0,
         proprietary_notice: 0,
         repeated_header: 0,
+      },
+      flagSummary: {
+        duplicate: 0,
+        boilerplate: 0,
+        lowConfidence: 0,
+        aiRefined: 0,
+        tableRepaired: 0,
+        missingFromDeterministic: 0,
+        conflict: 0,
       },
       balanced: true,
     },
