@@ -47,6 +47,9 @@ import type {
 import {
   compileCompiledEvidenceReview,
   type CompiledEvidenceReview,
+  type CompiledEvidenceEvidenceRefinementInput,
+  type CompiledEvidenceRepairedTableInput,
+  type CompiledEvidenceMissingCandidateInput,
 } from "@/lib/projects/project-rfp-compiled-evidence-review";
 
 /**
@@ -72,6 +75,33 @@ const RFP_TEXT_CHUNK_EVIDENCE_KIND: RfpEvidencePackageTextEvidence["evidenceKind
   "rfp_document_text_chunk";
 const RFP_TABLE_EVIDENCE_KIND: RfpEvidencePackageTableEvidence["evidenceKind"] =
   "rfp_document_table";
+
+/**
+ * The reviewed extraction_delta source identity, pinned locally so this read
+ * module never pulls the extraction-delta draft/review services into its
+ * runtime graph. Stage 4.5 folds the ACCEPTED candidates of a reviewed delta
+ * (recorded after the input package id in the package's sourceArtifactIds)
+ * into the compiled human-review presentation; deterministic evidence stays
+ * fully accounted for and is never removed.
+ */
+const EXTRACTION_DELTA_ARTIFACT_TYPE: ProjectArtifact["type"] =
+  "extraction_delta";
+const RFP_EXTRACTION_DELTA_PAYLOAD_KIND = "rfp_extraction_delta";
+/** A reviewed delta candidate must carry one of these decided statuses. */
+const DELTA_DECIDED_REVIEW_STATUSES = [
+  "accepted",
+  "rejected",
+  "waived",
+] as const;
+/** Only accepted candidates influence the compiled review presentation. */
+const DELTA_ACCEPTED_REVIEW_STATUS = "accepted";
+/** The four extraction-delta candidate kinds, declared locally. */
+const DELTA_KIND_MISSING_EVIDENCE = "missing_evidence";
+const DELTA_KIND_INCORRECT_EXTRACTION = "incorrect_extraction";
+const DELTA_KIND_TABLE_RECONSTRUCTION = "table_reconstruction";
+const DELTA_KIND_SUSPICIOUS_ITEM = "suspicious_item";
+/** A finite candidate confidence below this reads as low confidence. */
+const DELTA_LOW_CONFIDENCE_MAX = 0.7;
 
 /** Lean serializable Project projection; tenantId is never surfaced. */
 export interface RfpEvidencePackageInspectionProjectSummary {
@@ -396,6 +426,228 @@ function toEvidence(entry: unknown): RfpEvidencePackageEvidence {
   };
 }
 
+/** True for a string equal to one of the closed decided review statuses. */
+function isDecidedDeltaReviewStatus(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    DELTA_DECIDED_REVIEW_STATUSES.some((status) => status === value)
+  );
+}
+
+/**
+ * Resolve one loaded extraction_delta source to its ACCEPTED candidate records,
+ * or null when the source must be ignored: missing, wrong type, wrong stage,
+ * malformed payload, wrong input package, or any candidate carrying an
+ * unresolved (pending) or malformed review status. Rejected and waived
+ * candidates are dropped here so they never reach the compiled review. The
+ * loaded artifact, payload, and candidate records are never mutated.
+ */
+function resolveAcceptedDeltaCandidates(
+  artifact: ProjectArtifact | null,
+  inputPackageArtifactId: string
+): Record<string, unknown>[] | null {
+  if (artifact === null) return null;
+  if (
+    artifact.type !== EXTRACTION_DELTA_ARTIFACT_TYPE ||
+    artifact.stageId !== EVIDENCE_PACKAGE_STAGE_ID
+  ) {
+    return null;
+  }
+  const payload = toRecord(artifact.payload);
+  const candidates = payload.candidates;
+  if (
+    payload.payloadKind !== RFP_EXTRACTION_DELTA_PAYLOAD_KIND ||
+    inputPackageArtifactId === "" ||
+    asString(payload.inputPackageArtifactId) !== inputPackageArtifactId ||
+    !Array.isArray(candidates) ||
+    candidates.some((entry) => !isPlainRecord(entry))
+  ) {
+    return null;
+  }
+  const records = candidates as Record<string, unknown>[];
+  if (
+    records.some(
+      (candidate) => !isDecidedDeltaReviewStatus(candidate.reviewStatus)
+    )
+  ) {
+    return null;
+  }
+  return records.filter(
+    (candidate) => candidate.reviewStatus === DELTA_ACCEPTED_REVIEW_STATUS
+  );
+}
+
+/** One candidate's cited references as locator-only plain records. */
+function citedDeltaReferences(
+  candidate: Record<string, unknown>
+): Record<string, unknown>[] {
+  const refs = candidate.evidenceReferences;
+  if (!Array.isArray(refs)) return [];
+  return refs.filter((ref): ref is Record<string, unknown> =>
+    isPlainRecord(ref)
+  );
+}
+
+/** The proposed text body of one proposal record, when it is a nonblank text. */
+function proposedTextBody(
+  proposed: Record<string, unknown> | undefined
+): string | undefined {
+  if (proposed === undefined) return undefined;
+  if (proposed.evidenceKind !== RFP_TEXT_CHUNK_EVIDENCE_KIND) return undefined;
+  const text = proposed.text;
+  return typeof text === "string" && text.trim() !== "" ? text : undefined;
+}
+
+/** True when any provided text field mentions the word "conflict". */
+function mentionsConflict(values: Array<string | undefined>): boolean {
+  return values.some(
+    (value) =>
+      typeof value === "string" && value.toLowerCase().includes("conflict")
+  );
+}
+
+/**
+ * Simple human citation labels for a missing candidate, derived from the first
+ * cited reference when present, otherwise the proposed evidence. Labels are
+ * human-readable only (passage/page/sheet) - never raw ids.
+ */
+function deltaCitationLabels(
+  refs: Record<string, unknown>[],
+  proposed: Record<string, unknown> | undefined
+): { passageLabel?: string; pageLabel?: string; sheetLabel?: string } {
+  const source = refs.length > 0 ? refs[0] : proposed;
+  if (source === undefined) return {};
+  if (source.evidenceKind === RFP_TABLE_EVIDENCE_KIND) {
+    const pageNumber = asOptionalNumber(source.pageNumber);
+    const sheetName = asOptionalString(source.sheetName);
+    return {
+      ...(pageNumber !== undefined ? { pageLabel: `Page ${pageNumber}` } : {}),
+      ...(sheetName !== undefined ? { sheetLabel: `Sheet: ${sheetName}` } : {}),
+    };
+  }
+  const chunkIndex = asOptionalNumber(source.chunkIndex);
+  const chunkCount = asOptionalNumber(source.chunkCount);
+  if (chunkIndex !== undefined && chunkCount !== undefined) {
+    return { passageLabel: `Passage ${chunkIndex + 1} of ${chunkCount}` };
+  }
+  return {};
+}
+
+/**
+ * Fold one source's accepted candidates into the presentation-only compiled
+ * review inputs (mutating the provided accumulators only). incorrect_extraction
+ * and suspicious_item add per-evidence refinements for every cited evidence id
+ * that exists in the deterministic package; table_reconstruction adds a
+ * repaired table matched to the first cited deterministic table evidence id
+ * (falling back to that table's labels); missing_evidence adds a proposal-only
+ * missing candidate. Deterministic evidence is never touched, so the compiled
+ * accounting balance is preserved.
+ */
+function collectAcceptedDeltaInputs(
+  acceptedCandidates: Record<string, unknown>[],
+  deterministicById: Map<string, RfpEvidencePackageEvidence>,
+  evidenceRefinements: CompiledEvidenceEvidenceRefinementInput[],
+  repairedTables: CompiledEvidenceRepairedTableInput[],
+  missingCandidates: CompiledEvidenceMissingCandidateInput[]
+): void {
+  for (const candidate of acceptedCandidates) {
+    const kind = candidate.kind;
+    const title = asString(candidate.title);
+    const description = asString(candidate.description);
+    const rationale = asOptionalString(candidate.rationale);
+    const refs = citedDeltaReferences(candidate);
+    const proposed = isPlainRecord(candidate.proposedEvidence)
+      ? candidate.proposedEvidence
+      : undefined;
+
+    if (
+      kind === DELTA_KIND_INCORRECT_EXTRACTION ||
+      kind === DELTA_KIND_SUSPICIOUS_ITEM
+    ) {
+      const proposedText = proposedTextBody(proposed);
+      const readableContent =
+        proposedText !== undefined ? proposedText : description;
+      const lowConfidence =
+        isFiniteNumber(candidate.confidence) &&
+        candidate.confidence < DELTA_LOW_CONFIDENCE_MAX;
+      const conflict =
+        kind === DELTA_KIND_SUSPICIOUS_ITEM ||
+        mentionsConflict([title, description, rationale, proposedText]);
+      for (const ref of refs) {
+        const evidenceId = asString(ref.evidenceId);
+        if (evidenceId === "" || !deterministicById.has(evidenceId)) continue;
+        evidenceRefinements.push({
+          evidenceId,
+          ...(title !== "" ? { cleanSummary: title } : {}),
+          ...(readableContent !== "" ? { readableContent } : {}),
+          lowConfidence,
+          conflict,
+        });
+      }
+      continue;
+    }
+
+    if (kind === DELTA_KIND_TABLE_RECONSTRUCTION) {
+      if (
+        proposed === undefined ||
+        proposed.evidenceKind !== RFP_TABLE_EVIDENCE_KIND
+      ) {
+        continue;
+      }
+      const rows = toTableRows(proposed.rows);
+      if (rows.length === 0) continue;
+      let matched: RfpEvidencePackageTableEvidence | undefined;
+      let matchedId = "";
+      for (const ref of refs) {
+        const evidenceId = asString(ref.evidenceId);
+        if (evidenceId === "") continue;
+        const det = deterministicById.get(evidenceId);
+        if (det !== undefined && det.evidenceKind === RFP_TABLE_EVIDENCE_KIND) {
+          matched = det;
+          matchedId = evidenceId;
+          break;
+        }
+      }
+      const sourceFileName =
+        asOptionalString(proposed.sourceFileName) ?? matched?.sourceFileName;
+      const sourceFileRole =
+        asOptionalString(proposed.sourceFileRole) ?? matched?.sourceFileRole;
+      const pageNumber =
+        asOptionalNumber(proposed.pageNumber) ?? matched?.pageNumber;
+      const sheetName =
+        asOptionalString(proposed.sheetName) ?? matched?.sheetName;
+      repairedTables.push({
+        evidenceId: matchedId,
+        ...(sourceFileName !== undefined ? { sourceFileName } : {}),
+        ...(sourceFileRole !== undefined ? { sourceFileRole } : {}),
+        ...(pageNumber !== undefined ? { pageNumber } : {}),
+        ...(sheetName !== undefined ? { sheetName } : {}),
+        rows,
+      });
+      continue;
+    }
+
+    if (kind === DELTA_KIND_MISSING_EVIDENCE) {
+      const sourceFileName =
+        proposed !== undefined
+          ? asOptionalString(proposed.sourceFileName)
+          : undefined;
+      const sourceFileRole =
+        proposed !== undefined
+          ? asOptionalString(proposed.sourceFileRole)
+          : undefined;
+      missingCandidates.push({
+        candidateId: asString(candidate.id),
+        title,
+        ...(description !== "" ? { description } : {}),
+        ...(sourceFileName !== undefined ? { sourceFileName } : {}),
+        ...(sourceFileRole !== undefined ? { sourceFileRole } : {}),
+        ...deltaCitationLabels(refs, proposed),
+      });
+    }
+  }
+}
+
 /**
  * List one rfp Project's evidence_package artifact versions as lean
  * serializable summaries. Validates a nonblank projectId before any store call
@@ -513,6 +765,48 @@ export async function loadRfpEvidencePackageDetail(
   // those entries so every deterministic input is accounted for once.
   const sanitizedEvidence = evidence.map((entry) => toEvidence(entry));
 
+  // Reviewed extraction_delta sources are recorded after the input package id
+  // in the package's sourceArtifactIds. Load each exact source through the
+  // store boundary and fold ONLY its accepted candidates into the compiled
+  // human-review presentation; deterministic evidence is never removed.
+  const inputPackageArtifactId = asString(payload.inputPackageArtifactId);
+  const deterministicById = new Map<string, RfpEvidencePackageEvidence>();
+  for (const entry of sanitizedEvidence) {
+    if (entry.evidenceId !== "" && !deterministicById.has(entry.evidenceId)) {
+      deterministicById.set(entry.evidenceId, entry);
+    }
+  }
+  const inputIndex = artifact.sourceArtifactIds.indexOf(inputPackageArtifactId);
+  const deltaSourceIds =
+    inputIndex >= 0 ? artifact.sourceArtifactIds.slice(inputIndex + 1) : [];
+  const evidenceRefinements: CompiledEvidenceEvidenceRefinementInput[] = [];
+  const repairedTables: CompiledEvidenceRepairedTableInput[] = [];
+  const missingCandidates: CompiledEvidenceMissingCandidateInput[] = [];
+  for (const deltaSourceId of deltaSourceIds) {
+    if (deltaSourceId === "" || deltaSourceId === inputPackageArtifactId) {
+      continue;
+    }
+    const deltaArtifact = await getProjectArtifactById(
+      tenantId,
+      projectId,
+      deltaSourceId
+    );
+    const accepted = resolveAcceptedDeltaCandidates(
+      deltaArtifact,
+      inputPackageArtifactId
+    );
+    if (accepted === null) continue;
+    collectAcceptedDeltaInputs(
+      accepted,
+      deterministicById,
+      evidenceRefinements,
+      repairedTables,
+      missingCandidates
+    );
+  }
+  const hasRefinement =
+    evidenceRefinements.length > 0 || repairedTables.length > 0;
+
   return {
     status: "ok",
     project: toProjectSummary(project),
@@ -521,7 +815,7 @@ export async function loadRfpEvidencePackageDetail(
       payloadKind: RFP_EVIDENCE_PACKAGE_PAYLOAD_KIND,
       createdBy: asString(payload.createdBy),
       createdAt: asString(payload.createdAt),
-      inputPackageArtifactId: asString(payload.inputPackageArtifactId),
+      inputPackageArtifactId,
       evidenceCount: asCount(payload.evidenceCount),
       textChunkCount: asCount(payload.textChunkCount),
       tableEvidenceCount: asCount(payload.tableEvidenceCount),
@@ -530,6 +824,10 @@ export async function loadRfpEvidencePackageDetail(
       evidence: sanitizedEvidence,
       compiledReview: compileCompiledEvidenceReview({
         deterministicEvidence: sanitizedEvidence,
+        ...(hasRefinement
+          ? { refinement: { evidenceRefinements, repairedTables } }
+          : {}),
+        ...(missingCandidates.length > 0 ? { missingCandidates } : {}),
       }),
     },
   };

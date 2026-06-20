@@ -55,6 +55,20 @@ const TS2 = new Date("2026-06-02T11:30:00.000Z");
 const TEXT_BODY = "Contractor shall supply 48-port PoE access switches.";
 const TABLE_CELL = "C9300-48P";
 
+// Reviewed extraction_delta source wired after the input package id.
+const DELTA_ID = "art-extraction-delta-1";
+const DELTA_KIND = "rfp_extraction_delta" as const;
+const AI_TEXT = "Refined: 48-port PoE access switches, corrected quantity 12.";
+const REPAIRED_CELL = "C9300-48P-REPAIRED";
+const REPAIRED_ROWS = [
+  ["SKU", "Qty"],
+  [REPAIRED_CELL, "12"],
+];
+const MISSING_TITLE = "Missing warranty clause";
+const MISSING_DESC = "Warranty terms are absent from the deterministic extraction.";
+const REJECTED_MARKER = "REJECTED-CANDIDATE-MARKER";
+const WAIVED_MARKER = "WAIVED-CANDIDATE-MARKER";
+
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: PROJECT,
@@ -171,6 +185,158 @@ function makePackageArtifact(
     updatedAt: TS2,
     ...overrides,
   };
+}
+
+/** A locator-only reference to the deterministic text chunk, as the delta stores it. */
+function textReference(): Record<string, unknown> {
+  return {
+    evidenceId: EV_TEXT,
+    evidenceKind: TEXT_KIND,
+    sourceFileId: FILE_RFP,
+    inputPackageArtifactId: INPUT_PKG,
+    chunkIndex: 0,
+    chunkCount: 2,
+    charCount: 52,
+  };
+}
+
+/** A locator-only reference to the deterministic table, as the delta stores it. */
+function tableReference(): Record<string, unknown> {
+  return {
+    evidenceId: EV_TABLE,
+    evidenceKind: TABLE_KIND,
+    sourceFileId: FILE_BOQ,
+    inputPackageArtifactId: INPUT_PKG,
+    tableId: TABLE_ID,
+    pageNumber: 4,
+    sheetName: "BoQ Sheet",
+    rowCount: 2,
+    columnCount: 2,
+  };
+}
+
+/**
+ * A reviewed extraction_delta payload: an accepted incorrect_extraction citing
+ * the text evidence with proposed text, an accepted table_reconstruction citing
+ * the table evidence with proposed rows, an accepted missing_evidence, plus a
+ * rejected and a waived candidate that would be visible if applied wrongly.
+ * Every candidate carries a decided review status.
+ */
+function makeDeltaPayload(): Record<string, unknown> {
+  return {
+    payloadKind: DELTA_KIND,
+    createdBy: CREATED_BY,
+    createdAt: PAYLOAD_AT,
+    proposalSource: "engineer",
+    inputPackageArtifactId: INPUT_PKG,
+    candidateCount: 5,
+    evidenceReferenceCount: 3,
+    sourceFileIds: [FILE_RFP, FILE_BOQ],
+    sourceArtifactIds: [INPUT_PKG],
+    candidates: [
+      {
+        id: "RFP-DELTA-001",
+        kind: "incorrect_extraction",
+        sourceFileId: FILE_RFP,
+        title: "Corrected access switch count",
+        description: "fallback description body",
+        severity: "warning",
+        confidence: 0.5,
+        reviewStatus: "accepted",
+        evidenceReferences: [textReference()],
+        proposedEvidence: {
+          evidenceKind: TEXT_KIND,
+          text: AI_TEXT,
+          sourceFileName: "RFP.pdf",
+          sourceFileRole: "rfp",
+          chunkIndex: 0,
+          chunkCount: 2,
+        },
+      },
+      {
+        id: "RFP-DELTA-002",
+        kind: "table_reconstruction",
+        sourceFileId: FILE_BOQ,
+        title: "Repaired BoQ table",
+        description: "repaired",
+        severity: "warning",
+        reviewStatus: "accepted",
+        evidenceReferences: [tableReference()],
+        proposedEvidence: {
+          evidenceKind: TABLE_KIND,
+          sheetName: "BoQ Sheet",
+          pageNumber: 4,
+          rows: REPAIRED_ROWS,
+        },
+      },
+      {
+        id: "RFP-DELTA-003",
+        kind: "missing_evidence",
+        sourceFileId: FILE_RFP,
+        title: MISSING_TITLE,
+        description: MISSING_DESC,
+        severity: "warning",
+        reviewStatus: "accepted",
+        evidenceReferences: [],
+        proposedEvidence: {
+          evidenceKind: TEXT_KIND,
+          text: "Warranty: 5 years onsite support.",
+          sourceFileName: "RFP.pdf",
+          sourceFileRole: "rfp",
+          chunkIndex: 7,
+          chunkCount: 9,
+        },
+      },
+      {
+        id: "RFP-DELTA-004",
+        kind: "incorrect_extraction",
+        sourceFileId: FILE_RFP,
+        title: REJECTED_MARKER,
+        description: REJECTED_MARKER,
+        severity: "warning",
+        reviewStatus: "rejected",
+        evidenceReferences: [textReference()],
+        proposedEvidence: {
+          evidenceKind: TEXT_KIND,
+          text: REJECTED_MARKER,
+        },
+      },
+      {
+        id: "RFP-DELTA-005",
+        kind: "missing_evidence",
+        sourceFileId: FILE_RFP,
+        title: WAIVED_MARKER,
+        description: WAIVED_MARKER,
+        severity: "warning",
+        reviewStatus: "waived",
+        evidenceReferences: [],
+      },
+    ],
+  };
+}
+
+function makeDeltaArtifact(
+  overrides: Partial<ProjectArtifact> = {}
+): ProjectArtifact {
+  return {
+    id: DELTA_ID,
+    projectId: PROJECT,
+    stageId: "intake_package_review",
+    type: "extraction_delta",
+    status: "needs_review",
+    version: 1,
+    payload: makeDeltaPayload(),
+    sourceFileIds: [FILE_RFP, FILE_BOQ],
+    sourceArtifactIds: [INPUT_PKG],
+    createdAt: TS1,
+    updatedAt: TS2,
+    ...overrides,
+  };
+}
+
+/** The evidence package wired to a reviewed delta source after the input id. */
+function makePackageWithDelta(deltaId = DELTA_ID): ProjectArtifact {
+  return makePackageArtifact({ sourceArtifactIds: [INPUT_PKG, deltaId] });
 }
 
 function expectedProjectSummary() {
@@ -928,6 +1094,162 @@ describe("loadRfpEvidencePackageDetail - ok", () => {
     mockGetArtifact.mockRejectedValue(new Error("artifact read failed"));
 
     await expect(detail()).rejects.toThrow("artifact read failed");
+  });
+});
+
+describe("loadRfpEvidencePackageDetail - reviewed extraction_delta source", () => {
+  function findingsDisplayJson(
+    result: LoadRfpEvidencePackageDetailResult
+  ): string {
+    if (result.status !== "ok") throw new Error("unreachable");
+    return JSON.stringify(
+      result.package.compiledReview.findings.map(({ audit, ...rest }) => rest)
+    );
+  }
+
+  it("folds accepted candidates into the compiled review while keeping deterministic accounting balanced", async () => {
+    artifactById.set(PKG_A, makePackageWithDelta());
+    artifactById.set(DELTA_ID, makeDeltaArtifact());
+
+    const result = await detail();
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    // The delta source is loaded through the store boundary.
+    expect(mockGetArtifact).toHaveBeenCalledWith(TENANT, PROJECT, DELTA_ID);
+
+    const { findings, accounting } = result.package.compiledReview;
+    const textFinding = findings.find((f) => f.findingId === "text-finding-1");
+    const tableFinding = findings.find((f) => f.findingId === "table-finding-1");
+    const missingFinding = findings.find(
+      (f) => f.flags.missingFromDeterministic
+    );
+
+    // Accepted incorrect_extraction refines the grouped text finding.
+    expect(textFinding).toBeDefined();
+    expect(textFinding?.flags.aiRefined).toBe(true);
+    expect(textFinding?.flags.lowConfidence).toBe(true);
+    expect(textFinding?.cleanSummary).toBe("Corrected access switch count");
+    expect(textFinding?.body).toBe(AI_TEXT);
+
+    // Accepted table_reconstruction repairs the deterministic table in place.
+    expect(tableFinding).toBeDefined();
+    expect(tableFinding?.flags.tableRepaired).toBe(true);
+    expect(tableFinding?.flags.aiRefined).toBe(true);
+    expect(tableFinding?.table?.rows).toEqual(REPAIRED_ROWS);
+
+    // Accepted missing_evidence becomes a proposal-only finding.
+    expect(missingFinding).toBeDefined();
+    expect(missingFinding?.title).toBe(MISSING_TITLE);
+    expect(missingFinding?.kind).toBe("text");
+
+    // Deterministic inputs stay fully accounted for.
+    expect(accounting.balanced).toBe(true);
+    expect(accounting.deterministicInputCount).toBe(2);
+    expect(
+      accounting.accountedInPrimaryCount + accounting.suppressedCount
+    ).toBe(accounting.deterministicInputCount);
+    expect(result.package.evidence).toHaveLength(2);
+  });
+
+  it("never lets rejected or waived candidates alter the compiled review", async () => {
+    artifactById.set(PKG_A, makePackageWithDelta());
+    artifactById.set(DELTA_ID, makeDeltaArtifact());
+
+    const result = await detail();
+
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain(REJECTED_MARKER);
+    expect(serialized).not.toContain(WAIVED_MARKER);
+  });
+
+  it("keeps raw ids out of primary finding display fields", async () => {
+    artifactById.set(PKG_A, makePackageWithDelta());
+    artifactById.set(DELTA_ID, makeDeltaArtifact());
+
+    const result = await detail();
+
+    const display = findingsDisplayJson(result);
+    for (const raw of [
+      EV_TEXT,
+      EV_TABLE,
+      TABLE_ID,
+      FILE_RFP,
+      FILE_BOQ,
+      INPUT_PKG,
+      DELTA_ID,
+      "chunk",
+    ]) {
+      expect(display).not.toContain(raw);
+    }
+  });
+
+  it("ignores malformed, missing, or mismatched delta sources without failing detail", async () => {
+    const variants: Array<ProjectArtifact | null> = [
+      // missing: no artifact stored for the delta id
+      null,
+      // wrong type
+      makeDeltaArtifact({ type: "input_package" }),
+      // wrong stage
+      makeDeltaArtifact({ stageId: "requirements_baseline_review" }),
+      // wrong payload kind
+      makeDeltaArtifact({
+        payload: { ...makeDeltaPayload(), payloadKind: "rfp_input_package" },
+      }),
+      // candidates not an array
+      makeDeltaArtifact({
+        payload: { ...makeDeltaPayload(), candidates: "not-an-array" },
+      }),
+      // wrong input package
+      makeDeltaArtifact({
+        payload: {
+          ...makeDeltaPayload(),
+          inputPackageArtifactId: "art-other-input",
+        },
+      }),
+      // an unresolved (pending) candidate poisons the whole source
+      makeDeltaArtifact({
+        payload: {
+          ...makeDeltaPayload(),
+          candidates: [
+            {
+              id: "RFP-DELTA-001",
+              kind: "incorrect_extraction",
+              sourceFileId: FILE_RFP,
+              title: "should-not-apply",
+              description: "should-not-apply",
+              reviewStatus: "pending_review",
+              evidenceReferences: [textReference()],
+            },
+          ],
+        },
+      }),
+    ];
+
+    for (const variant of variants) {
+      artifactById.clear();
+      artifactById.set(PKG_A, makePackageWithDelta());
+      if (variant !== null) artifactById.set(DELTA_ID, variant);
+
+      const result = await detail();
+
+      expect(result.status).toBe("ok");
+      if (result.status !== "ok") throw new Error("unreachable");
+      // No delta effect: the compiled review equals the deterministic-only one.
+      expect(result.package.compiledReview).toEqual(expectedCompiledReview());
+    }
+  });
+
+  it("does not mutate the loaded delta artifact, payload, or candidates", async () => {
+    const deltaArtifact = makeDeltaArtifact();
+    const snapshot = structuredClone(deltaArtifact);
+    artifactById.set(PKG_A, makePackageWithDelta());
+    artifactById.set(DELTA_ID, deltaArtifact);
+
+    const result = await detail();
+
+    expect(result.status).toBe("ok");
+    expect(deltaArtifact).toEqual(snapshot);
   });
 });
 
