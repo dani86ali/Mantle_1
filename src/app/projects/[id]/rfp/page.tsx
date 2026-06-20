@@ -16,7 +16,7 @@
  * server stores, provider SDKs, pricing/configuration authority, or raw files.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import {
   buildRfpOperatorWorkflow,
@@ -278,6 +278,13 @@ interface DrawerState {
   activeId: string;
 }
 
+/** One file queued for upload with its operator-chosen role; key is UI-only. */
+interface QueuedUploadFile {
+  key: string;
+  file: File;
+  role: ProjectFileRole;
+}
+
 type PrimaryActionStatus = "idle" | "success" | "warning" | "error";
 
 interface PrimaryActionMessage {
@@ -444,6 +451,18 @@ function fileRoleLabel(role: string): string {
   return role in FILE_ROLE_LABELS
     ? FILE_ROLE_LABELS[role as ProjectFileRole]
     : role;
+}
+
+type UploadedFileSummary = ProjectRfpBoqWorkspace["uploadedFiles"][number];
+
+/** Group persisted uploaded files by role, in canonical FILE_ROLES order. */
+function groupUploadedFilesByRole(
+  files: readonly UploadedFileSummary[]
+): { role: ProjectFileRole; files: UploadedFileSummary[] }[] {
+  return FILE_ROLES.map((role) => ({
+    role,
+    files: files.filter((file) => file.fileRole === role),
+  })).filter((group) => group.files.length > 0);
 }
 
 function StatusBadge({ status }: { status: ProjectArtifactStatus }) {
@@ -1652,11 +1671,11 @@ export default function ProjectRfpEvidencePage() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [generateSuccess, setGenerateSuccess] = useState<string | null>(null);
 
-  const [uploadRole, setUploadRole] = useState<ProjectFileRole>("rfp");
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadQueue, setUploadQueue] = useState<QueuedUploadFile[]>([]);
   const [uploadPending, setUploadPending] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const uploadKeyRef = useRef(0);
 
   const [inputPackagePending, setInputPackagePending] = useState(false);
   const [inputPackageError, setInputPackageError] = useState<string | null>(null);
@@ -2267,7 +2286,7 @@ export default function ProjectRfpEvidencePage() {
   const workflow = useMemo(
     () =>
       buildRfpOperatorWorkflow({
-        uploadedFileCount: boqWorkspace?.boqFiles.length ?? 0,
+        uploadedFileCount: boqWorkspace?.uploadedFiles.length ?? 0,
         inputPackages: workspaceArtifactsByType(boqWorkspace, "input_package"),
         extractionDeltas:
           deltaList?.artifacts.map(toWorkflowExtractionDeltaInput) ?? [],
@@ -2319,32 +2338,73 @@ export default function ProjectRfpEvidencePage() {
     loadPackageList,
   ]);
 
+  const enqueueUploadFiles = useCallback((files: FileList | null): void => {
+    if (files === null || files.length === 0) return;
+    const next: QueuedUploadFile[] = [];
+    for (const file of Array.from(files)) {
+      uploadKeyRef.current += 1;
+      next.push({ key: `upload-${uploadKeyRef.current}`, file, role: "rfp" });
+    }
+    if (next.length === 0) return;
+    setUploadError(null);
+    setUploadSuccess(null);
+    setUploadQueue((queue) => [...queue, ...next]);
+  }, []);
+
+  const setQueuedFileRole = useCallback(
+    (key: string, role: ProjectFileRole): void => {
+      setUploadQueue((queue) =>
+        queue.map((item) => (item.key === key ? { ...item, role } : item))
+      );
+    },
+    []
+  );
+
+  const removeQueuedFile = useCallback((key: string): void => {
+    setUploadQueue((queue) => queue.filter((item) => item.key !== key));
+  }, []);
+
   const submitUpload = useCallback(async (): Promise<void> => {
-    if (uploadFile === null || uploadPending) return;
+    if (uploadQueue.length === 0 || uploadPending) return;
     setUploadPending(true);
     setUploadError(null);
     setUploadSuccess(null);
+    const pending = [...uploadQueue];
+    let uploaded = 0;
     try {
-      const form = new FormData();
-      form.append("file", uploadFile);
-      form.append("fileRole", uploadRole);
-      const res = await fetch(`/api/projects/${id}/rfp/files`, {
-        method: "POST",
-        body: form,
-      });
-      if (!res.ok) {
-        setUploadError(UPLOAD_ERROR);
-        return;
+      for (let index = 0; index < pending.length; index += 1) {
+        const item = pending[index];
+        let ok = false;
+        try {
+          const form = new FormData();
+          form.append("file", item.file);
+          form.append("fileRole", item.role);
+          const res = await fetch(`/api/projects/${id}/rfp/files`, {
+            method: "POST",
+            body: form,
+          });
+          ok = res.ok;
+        } catch {
+          ok = false;
+        }
+        if (!ok) {
+          // Keep the failed file and every unattempted file queued; never
+          // report later unattempted files as uploaded.
+          setUploadQueue(pending.slice(index));
+          setUploadError(`${UPLOAD_ERROR} (${item.file.name})`);
+          return;
+        }
+        uploaded += 1;
       }
-      setUploadFile(null);
-      setUploadSuccess("File uploaded. Create the input package when all roles are ready.");
-      void loadBoqWorkspace();
-    } catch {
-      setUploadError(UPLOAD_ERROR);
+      setUploadQueue([]);
+      setUploadSuccess(
+        `${uploaded} file(s) uploaded. Create the input package when all roles are ready.`
+      );
     } finally {
+      void loadBoqWorkspace();
       setUploadPending(false);
     }
-  }, [id, loadBoqWorkspace, uploadFile, uploadPending, uploadRole]);
+  }, [id, loadBoqWorkspace, uploadPending, uploadQueue]);
 
   const submitCreateInputPackage = useCallback(async (): Promise<void> => {
     if (inputPackagePending || hasCurrentInputPackage) return;
@@ -3248,42 +3308,80 @@ export default function ProjectRfpEvidencePage() {
               <p className="mt-1 text-xs text-text-secondary">
                 Role and filename matching is enforced by the upload route.
               </p>
-              <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
-                <label className="flex flex-col text-xs text-text-tertiary">
-                  File
-                  <input
-                    data-testid="rfp-file-input"
-                    type="file"
-                    onChange={(event) =>
-                      setUploadFile(event.target.files?.item(0) ?? null)
-                    }
-                    className={FIELD}
-                  />
-                </label>
-                <label className="flex flex-col text-xs text-text-tertiary">
-                  Role
-                  <select
-                    data-testid="rfp-file-role"
-                    value={uploadRole}
-                    onChange={(event) =>
-                      setUploadRole(event.target.value as ProjectFileRole)
-                    }
-                    className={FIELD}
-                  >
-                    {FILE_ROLES.map((role) => (
-                      <option key={role} value={role}>
-                        {FILE_ROLE_LABELS[role]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+              <label className="mt-3 flex flex-col text-xs text-text-tertiary">
+                Files
+                <input
+                  data-testid="rfp-file-input"
+                  type="file"
+                  multiple
+                  onChange={(event) => {
+                    enqueueUploadFiles(event.target.files);
+                    event.target.value = "";
+                  }}
+                  className={FIELD}
+                />
+              </label>
+              {uploadQueue.length > 0 ? (
+                <ul data-testid="rfp-upload-queue" className="mt-3 space-y-2">
+                  {uploadQueue.map((item, index) => (
+                    <li
+                      key={item.key}
+                      data-testid="rfp-upload-queue-item"
+                      className="flex flex-wrap items-end gap-2 rounded-button border border-[var(--border)] bg-bg-card p-2"
+                    >
+                      <span
+                        data-testid={`rfp-upload-queue-name-${index}`}
+                        className="min-w-0 flex-1 truncate text-xs text-text-primary"
+                      >
+                        {item.file.name}
+                      </span>
+                      <label className="flex flex-col text-xs text-text-tertiary">
+                        Role
+                        <select
+                          data-testid={`rfp-upload-queue-role-${index}`}
+                          value={item.role}
+                          disabled={uploadPending}
+                          onChange={(event) =>
+                            setQueuedFileRole(
+                              item.key,
+                              event.target.value as ProjectFileRole
+                            )
+                          }
+                          className={FIELD}
+                        >
+                          {FILE_ROLES.map((role) => (
+                            <option key={role} value={role}>
+                              {FILE_ROLE_LABELS[role]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        data-testid={`rfp-upload-queue-remove-${index}`}
+                        className={PLAIN_BTN}
+                        disabled={uploadPending}
+                        onClick={() => removeQueuedFile(item.key)}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p
+                  data-testid="rfp-uploaded-count"
+                  className="mt-3 text-xs text-text-secondary"
+                >
+                  {boqWorkspace?.uploadedFiles.length ?? 0} files uploaded
+                </p>
+              )}
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   data-testid="rfp-upload-submit"
                   className={ACTION_BTN}
-                  disabled={uploadPending || uploadFile === null}
+                  disabled={uploadPending || uploadQueue.length === 0}
                   onClick={() => void submitUpload()}
                 >
                   Upload
@@ -3377,6 +3475,53 @@ export default function ProjectRfpEvidencePage() {
                 </p>
               )}
             </div>
+            <div className="space-y-4">
+            <div className={SUBTLE_CARD}>
+              <h3 className="text-sm font-semibold text-text-primary">
+                Uploaded files
+              </h3>
+              {boqWorkspace !== null && boqWorkspace.uploadedFiles.length > 0 ? (
+                <div
+                  data-testid="rfp-uploaded-files-panel"
+                  className="mt-2 space-y-2"
+                >
+                  {groupUploadedFilesByRole(boqWorkspace.uploadedFiles).map(
+                    (group) => (
+                      <div
+                        key={group.role}
+                        data-testid={`rfp-uploaded-role-${group.role}`}
+                      >
+                        <p className="text-xs font-semibold text-text-tertiary">
+                          {FILE_ROLE_LABELS[group.role]} ({group.files.length})
+                        </p>
+                        <ul className="mt-1 space-y-0.5">
+                          {group.files.map((file) => (
+                            <li
+                              key={file.id}
+                              data-testid="rfp-uploaded-file-name"
+                              className="truncate text-xs text-text-primary"
+                            >
+                              {file.fileName}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )
+                  )}
+                  <TechnicalDetails testId="rfp-uploaded-files-audit">
+                    {boqWorkspace.uploadedFiles.map((file) => (
+                      <p key={file.id} data-testid="rfp-uploaded-file-audit">
+                        {file.fileName}: {file.id}
+                      </p>
+                    ))}
+                  </TechnicalDetails>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-text-secondary">
+                  No files uploaded yet.
+                </p>
+              )}
+            </div>
             <div className={SUBTLE_CARD}>
               <h3 className="text-sm font-semibold text-text-primary">
                 Package review
@@ -3437,6 +3582,7 @@ export default function ProjectRfpEvidencePage() {
                 </p>
               )}
               <ReviewHistory track={workflow.inputPackage} />
+            </div>
             </div>
           </div>
         </WorkflowStep>

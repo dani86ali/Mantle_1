@@ -359,6 +359,66 @@ describe("loadProjectRfpBoqWorkspace - ok workspace", () => {
     expect(JSON.stringify(workspace)).not.toContain("s3://bucket");
   });
 
+  it("returns lean uploadedFiles across all roles without storage paths, retainUntil, or tenantId, and leaves boqFiles readiness unchanged", async () => {
+    mockListProjectFiles.mockResolvedValue([
+      BOQ_FILE,
+      file("rfp-1", "rfp", { roleCorrectedBy: "engineer-3" }),
+      file("sow-1", "scope_of_work"),
+    ]);
+
+    const { workspace } = await ok();
+
+    expect(workspace.uploadedFiles).toEqual([
+      {
+        id: "boq-1",
+        fileName: "boq-1.xlsx",
+        fileRole: "boq",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        sizeBytes: 2048,
+        uploadedAt: new Date("2026-06-01T00:00:00.000Z").toISOString(),
+        roleCorrectedBy: "engineer-2",
+      },
+      {
+        id: "rfp-1",
+        fileName: "rfp-1.xlsx",
+        fileRole: "rfp",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        sizeBytes: 2048,
+        uploadedAt: new Date("2026-06-01T00:00:00.000Z").toISOString(),
+        roleCorrectedBy: "engineer-3",
+      },
+      {
+        id: "sow-1",
+        fileName: "sow-1.xlsx",
+        fileRole: "scope_of_work",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        sizeBytes: 2048,
+        uploadedAt: new Date("2026-06-01T00:00:00.000Z").toISOString(),
+      },
+    ]);
+    expect(workspace.uploadedFiles.map((f) => f.fileRole)).toEqual([
+      "boq",
+      "rfp",
+      "scope_of_work",
+    ]);
+    for (const summary of workspace.uploadedFiles) {
+      expect("storagePath" in summary).toBe(false);
+      expect("retainUntil" in summary).toBe(false);
+      expect("tenantId" in summary).toBe(false);
+      expect("projectId" in summary).toBe(false);
+    }
+    // BoQ readiness is unchanged: still one BoQ file with its retainUntil-bearing summary.
+    expect(workspace.boqFiles).toEqual(workspace.readiness.boqFiles);
+    expect(workspace.readiness.boqFileCount).toBe(1);
+    expect(workspace.readiness.boqFiles[0]).toMatchObject({
+      id: "boq-1",
+      fileRole: "boq",
+    });
+  });
+
   it("defensively copies arrays and nested project pricing config", async () => {
     const storedProject = project();
     const storedArtifact = artifact("sku_resolution", 1, "approved");

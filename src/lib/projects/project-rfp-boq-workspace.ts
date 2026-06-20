@@ -6,7 +6,8 @@ import { listProjectApprovals } from "@/lib/db/project-approval-store";
 import { getRfpBoqReadinessReport, type RfpBoqFileSummary, type RfpBoqReadinessReport } from "@/lib/projects/project-rfp-boq-readiness";
 import type {
   Project, ProjectApproval, ProjectArtifact, ProjectArtifactStatus, ProjectArtifactType,
-  ProjectMode, ProjectPricingConfig, ProjectStage, ProjectStageId, ProjectStageStatus,
+  ProjectFile, ProjectFileRole, ProjectMode, ProjectPricingConfig, ProjectStage,
+  ProjectStageId, ProjectStageStatus,
 } from "@/types/project";
 
 export interface RfpBoqProjectSummary {
@@ -43,6 +44,22 @@ export interface RfpBoqArtifactSummary {
   updatedAt: string;
 }
 
+/**
+ * Lean, serializable summary of one uploaded project file for the operator page,
+ * covering every role - not just BoQ. Deliberately omits storagePath, retainUntil,
+ * tenantId, payload, and any raw storage handle: this is a UI shape, not a storage
+ * reference.
+ */
+export interface RfpUploadedFileSummary {
+  id: string;
+  fileName: string;
+  fileRole: ProjectFileRole;
+  mimeType?: string;
+  sizeBytes?: number;
+  uploadedAt: string;
+  roleCorrectedBy?: string;
+}
+
 export interface RfpBoqApprovalSummary {
   id: string;
   stageId: ProjectStageId;
@@ -67,6 +84,8 @@ export interface ProjectRfpBoqWorkspace {
   stages: RfpBoqStageSummary[];
   /** BoQ files from the readiness helper (storagePath already stripped). */
   boqFiles: RfpBoqFileSummary[];
+  /** All uploaded files (every role), lean and UI-safe; no storage paths. */
+  uploadedFiles: RfpUploadedFileSummary[];
   artifacts: RfpBoqArtifactSummary[];
   spineArtifacts: RfpBoqSpineArtifacts;
   approvals: RfpBoqApprovalSummary[];
@@ -117,6 +136,19 @@ function toArtifactSummary(artifact: ProjectArtifact): RfpBoqArtifactSummary {
     sourceArtifactIds: artifact.sourceArtifactIds.slice(),
     createdAt: iso(artifact.createdAt),
     updatedAt: iso(artifact.updatedAt),
+  };
+}
+
+// Lean UI summary of one uploaded file; omits storagePath, retainUntil, tenantId.
+function toUploadedFileSummary(file: ProjectFile): RfpUploadedFileSummary {
+  return {
+    id: file.id,
+    fileName: file.fileName,
+    fileRole: file.fileRole,
+    ...(file.mimeType !== undefined ? { mimeType: file.mimeType } : {}),
+    ...(file.sizeBytes !== undefined ? { sizeBytes: file.sizeBytes } : {}),
+    uploadedAt: iso(file.uploadedAt),
+    ...(file.roleCorrectedBy !== undefined ? { roleCorrectedBy: file.roleCorrectedBy } : {}),
   };
 }
 
@@ -182,6 +214,7 @@ export async function loadProjectRfpBoqWorkspace(
     project: toProjectSummary(project),
     stages: project.stages.map(toStageSummary),
     boqFiles: readiness.boqFiles,
+    uploadedFiles: files.map(toUploadedFileSummary),
     artifacts: artifacts.map(toArtifactSummary),
     spineArtifacts: {
       normalized_boq: spineSummary(artifacts, "normalized_boq"),

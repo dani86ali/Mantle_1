@@ -534,6 +534,7 @@ function rfpBoqWorkspaceResponse(): Record<string, unknown> {
       project: projectContext(),
       stages: [],
       boqFiles: [],
+      uploadedFiles: [],
       artifacts: [
         artifact(INPUT_PACKAGE_ARTIFACT_ID, "input_package", "approved", 1, []),
         artifact(CONFIG_EXPANSION_ARTIFACT_ID, "configuration_expansion", "approved", 1, []),
@@ -891,6 +892,177 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
       expect(String(post?.init?.body)).not.toContain("artifactId");
       expect(String(post?.init?.body)).not.toContain("decidedBy");
     });
+  });
+
+  function uploadedFile(
+    id: string,
+    fileName: string,
+    fileRole: string
+  ): Record<string, unknown> {
+    return {
+      id,
+      fileName,
+      fileRole,
+      mimeType: "application/pdf",
+      sizeBytes: 1024,
+      uploadedAt: "2026-06-01T00:00:00.000Z",
+    };
+  }
+
+  function workspaceWithUploadedFiles(
+    uploadedFiles: Record<string, unknown>[]
+  ): Record<string, unknown> {
+    const body = rfpBoqWorkspaceResponse();
+    const workspace = body.workspace as Record<string, unknown>;
+    workspace.uploadedFiles = uploadedFiles;
+    // No input package: keep the page in the upload/create-package stage.
+    workspace.artifacts = [];
+    workspace.spineArtifacts = {
+      normalized_boq: null,
+      sku_resolution: null,
+      configuration_expansion: null,
+      priced_boq: null,
+      export_package: null,
+    };
+    return body;
+  }
+
+  it("supports selecting multiple files and queues them with per-file role selects", async () => {
+    stubFetch((url) => {
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const input = await screen.findByTestId("rfp-file-input");
+    expect(input).toHaveAttribute("multiple");
+
+    await act(async () => {
+      fireEvent.change(input, {
+        target: {
+          files: [
+            new File(["a"], "main-rfp.pdf", { type: "application/pdf" }),
+            new File(["b"], "scope.pdf", { type: "application/pdf" }),
+          ],
+        },
+      });
+    });
+
+    expect(screen.getAllByTestId("rfp-upload-queue-item")).toHaveLength(2);
+    expect(screen.getByTestId("rfp-upload-queue-name-0")).toHaveTextContent("main-rfp.pdf");
+    expect(screen.getByTestId("rfp-upload-queue-name-1")).toHaveTextContent("scope.pdf");
+    expect(screen.getByTestId("rfp-upload-queue-role-0")).toBeInTheDocument();
+    expect(screen.getByTestId("rfp-upload-queue-role-1")).toBeInTheDocument();
+
+    // A queued file can be removed before upload.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-upload-queue-remove-1"));
+    });
+    expect(screen.getAllByTestId("rfp-upload-queue-item")).toHaveLength(1);
+  });
+
+  it("uploads every queued file in sequence with its per-file role, then clears the queue and shows a concise count plus a grouped side panel", async () => {
+    let uploadCount = 0;
+    const uploadRoles: string[] = [];
+    const calls = stubFetch((url, init) => {
+      if (url === `/api/projects/${PROJECT_ID}/rfp/files` && init?.method === "POST") {
+        uploadCount += 1;
+        const body = init.body as FormData;
+        uploadRoles.push(String(body.get("fileRole")));
+        return jsonResponse({ ok: true }, 201);
+      }
+      if (url === RFP_BOQ_WORKSPACE_URL) {
+        // After uploads land, the workspace reports the two persisted files.
+        return jsonResponse(
+          uploadCount >= 2
+            ? workspaceWithUploadedFiles([
+                uploadedFile("file-rfp-1", "main-rfp.pdf", "rfp"),
+                uploadedFile("file-sow-1", "scope.pdf", "scope_of_work"),
+              ])
+            : workspaceWithUploadedFiles([])
+        );
+      }
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const input = await screen.findByTestId("rfp-file-input");
+    await act(async () => {
+      fireEvent.change(input, {
+        target: {
+          files: [
+            new File(["a"], "main-rfp.pdf", { type: "application/pdf" }),
+            new File(["b"], "scope.pdf", { type: "application/pdf" }),
+          ],
+        },
+      });
+    });
+
+    fireEvent.change(screen.getByTestId("rfp-upload-queue-role-0"), {
+      target: { value: "rfp" },
+    });
+    fireEvent.change(screen.getByTestId("rfp-upload-queue-role-1"), {
+      target: { value: "scope_of_work" },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-upload-submit"));
+    });
+
+    await waitFor(() => {
+      const uploads = calls.filter(
+        (call) =>
+          call.url === `/api/projects/${PROJECT_ID}/rfp/files` &&
+          call.init?.method === "POST"
+      );
+      expect(uploads).toHaveLength(2);
+    });
+    expect(uploadRoles).toEqual(["rfp", "scope_of_work"]);
+
+    // The queue clears and the center area is concise (count only), with the
+    // grouped persisted filenames shown in the side status panel.
+    await waitFor(() => {
+      expect(screen.queryAllByTestId("rfp-upload-queue-item")).toHaveLength(0);
+    });
+    expect(screen.getByTestId("rfp-uploaded-count")).toHaveTextContent("2 files uploaded");
+
+    const panel = screen.getByTestId("rfp-uploaded-files-panel");
+    expect(within(panel).getByTestId("rfp-uploaded-role-rfp")).toHaveTextContent("main-rfp.pdf");
+    expect(within(panel).getByTestId("rfp-uploaded-role-scope_of_work")).toHaveTextContent(
+      "scope.pdf"
+    );
+  });
+
+  it("derives the next action from all uploaded files, not only BoQ files", async () => {
+    stubFetch((url) => {
+      if (url === RFP_BOQ_WORKSPACE_URL) {
+        // Only a non-BoQ file uploaded: boqFiles stays empty but the operator
+        // can still assemble the input package from uploaded files.
+        return jsonResponse(
+          workspaceWithUploadedFiles([uploadedFile("file-rfp-1", "main-rfp.pdf", "rfp")])
+        );
+      }
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByText("RFP operator workflow");
+    expect(screen.getByTestId("next-action")).toHaveTextContent("Create input package");
   });
 
   it("keeps rejected or edited extraction decisions in collapsed review history", async () => {
