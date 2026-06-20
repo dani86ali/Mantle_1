@@ -717,7 +717,7 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(compiled.textContent ?? "").not.toMatch(/chunk/i);
   });
 
-  it("shows readable requirement evidence labels and keeps raw ids in the collapsed audit", async () => {
+  it("shows compiled requirement evidence labels from the approved package and keeps raw ids in the collapsed audit", async () => {
     stubFetch();
     render(<ProjectRfpEvidencePage />);
 
@@ -727,12 +727,23 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     });
     await screen.findByTestId("review-drawer");
 
-    const reference = await screen.findByTestId("baseline-detail-reference");
-    // The primary label now carries the loaded document name and human role
-    // label, not just the generic passage locator.
+    await screen.findByTestId("baseline-detail-reference");
+    // Opening the requirements drawer loads the latest approved evidence
+    // package's compiled review for reference labels (without switching to the
+    // evidence-package drawer), so the primary reference now reads as the
+    // compiled finding - document, human role, and the compiled clean summary -
+    // proving it came from the returned compiledReview, not a raw locator.
+    await waitFor(() => {
+      expect(screen.getByTestId("baseline-detail-reference")).toHaveTextContent(
+        COMPILED_SUMMARY_CANARY
+      );
+    });
+    const reference = screen.getByTestId("baseline-detail-reference");
     expect(reference).toHaveTextContent("rfp-main.pdf");
     expect(reference).toHaveTextContent("Main RFP");
-    expect(reference).toHaveTextContent("Text passage 1 of 4");
+    // The deterministic extraction-position label must not return as a primary
+    // requirement reference.
+    expect(reference).not.toHaveTextContent("Text passage 1 of 4");
 
     const card = screen.getByTestId("baseline-detail-requirement");
     const primary = card.cloneNode(true) as HTMLElement;
@@ -746,13 +757,15 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(primaryText).not.toContain(INPUT_PACKAGE_ARTIFACT_ID);
 
     const audit = within(card).getByTestId("baseline-detail-audit");
+    expect(audit.tagName).toBe("DETAILS");
+    expect(audit.hasAttribute("open")).toBe(false);
     expect(audit).toHaveTextContent("ev-text-1");
     expect(audit).toHaveTextContent("file-rfp-1");
     expect(audit).toHaveTextContent(INPUT_PACKAGE_ARTIFACT_ID);
     expect(audit.textContent ?? "").toMatch(/chunk/i);
   });
 
-  it("renders business-readable compliance rows and confines raw ids to the row audit", async () => {
+  it("renders compiled compliance evidence labels from the approved package and confines raw ids to the row audit", async () => {
     stubFetch();
     render(<ProjectRfpEvidencePage />);
 
@@ -762,7 +775,17 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     });
     await screen.findByTestId("review-drawer");
 
-    const row = await screen.findByTestId("cm-detail-row");
+    await screen.findByTestId("cm-detail-row");
+    // Opening the compliance drawer loads the latest approved evidence package's
+    // compiled review for reference labels (without switching to the
+    // evidence-package drawer), so the primary reference reads as the compiled
+    // finding's clean summary - proving it came from the returned compiledReview.
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("cm-detail-evidence-reference")
+      ).toHaveTextContent(COMPILED_SUMMARY_CANARY);
+    });
+    const row = screen.getByTestId("cm-detail-row");
     const primary = row.cloneNode(true) as HTMLElement;
     primary
       .querySelectorAll('[data-testid="cm-detail-audit"]')
@@ -771,11 +794,14 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(primaryText).toContain(
       "Supplier shall provide a complete network design."
     );
-    // The primary evidence reference carries the loaded document name and
-    // human role label alongside the readable passage locator.
+    // The primary evidence reference is the compiled finding label: document,
+    // human role, and the compiled clean summary.
     expect(primaryText).toContain("rfp-main.pdf");
     expect(primaryText).toContain("Main RFP");
-    expect(primaryText).toContain("Text passage 1 of 4");
+    expect(primaryText).toContain(COMPILED_SUMMARY_CANARY);
+    // The deterministic extraction-position label must not return as a primary
+    // compliance reference.
+    expect(primaryText).not.toContain("Text passage 1 of 4");
     expect(primaryText).not.toContain("CM-001");
     expect(primaryText).not.toContain("RFP-REQ-001");
     expect(primaryText).not.toContain("ev-text-1");
@@ -784,6 +810,8 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(primaryText).not.toMatch(/chunk/i);
 
     const audit = within(row).getByTestId("cm-detail-audit");
+    expect(audit.tagName).toBe("DETAILS");
+    expect(audit.hasAttribute("open")).toBe(false);
     expect(audit).toHaveTextContent("CM-001");
     expect(audit).toHaveTextContent("RFP-REQ-001");
     expect(audit).toHaveTextContent("ev-text-1");

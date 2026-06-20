@@ -52,7 +52,10 @@ import type {
   RfpEvidencePackageInspectionListItem,
   RfpEvidencePackageInspectionPackage,
 } from "@/lib/projects/project-rfp-evidence-package-inspection";
-import type { CompiledEvidenceFinding } from "@/lib/projects/project-rfp-compiled-evidence-review";
+import type {
+  CompiledEvidenceFinding,
+  CompiledEvidenceReview,
+} from "@/lib/projects/project-rfp-compiled-evidence-review";
 import type { ProjectRfpBoqWorkspace } from "@/lib/projects/project-rfp-boq-workspace";
 import type {
   ProjectArtifactStatus,
@@ -1317,6 +1320,70 @@ function citationLine(
 }
 
 /**
+ * Human reference label for one compiled finding, reused as the primary label
+ * for a requirement/compliance evidence reference: the source document and its
+ * human role, then the finding's topic/title/clean-summary descriptor, then its
+ * compiled citation labels. Carries only human labels - never a raw
+ * evidence/file/package/table id, the word "chunk", a char count, or the
+ * deterministic "Text passage N of M" extraction locator.
+ */
+function compiledFindingReferenceLabel(
+  finding: CompiledEvidenceFinding
+): string {
+  const head = [finding.documentName];
+  if (finding.role !== undefined) head.push(`(${fileRoleLabel(finding.role)})`);
+  const segments = [head.join(" ")];
+  const descriptor =
+    finding.topic ??
+    (finding.title !== finding.documentName ? finding.title : undefined) ??
+    finding.cleanSummary;
+  if (descriptor !== undefined && descriptor !== "") segments.push(descriptor);
+  const citations = finding.citations
+    .map((citation) => citationLine(citation))
+    .filter((line) => line !== "");
+  if (citations.length > 0) segments.push(citations.join("; "));
+  return segments.join(" - ");
+}
+
+/**
+ * UI-only evidenceId -> compiled finding label, built from one loaded evidence
+ * package compiledReview. Each finding's compiled label is keyed by every raw
+ * deterministic record it represents (its audit evidence id values); the first
+ * finding to claim an id wins. The page reuses the returned review and never
+ * recompiles evidence in the client.
+ */
+function buildCompiledReferenceLabelLookup(
+  compiledReview?: CompiledEvidenceReview
+): Map<string, string> {
+  const lookup = new Map<string, string>();
+  if (compiledReview === undefined) return lookup;
+  for (const finding of compiledReview.findings) {
+    const label = compiledFindingReferenceLabel(finding);
+    for (const entry of finding.audit) {
+      if (!lookup.has(entry.evidenceId)) lookup.set(entry.evidenceId, label);
+    }
+  }
+  return lookup;
+}
+
+/**
+ * Primary label for one requirement/compliance evidence reference: prefer the
+ * approved evidence package's compiled finding label for this evidenceId, and
+ * otherwise degrade to the document-prefixed extraction locator. Raw ids and
+ * chunk locators stay in the collapsed audit, never here.
+ */
+function primaryEvidenceReferenceLabel(
+  ref: ReadableEvidenceReference,
+  compiledLabelById: Map<string, string>,
+  contextById: Map<string, EvidenceReferenceContext>
+): string {
+  return (
+    compiledLabelById.get(ref.evidenceId) ??
+    readableEvidenceReferenceLabel(ref, contextById.get(ref.evidenceId))
+  );
+}
+
+/**
  * One primary compiled evidence finding. Only human labels render here - the
  * finding title, source document/role, citation labels, and the grouped text
  * body or readable table - plus presentation flags. Raw machine ids and chunk
@@ -1440,9 +1507,11 @@ function CompiledFindingView({ finding }: { finding: CompiledEvidenceFinding }) 
 function ComplianceMatrixRowView({
   row,
   evidenceContextById,
+  compiledLabelById,
 }: {
   row: ComplianceMatrixRow;
   evidenceContextById: Map<string, EvidenceReferenceContext>;
+  compiledLabelById: Map<string, string>;
 }) {
   return (
     <li
@@ -1479,9 +1548,10 @@ function ComplianceMatrixRowView({
             data-testid="cm-detail-evidence-reference"
             className="text-xs text-text-tertiary"
           >
-            {readableEvidenceReferenceLabel(
+            {primaryEvidenceReferenceLabel(
               ref,
-              evidenceContextById.get(ref.evidenceId)
+              compiledLabelById,
+              evidenceContextById
             )}
           </li>
         ))}
@@ -1891,6 +1961,21 @@ export default function ProjectRfpEvidencePage() {
   const [packageReviewError, setPackageReviewError] = useState<string | null>(null);
   const [packageReviewSuccess, setPackageReviewSuccess] = useState<string | null>(null);
 
+  // UI-only compiled reference labels: the compiled evidence review of the
+  // latest approved evidence package, loaded lazily when a requirements or
+  // compliance drawer opens so its primary references point at compiled
+  // findings instead of raw extraction positions. Keyed by the loaded artifact
+  // id so the same approved package is never refetched and the evidence-package
+  // drawer's own packageDetail stays independent.
+  const [referenceCompiledReview, setReferenceCompiledReview] = useState<{
+    artifactId: string;
+    review: CompiledEvidenceReview;
+  } | null>(null);
+  const compiledReferenceLabelById = useMemo(
+    () => buildCompiledReferenceLabelLookup(referenceCompiledReview?.review),
+    [referenceCompiledReview]
+  );
+
   const [boqWorkspace, setBoqWorkspace] = useState<ProjectRfpBoqWorkspace | null>(null);
   const [boqWorkspaceLoading, setBoqWorkspaceLoading] = useState(true);
   const [boqWorkspaceError, setBoqWorkspaceError] = useState<string | null>(null);
@@ -2127,6 +2212,32 @@ export default function ProjectRfpEvidencePage() {
         setPackageDetailError(PACKAGE_DETAIL_ERROR);
       } finally {
         setPackageDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  // Load ONE approved evidence package's compiled review for requirement and
+  // compliance reference labels only. It reuses the read model's returned
+  // compiledReview, never opens the evidence-package drawer, and never touches
+  // package review state; a failed, missing, or packageless response leaves
+  // references on their graceful document-locator fallback.
+  const loadReferenceEvidencePackage = useCallback(
+    async (artifactId: string): Promise<void> => {
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/evidence-package/${artifactId}`
+        );
+        const body = (await res.json().catch(() => null)) as
+          | EvidencePackageDetailResponse
+          | null;
+        if (!res.ok || body === null || body.package === undefined) return;
+        setReferenceCompiledReview({
+          artifactId,
+          review: body.package.compiledReview,
+        });
+      } catch {
+        // Graceful fallback: keep the existing document-locator labels.
       }
     },
     [id]
@@ -2807,14 +2918,27 @@ export default function ProjectRfpEvidencePage() {
     void loadPackageDetail(artifactId);
   }
 
+  // Ensure the latest approved evidence package's compiled review is loaded for
+  // requirement/compliance reference labels, WITHOUT opening its drawer. A
+  // no-op when none is approved yet (references keep their fallback) or when it
+  // is already loaded.
+  function ensureReferenceEvidencePackage(): void {
+    const approvedId = latestApprovedArtifactId(packageList?.artifacts ?? []);
+    if (approvedId === null) return;
+    if (referenceCompiledReview?.artifactId === approvedId) return;
+    void loadReferenceEvidencePackage(approvedId);
+  }
+
   function openBaselineDrawer(artifactId: string): void {
     setDrawer({ kind: "requirements", activeId: artifactId });
     void loadBaselineDetail(artifactId);
+    ensureReferenceEvidencePackage();
   }
 
   function openComplianceDrawer(artifactId: string): void {
     setDrawer({ kind: "compliance", activeId: artifactId });
     void loadComplianceDetail(artifactId);
+    ensureReferenceEvidencePackage();
   }
 
   function drawerIds(): string[] {
@@ -3209,9 +3333,10 @@ export default function ProjectRfpEvidencePage() {
                       data-testid="baseline-detail-reference"
                       className="text-xs text-text-tertiary"
                     >
-                      {readableEvidenceReferenceLabel(
+                      {primaryEvidenceReferenceLabel(
                         ref,
-                        evidenceContextById.get(ref.evidenceId)
+                        compiledReferenceLabelById,
+                        evidenceContextById
                       )}
                     </li>
                   ))}
@@ -3313,6 +3438,7 @@ export default function ProjectRfpEvidencePage() {
               key={row.id}
               row={row}
               evidenceContextById={evidenceContextById}
+              compiledLabelById={compiledReferenceLabelById}
             />
           ))}
         </ol>
@@ -3327,6 +3453,7 @@ export default function ProjectRfpEvidencePage() {
                   key={row.id}
                   row={row}
                   evidenceContextById={evidenceContextById}
+                  compiledLabelById={compiledReferenceLabelById}
                 />
               ))}
             </ol>
