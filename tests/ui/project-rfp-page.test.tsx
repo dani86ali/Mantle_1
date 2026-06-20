@@ -1375,6 +1375,68 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(screen.getByTestId("rfp-upload-queue-name-0")).toHaveTextContent("scope.pdf");
     expect(screen.getByTestId("rfp-upload-queue-name-1")).toHaveTextContent("addendum.pdf");
   });
+
+  it("hides artifact metadata and technical-detail dropdowns from the primary workflow cards while keeping their review/inspect drawer actions", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    // The guided workflow and its status-only cards must be mounted before the
+    // absence checks run; an unrendered page would pass every absence check
+    // vacuously.
+    await screen.findByText("RFP operator workflow");
+    await screen.findByTestId("baseline-card-review");
+
+    // The verbose baseline/compliance list rows (inline requirement/row counts
+    // plus source ids) are gone, replaced by status-only cards.
+    expect(screen.queryByTestId("baseline-row")).toBeNull();
+    expect(screen.queryByTestId("cm-row")).toBeNull();
+
+    // No primary artifact card exposes a raw technical-detail dropdown - not the
+    // intake overview cards, nor the per-step current/approved cards. In this
+    // fixture the evidence-package overview card and both current cards are
+    // populated, so these would have rendered before the cleanup.
+    for (const technicalTestId of [
+      "evidence-package-technical",
+      "requirements-baseline-technical",
+      "compliance-matrix-technical",
+      "current-requirements-baseline-technical",
+      "approved-requirements-baseline-technical",
+      "current-compliance-matrix-technical",
+      "approved-compliance-matrix-technical",
+    ]) {
+      expect(screen.queryByTestId(technicalTestId)).toBeNull();
+    }
+
+    // The cleaned-up cards keep their drawer action: the current requirements
+    // baseline card opens the requirements drawer.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("baseline-card-review"));
+    });
+    expect(await screen.findByTestId("review-drawer")).toHaveTextContent(
+      "Requirements baseline"
+    );
+
+    // Close the requirements drawer before exercising the compliance card.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("review-drawer")).toBeNull();
+    });
+
+    // Whichever compliance card action the fixture exposes (a reviewable current
+    // matrix here, an approved one otherwise) opens the compliance drawer.
+    const complianceAction =
+      screen.queryByTestId("compliance-card-review") ??
+      screen.queryByTestId("compliance-card-inspect");
+    expect(complianceAction).not.toBeNull();
+    await act(async () => {
+      fireEvent.click(complianceAction as HTMLElement);
+    });
+    expect(await screen.findByTestId("review-drawer")).toHaveTextContent(
+      "Compliance matrix"
+    );
+  });
 });
 
 describe("ProjectRfpEvidencePage static guards", () => {
