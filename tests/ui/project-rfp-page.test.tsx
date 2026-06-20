@@ -1080,6 +1080,193 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(history).toHaveTextContent("Review history (1)");
     expect(history.hasAttribute("open")).toBe(false);
   });
+
+  it("opens the current evidence package drawer without preparing another package", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const prepare = await screen.findByTestId("prepare-evidence-review");
+    expect(prepare).toHaveTextContent("Review evidence package");
+    await act(async () => {
+      fireEvent.click(prepare);
+    });
+
+    expect(await screen.findByTestId("review-drawer")).toHaveTextContent(
+      "Compiled evidence package"
+    );
+    const prepareWrites = calls.filter(
+      (call) =>
+        call.init?.method === "POST" &&
+        (call.url.endsWith(`/artifacts/${INPUT_PACKAGE_ARTIFACT_ID}/evidence`) ||
+          call.url.endsWith(
+            `/artifacts/${INPUT_PACKAGE_ARTIFACT_ID}/extraction-delta/generate`
+          ) ||
+          call.url.endsWith(
+            `/artifacts/${INPUT_PACKAGE_ARTIFACT_ID}/evidence-package`
+          ))
+    );
+    expect(prepareWrites).toHaveLength(0);
+  });
+
+  it("opens the current requirements baseline drawer without posting to generate", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-baseline");
+    expect(generate).toHaveTextContent("Review current baseline");
+    expect(generate).not.toBeDisabled();
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+
+    expect(await screen.findByTestId("review-drawer")).toHaveTextContent(
+      "Requirements baseline"
+    );
+    expect(
+      calls.some(
+        (call) => call.url === GENERATE_URL && call.init?.method === "POST"
+      )
+    ).toBe(false);
+  });
+
+  it("opens the current compliance matrix drawer without posting to generate", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    expect(generate).toHaveTextContent("Review current matrix");
+    expect(generate).not.toBeDisabled();
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+
+    expect(await screen.findByTestId("review-drawer")).toHaveTextContent(
+      "Compliance matrix"
+    );
+    expect(
+      calls.some(
+        (call) =>
+          call.url === COMPLIANCE_MATRIX_GENERATE_URL &&
+          call.init?.method === "POST"
+      )
+    ).toBe(false);
+  });
+
+  it("inspects an approved requirements baseline instead of offering to generate another", async () => {
+    const calls = stubFetch((url) => {
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse("approved"));
+      if (url === BASELINE_DETAIL_URL) return jsonResponse(baselineDetailResponse("approved"));
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-baseline");
+    expect(generate).toHaveTextContent("Inspect approved baseline");
+    expect(generate).not.toHaveTextContent("Generate");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+
+    expect(await screen.findByTestId("review-drawer")).toHaveTextContent(
+      "Requirements baseline"
+    );
+    expect(
+      calls.some(
+        (call) => call.url === GENERATE_URL && call.init?.method === "POST"
+      )
+    ).toBe(false);
+  });
+
+  it("inspects an approved compliance matrix instead of offering to generate another", async () => {
+    const calls = stubFetch((url) => {
+      if (url === COMPLIANCE_MATRIX_LIST_URL) {
+        return jsonResponse(complianceMatrixListResponse("approved"));
+      }
+      if (url === COMPLIANCE_MATRIX_DETAIL_URL) {
+        return jsonResponse(complianceMatrixDetailResponse("approved"));
+      }
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse("approved"));
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    expect(generate).toHaveTextContent("Inspect approved matrix");
+    expect(generate).not.toHaveTextContent("Generate");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+
+    expect(await screen.findByTestId("review-drawer")).toHaveTextContent(
+      "Compliance matrix"
+    );
+    expect(
+      calls.some(
+        (call) =>
+          call.url === COMPLIANCE_MATRIX_GENERATE_URL &&
+          call.init?.method === "POST"
+      )
+    ).toBe(false);
+  });
+
+  it("keeps the failed and unattempted files queued and reports the failed filename on a partial upload failure", async () => {
+    let uploadCount = 0;
+    stubFetch((url, init) => {
+      if (url === `/api/projects/${PROJECT_ID}/rfp/files` && init?.method === "POST") {
+        uploadCount += 1;
+        // The second upload fails; the first succeeds and the third is never
+        // attempted.
+        return jsonResponse({}, uploadCount === 2 ? 500 : 201);
+      }
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(workspaceWithUploadedFiles([]));
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const input = await screen.findByTestId("rfp-file-input");
+    await act(async () => {
+      fireEvent.change(input, {
+        target: {
+          files: [
+            new File(["a"], "main-rfp.pdf", { type: "application/pdf" }),
+            new File(["b"], "scope.pdf", { type: "application/pdf" }),
+            new File(["c"], "addendum.pdf", { type: "application/pdf" }),
+          ],
+        },
+      });
+    });
+    expect(screen.getAllByTestId("rfp-upload-queue-item")).toHaveLength(3);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-upload-submit"));
+    });
+
+    // The failed file and the unattempted file stay queued; the first
+    // (successful) file dropped out, and the error names the failed file.
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Unable to upload RFP file\. \(scope\.pdf\)/)
+      ).toBeInTheDocument();
+    });
+    const remaining = screen.getAllByTestId("rfp-upload-queue-item");
+    expect(remaining).toHaveLength(2);
+    expect(screen.getByTestId("rfp-upload-queue-name-0")).toHaveTextContent("scope.pdf");
+    expect(screen.getByTestId("rfp-upload-queue-name-1")).toHaveTextContent("addendum.pdf");
+  });
 });
 
 describe("ProjectRfpEvidencePage static guards", () => {

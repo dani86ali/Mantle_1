@@ -2496,12 +2496,19 @@ export default function ProjectRfpEvidencePage() {
   const submitPrepareEvidenceReview = useCallback(async (): Promise<void> => {
     if (prepareEvidencePending) return;
     const inputPackageArtifactId = latestApprovedInputPackageId;
-    if (workflow.evidencePackage.current !== undefined) {
+    // A current or approved evidence package already exists: the primary
+    // action inspects it (continue review / inspect approved), never silently
+    // prepares another package.
+    const existingEvidencePackageId =
+      workflow.evidencePackage.current?.id ??
+      workflow.evidencePackage.latestApproved?.id ??
+      null;
+    if (existingEvidencePackageId !== null) {
       setDrawer({
         kind: "evidence-package",
-        activeId: workflow.evidencePackage.current.id,
+        activeId: existingEvidencePackageId,
       });
-      void loadPackageDetail(workflow.evidencePackage.current.id);
+      void loadPackageDetail(existingEvidencePackageId);
       return;
     }
     if (inputPackageArtifactId === null) {
@@ -2584,6 +2591,7 @@ export default function ProjectRfpEvidencePage() {
     prepareEvidencePending,
     refreshRfpLists,
     workflow.evidencePackage.current,
+    workflow.evidencePackage.latestApproved,
     workflow.extractionDelta.current,
   ]);
 
@@ -3631,7 +3639,9 @@ export default function ProjectRfpEvidencePage() {
                 >
                   {workflow.evidencePackage.current !== undefined
                     ? "Review evidence package"
-                    : "Prepare Evidence Review"}
+                    : workflow.evidencePackage.latestApproved !== undefined
+                      ? "Inspect approved evidence package"
+                      : "Prepare Evidence Review"}
                 </button>
               </div>
               {prepareEvidenceMessage !== null && (
@@ -3720,16 +3730,33 @@ export default function ProjectRfpEvidencePage() {
               type="button"
               data-testid="generate-baseline"
               disabled={
-                generatePending ||
-                workflow.requirementsBaseline.current !== undefined ||
-                autoEvidencePackageId === null
+                workflow.requirementsBaseline.current === undefined &&
+                workflow.requirementsBaseline.latestApproved === undefined &&
+                (generatePending || autoEvidencePackageId === null)
               }
-              onClick={() => void submitGenerate()}
+              onClick={() => {
+                // A current reviewable baseline opens for continued review; an
+                // approved baseline (with no current draft) opens for inspection.
+                // Generation only runs when neither exists.
+                if (workflow.requirementsBaseline.current !== undefined) {
+                  openBaselineDrawer(workflow.requirementsBaseline.current.id);
+                } else if (
+                  workflow.requirementsBaseline.latestApproved !== undefined
+                ) {
+                  openBaselineDrawer(
+                    workflow.requirementsBaseline.latestApproved.id
+                  );
+                } else {
+                  void submitGenerate();
+                }
+              }}
               className={ACTION_BTN}
             >
               {workflow.requirementsBaseline.current !== undefined
                 ? "Review current baseline"
-                : "Generate requirements baseline"}
+                : workflow.requirementsBaseline.latestApproved !== undefined
+                  ? "Inspect approved baseline"
+                  : "Generate requirements baseline"}
             </button>
           </div>
           {generateError && <div className={`mt-3 ${ERROR_BOX}`}>{generateError}</div>}
@@ -3810,16 +3837,33 @@ export default function ProjectRfpEvidencePage() {
               type="button"
               data-testid="generate-compliance"
               disabled={
-                complianceGeneratePending ||
-                workflow.complianceMatrix.current !== undefined ||
-                !complianceInputs.ready
+                workflow.complianceMatrix.current === undefined &&
+                workflow.complianceMatrix.latestApproved === undefined &&
+                (complianceGeneratePending || !complianceInputs.ready)
               }
-              onClick={() => void submitGenerateCompliance()}
+              onClick={() => {
+                // A current reviewable matrix opens for continued review; an
+                // approved matrix (with no current draft) opens for inspection.
+                // Generation only runs when neither exists.
+                if (workflow.complianceMatrix.current !== undefined) {
+                  openComplianceDrawer(workflow.complianceMatrix.current.id);
+                } else if (
+                  workflow.complianceMatrix.latestApproved !== undefined
+                ) {
+                  openComplianceDrawer(
+                    workflow.complianceMatrix.latestApproved.id
+                  );
+                } else {
+                  void submitGenerateCompliance();
+                }
+              }}
               className={ACTION_BTN}
             >
               {workflow.complianceMatrix.current !== undefined
                 ? "Review current matrix"
-                : "Generate compliance matrix"}
+                : workflow.complianceMatrix.latestApproved !== undefined
+                  ? "Inspect approved matrix"
+                  : "Generate compliance matrix"}
             </button>
           </div>
           {complianceGenerateError && (
