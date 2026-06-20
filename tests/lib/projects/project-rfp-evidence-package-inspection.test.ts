@@ -213,6 +213,100 @@ function expectedPayloadSummary() {
   };
 }
 
+/**
+ * The compiled review the detail must derive from the fixture payload: the
+ * lone text chunk becomes one grouped text finding, the lone table becomes one
+ * readable table finding, nothing is suppressed, and the two deterministic
+ * inputs balance exactly across the primary-finding audit.
+ */
+function expectedCompiledReview() {
+  return {
+    findings: [
+      {
+        findingId: "text-finding-1",
+        kind: "text",
+        title: "RFP.pdf",
+        documentName: "RFP.pdf",
+        role: "rfp",
+        citations: [{ passageLabel: "Passage 1 of 2" }],
+        body: TEXT_BODY,
+        flags: {
+          tableRepaired: false,
+          aiRefined: false,
+          missingFromDeterministic: false,
+        },
+        audit: [
+          {
+            evidenceId: EV_TEXT,
+            evidenceKind: TEXT_KIND,
+            sourceFileId: FILE_RFP,
+            inputPackageArtifactId: INPUT_PKG,
+            chunkIndex: 0,
+            chunkCount: 2,
+            charCount: 52,
+          },
+        ],
+      },
+      {
+        findingId: "table-finding-1",
+        kind: "table",
+        title: "Table - BoQ Sheet",
+        documentName: "BoQ.xlsx",
+        role: "boq",
+        citations: [
+          { tableLabel: "Table 1", pageLabel: "Page 4", sheetLabel: "Sheet: BoQ Sheet" },
+        ],
+        table: {
+          rows: [
+            ["SKU", "Qty"],
+            [TABLE_CELL, "10"],
+          ],
+        },
+        flags: {
+          tableRepaired: false,
+          aiRefined: false,
+          missingFromDeterministic: false,
+        },
+        audit: [
+          {
+            evidenceId: EV_TABLE,
+            evidenceKind: TABLE_KIND,
+            sourceFileId: FILE_BOQ,
+            inputPackageArtifactId: INPUT_PKG,
+            tableId: TABLE_ID,
+            pageNumber: 4,
+            sheetName: "BoQ Sheet",
+            rowCount: 2,
+            columnCount: 2,
+          },
+        ],
+      },
+    ],
+    suppressed: [],
+    accounting: {
+      deterministicInputCount: 2,
+      deterministicTextInputCount: 1,
+      deterministicTableInputCount: 1,
+      primaryFindingCount: 2,
+      textFindingCount: 1,
+      tableFindingCount: 1,
+      repairedTableFindingCount: 0,
+      missingCandidateFindingCount: 0,
+      accountedInPrimaryCount: 2,
+      suppressedCount: 0,
+      suppressedByReason: {
+        empty_fragment: 0,
+        tiny_fragment: 0,
+        duplicate_body: 0,
+        page_only: 0,
+        proprietary_notice: 0,
+        repeated_header: 0,
+      },
+      balanced: true,
+    },
+  };
+}
+
 /** The sanitized package the detail must produce from the fixture payload. */
 function expectedPackage() {
   return {
@@ -262,6 +356,7 @@ function expectedPackage() {
         ],
       },
     ],
+    compiledReview: expectedCompiledReview(),
   };
 }
 
@@ -664,6 +759,34 @@ describe("loadRfpEvidencePackageDetail - ok", () => {
     expect(serialized).toContain(TABLE_CELL);
   });
 
+  it("derives compiledReview from the sanitized entries while keeping the legacy evidence array", async () => {
+    const result = await detail();
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    // The legacy raw evidence array is retained for audit/backward compat.
+    expect(result.package.evidence).toHaveLength(2);
+    // The compiled review is exactly the deterministic projection.
+    expect(result.package.compiledReview).toEqual(expectedCompiledReview());
+    // Every deterministic input is accounted for exactly once.
+    const { accounting } = result.package.compiledReview;
+    expect(accounting.balanced).toBe(true);
+    expect(
+      accounting.accountedInPrimaryCount + accounting.suppressedCount
+    ).toBe(accounting.deterministicInputCount);
+    expect(accounting.deterministicInputCount).toBe(
+      result.package.evidence.length
+    );
+    // Primary compiled finding DISPLAY fields (everything but the audit array)
+    // never leak raw ids, table ids, or the word "chunk".
+    const primary = JSON.stringify(
+      result.package.compiledReview.findings.map(({ audit, ...rest }) => rest)
+    );
+    for (const raw of [EV_TEXT, EV_TABLE, TABLE_ID, "chunk"]) {
+      expect(primary).not.toContain(raw);
+    }
+  });
+
   it("inspects any version regardless of review status", async () => {
     artifactById.set(PKG_A, makePackageArtifact({ status: "approved" }));
 
@@ -809,6 +932,7 @@ describe("module purity (static source check)", () => {
       "@/lib/db/project-artifact-store",
       "@/types/project",
       "@/lib/projects/project-rfp-evidence-package",
+      "@/lib/projects/project-rfp-compiled-evidence-review",
     ]);
     expect(source).toMatch(/import type \{[\s\S]*?\} from "@\/types\/project";/);
     expect(source).toMatch(

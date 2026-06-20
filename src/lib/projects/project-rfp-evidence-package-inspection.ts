@@ -44,6 +44,10 @@ import type {
   RfpEvidencePackageTableEvidence,
   RfpEvidencePackageTextEvidence,
 } from "@/lib/projects/project-rfp-evidence-package";
+import {
+  compileCompiledEvidenceReview,
+  type CompiledEvidenceReview,
+} from "@/lib/projects/project-rfp-compiled-evidence-review";
 
 /**
  * The payload discriminator every evidence_package draft payload carries.
@@ -137,9 +141,12 @@ export type LoadRfpEvidencePackageListResult =
     };
 
 /**
- * Sanitized whitelist copy of one stored evidence_package payload. The
+ * Sanitized whitelist copy of one stored evidence_package payload. The legacy
  * evidence entries carry the chunk text bodies and fresh table row matrices
- * because this is the final evidence content under human review.
+ * because this is the final evidence content under human review; they remain
+ * for audit and backward compatibility. compiledReview is the deterministic
+ * UI-facing projection of those same entries into grouped, noise-suppressed,
+ * fully accounted human-review findings.
  */
 export interface RfpEvidencePackageInspectionPackage {
   payloadKind: RfpEvidencePackagePayload["payloadKind"];
@@ -152,6 +159,7 @@ export interface RfpEvidencePackageInspectionPackage {
   sourceFileIds: string[];
   sourceArtifactIds: string[];
   evidence: RfpEvidencePackageEvidence[];
+  compiledReview: CompiledEvidenceReview;
 }
 
 /** Input for {@link loadRfpEvidencePackageDetail}. */
@@ -444,12 +452,15 @@ export async function loadRfpEvidencePackageList(
  * discriminator, or whose evidence array is malformed (not an array, or
  * holding a non-object entry) reports invalid_payload the same lean way. The
  * ok result carries the project and artifact summaries plus the whitelist copy
- * of the evidence-package payload shape. Because this is the final RFP evidence
- * content under human review, the detail does expose the chunk text bodies and
- * fresh table row matrices, but it still drops storage paths, a tenantId,
- * provider metadata, arbitrary content keys, and any SKU/catalog/pricing/
- * configuration/export field, and never aliases into the stored payload.
- * Loaded rows are never mutated; store failures bubble unhidden.
+ * of the evidence-package payload shape, including the deterministic
+ * compiledReview projection derived from exactly those sanitized entries (the
+ * pure model groups text, suppresses extraction noise into the audit trail,
+ * renders tables, and proves the deterministic inputs balance). Because this is
+ * the final RFP evidence content under human review, the detail does expose the
+ * chunk text bodies and fresh table row matrices, but it still drops storage
+ * paths, a tenantId, provider metadata, arbitrary content keys, and any
+ * SKU/catalog/pricing/configuration/export field, and never aliases into the
+ * stored payload. Loaded rows are never mutated; store failures bubble unhidden.
  */
 export async function loadRfpEvidencePackageDetail(
   input: LoadRfpEvidencePackageDetailInput
@@ -497,6 +508,11 @@ export async function loadRfpEvidencePackageDetail(
     };
   }
 
+  // Sanitize each stored entry once; the legacy evidence array keeps the raw
+  // sanitized rows for audit, and the compiled review is derived from exactly
+  // those entries so every deterministic input is accounted for once.
+  const sanitizedEvidence = evidence.map((entry) => toEvidence(entry));
+
   return {
     status: "ok",
     project: toProjectSummary(project),
@@ -511,7 +527,10 @@ export async function loadRfpEvidencePackageDetail(
       tableEvidenceCount: asCount(payload.tableEvidenceCount),
       sourceFileIds: toStringArray(payload.sourceFileIds),
       sourceArtifactIds: toStringArray(payload.sourceArtifactIds),
-      evidence: evidence.map((entry) => toEvidence(entry)),
+      evidence: sanitizedEvidence,
+      compiledReview: compileCompiledEvidenceReview({
+        deterministicEvidence: sanitizedEvidence,
+      }),
     },
   };
 }

@@ -592,7 +592,7 @@ afterEach(() => {
 });
 
 describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
-  it("renders the guided operator workflow, next action, and collapsed technical details", async () => {
+  it("renders the guided operator workflow with a compiled evidence review and a collapsed source audit", async () => {
     stubFetch();
     render(<ProjectRfpEvidencePage />);
 
@@ -604,32 +604,46 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(screen.getByTestId("workflow-step-3")).toHaveTextContent("Requirements Baseline");
     expect(screen.getByTestId("workflow-step-4")).toHaveTextContent("Compliance Matrix");
 
-    const evidenceRows = await screen.findAllByTestId("evidence-row");
-    expect(evidenceRows[0]).toHaveTextContent("rfp-main.pdf");
-    expect(evidenceRows[0]).toHaveTextContent("Main RFP");
-    const technicalDetails = evidenceRows[0].querySelector("details");
-    expect(technicalDetails).not.toBeNull();
-    expect(technicalDetails?.hasAttribute("open")).toBe(false);
+    // Step 2 points at compiled evidence packages, not raw evidence rows.
+    expect(screen.getByTestId("compiled-evidence-review")).toBeInTheDocument();
+    const audit = await screen.findByTestId("source-evidence-audit");
+    expect(audit.tagName).toBe("DETAILS");
+    expect(audit.hasAttribute("open")).toBe(false);
+    expect(audit).toHaveTextContent("persisted authority");
+    expect(screen.queryAllByTestId("evidence-row")).toHaveLength(0);
   });
 
-  it("opens evidence in a right-side drawer with next/previous navigation and table formatting", async () => {
+  it("opens the compiled evidence package drawer with grouped findings and raw ids only in the audit", async () => {
     stubFetch();
     render(<ProjectRfpEvidencePage />);
 
-    await screen.findAllByTestId("evidence-row");
+    const prepare = await screen.findByTestId("prepare-evidence-review");
+    expect(prepare).toHaveTextContent("Review evidence package");
     await act(async () => {
-      fireEvent.click(screen.getByTestId("inspect-ev-text-1"));
+      fireEvent.click(prepare);
     });
 
     const drawer = await screen.findByTestId("review-drawer");
-    expect(drawer).toHaveTextContent("Evidence detail");
-    expect(await screen.findByTestId("detail-text-body")).toHaveTextContent(TEXT_BODY_CANARY);
+    expect(drawer).toHaveTextContent("Compiled evidence package");
 
-    await act(async () => {
-      fireEvent.click(within(drawer).getByRole("button", { name: "Next" }));
-    });
-    expect(await screen.findByTestId("detail-table")).toHaveTextContent(TABLE_CELL_CANARY);
-    expect(screen.getAllByTestId("detail-table-row")).toHaveLength(2);
+    // Primary body is grouped compiled findings, not sequential raw cards.
+    const compiled = await screen.findByTestId("ep-compiled-review");
+    expect(within(compiled).getAllByTestId("ep-finding").length).toBeGreaterThanOrEqual(2);
+    expect(compiled).toHaveTextContent("network design");
+    expect(compiled).toHaveTextContent(TABLE_CELL_CANARY);
+    expect(compiled).toHaveTextContent("Passage 1 of 4");
+
+    // Raw ids and the word chunk never appear in the primary compiled review.
+    expect(compiled).not.toHaveTextContent("ev-text-1");
+    expect(compiled).not.toHaveTextContent("tbl-1");
+    expect(compiled.textContent ?? "").not.toMatch(/chunk/i);
+
+    // Raw machine data lives only in the collapsed audit/debug disclosure.
+    const rawAudit = screen.getByTestId("ep-raw-audit");
+    expect(rawAudit.tagName).toBe("DETAILS");
+    expect(rawAudit.hasAttribute("open")).toBe(false);
+    expect(rawAudit).toHaveTextContent("ev-text-1");
+    expect(rawAudit).toHaveTextContent("tbl-1");
   });
 
   it("auto-generates requirements from the latest approved evidence package without a primary selection", async () => {

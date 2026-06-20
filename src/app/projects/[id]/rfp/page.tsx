@@ -51,6 +51,10 @@ import type {
   RfpEvidencePackageInspectionListItem,
   RfpEvidencePackageInspectionPackage,
 } from "@/lib/projects/project-rfp-evidence-package-inspection";
+import {
+  compileCompiledEvidenceReview,
+  type CompiledEvidenceFinding,
+} from "@/lib/projects/project-rfp-compiled-evidence-review";
 import type { ProjectRfpBoqWorkspace } from "@/lib/projects/project-rfp-boq-workspace";
 import type {
   ProjectArtifactStatus,
@@ -513,20 +517,6 @@ function primaryActionMessageClass(status: PrimaryActionStatus): string {
   }
   if (status === "error") return ERROR_BOX;
   return "border-[var(--border)] bg-bg-primary text-text-secondary";
-}
-
-/** One-line position/size summary for a lean list row; never content. */
-function summaryLine(item: RfpEvidenceListItemSummary): string {
-  const s = item.contentSummary;
-  if (s.evidenceKind === "rfp_document_table") {
-    const page = s.pageNumber !== undefined ? ` | page ${s.pageNumber}` : "";
-    const sheet = s.sheetName !== undefined ? ` | sheet ${s.sheetName}` : "";
-    return `table ${s.tableId}${page}${sheet} | ${s.rowCount} rows x ${s.columnCount} cols`;
-  }
-  const m = s.documentMetrics;
-  const doc =
-    m !== undefined ? ` | doc ${m.textCharCount} chars / ${m.tableCount} tables` : "";
-  return `chunk ${s.chunkIndex + 1}/${s.chunkCount} | ${s.charCount} chars${doc}`;
 }
 
 /** Only these artifact statuses may still receive a human review decision. */
@@ -1156,6 +1146,101 @@ function PackageEvidenceView({ evidence }: { evidence: PackageEvidence }) {
           </table>
         </div>
       </details>
+    </li>
+  );
+}
+
+/** Human label for one finding citation: document/passage/page/sheet/table. */
+function citationLine(
+  citation: CompiledEvidenceFinding["citations"][number]
+): string {
+  return [
+    citation.documentLabel,
+    citation.passageLabel,
+    citation.pageLabel,
+    citation.sheetLabel,
+    citation.tableLabel,
+  ]
+    .filter((part): part is string => part !== undefined && part !== "")
+    .join(" | ");
+}
+
+/**
+ * One primary compiled evidence finding. Only human labels render here - the
+ * finding title, source document/role, citation labels, and the grouped text
+ * body or readable table - plus presentation flags. Raw machine ids and chunk
+ * locators stay in the drawer audit trail, and there is no per-finding
+ * technical dropdown.
+ */
+function CompiledFindingView({ finding }: { finding: CompiledEvidenceFinding }) {
+  return (
+    <li
+      data-testid="ep-finding"
+      className="rounded-button border border-[var(--border)] p-2"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm font-medium text-text-primary">{finding.title}</p>
+        {finding.flags.tableRepaired && (
+          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
+            table repaired
+          </span>
+        )}
+        {finding.flags.missingFromDeterministic && (
+          <span className="rounded-full border border-accent/40 bg-accent-muted px-2 py-0.5 text-[11px] text-accent">
+            proposed addition
+          </span>
+        )}
+        {finding.flags.aiRefined && (
+          <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px] text-text-secondary">
+            AI refined
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-text-secondary">
+        {finding.documentName}
+        {finding.role !== undefined ? ` (${fileRoleLabel(finding.role)})` : ""}
+      </p>
+      {finding.citations.length > 0 && (
+        <ul className="mt-1 space-y-0.5">
+          {finding.citations.map((citation, citationIndex) => (
+            <li
+              key={citationIndex}
+              data-testid="ep-finding-citation"
+              className="text-xs text-text-tertiary"
+            >
+              {citationLine(citation)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {finding.body !== undefined && (
+        <pre
+          data-testid="ep-finding-body"
+          className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-button bg-bg-card p-2 text-xs text-text-primary"
+        >
+          {finding.body}
+        </pre>
+      )}
+      {finding.table !== undefined && (
+        <div className="mt-1 max-h-72 overflow-auto">
+          <table className="w-full border-collapse text-xs">
+            <tbody>
+              {finding.table.rows.map((row, rowIndex) => (
+                <tr key={rowIndex} data-testid="ep-finding-table-row">
+                  {row.map((cell, cellIndex) => (
+                    <td
+                      key={cellIndex}
+                      className="border border-[var(--border)] px-2 py-1 text-text-primary"
+                    >
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </li>
   );
 }
@@ -2677,6 +2762,12 @@ export default function ProjectRfpEvidencePage() {
 
   function renderPackageDrawerContent(): ReactNode {
     if (packageDetail === null) return null;
+    // The compiled review is derived deterministically from the sanitized
+    // evidence records; the raw records stay the persisted authority below.
+    const compiledReview = compileCompiledEvidenceReview({
+      deterministicEvidence: packageDetail.package.evidence,
+    });
+    const { accounting } = compiledReview;
     return (
       <div data-testid="ep-detail-panel" className="space-y-3">
         <div className={SUBTLE_CARD}>
@@ -2687,24 +2778,49 @@ export default function ProjectRfpEvidencePage() {
             </span>
           </div>
           <p className="mt-2 text-sm text-text-primary">
-            {packageDetail.package.evidenceCount} evidence items,{" "}
-            {packageDetail.package.textChunkCount} text chunks,{" "}
-            {packageDetail.package.tableEvidenceCount} tables
+            {accounting.primaryFindingCount} compiled findings from{" "}
+            {accounting.deterministicInputCount} deterministic records,{" "}
+            {accounting.suppressedCount} suppressed as extraction noise
           </p>
           <TechnicalDetails>
             <p>Artifact ID: {packageDetail.artifact.id}</p>
             <p>Input package artifact ID: {packageDetail.package.inputPackageArtifactId}</p>
+            <p>
+              Evidence records: {packageDetail.package.evidenceCount} (
+              {packageDetail.package.textChunkCount} text passages,{" "}
+              {packageDetail.package.tableEvidenceCount} tables)
+            </p>
           </TechnicalDetails>
         </div>
         {packageReviewError && <div className={ERROR_BOX}>{packageReviewError}</div>}
         {packageReviewSuccess && (
           <p className="text-xs text-text-secondary">{packageReviewSuccess}</p>
         )}
-        <ol className="space-y-2">
-          {packageDetail.package.evidence.map((evidence, evidenceIndex) => (
-            <PackageEvidenceView key={evidenceIndex} evidence={evidence} />
-          ))}
-        </ol>
+        {compiledReview.findings.length > 0 ? (
+          <ol data-testid="ep-compiled-review" className="space-y-2">
+            {compiledReview.findings.map((finding) => (
+              <CompiledFindingView key={finding.findingId} finding={finding} />
+            ))}
+          </ol>
+        ) : (
+          <p
+            data-testid="ep-compiled-review"
+            className="text-sm text-text-tertiary"
+          >
+            No compiled findings in this package.
+          </p>
+        )}
+        <details data-testid="ep-raw-audit" className={TECHNICAL_DETAILS_CLASS}>
+          <summary className="cursor-pointer text-xs font-medium text-text-tertiary">
+            Audit trail and raw evidence ({accounting.deterministicInputCount}{" "}
+            records, {accounting.suppressedCount} suppressed)
+          </summary>
+          <ol className="mt-2 space-y-2">
+            {packageDetail.package.evidence.map((evidence, evidenceIndex) => (
+              <PackageEvidenceView key={evidenceIndex} evidence={evidence} />
+            ))}
+          </ol>
+        </details>
         {packageDetail.artifact.status === "needs_review" ? (
           <div className="sticky bottom-0 border-t border-[var(--border)] bg-bg-primary pt-3">
             <label className="flex flex-col text-xs text-text-tertiary">
@@ -3303,16 +3419,20 @@ export default function ProjectRfpEvidencePage() {
           summary="Prepare and review one compiled evidence package. Raw chunks and IDs stay behind inspection."
         >
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-            <div className={SUBTLE_CARD}>
+            <div data-testid="compiled-evidence-review" className={SUBTLE_CARD}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold text-text-primary">
                     Compiled evidence review
                   </h3>
                   <p data-testid="evidence-counts" className="mt-1 text-xs text-text-secondary">
-                    {workflow.evidence.evidenceCount} evidence items -{" "}
-                    {workflow.evidence.textChunkCount} text chunks -{" "}
+                    {workflow.evidence.evidenceCount} deterministic records -{" "}
+                    {workflow.evidence.textChunkCount} text passages -{" "}
                     {workflow.evidence.tableEvidenceCount} tables
+                  </p>
+                  <p className="mt-1 text-xs text-text-secondary">
+                    Deterministic records are compiled into reviewable findings
+                    inside the evidence package; open it to review grouped findings.
                   </p>
                 </div>
                 <button
@@ -3339,48 +3459,29 @@ export default function ProjectRfpEvidencePage() {
                 </div>
               )}
               {listError && <div className={`mt-3 ${ERROR_BOX}`}>{listError}</div>}
-              {listLoading && (
-                <p className="mt-3 text-sm text-text-tertiary">Loading evidence...</p>
-              )}
-              {data && data.evidence.length > 0 ? (
-                <ol className="mt-3 grid gap-2">
-                  {data.evidence.map((item) => (
-                    <li key={item.id} data-testid="evidence-row" className={SUBTLE_CARD}>
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-medium text-text-primary">
-                            {item.contentSummary.sourceFileName}
-                          </p>
-                          <p className={MUTED_TEXT}>
-                            {fileRoleLabel(item.contentSummary.sourceFileRole)}{" "}
-                            - {kindLabel(item.kind)} - {summaryLine(item)}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          data-testid={`inspect-${item.id}`}
-                          disabled={detailLoading}
-                          onClick={() => openEvidenceDrawer(item.id)}
-                          className={PLAIN_BTN}
-                        >
-                          Inspect
-                        </button>
-                      </div>
-                      <TechnicalDetails>
-                        <p>Evidence ID: {item.id}</p>
-                        <p>Source file ID: {item.sourceFileId}</p>
-                        <p>
-                          Input package artifact ID:{" "}
-                          {item.contentSummary.inputPackageArtifactId}
-                        </p>
-                        <p>Extracted: {item.extractedAt}</p>
-                      </TechnicalDetails>
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                !listLoading && <EmptyState>No persisted evidence yet.</EmptyState>
-              )}
+              <details
+                data-testid="source-evidence-audit"
+                className={`mt-3 ${TECHNICAL_DETAILS_CLASS}`}
+              >
+                <summary className="cursor-pointer text-xs font-medium text-text-tertiary">
+                  Source evidence audit ({workflow.evidence.evidenceCount}{" "}
+                  deterministic records)
+                </summary>
+                <div className="mt-2 space-y-1 text-xs text-text-tertiary">
+                  <p>
+                    Raw deterministic evidence remains the persisted authority and is
+                    retained for traceability. Reviewable findings are compiled from
+                    these records inside each evidence package; open the package to
+                    review grouped findings and the full audit trail.
+                  </p>
+                  <p>
+                    {workflow.evidence.evidenceCount} records:{" "}
+                    {workflow.evidence.textChunkCount} text passages,{" "}
+                    {workflow.evidence.tableEvidenceCount} tables.
+                  </p>
+                  {listLoading && <p>Loading source evidence...</p>}
+                </div>
+              </details>
             </div>
             <div className="space-y-3">
               <ArtifactStatusCard
