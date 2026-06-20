@@ -459,7 +459,7 @@ describe("Anthropic extraction delta drafting adapter module purity (static sour
       "@/lib/projects/project-rfp-extraction-delta-candidate-drafting",
     ]);
     const importLines = adapterSource
-      .split("\n")
+      .split(/\r?\n/)
       .filter((line) => /^\s*import\b/.test(line));
     expect(importLines).toHaveLength(2);
     expect(importLines[0]).toMatch(
