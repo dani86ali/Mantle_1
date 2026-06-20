@@ -29,6 +29,7 @@ import {
 import type {
   RfpEvidenceDetail,
   RfpEvidenceInspectionProjectSummary,
+  RfpEvidenceListContentSummary,
   RfpEvidenceListItemSummary,
 } from "@/lib/projects/project-rfp-evidence-inspection";
 import type {
@@ -559,20 +560,85 @@ function evidenceLocatorLine(ref: ReadableEvidenceReference): string {
 }
 
 /**
+ * UI-only document context for one evidence reference, looked up from the
+ * loaded evidence summaries by evidenceId. Carries human document/role labels
+ * and (for tables) a sheet/page locator; never a machine id.
+ */
+interface EvidenceReferenceContext {
+  sourceFileName?: string;
+  sourceFileRole?: string;
+  sheetName?: string;
+  pageNumber?: number;
+}
+
+/** Normalize one loaded evidence content summary into a reference context. */
+function toEvidenceReferenceContext(
+  summary: RfpEvidenceListContentSummary
+): EvidenceReferenceContext {
+  return {
+    ...(summary.sourceFileName !== ""
+      ? { sourceFileName: summary.sourceFileName }
+      : {}),
+    ...(summary.sourceFileRole !== ""
+      ? { sourceFileRole: summary.sourceFileRole }
+      : {}),
+    ...(summary.evidenceKind === "rfp_document_table" &&
+    summary.sheetName !== undefined
+      ? { sheetName: summary.sheetName }
+      : {}),
+    ...(summary.evidenceKind === "rfp_document_table" &&
+    summary.pageNumber !== undefined
+      ? { pageNumber: summary.pageNumber }
+      : {}),
+  };
+}
+
+/** Build a UI-only evidenceId -> context lookup from loaded summaries. */
+function buildEvidenceContextLookup(
+  evidence: readonly RfpEvidenceListItemSummary[]
+): Map<string, EvidenceReferenceContext> {
+  const lookup = new Map<string, EvidenceReferenceContext>();
+  for (const item of evidence) {
+    lookup.set(item.id, toEvidenceReferenceContext(item.contentSummary));
+  }
+  return lookup;
+}
+
+/** Human "document (Role) - " prefix for a primary reference label; "" if none. */
+function evidenceContextPrefix(context?: EvidenceReferenceContext): string {
+  if (context === undefined) return "";
+  const bits: string[] = [];
+  if (context.sourceFileName !== undefined) bits.push(context.sourceFileName);
+  if (context.sourceFileRole !== undefined) {
+    bits.push(`(${fileRoleLabel(context.sourceFileRole)})`);
+  }
+  return bits.length > 0 ? `${bits.join(" ")} - ` : "";
+}
+
+/**
  * Human-readable label for one evidence reference in a primary card or the
  * nontechnical disclosure. Never the word "chunk", a machine tableId, or any
  * id - text references read as a passage position, tables as a readable
- * sheet/page/row-column locator.
+ * sheet/page/row-column locator. When the loaded evidence summary is available
+ * the label is prefixed with the source document name and human role label,
+ * and table locators fall back to the summary's sheet/page. Without that
+ * context the label degrades to the bare passage/table locator.
  */
-function readableEvidenceReferenceLabel(ref: ReadableEvidenceReference): string {
+function readableEvidenceReferenceLabel(
+  ref: ReadableEvidenceReference,
+  context?: EvidenceReferenceContext
+): string {
+  const prefix = evidenceContextPrefix(context);
   if (ref.evidenceKind === "rfp_document_table") {
     const parts = ["Table"];
-    if (ref.sheetName !== undefined) parts.push(`sheet ${ref.sheetName}`);
-    if (ref.pageNumber !== undefined) parts.push(`page ${ref.pageNumber}`);
+    const sheetName = ref.sheetName ?? context?.sheetName;
+    const pageNumber = ref.pageNumber ?? context?.pageNumber;
+    if (sheetName !== undefined) parts.push(`sheet ${sheetName}`);
+    if (pageNumber !== undefined) parts.push(`page ${pageNumber}`);
     parts.push(`${ref.rowCount} rows x ${ref.columnCount} cols`);
-    return parts.join(" - ");
+    return `${prefix}${parts.join(" - ")}`;
   }
-  return `Text passage ${ref.chunkIndex + 1} of ${ref.chunkCount}`;
+  return `${prefix}Text passage ${ref.chunkIndex + 1} of ${ref.chunkCount}`;
 }
 
 /**
@@ -1388,7 +1454,13 @@ function CompiledFindingView({ finding }: { finding: CompiledEvidenceFinding }) 
   );
 }
 
-function ComplianceMatrixRowView({ row }: { row: ComplianceMatrixRow }) {
+function ComplianceMatrixRowView({
+  row,
+  evidenceContextById,
+}: {
+  row: ComplianceMatrixRow;
+  evidenceContextById: Map<string, EvidenceReferenceContext>;
+}) {
   return (
     <li
       data-testid="cm-detail-row"
@@ -1424,7 +1496,10 @@ function ComplianceMatrixRowView({ row }: { row: ComplianceMatrixRow }) {
             data-testid="cm-detail-evidence-reference"
             className="text-xs text-text-tertiary"
           >
-            {readableEvidenceReferenceLabel(ref)}
+            {readableEvidenceReferenceLabel(
+              ref,
+              evidenceContextById.get(ref.evidenceId)
+            )}
           </li>
         ))}
       </ul>
@@ -1724,6 +1799,13 @@ export default function ProjectRfpEvidencePage() {
   const [data, setData] = useState<EvidenceListResponse | null>(null);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+
+  // UI-only lookup from loaded evidence summaries, keyed by evidenceId, so
+  // requirement/compliance reference labels can show document/role context.
+  const evidenceContextById = useMemo(
+    () => buildEvidenceContextLookup(data?.evidence ?? []),
+    [data]
+  );
 
   const [detail, setDetail] = useState<RfpEvidenceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -3146,7 +3228,10 @@ export default function ProjectRfpEvidencePage() {
                       data-testid="baseline-detail-reference"
                       className="text-xs text-text-tertiary"
                     >
-                      {readableEvidenceReferenceLabel(ref)}
+                      {readableEvidenceReferenceLabel(
+                        ref,
+                        evidenceContextById.get(ref.evidenceId)
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -3243,7 +3328,11 @@ export default function ProjectRfpEvidencePage() {
         )}
         <ol className="space-y-2">
           {pendingComplianceRows.map((row) => (
-            <ComplianceMatrixRowView key={row.id} row={row} />
+            <ComplianceMatrixRowView
+              key={row.id}
+              row={row}
+              evidenceContextById={evidenceContextById}
+            />
           ))}
         </ol>
         {decidedComplianceRows.length > 0 && (
@@ -3253,7 +3342,11 @@ export default function ProjectRfpEvidencePage() {
             </summary>
             <ol className="mt-2 space-y-2">
               {decidedComplianceRows.map((row) => (
-                <ComplianceMatrixRowView key={row.id} row={row} />
+                <ComplianceMatrixRowView
+                  key={row.id}
+                  row={row}
+                  evidenceContextById={evidenceContextById}
+                />
               ))}
             </ol>
           </details>

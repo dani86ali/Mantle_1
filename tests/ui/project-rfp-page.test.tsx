@@ -728,6 +728,10 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     await screen.findByTestId("review-drawer");
 
     const reference = await screen.findByTestId("baseline-detail-reference");
+    // The primary label now carries the loaded document name and human role
+    // label, not just the generic passage locator.
+    expect(reference).toHaveTextContent("rfp-main.pdf");
+    expect(reference).toHaveTextContent("Main RFP");
     expect(reference).toHaveTextContent("Text passage 1 of 4");
 
     const card = screen.getByTestId("baseline-detail-requirement");
@@ -767,6 +771,10 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(primaryText).toContain(
       "Supplier shall provide a complete network design."
     );
+    // The primary evidence reference carries the loaded document name and
+    // human role label alongside the readable passage locator.
+    expect(primaryText).toContain("rfp-main.pdf");
+    expect(primaryText).toContain("Main RFP");
     expect(primaryText).toContain("Text passage 1 of 4");
     expect(primaryText).not.toContain("CM-001");
     expect(primaryText).not.toContain("RFP-REQ-001");
