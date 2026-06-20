@@ -422,10 +422,6 @@ function yesNo(value: boolean): string {
   return value ? "yes" : "no";
 }
 
-function idList(values: readonly string[]): string {
-  return values.length > 0 ? values.join(", ") : "none";
-}
-
 function displayId(value: string): string {
   if (value.length <= 12) return value;
   return `${value.slice(0, 8)}...${value.slice(-4)}`;
@@ -647,19 +643,6 @@ function readableEvidenceReferenceLabel(
  */
 function rawEvidenceReferenceLine(ref: ReadableEvidenceReference): string {
   return `${ref.evidenceId} | ${kindLabel(ref.evidenceKind)} | ${evidenceLocatorLine(ref)} | file ${ref.sourceFileId} | package ${ref.inputPackageArtifactId}`;
-}
-
-function complianceStatusCounts(
-  item: RfpComplianceMatrixInspectionListItem
-): string {
-  const counts = item.payloadSummary.statusCounts;
-  return [
-    `pending ${counts.needs_review}`,
-    `compliant ${counts.compliant}`,
-    `partial ${counts.partially_compliant}`,
-    `non-compliant ${counts.non_compliant}`,
-    `not applicable ${counts.not_applicable}`,
-  ].join(" | ");
 }
 
 /** Full raw configuration-reference audit line: artifact id + line id + fields. */
@@ -1614,11 +1597,13 @@ function ArtifactStatusCard({
   label,
   artifact,
   actionLabel,
+  actionTestId,
   onInspect,
 }: {
   label: string;
   artifact?: RfpArtifactState;
   actionLabel?: string;
+  actionTestId?: string;
   onInspect?: (artifactId: string) => void;
 }) {
   return (
@@ -1640,6 +1625,7 @@ function ArtifactStatusCard({
         {artifact !== undefined && onInspect !== undefined && (
           <button
             type="button"
+            data-testid={actionTestId}
             className={PLAIN_BTN}
             onClick={() => onInspect(artifact.id)}
           >
@@ -1647,13 +1633,6 @@ function ArtifactStatusCard({
           </button>
         )}
       </div>
-      {artifact !== undefined && (
-        <TechnicalDetails testId={`${label.toLowerCase().replaceAll(" ", "-")}-technical`}>
-          <p>Artifact ID: {artifact.id}</p>
-          <p>Status: {artifact.status}</p>
-          <p>Version: {artifact.version}</p>
-        </TechnicalDetails>
-      )}
     </div>
   );
 }
@@ -3974,47 +3953,22 @@ export default function ProjectRfpEvidencePage() {
               Loading requirements baseline...
             </p>
           )}
-          {baselineList && baselineList.artifacts.length > 0 ? (
-            <ol className="mt-3 grid gap-2 md:grid-cols-2">
-              {baselineList.artifacts.map((item) => (
-                <li key={item.id} data-testid="baseline-row" className={SUBTLE_CARD}>
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusBadge status={item.status} />
-                        <span className="text-xs text-text-secondary">
-                          Version {item.version}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-sm text-text-primary">
-                        {item.payloadSummary.requirementCount} requirements
-                      </p>
-                      <p className={MUTED_TEXT}>
-                        {item.payloadSummary.evidenceCount} evidence references
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      data-testid={`baseline-inspect-${item.id}`}
-                      disabled={baselineDetailLoading}
-                      onClick={() => openBaselineDrawer(item.id)}
-                      className={PLAIN_BTN}
-                    >
-                      Inspect
-                    </button>
-                  </div>
-                  <TechnicalDetails>
-                    <p>Artifact ID: {item.id}</p>
-                    <p>Source artifacts: {idList(item.sourceArtifactIds)}</p>
-                    <p>Source files: {idList(item.sourceFileIds)}</p>
-                    <p>Updated: {item.updatedAt}</p>
-                  </TechnicalDetails>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            !baselineLoading && <EmptyState>No requirements baseline yet.</EmptyState>
-          )}
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            <ArtifactStatusCard
+              label="Current requirements baseline"
+              artifact={workflow.requirementsBaseline.current}
+              actionLabel="Review"
+              actionTestId="baseline-card-review"
+              onInspect={openBaselineDrawer}
+            />
+            <ArtifactStatusCard
+              label="Approved requirements baseline"
+              artifact={workflow.requirementsBaseline.latestApproved}
+              actionLabel="Inspect"
+              actionTestId="baseline-card-inspect"
+              onInspect={openBaselineDrawer}
+            />
+          </div>
           <ReviewHistory track={workflow.requirementsBaseline} onInspect={openBaselineDrawer} />
         </WorkflowStep>
 
@@ -4085,52 +4039,22 @@ export default function ProjectRfpEvidencePage() {
               Loading compliance matrices...
             </p>
           )}
-          {complianceList && complianceList.artifacts.length > 0 ? (
-            <ol className="mt-3 grid gap-2 md:grid-cols-2">
-              {complianceList.artifacts.map((item) => (
-                <li key={item.id} data-testid="cm-row" className={SUBTLE_CARD}>
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusBadge status={item.status} />
-                        <span className="text-xs text-text-secondary">
-                          Version {item.version}
-                        </span>
-                      </div>
-                      <p data-testid="cm-row-counts" className="mt-2 text-sm text-text-primary">
-                        {item.payloadSummary.rowCount} rows
-                      </p>
-                      <p className={MUTED_TEXT}>{complianceStatusCounts(item)}</p>
-                    </div>
-                    <button
-                      type="button"
-                      data-testid={`cm-inspect-${item.id}`}
-                      disabled={complianceDetailLoading}
-                      onClick={() => openComplianceDrawer(item.id)}
-                      className={PLAIN_BTN}
-                    >
-                      Inspect
-                    </button>
-                  </div>
-                  <TechnicalDetails>
-                    <p>Artifact ID: {item.id}</p>
-                    <p>
-                      Requirements baseline artifact ID:{" "}
-                      {item.payloadSummary.sourceRequirementsBaselineArtifactId}
-                    </p>
-                    <p>
-                      Evidence package artifact ID:{" "}
-                      {item.payloadSummary.sourceEvidencePackageArtifactId}
-                    </p>
-                    <p>Source artifacts: {idList(item.payloadSummary.sourceArtifactIds)}</p>
-                    <p>Source files: {idList(item.payloadSummary.sourceFileIds)}</p>
-                  </TechnicalDetails>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            !complianceLoading && <EmptyState>No compliance matrix yet.</EmptyState>
-          )}
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            <ArtifactStatusCard
+              label="Current compliance matrix"
+              artifact={workflow.complianceMatrix.current}
+              actionLabel="Review"
+              actionTestId="compliance-card-review"
+              onInspect={openComplianceDrawer}
+            />
+            <ArtifactStatusCard
+              label="Approved compliance matrix"
+              artifact={workflow.complianceMatrix.latestApproved}
+              actionLabel="Inspect"
+              actionTestId="compliance-card-inspect"
+              onInspect={openComplianceDrawer}
+            />
+          </div>
           <ReviewHistory track={workflow.complianceMatrix} onInspect={openComplianceDrawer} />
         </WorkflowStep>
 

@@ -721,9 +721,9 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     stubFetch();
     render(<ProjectRfpEvidencePage />);
 
-    await screen.findByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`);
+    await screen.findByTestId("baseline-card-review");
     await act(async () => {
-      fireEvent.click(screen.getByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`));
+      fireEvent.click(screen.getByTestId("baseline-card-review"));
     });
     await screen.findByTestId("review-drawer");
 
@@ -977,9 +977,9 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     const calls = stubFetch();
     render(<ProjectRfpEvidencePage />);
 
-    await screen.findByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`);
+    await screen.findByTestId("baseline-card-review");
     await act(async () => {
-      fireEvent.click(screen.getByTestId(`baseline-inspect-${BASELINE_ARTIFACT_ID}`));
+      fireEvent.click(screen.getByTestId("baseline-card-review"));
     });
 
     expect(await screen.findByTestId("review-drawer")).toHaveTextContent("Requirements baseline");
