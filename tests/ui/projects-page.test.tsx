@@ -86,6 +86,10 @@ describe("ProjectsPage", () => {
       "href",
       "/projects/quick-bom/new"
     );
+    expect(screen.getByRole("link", { name: "New RFP Project" })).toHaveAttribute(
+      "href",
+      "/projects/rfp/new"
+    );
     expect(screen.getByRole("link", { name: "Alpha Quick BoM" })).toHaveAttribute(
       "href",
       "/projects/proj-qbm/quick-bom"
