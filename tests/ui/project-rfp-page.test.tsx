@@ -1173,20 +1173,60 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(screen.getByTestId("next-action")).toHaveTextContent("Create input package");
   });
 
-  it("keeps rejected or edited extraction decisions in collapsed review history", async () => {
-    stubFetch();
+  it("centers step 2 on compiled evidence and demotes extraction decisions to collapsed review history", async () => {
+    // A decided (rejected) extraction delta lands in collapsed history rather
+    // than as a primary card; its recorded decisions stay reachable via Inspect.
+    stubFetch((url) => {
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse("rejected"));
+      if (url === EXTRACTION_DELTA_DETAIL_URL) return jsonResponse(deltaDetailResponse());
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      return jsonResponse({}, 200);
+    });
     render(<ProjectRfpEvidencePage />);
 
-    await screen.findByText("Extraction refinement");
+    const step2 = await screen.findByTestId("workflow-step-2");
+
+    // The primary workflow centers on compiled evidence review and the evidence
+    // package cards, keeping their review/inspect drawer actions.
+    expect(within(step2).getByTestId("compiled-evidence-review")).toBeInTheDocument();
+    expect(within(step2).getByTestId("prepare-evidence-review")).toHaveTextContent(
+      "Review evidence package"
+    );
+    expect(within(step2).getByText("Current evidence package")).toBeInTheDocument();
+    expect(within(step2).getByText("Approved evidence package")).toBeInTheDocument();
+    // Exactly one primary "Review" action remains (the evidence package); the old
+    // extraction-refinement primary Review card is gone. An Inspect action stays.
+    expect(within(step2).getByRole("button", { name: "Review" })).toBeInTheDocument();
+    expect(
+      within(step2).getAllByRole("button", { name: "Inspect" }).length
+    ).toBeGreaterThanOrEqual(1);
+    // No primary "Extraction refinement" card remains - only the collapsed,
+    // labeled "Extraction refinement history".
+    expect(within(step2).queryByText("Extraction refinement")).toBeNull();
+
+    // Extraction decisions remain accessible under the collapsed, labeled review
+    // history: it is closed by default and inspectable.
+    const extractionHistory = within(step2)
+      .getByText(/Extraction refinement history/)
+      .closest("details") as HTMLElement;
+    expect(extractionHistory.tagName).toBe("DETAILS");
+    expect(extractionHistory.hasAttribute("open")).toBe(false);
     await act(async () => {
-      fireEvent.click(screen.getAllByRole("button", { name: "Review" })[1]);
+      fireEvent.click(within(extractionHistory).getByRole("button", { name: "Inspect" }));
     });
 
+    // Inspecting opens the extraction-refinement drawer with the recorded
+    // decisions: the pending candidate plus the decided review history.
+    expect(await screen.findByTestId("review-drawer")).toHaveTextContent("Extraction refinement");
     expect(await screen.findByTestId("delta-pending-list")).toHaveTextContent("Missing service SLA");
-    const history = await screen.findByTestId("delta-decided");
-    expect(history.tagName).toBe("DETAILS");
-    expect(history).toHaveTextContent("Review history (1)");
-    expect(history.hasAttribute("open")).toBe(false);
+    const decided = await screen.findByTestId("delta-decided");
+    expect(decided.tagName).toBe("DETAILS");
+    expect(decided).toHaveTextContent("Review history (1)");
+    expect(decided.hasAttribute("open")).toBe(false);
   });
 
   it("opens the current evidence package drawer without preparing another package", async () => {

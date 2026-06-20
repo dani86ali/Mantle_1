@@ -1640,15 +1640,17 @@ function ArtifactStatusCard({
 function ReviewHistory({
   track,
   onInspect,
+  label,
 }: {
   track: RfpArtifactTrack;
   onInspect?: (artifactId: string) => void;
+  label?: string;
 }) {
   const entries: RfpArtifactHistoryEntry[] = track.history;
   return (
     <details data-testid="review-history" className="mt-3">
       <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-        Review history ({entries.length})
+        {label ?? "Review history"} ({entries.length})
       </summary>
       {entries.length === 0 ? (
         <p className="mt-2 text-xs text-text-tertiary">No previous versions.</p>
@@ -3874,14 +3876,16 @@ export default function ProjectRfpEvidencePage() {
                 actionLabel="Inspect"
                 onInspect={openPackageDrawer}
               />
-              <ArtifactStatusCard
-                label="Extraction refinement"
-                artifact={workflow.extractionDelta.current}
-                actionLabel="Review"
+              <ReviewHistory
+                track={workflow.extractionDelta}
                 onInspect={openDeltaDrawer}
+                label="Extraction refinement history"
               />
-              <ReviewHistory track={workflow.extractionDelta} onInspect={openDeltaDrawer} />
-              <ReviewHistory track={workflow.evidencePackage} onInspect={openPackageDrawer} />
+              <ReviewHistory
+                track={workflow.evidencePackage}
+                onInspect={openPackageDrawer}
+                label="Evidence package history"
+              />
             </div>
           </div>
         </WorkflowStep>
