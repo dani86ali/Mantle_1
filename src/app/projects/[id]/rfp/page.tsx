@@ -615,13 +615,17 @@ function evidenceContextPrefix(context?: EvidenceReferenceContext): string {
 }
 
 /**
- * Human-readable label for one evidence reference in a primary card or the
- * nontechnical disclosure. Never the word "chunk", a machine tableId, or any
- * id - text references read as a passage position, tables as a readable
+ * Human-readable fallback label for one evidence reference in a primary card or
+ * the nontechnical disclosure, used only when no approved compiled finding
+ * label is available for the evidenceId. Never the word "chunk", a char count,
+ * a raw extraction-position passage ("Text passage N of M" / "Passage N of M"),
+ * a machine tableId, or any file/package id - a text reference degrades to a
+ * human "Evidence reference" descriptor, a table to a readable
  * sheet/page/row-column locator. When the loaded evidence summary is available
- * the label is prefixed with the source document name and human role label,
- * and table locators fall back to the summary's sheet/page. Without that
- * context the label degrades to the bare passage/table locator.
+ * the label is prefixed with the source document name and human role label, and
+ * table locators fall back to the summary's sheet/page. Without that context the
+ * text label is the bare "Evidence reference" and the table label is the bare
+ * row-column locator.
  */
 function readableEvidenceReferenceLabel(
   ref: ReadableEvidenceReference,
@@ -637,7 +641,7 @@ function readableEvidenceReferenceLabel(
     parts.push(`${ref.rowCount} rows x ${ref.columnCount} cols`);
     return `${prefix}${parts.join(" - ")}`;
   }
-  return `${prefix}Text passage ${ref.chunkIndex + 1} of ${ref.chunkCount}`;
+  return `${prefix}Evidence reference`;
 }
 
 /**

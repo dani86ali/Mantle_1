@@ -904,6 +904,129 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(reference).not.toHaveTextContent("Passage 1 of 4");
   });
 
+  it("degrades a requirement reference to a human evidence label, never a raw text passage, before a compiled label loads", async () => {
+    // No approved evidence package compiled review is available (the approved
+    // package detail returns no package), so the primary requirement reference
+    // cannot use a compiled finding label. It must still degrade to a human
+    // "Evidence reference" descriptor - never the raw extraction-position "Text
+    // passage N of M" - while the collapsed audit keeps the raw ids and chunk
+    // locator.
+    stubFetch((url) => {
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === BASELINE_DETAIL_URL) return jsonResponse(baselineDetailResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      // No package payload -> no compiled review loads -> references stay on the
+      // document-locator fallback.
+      if (url === `${EVIDENCE_PACKAGE_LIST_URL}/${EVIDENCE_PACKAGE_APPROVED_ID}`) {
+        return jsonResponse({ project: projectContext() }, 200);
+      }
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("baseline-card-review");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("baseline-card-review"));
+    });
+    await screen.findByTestId("review-drawer");
+    await screen.findByTestId("baseline-detail-reference");
+
+    // The degraded primary reference is the human document-prefixed evidence
+    // descriptor, never a raw extraction-position passage.
+    await waitFor(() => {
+      expect(screen.getByTestId("baseline-detail-reference")).toHaveTextContent(
+        "rfp-main.pdf (Main RFP) - Evidence reference"
+      );
+    });
+    const reference = screen.getByTestId("baseline-detail-reference");
+    expect(reference).not.toHaveTextContent("Text passage 1 of 4");
+    expect(reference).not.toHaveTextContent("Passage 1 of 4");
+    // The compiled clean summary never loaded, so it cannot appear here.
+    expect(reference).not.toHaveTextContent(COMPILED_SUMMARY_CANARY);
+
+    const card = screen.getByTestId("baseline-detail-requirement");
+    const primary = card.cloneNode(true) as HTMLElement;
+    primary
+      .querySelectorAll('[data-testid="baseline-detail-audit"]')
+      .forEach((node) => node.remove());
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).not.toMatch(/chunk/i);
+    expect(primaryText).not.toContain("Text passage 1 of 4");
+    expect(primaryText).not.toContain("Passage 1 of 4");
+    expect(primaryText).not.toContain("ev-text-1");
+    expect(primaryText).not.toContain("file-rfp-1");
+
+    // Even on the fallback, raw ids and the chunk locator stay in the audit.
+    const audit = within(card).getByTestId("baseline-detail-audit");
+    expect(audit.tagName).toBe("DETAILS");
+    expect(audit.hasAttribute("open")).toBe(false);
+    expect(audit).toHaveTextContent("ev-text-1");
+    expect(audit).toHaveTextContent("file-rfp-1");
+    expect(audit).toHaveTextContent(INPUT_PACKAGE_ARTIFACT_ID);
+    expect(audit.textContent ?? "").toMatch(/chunk/i);
+  });
+
+  it("degrades a compliance reference to a human evidence label, never a raw text passage, before a compiled label loads", async () => {
+    // Same degraded case on the compliance render path: no compiled review is
+    // available, so the primary compliance reference must read as a human
+    // "Evidence reference" descriptor, never "Text passage N of M", while the
+    // row audit keeps the raw ids and chunk locator.
+    stubFetch((url) => {
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === COMPLIANCE_MATRIX_DETAIL_URL) return jsonResponse(complianceMatrixDetailResponse());
+      if (url === COMPLIANCE_MATRIX_GENERATE_URL) {
+        return jsonResponse({ artifact: complianceMatrixListItem(), draftSummary: {} }, 201);
+      }
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === `${EVIDENCE_PACKAGE_LIST_URL}/${EVIDENCE_PACKAGE_APPROVED_ID}`) {
+        return jsonResponse({ project: projectContext() }, 200);
+      }
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("review-drawer");
+    await screen.findByTestId("cm-detail-evidence-reference");
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("cm-detail-evidence-reference")
+      ).toHaveTextContent("rfp-main.pdf (Main RFP) - Evidence reference");
+    });
+    const row = screen.getByTestId("cm-detail-row");
+    const primary = row.cloneNode(true) as HTMLElement;
+    primary
+      .querySelectorAll('[data-testid="cm-detail-audit"]')
+      .forEach((node) => node.remove());
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).not.toContain("Text passage 1 of 4");
+    expect(primaryText).not.toContain("Passage 1 of 4");
+    expect(primaryText).not.toContain(COMPILED_SUMMARY_CANARY);
+    expect(primaryText).not.toContain("ev-text-1");
+    expect(primaryText).not.toContain("file-rfp-1");
+    expect(primaryText).not.toMatch(/chunk/i);
+
+    const audit = within(row).getByTestId("cm-detail-audit");
+    expect(audit.tagName).toBe("DETAILS");
+    expect(audit.hasAttribute("open")).toBe(false);
+    expect(audit).toHaveTextContent("ev-text-1");
+    expect(audit).toHaveTextContent("file-rfp-1");
+    expect(audit).toHaveTextContent(INPUT_PACKAGE_ARTIFACT_ID);
+    expect(audit.textContent ?? "").toMatch(/chunk/i);
+  });
+
   it("auto-generates requirements from the latest approved evidence package without a primary selection", async () => {
     const calls = stubFetch((url) => {
       if (url === EVIDENCE_PACKAGE_LIST_URL) {
