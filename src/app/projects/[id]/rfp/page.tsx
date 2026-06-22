@@ -1565,6 +1565,22 @@ function CompiledFindingView({ finding }: { finding: CompiledEvidenceFinding }) 
   );
 }
 
+/**
+ * One optional Stage 5 review-metadata line for the collapsed compliance row
+ * audit, omitted entirely when the value is absent so an un-reviewed row keeps a
+ * clean audit. Collapsed audit/technical detail only - never a primary row line -
+ * and it carries human review hints only, never pricing, SKU, catalog, or
+ * configuration authority.
+ */
+function complianceRowAuditLine(label: string, value?: string): ReactNode {
+  if (value === undefined || value === "") return null;
+  return (
+    <p>
+      {label}: {value}
+    </p>
+  );
+}
+
 function ComplianceMatrixRowView({
   row,
   evidenceContextById,
@@ -1579,6 +1595,14 @@ function ComplianceMatrixRowView({
       data-testid="cm-detail-row"
       className="rounded-button border border-[var(--border)] p-2"
     >
+      {row.sectionReference !== undefined && (
+        <p
+          data-testid="cm-detail-section-reference"
+          className="text-xs font-medium text-text-secondary"
+        >
+          Section reference: {row.sectionReference}
+        </p>
+      )}
       <p className="text-xs font-medium text-text-primary">
         {row.category} | {row.priority} | {row.complianceStatus}
       </p>
@@ -1651,6 +1675,38 @@ function ComplianceMatrixRowView({
               {ref.configurationExpansionArtifactId} | {configurationReferenceLine(ref)}
             </p>
           ))}
+        {complianceRowAuditLine("Section reference", row.sectionReference)}
+        {complianceRowAuditLine("Response lane", row.responseLane)}
+        {complianceRowAuditLine("Owner lane", row.ownerLane)}
+        {complianceRowAuditLine("HLD impact", row.hldImpact)}
+        {complianceRowAuditLine("TP impact", row.tpImpact)}
+        {complianceRowAuditLine("BoQ/config impact", row.boqConfigImpact)}
+        {complianceRowAuditLine(
+          "Requires owner review",
+          row.requiresOwnerReview !== undefined
+            ? yesNo(row.requiresOwnerReview)
+            : undefined
+        )}
+        {complianceRowAuditLine("Row review status", row.rowReviewStatus)}
+        {complianceRowAuditLine(
+          "Not applicable reason",
+          row.notApplicableReason
+        )}
+        {complianceRowAuditLine("Removed reason", row.removedReason)}
+        {row.reviewHistory !== undefined && row.reviewHistory.length > 0 && (
+          <div data-testid="cm-detail-review-history">
+            <p>Review history ({row.reviewHistory.length})</p>
+            {row.reviewHistory.map((entry, entryIndex) => (
+              <p
+                key={entryIndex}
+                data-testid="cm-detail-review-history-entry"
+              >
+                {entry.action} | {entry.by} | {entry.at}
+                {entry.note !== undefined ? ` | ${entry.note}` : ""}
+              </p>
+            ))}
+          </div>
+        )}
       </TechnicalDetails>
     </li>
   );

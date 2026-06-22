@@ -338,6 +338,112 @@ function complianceMatrixDetailResponse(status = "needs_review"): Record<string,
   };
 }
 
+// A compliance matrix detail whose single pending row carries Stage 5 engineer
+// review metadata: a section reference (also surfaced as a primary line) plus
+// lanes, downstream impacts, owner-review flag, row review status, and review
+// history that must stay inside the collapsed cm-detail-audit only.
+function complianceMatrixStage5DetailResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: artifact(COMPLIANCE_MATRIX_ARTIFACT_ID, "compliance_matrix", "needs_review", 1),
+    matrix: {
+      payloadKind: "rfp_compliance_matrix",
+      sourceRequirementsBaselineArtifactId: BASELINE_ARTIFACT_ID,
+      sourceEvidencePackageArtifactId: EVIDENCE_PACKAGE_APPROVED_ID,
+      sourceConfigurationExpansionArtifactId: CONFIG_EXPANSION_ARTIFACT_ID,
+      reviewedBy: "user-9",
+      reviewedAt: "2026-06-11T09:00:00.000Z",
+      rows: [
+        {
+          id: "CM-010",
+          requirementId: "RFP-REQ-010",
+          requirementText: "Supplier shall meet the security control baseline.",
+          category: "technical",
+          priority: "high",
+          complianceStatus: "needs_review",
+          response: "Compliant with the stated control set.",
+          rationale: "Backed by the approved design evidence.",
+          notes: "Pending sign-off.",
+          evidenceReferences: [
+            {
+              evidenceId: "ev-text-1",
+              sourceFileId: "file-rfp-1",
+              inputPackageArtifactId: INPUT_PACKAGE_ARTIFACT_ID,
+              evidenceKind: "rfp_document_text_chunk",
+              chunkIndex: 0,
+              chunkCount: 4,
+              charCount: 1810,
+            },
+          ],
+          sectionReference: "SEC-REF-3.2.1",
+          responseLane: "commercial",
+          ownerLane: "legal",
+          hldImpact: "required",
+          tpImpact: "potential",
+          boqConfigImpact: "owner_review_required",
+          requiresOwnerReview: true,
+          rowReviewStatus: "pending",
+          reviewHistory: [
+            {
+              action: "owner_review_requested",
+              at: "2026-06-11T08:30:00.000Z",
+              by: "owner-7",
+              note: "OWNER-HISTORY-NOTE-CANARY",
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+// A compliance matrix detail whose single row was removed by the engineer. Its
+// non-needs_review status lands it in the collapsed review-history section, where
+// it stays inspectable; its removed/not-applicable reasons and review history
+// live only in the collapsed cm-detail-audit.
+function complianceMatrixRemovedRowDetailResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: artifact(COMPLIANCE_MATRIX_ARTIFACT_ID, "compliance_matrix", "needs_review", 1),
+    matrix: {
+      payloadKind: "rfp_compliance_matrix",
+      sourceRequirementsBaselineArtifactId: BASELINE_ARTIFACT_ID,
+      sourceEvidencePackageArtifactId: EVIDENCE_PACKAGE_APPROVED_ID,
+      sourceConfigurationExpansionArtifactId: CONFIG_EXPANSION_ARTIFACT_ID,
+      rows: [
+        {
+          id: "CM-020",
+          requirementId: "RFP-REQ-020",
+          requirementText: "Supplier shall provide an on-site spare parts depot.",
+          category: "commercial",
+          priority: "low",
+          complianceStatus: "not_applicable",
+          response: "Removed from scope by the engineer.",
+          sectionReference: "SEC-REF-9.9",
+          rowReviewStatus: "removed",
+          notApplicableReason: "NA-REASON-CANARY out of contract scope",
+          removedReason: "REMOVED-REASON-CANARY duplicate row",
+          reviewHistory: [
+            {
+              action: "marked_not_applicable",
+              at: "2026-06-12T09:00:00.000Z",
+              by: "user-3",
+              note: "Out of scope.",
+            },
+            {
+              action: "removed",
+              at: "2026-06-12T09:05:00.000Z",
+              by: "user-3",
+              note: "REMOVED-HISTORY-NOTE-CANARY",
+            },
+          ],
+          evidenceReferences: [],
+        },
+      ],
+    },
+  };
+}
+
 function deltaListItem(status = "needs_review"): Record<string, unknown> {
   return {
     ...artifact(EXTRACTION_DELTA_ARTIFACT_ID, "extraction_delta", status, 1),
@@ -622,6 +728,32 @@ function stubFetch(
     })
   );
   return calls;
+}
+
+// Shared fetch handler for the Stage 5 compliance-drawer tests: the mount
+// endpoints plus a generate that yields the existing matrix id, with the supplied
+// detail returned for the compliance-matrix detail URL. The approved evidence
+// package detail carries no package payload, so evidence reference labels degrade
+// harmlessly (the Stage 5 assertions do not depend on them).
+function stage5ComplianceFetch(
+  detail: Record<string, unknown>
+): (url: string) => Response {
+  return (url: string) => {
+    if (url === LIST_URL) return jsonResponse(listResponse());
+    if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+    if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+    if (url === COMPLIANCE_MATRIX_DETAIL_URL) return jsonResponse(detail);
+    if (url === COMPLIANCE_MATRIX_GENERATE_URL) {
+      return jsonResponse({ artifact: complianceMatrixListItem(), draftSummary: {} }, 201);
+    }
+    if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+    if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+    if (url === `${EVIDENCE_PACKAGE_LIST_URL}/${EVIDENCE_PACKAGE_APPROVED_ID}`) {
+      return jsonResponse({ project: projectContext() }, 200);
+    }
+    if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+    return jsonResponse({}, 200);
+  };
 }
 
 afterEach(() => {
@@ -1035,6 +1167,137 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(audit).toHaveTextContent("file-rfp-1");
     expect(audit).toHaveTextContent(INPUT_PACKAGE_ARTIFACT_ID);
     expect(audit.textContent ?? "").toMatch(/chunk/i);
+  });
+
+  it("renders the Stage 5 section reference in the primary compliance row and confines lanes, impacts, status, and history to the collapsed audit", async () => {
+    stubFetch(stage5ComplianceFetch(complianceMatrixStage5DetailResponse()));
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("review-drawer");
+    await screen.findByTestId("cm-detail-row");
+
+    // The section reference leads the primary row display.
+    expect(screen.getByTestId("cm-detail-section-reference")).toHaveTextContent(
+      "SEC-REF-3.2.1"
+    );
+
+    const row = screen.getByTestId("cm-detail-row");
+    const primary = row.cloneNode(true) as HTMLElement;
+    primary
+      .querySelectorAll('[data-testid="cm-detail-audit"]')
+      .forEach((node) => node.remove());
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).toContain("SEC-REF-3.2.1");
+    // Lanes, impacts, owner-review flag, row status, and history never appear in
+    // the primary row - they belong to the collapsed audit only.
+    expect(primaryText).not.toContain("Response lane");
+    expect(primaryText).not.toContain("Owner lane");
+    expect(primaryText).not.toContain("HLD impact");
+    expect(primaryText).not.toContain("TP impact");
+    expect(primaryText).not.toContain("BoQ/config impact");
+    expect(primaryText).not.toContain("Requires owner review");
+    expect(primaryText).not.toContain("Row review status");
+    expect(primaryText).not.toContain("OWNER-HISTORY-NOTE-CANARY");
+    expect(primaryText).not.toContain("owner_review_requested");
+
+    const audit = within(row).getByTestId("cm-detail-audit");
+    expect(audit.tagName).toBe("DETAILS");
+    expect(audit.hasAttribute("open")).toBe(false);
+    expect(audit).toHaveTextContent("Section reference: SEC-REF-3.2.1");
+    expect(audit).toHaveTextContent("Response lane: commercial");
+    expect(audit).toHaveTextContent("Owner lane: legal");
+    expect(audit).toHaveTextContent("HLD impact: required");
+    expect(audit).toHaveTextContent("TP impact: potential");
+    expect(audit).toHaveTextContent("BoQ/config impact: owner_review_required");
+    expect(audit).toHaveTextContent("Requires owner review: yes");
+    expect(audit).toHaveTextContent("Row review status: pending");
+    const historyEntry = within(audit).getByTestId(
+      "cm-detail-review-history-entry"
+    );
+    expect(historyEntry).toHaveTextContent("owner_review_requested");
+    expect(historyEntry).toHaveTextContent("owner-7");
+    expect(historyEntry).toHaveTextContent("OWNER-HISTORY-NOTE-CANARY");
+  });
+
+  it("keeps raw row, requirement, evidence, file, package, and chunk identifiers out of the primary compliance row and inside the audit", async () => {
+    stubFetch(stage5ComplianceFetch(complianceMatrixStage5DetailResponse()));
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("review-drawer");
+    await screen.findByTestId("cm-detail-row");
+
+    const row = screen.getByTestId("cm-detail-row");
+    const primary = row.cloneNode(true) as HTMLElement;
+    primary
+      .querySelectorAll('[data-testid="cm-detail-audit"]')
+      .forEach((node) => node.remove());
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).not.toContain("CM-010");
+    expect(primaryText).not.toContain("RFP-REQ-010");
+    expect(primaryText).not.toContain("ev-text-1");
+    expect(primaryText).not.toContain("file-rfp-1");
+    expect(primaryText).not.toContain(INPUT_PACKAGE_ARTIFACT_ID);
+    expect(primaryText).not.toMatch(/chunk/i);
+
+    const audit = within(row).getByTestId("cm-detail-audit");
+    expect(audit).toHaveTextContent("CM-010");
+    expect(audit).toHaveTextContent("RFP-REQ-010");
+    expect(audit).toHaveTextContent("ev-text-1");
+    expect(audit).toHaveTextContent("file-rfp-1");
+    expect(audit).toHaveTextContent(INPUT_PACKAGE_ARTIFACT_ID);
+    expect(audit.textContent ?? "").toMatch(/chunk/i);
+  });
+
+  it("keeps a removed compliance row inspectable in the drawer history with its removed reason and review history in the collapsed audit", async () => {
+    stubFetch(stage5ComplianceFetch(complianceMatrixRemovedRowDetailResponse()));
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("review-drawer");
+
+    // The removed (not-applicable) row is not pending; it stays inspectable in
+    // the collapsed review-history section of the drawer.
+    const decided = await screen.findByTestId("cm-decided-rows");
+    const row = within(decided).getByTestId("cm-detail-row");
+
+    const audit = within(row).getByTestId("cm-detail-audit");
+    expect(audit).toHaveTextContent("Row review status: removed");
+    expect(audit).toHaveTextContent(
+      "Removed reason: REMOVED-REASON-CANARY duplicate row"
+    );
+    expect(audit).toHaveTextContent(
+      "Not applicable reason: NA-REASON-CANARY out of contract scope"
+    );
+    const historyEntries = within(audit).getAllByTestId(
+      "cm-detail-review-history-entry"
+    );
+    expect(historyEntries).toHaveLength(2);
+    expect(historyEntries[0]).toHaveTextContent("marked_not_applicable");
+    expect(historyEntries[1]).toHaveTextContent("removed");
+    expect(historyEntries[1]).toHaveTextContent("REMOVED-HISTORY-NOTE-CANARY");
+
+    // The removed reason and history stay out of the primary row display, which
+    // still leads with the readable section reference.
+    const primary = row.cloneNode(true) as HTMLElement;
+    primary
+      .querySelectorAll('[data-testid="cm-detail-audit"]')
+      .forEach((node) => node.remove());
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).toContain("SEC-REF-9.9");
+    expect(primaryText).not.toContain("Removed reason");
+    expect(primaryText).not.toContain("REMOVED-REASON-CANARY");
+    expect(primaryText).not.toContain("REMOVED-HISTORY-NOTE-CANARY");
   });
 
   it("auto-generates requirements from the latest approved evidence package without a primary selection", async () => {
