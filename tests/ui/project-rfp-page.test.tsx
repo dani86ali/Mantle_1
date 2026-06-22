@@ -1499,6 +1499,209 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(screen.queryByTestId("cm-row-response-edit-submit")).toBeNull();
   });
 
+  it("requires a reason to mark a row not applicable and posts only the lifecycle decision to the rows/review route", async () => {
+    const ROWS_REVIEW_URL = `${COMPLIANCE_MATRIX_DETAIL_URL}/rows/review`;
+    const ARTIFACT_REVIEW_URL = `${COMPLIANCE_MATRIX_DETAIL_URL}/review`;
+    const calls = stubFetch((url, init) => {
+      if (url === ROWS_REVIEW_URL && init?.method === "POST") {
+        return jsonResponse(
+          {
+            artifact: artifact(
+              COMPLIANCE_MATRIX_ARTIFACT_ID,
+              "compliance_matrix",
+              "needs_review",
+              1
+            ),
+          },
+          200
+        );
+      }
+      return stage5ComplianceFetch(complianceMatrixStage5DetailResponse())(url);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("cm-detail-row");
+
+    // No action selected -> submit is disabled.
+    expect(screen.getByTestId("cm-row-lifecycle-submit")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("cm-row-lifecycle-action-CM-010"), {
+      target: { value: "mark_not_applicable" },
+    });
+    // Reason still blank -> submit stays disabled.
+    expect(screen.getByTestId("cm-row-lifecycle-submit")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("cm-row-lifecycle-reason-CM-010"), {
+      target: { value: "Out of scope." },
+    });
+    expect(screen.getByTestId("cm-row-lifecycle-submit")).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cm-row-lifecycle-submit"));
+    });
+    await screen.findByTestId("cm-row-lifecycle-success");
+
+    const post = calls.find(
+      (call) => call.url === ROWS_REVIEW_URL && call.init?.method === "POST"
+    );
+    expect(post).toBeDefined();
+    const body = JSON.parse(String(post?.init?.body));
+    expect(body).toEqual({
+      decisions: [
+        {
+          rowId: "CM-010",
+          action: "mark_not_applicable",
+          reason: "Out of scope.",
+        },
+      ],
+    });
+    // Lifecycle decisions never carry editedFields and never approve the artifact.
+    expect(body.decisions[0].editedFields).toBeUndefined();
+    expect(
+      calls.some(
+        (call) =>
+          call.url === ARTIFACT_REVIEW_URL && call.init?.method === "POST"
+      )
+    ).toBe(false);
+  });
+
+  it("posts a remove lifecycle decision with its reason and no editedFields", async () => {
+    const ROWS_REVIEW_URL = `${COMPLIANCE_MATRIX_DETAIL_URL}/rows/review`;
+    const calls = stubFetch((url, init) => {
+      if (url === ROWS_REVIEW_URL && init?.method === "POST") {
+        return jsonResponse(
+          {
+            artifact: artifact(
+              COMPLIANCE_MATRIX_ARTIFACT_ID,
+              "compliance_matrix",
+              "needs_review",
+              1
+            ),
+          },
+          200
+        );
+      }
+      return stage5ComplianceFetch(complianceMatrixStage5DetailResponse())(url);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("cm-detail-row");
+
+    fireEvent.change(screen.getByTestId("cm-row-lifecycle-action-CM-010"), {
+      target: { value: "remove" },
+    });
+    fireEvent.change(screen.getByTestId("cm-row-lifecycle-reason-CM-010"), {
+      target: { value: "Duplicate of CM-001." },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cm-row-lifecycle-submit"));
+    });
+    await screen.findByTestId("cm-row-lifecycle-success");
+
+    const post = calls.find(
+      (call) => call.url === ROWS_REVIEW_URL && call.init?.method === "POST"
+    );
+    expect(post).toBeDefined();
+    const body = JSON.parse(String(post?.init?.body));
+    expect(body).toEqual({
+      decisions: [
+        { rowId: "CM-010", action: "remove", reason: "Duplicate of CM-001." },
+      ],
+    });
+    expect(body.decisions[0].editedFields).toBeUndefined();
+  });
+
+  it("restores a removed row from the drawer history with an optional note", async () => {
+    const ROWS_REVIEW_URL = `${COMPLIANCE_MATRIX_DETAIL_URL}/rows/review`;
+    const calls = stubFetch((url, init) => {
+      if (url === ROWS_REVIEW_URL && init?.method === "POST") {
+        return jsonResponse(
+          {
+            artifact: artifact(
+              COMPLIANCE_MATRIX_ARTIFACT_ID,
+              "compliance_matrix",
+              "needs_review",
+              1
+            ),
+          },
+          200
+        );
+      }
+      return stage5ComplianceFetch(complianceMatrixRemovedRowDetailResponse())(
+        url
+      );
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("cm-decided-rows");
+
+    fireEvent.change(screen.getByTestId("cm-row-lifecycle-action-CM-020"), {
+      target: { value: "restore" },
+    });
+    fireEvent.change(screen.getByTestId("cm-row-lifecycle-note-CM-020"), {
+      target: { value: "Back in scope after clarification." },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cm-row-lifecycle-submit"));
+    });
+    await screen.findByTestId("cm-row-lifecycle-success");
+
+    const post = calls.find(
+      (call) => call.url === ROWS_REVIEW_URL && call.init?.method === "POST"
+    );
+    expect(post).toBeDefined();
+    expect(JSON.parse(String(post?.init?.body))).toEqual({
+      decisions: [
+        {
+          rowId: "CM-020",
+          action: "restore",
+          note: "Back in scope after clarification.",
+        },
+      ],
+    });
+  });
+
+  it("does not render row lifecycle controls or submit for an approved compliance matrix", async () => {
+    const approvedDetail = complianceMatrixStage5DetailResponse();
+    approvedDetail.artifact = artifact(
+      COMPLIANCE_MATRIX_ARTIFACT_ID,
+      "compliance_matrix",
+      "approved",
+      1,
+      [BASELINE_ARTIFACT_ID, EVIDENCE_PACKAGE_APPROVED_ID, CONFIG_EXPANSION_ARTIFACT_ID]
+    );
+    stubFetch(stage5ComplianceFetch(approvedDetail));
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("cm-detail-row");
+
+    // Stage 5 metadata still renders for the approved matrix.
+    expect(screen.getByTestId("cm-detail-section-reference")).toHaveTextContent(
+      "SEC-REF-3.2.1"
+    );
+    // No engineer lifecycle surface on an approved matrix.
+    expect(
+      screen.queryByTestId("cm-row-lifecycle-action-CM-010")
+    ).toBeNull();
+    expect(screen.queryByTestId("cm-row-lifecycle-submit")).toBeNull();
+  });
+
   it("auto-generates requirements from the latest approved evidence package without a primary selection", async () => {
     const calls = stubFetch((url) => {
       if (url === EVIDENCE_PACKAGE_LIST_URL) {
@@ -2295,19 +2498,21 @@ describe("ProjectRfpEvidencePage static guards", () => {
     expect(source).toContain("/compliance-matrix/rows/review");
   });
 
-  it("introduces no mark_not_applicable, remove, or restore row edit controls and never sends not_applicable from an edit", () => {
-    // The row edit slice exposes only response/status/notes controls.
+  it("exposes row lifecycle controls (mark not applicable, remove, restore) without ever sending bare not_applicable as an edit status", () => {
+    // The response edit slice still exposes only response/status/notes controls.
     expect(source).toContain("cm-row-response-edit-status-");
     expect(source).toContain("cm-row-response-edit-notes-");
-    expect(source).not.toContain("cm-row-mark-not-applicable");
-    expect(source).not.toContain("cm-row-response-edit-remove");
-    expect(source).not.toContain("cm-row-response-edit-restore");
-    // The editable status set excludes not_applicable, and the only row decision
-    // action is edit (never marked_not_applicable / removed / restored).
+    // The lifecycle slice now exposes action/reason/note controls and a submit.
+    expect(source).toContain("cm-row-lifecycle-action-");
+    expect(source).toContain("cm-row-lifecycle-reason-");
+    expect(source).toContain("cm-row-lifecycle-note-");
+    expect(source).toContain("cm-row-lifecycle-submit");
+    // The editable response status set still excludes bare not_applicable; the
+    // only quoted literal is the mark_not_applicable lifecycle action.
     expect(source).not.toContain('"not_applicable"');
-    expect(source).not.toContain('"marked_not_applicable"');
-    expect(source).toContain('action: "edit" as const');
-    // The row edit must never reach the artifact-level review route.
+    expect(source).toContain('"mark_not_applicable"');
+    // Lifecycle is its own decision slice and never reaches the artifact-level
+    // review route; it posts only to the rows/review route.
     expect(source).toContain("/compliance-matrix/rows/review");
   });
 });

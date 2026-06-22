@@ -248,6 +248,25 @@ function complianceRowEditedFields(
   return editedFields;
 }
 
+/**
+ * One row's in-progress lifecycle draft, keyed by row id. action is the engineer
+ * lifecycle decision (mark not applicable / remove on active rows, restore on a
+ * removed row); reason backs mark/remove and note backs restore. Lifecycle is
+ * separate from the response edit: it never carries response/status/notes edits
+ * and never sets pricing, SKU, catalog, or configuration authority.
+ */
+interface ComplianceRowLifecycleDraft {
+  action: "" | "mark_not_applicable" | "remove" | "restore";
+  reason: string;
+  note: string;
+}
+
+/** One engineer lifecycle decision in the rows/review POST body. */
+type ComplianceRowLifecycleDecision =
+  | { rowId: string; action: "mark_not_applicable"; reason: string }
+  | { rowId: string; action: "remove"; reason: string }
+  | { rowId: string; action: "restore"; note?: string };
+
 type ComplianceMatrixReviewDecision = "approved" | "rejected";
 type ComplianceMatrixRow = RfpComplianceMatrixInspectionMatrix["rows"][number];
 type ComplianceMatrixEvidenceReference =
@@ -412,6 +431,9 @@ const COMPLIANCE_REJECT_SUCCESS = "Compliance matrix rejected.";
 const COMPLIANCE_REVIEW_ERROR = "Unable to review compliance matrix.";
 const COMPLIANCE_ROW_EDIT_SUCCESS = "Compliance row responses updated.";
 const COMPLIANCE_ROW_EDIT_ERROR = "Unable to update compliance row responses.";
+const COMPLIANCE_ROW_LIFECYCLE_SUCCESS = "Compliance row lifecycle updated.";
+const COMPLIANCE_ROW_LIFECYCLE_ERROR =
+  "Unable to update compliance row lifecycle.";
 
 /** Exact UI copy required for the extraction-delta failure states. */
 const DELTA_LIST_ERROR = "Unable to load extraction deltas.";
@@ -1681,6 +1703,7 @@ function ComplianceMatrixRowView({
   evidenceContextById,
   compiledLabelById,
   responseEdit,
+  lifecycle,
 }: {
   row: ComplianceMatrixRow;
   evidenceContextById: Map<string, EvidenceReferenceContext>;
@@ -1693,9 +1716,19 @@ function ComplianceMatrixRowView({
     onChangeStatus: (rowId: string, value: string) => void;
     onChangeNotes: (rowId: string, value: string) => void;
   };
+  // Present for every row while the matrix needs review; the offered actions
+  // depend on whether the row is removed (restore) or active (mark/remove).
+  lifecycle?: {
+    draft: ComplianceRowLifecycleDraft | undefined;
+    onChangeAction: (rowId: string, value: string) => void;
+    onChangeReason: (rowId: string, value: string) => void;
+    onChangeNote: (rowId: string, value: string) => void;
+  };
 }) {
   const showResponseEdit =
     responseEdit !== undefined && row.rowReviewStatus !== "removed";
+  const isRemovedRow = row.rowReviewStatus === "removed";
+  const lifecycleAction = lifecycle?.draft?.action ?? "";
   const responseEditEnabled = responseEdit?.draft?.enabled ?? false;
   return (
     <li
@@ -1777,6 +1810,62 @@ function ComplianceMatrixRowView({
                 />
               </label>
             </>
+          )}
+        </div>
+      )}
+      {lifecycle !== undefined && (
+        <div className="mt-2 space-y-1">
+          <label className="flex flex-col text-xs text-text-secondary">
+            Row lifecycle
+            <select
+              data-testid={`cm-row-lifecycle-action-${row.id}`}
+              value={lifecycleAction}
+              onChange={(e) =>
+                lifecycle.onChangeAction(row.id, e.target.value)
+              }
+              className={FIELD}
+            >
+              <option value="">No change</option>
+              {isRemovedRow ? (
+                <option value="restore">Restore</option>
+              ) : (
+                <>
+                  <option value="mark_not_applicable">
+                    Mark not applicable
+                  </option>
+                  <option value="remove">Remove</option>
+                </>
+              )}
+            </select>
+          </label>
+          {(lifecycleAction === "mark_not_applicable" ||
+            lifecycleAction === "remove") && (
+            <label className="flex flex-col text-xs text-text-secondary">
+              Reason
+              <textarea
+                data-testid={`cm-row-lifecycle-reason-${row.id}`}
+                value={lifecycle.draft?.reason ?? ""}
+                onChange={(e) =>
+                  lifecycle.onChangeReason(row.id, e.target.value)
+                }
+                rows={2}
+                className={FIELD}
+              />
+            </label>
+          )}
+          {lifecycleAction === "restore" && (
+            <label className="flex flex-col text-xs text-text-secondary">
+              Note (optional)
+              <textarea
+                data-testid={`cm-row-lifecycle-note-${row.id}`}
+                value={lifecycle.draft?.note ?? ""}
+                onChange={(e) =>
+                  lifecycle.onChangeNote(row.id, e.target.value)
+                }
+                rows={2}
+                className={FIELD}
+              />
+            </label>
           )}
         </div>
       )}
@@ -2183,6 +2272,15 @@ export default function ProjectRfpEvidencePage() {
   const [complianceRowEditSuccess, setComplianceRowEditSuccess] = useState<
     string | null
   >(null);
+  const [complianceRowLifecycle, setComplianceRowLifecycle] = useState<
+    Record<string, ComplianceRowLifecycleDraft>
+  >({});
+  const [complianceRowLifecyclePending, setComplianceRowLifecyclePending] =
+    useState(false);
+  const [complianceRowLifecycleError, setComplianceRowLifecycleError] =
+    useState<string | null>(null);
+  const [complianceRowLifecycleSuccess, setComplianceRowLifecycleSuccess] =
+    useState<string | null>(null);
 
   const [generatePending, setGeneratePending] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -2632,6 +2730,9 @@ export default function ProjectRfpEvidencePage() {
       setComplianceRowResponseEdits({});
       setComplianceRowEditError(null);
       setComplianceRowEditSuccess(null);
+      setComplianceRowLifecycle({});
+      setComplianceRowLifecycleError(null);
+      setComplianceRowLifecycleSuccess(null);
       setComplianceDetailLoading(true);
       try {
         const res = await fetch(
@@ -2664,6 +2765,13 @@ export default function ProjectRfpEvidencePage() {
           };
         }
         setComplianceRowResponseEdits(seededEdits);
+        // Seed one blank lifecycle draft per row so a selection always has a
+        // backing draft; the offered actions are decided at render time.
+        const seededLifecycle: Record<string, ComplianceRowLifecycleDraft> = {};
+        for (const row of body.matrix.rows) {
+          seededLifecycle[row.id] = { action: "", reason: "", note: "" };
+        }
+        setComplianceRowLifecycle(seededLifecycle);
       } catch {
         setComplianceDetailError(COMPLIANCE_DETAIL_ERROR);
       } finally {
@@ -2891,6 +2999,125 @@ export default function ProjectRfpEvidencePage() {
     complianceDetail,
     complianceRowEditPending,
     complianceRowResponseEdits,
+    id,
+    loadComplianceDetail,
+    loadComplianceList,
+  ]);
+
+  const updateComplianceRowLifecycle = useCallback(
+    (rowId: string, patch: Partial<ComplianceRowLifecycleDraft>): void => {
+      setComplianceRowLifecycle((prev) => {
+        const existing = prev[rowId];
+        return {
+          ...prev,
+          [rowId]: {
+            action: existing?.action ?? "",
+            reason: existing?.reason ?? "",
+            note: existing?.note ?? "",
+            ...patch,
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const setComplianceRowLifecycleAction = useCallback(
+    (rowId: string, value: string): void => {
+      const action =
+        value === "mark_not_applicable" ||
+        value === "remove" ||
+        value === "restore"
+          ? value
+          : "";
+      updateComplianceRowLifecycle(rowId, { action });
+    },
+    [updateComplianceRowLifecycle]
+  );
+
+  const setComplianceRowLifecycleReason = useCallback(
+    (rowId: string, value: string): void => {
+      updateComplianceRowLifecycle(rowId, { reason: value });
+    },
+    [updateComplianceRowLifecycle]
+  );
+
+  const setComplianceRowLifecycleNote = useCallback(
+    (rowId: string, value: string): void => {
+      updateComplianceRowLifecycle(rowId, { note: value });
+    },
+    [updateComplianceRowLifecycle]
+  );
+
+  // Engineer row lifecycle: post one lifecycle decision per row whose draft holds
+  // a selected action. mark_not_applicable / remove carry a trimmed nonblank
+  // reason; restore (removed rows only) carries an optional trimmed note. The body
+  // carries only { decisions } - never editedFields, never an artifact approval,
+  // and never any provider/pricing/config authority. The route may return a new
+  // compliance_matrix version, so on success the persisted list and detail reload
+  // (no local row mutation) and the drawer retargets the returned artifact id.
+  const submitComplianceRowLifecycle = useCallback(async (): Promise<void> => {
+    if (complianceDetail === null || complianceRowLifecyclePending) return;
+    const decisions = complianceDetail.matrix.rows.flatMap(
+      (row): ComplianceRowLifecycleDecision[] => {
+        const draft = complianceRowLifecycle[row.id];
+        if (draft === undefined || draft.action === "") return [];
+        if (draft.action === "restore") {
+          if (row.rowReviewStatus !== "removed") return [];
+          const note = draft.note.trim();
+          return [
+            note === ""
+              ? { rowId: row.id, action: "restore" }
+              : { rowId: row.id, action: "restore", note },
+          ];
+        }
+        if (row.rowReviewStatus === "removed") return [];
+        const reason = draft.reason.trim();
+        if (reason === "") return [];
+        if (draft.action === "mark_not_applicable") {
+          return [{ rowId: row.id, action: "mark_not_applicable", reason }];
+        }
+        return [{ rowId: row.id, action: "remove", reason }];
+      }
+    );
+    if (decisions.length === 0) return;
+    const currentArtifactId = complianceDetail.artifact.id;
+    setComplianceRowLifecyclePending(true);
+    setComplianceRowLifecycleError(null);
+    setComplianceRowLifecycleSuccess(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${id}/rfp/artifacts/${currentArtifactId}/compliance-matrix/rows/review`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decisions }),
+        }
+      );
+      const body = (await res
+        .json()
+        .catch(() => null)) as ComplianceMatrixRowReviewResponse | null;
+      if (!res.ok) {
+        setComplianceRowLifecycleError(COMPLIANCE_ROW_LIFECYCLE_ERROR);
+        return;
+      }
+      setComplianceRowLifecycle({});
+      const nextArtifactId = body?.artifact?.id ?? currentArtifactId;
+      if (nextArtifactId !== currentArtifactId) {
+        setDrawer({ kind: "compliance", activeId: nextArtifactId });
+      }
+      void loadComplianceList();
+      await loadComplianceDetail(nextArtifactId);
+      setComplianceRowLifecycleSuccess(COMPLIANCE_ROW_LIFECYCLE_SUCCESS);
+    } catch {
+      setComplianceRowLifecycleError(COMPLIANCE_ROW_LIFECYCLE_ERROR);
+    } finally {
+      setComplianceRowLifecyclePending(false);
+    }
+  }, [
+    complianceDetail,
+    complianceRowLifecycle,
+    complianceRowLifecyclePending,
     id,
     loadComplianceDetail,
     loadComplianceList,
@@ -3834,6 +4061,31 @@ export default function ProjectRfpEvidencePage() {
             onChangeNotes: setComplianceRowEditNotes,
           }
         : undefined;
+    const lifecycleProp = (row: ComplianceMatrixRow) =>
+      rowEditActive
+        ? {
+            draft: complianceRowLifecycle[row.id],
+            onChangeAction: setComplianceRowLifecycleAction,
+            onChangeReason: setComplianceRowLifecycleReason,
+            onChangeNote: setComplianceRowLifecycleNote,
+          }
+        : undefined;
+    const lifecycleSelectedRows = complianceDetail.matrix.rows.filter((row) => {
+      const draft = complianceRowLifecycle[row.id];
+      return draft !== undefined && draft.action !== "";
+    });
+    const lifecycleHasBlankReason = lifecycleSelectedRows.some((row) => {
+      const draft = complianceRowLifecycle[row.id];
+      return (
+        (draft.action === "mark_not_applicable" ||
+          draft.action === "remove") &&
+        draft.reason.trim() === ""
+      );
+    });
+    const lifecycleSubmitDisabled =
+      complianceRowLifecyclePending ||
+      lifecycleSelectedRows.length === 0 ||
+      lifecycleHasBlankReason;
     const editableRows = complianceDetail.matrix.rows.filter(
       (row) => row.rowReviewStatus !== "removed"
     );
@@ -3893,6 +4145,7 @@ export default function ProjectRfpEvidencePage() {
               evidenceContextById={evidenceContextById}
               compiledLabelById={compiledReferenceLabelById}
               responseEdit={responseEditProp(row)}
+              lifecycle={lifecycleProp(row)}
             />
           ))}
         </ol>
@@ -3909,6 +4162,7 @@ export default function ProjectRfpEvidencePage() {
                   evidenceContextById={evidenceContextById}
                   compiledLabelById={compiledReferenceLabelById}
                   responseEdit={responseEditProp(row)}
+                  lifecycle={lifecycleProp(row)}
                 />
               ))}
             </ol>
@@ -3938,6 +4192,36 @@ export default function ProjectRfpEvidencePage() {
                 className={ACTION_BTN}
               >
                 Save response edits
+              </button>
+            )}
+          </div>
+        )}
+        {(complianceRowLifecycleError ||
+          complianceRowLifecycleSuccess ||
+          rowEditActive) && (
+          <div className="space-y-2">
+            {complianceRowLifecycleError && (
+              <div data-testid="cm-row-lifecycle-error" className={ERROR_BOX}>
+                {complianceRowLifecycleError}
+              </div>
+            )}
+            {complianceRowLifecycleSuccess && (
+              <p
+                data-testid="cm-row-lifecycle-success"
+                className="text-xs text-text-secondary"
+              >
+                {complianceRowLifecycleSuccess}
+              </p>
+            )}
+            {rowEditActive && (
+              <button
+                type="button"
+                data-testid="cm-row-lifecycle-submit"
+                disabled={lifecycleSubmitDisabled}
+                onClick={() => void submitComplianceRowLifecycle()}
+                className={ACTION_BTN}
+              >
+                Apply lifecycle changes
               </button>
             )}
           </div>
