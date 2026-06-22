@@ -791,45 +791,17 @@ describe("expanded Stage 5 requirement category taxonomy", () => {
     ]);
   });
 
-  it("creates representative nontechnical obligations using the new category literals", async () => {
-    const candidates: RfpRequirementsBaselineCandidateInput[] = [
-      {
-        text: "Supply every product line listed in the BoQ.",
-        category: "boq_product",
-        priority: "mandatory",
-        evidenceIds: [EV_TABLE],
-      },
-      {
-        text: "Perform on-site installation, configuration, and testing.",
-        category: "installation_configuration_testing",
-        priority: "mandatory",
-        evidenceIds: [EV_TEXT],
-      },
-      {
-        text: "Deliver as-built documentation for the solution.",
-        category: "documentation",
-        priority: "preferred",
-        evidenceIds: [EV_TEXT],
-      },
-      {
-        text: "Run transfer-of-knowledge training for operators.",
-        category: "training_totk",
-        priority: "preferred",
-        evidenceIds: [EV_TEXT_B],
-      },
-      {
-        text: "Provide a three-year warranty and support package.",
-        category: "warranty_support",
-        priority: "mandatory",
-        evidenceIds: [EV_TEXT_B],
-      },
-      {
-        text: "Meet local content and regulatory obligations.",
-        category: "legal_regulatory_local_content",
-        priority: "mandatory",
-        evidenceIds: [EV_TEXT, EV_TABLE],
-      },
-    ];
+  it("persists every requirement category, including all new Stage 5 obligations, each with locator-only evidence", async () => {
+    // One candidate per category in canonical order; each cites a real
+    // evidence row so it carries at least one locator-only reference.
+    const citationCycle = [EV_TEXT, EV_TABLE, EV_TEXT_B];
+    const candidates: RfpRequirementsBaselineCandidateInput[] =
+      RFP_REQUIREMENT_CATEGORIES.map((category, index) => ({
+        text: `Obligation requirement for the ${category} category.`,
+        category,
+        priority: "mandatory" as const,
+        evidenceIds: [citationCycle[index % citationCycle.length]],
+      }));
 
     const result = await draft({ candidates });
 
@@ -838,34 +810,64 @@ describe("expanded Stage 5 requirement category taxonomy", () => {
 
     const call = mockCreateArtifact.mock.calls[0][0];
     expect(call.status).toBe("needs_review");
+
     const storedRequirements = call.payload.requirements as Array<{
       id: string;
       category: string;
-      evidenceReferences: unknown[];
+      evidenceReferences: Array<Record<string, unknown>>;
     }>;
-    expect(storedRequirements.map((requirement) => requirement.id)).toEqual([
-      "RFP-REQ-001",
-      "RFP-REQ-002",
-      "RFP-REQ-003",
-      "RFP-REQ-004",
-      "RFP-REQ-005",
-      "RFP-REQ-006",
-    ]);
-    expect(storedRequirements.map((requirement) => requirement.category)).toEqual([
+    // Every category in the taxonomy persisted, in canonical order.
+    expect(
+      storedRequirements.map((requirement) => requirement.category)
+    ).toEqual(Array.from(RFP_REQUIREMENT_CATEGORIES));
+    expect(storedRequirements.map((requirement) => requirement.id)).toEqual(
+      RFP_REQUIREMENT_CATEGORIES.map(
+        (_category, index) => `RFP-REQ-${String(index + 1).padStart(3, "0")}`
+      )
+    );
+    // Every newly added Stage 5 obligation category was persisted.
+    for (const newCategory of [
       "boq_product",
       "installation_configuration_testing",
       "documentation",
       "training_totk",
+      "schedule_duration",
       "warranty_support",
+      "permits_site_access_safety",
       "legal_regulatory_local_content",
-    ]);
-    // Each obligation still carries at least one locator-only evidence reference.
-    expect(
-      storedRequirements.every(
-        (requirement) => requirement.evidenceReferences.length >= 1
-      )
-    ).toBe(true);
-    expect(result.payloadSummary.requirementCount).toBe(6);
+      "insurance",
+      "commercial_contractual",
+      "vendor_qualification_submittals",
+      "security_cybersecurity",
+    ]) {
+      expect(
+        storedRequirements.some(
+          (requirement) => requirement.category === newCategory
+        )
+      ).toBe(true);
+    }
+    // Each obligation carries at least one locator-only evidence reference:
+    // identifiers and counts only, never a raw text body or table rows.
+    for (const requirement of storedRequirements) {
+      expect(requirement.evidenceReferences.length).toBeGreaterThanOrEqual(1);
+      for (const reference of requirement.evidenceReferences) {
+        expect(typeof reference.evidenceId).toBe("string");
+        expect(typeof reference.sourceFileId).toBe("string");
+        expect(typeof reference.inputPackageArtifactId).toBe("string");
+        expect(
+          reference.evidenceKind === TEXT_KIND ||
+            reference.evidenceKind === TABLE_KIND
+        ).toBe(true);
+        expect(reference).not.toHaveProperty("text");
+        expect(reference).not.toHaveProperty("rows");
+      }
+    }
+    const serializedPayload = JSON.stringify(call.payload);
+    expect(serializedPayload).not.toContain("RAW-EVIDENCE-TEXT");
+    expect(serializedPayload).not.toContain("RAW-TABLE-CELL");
+    expect(result.payloadSummary.requirementCount).toBe(
+      RFP_REQUIREMENT_CATEGORIES.length
+    );
   });
 });
 

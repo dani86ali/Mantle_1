@@ -184,6 +184,92 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - request shape
     expect(system).toContain('{"candidates":[...]}');
   });
 
+  it("drafts for every customer obligation class, lists the full category taxonomy, and pins human-review and non-authority language", async () => {
+    const { create, client } = makeClient(
+      textResponse(JSON.stringify(RAW_MODEL_OUTPUT))
+    );
+    const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+      apiKey: "test-api-key",
+      client,
+    });
+
+    await executor(EXECUTOR_INPUT);
+
+    const system = create.mock.calls[0][0].system
+      .replace(/\s+/g, " ")
+      .toLowerCase();
+
+    // (1) Drafts candidate requirements for EVERY customer obligation class,
+    // not only technical scope, naming each obligation class explicitly.
+    expect(system).toContain("every customer obligation");
+    expect(system).toContain("not only technical scope");
+    for (const obligation of [
+      "technical scope",
+      "boq and product requirements",
+      "installation, configuration, and testing",
+      "documentation",
+      "training and transfer of knowledge (totk)",
+      "schedule and project duration",
+      "warranty and support",
+      "permits, site access, and safety",
+      "legal, regulatory, saudi, and local-content",
+      "insurance",
+      "commercial and contractual requirements",
+      "vendor qualification and submittals",
+      "security and cybersecurity",
+      "any other customer obligations",
+    ]) {
+      expect(system).toContain(obligation);
+    }
+
+    // (2) The full expanded RFP_REQUIREMENT_CATEGORIES taxonomy, in order.
+    expect(system).toContain(
+      "category (one of technical, commercial, compliance, delivery, " +
+        "security, support, legal, other, boq_product, " +
+        "installation_configuration_testing, documentation, training_totk, " +
+        "schedule_duration, warranty_support, permits_site_access_safety, " +
+        "legal_regulatory_local_content, insurance, commercial_contractual, " +
+        "vendor_qualification_submittals, security_cybersecurity)"
+    );
+    for (const category of [
+      "technical",
+      "commercial",
+      "compliance",
+      "delivery",
+      "security",
+      "support",
+      "legal",
+      "other",
+      "boq_product",
+      "installation_configuration_testing",
+      "documentation",
+      "training_totk",
+      "schedule_duration",
+      "warranty_support",
+      "permits_site_access_safety",
+      "legal_regulatory_local_content",
+      "insurance",
+      "commercial_contractual",
+      "vendor_qualification_submittals",
+      "security_cybersecurity",
+    ]) {
+      expect(system).toContain(category);
+    }
+
+    // (3) Strict non-authority and human review stay pinned, including no
+    // legal/commercial/local-content/safety/insurance determinations.
+    expect(system).toContain("no authority");
+    expect(system).toContain("make no business decisions");
+    expect(system).toContain("approve or validate anything");
+    expect(system).toContain(
+      "make legal, commercial, local-content, safety, or insurance determinations"
+    );
+    expect(system).toContain("act as the hld, tp, or proposal authority");
+    expect(system).toContain("unapproved draft");
+    expect(system).toContain("human-reviewed");
+    expect(system).toContain("human-approved");
+  });
+
   it("sends exactly one user turn whose content is the whitelisted executor input serialized verbatim", async () => {
     const { create, client } = makeClient(
       textResponse(JSON.stringify(RAW_MODEL_OUTPUT))

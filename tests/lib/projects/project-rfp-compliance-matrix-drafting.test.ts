@@ -1433,7 +1433,7 @@ describe("success", () => {
     ]);
   });
 
-  it("snapshots new baseline category literals into needs_review rows", async () => {
+  it("snapshots previously under-proven Stage 5 baseline category literals into needs_review rows", async () => {
     artifactById.set(
       BASELINE_ARTIFACT,
       makeBaselineArtifact({
@@ -1442,21 +1442,21 @@ describe("success", () => {
             {
               id: REQ_1,
               text: REQ_1_TEXT,
-              category: "boq_product",
+              category: "schedule_duration",
               priority: "mandatory",
               evidenceReferences: [baselineTableRef(EV_TABLE)],
             },
             {
               id: REQ_2,
               text: REQ_2_TEXT,
-              category: "warranty_support",
+              category: "permits_site_access_safety",
               priority: "preferred",
               evidenceReferences: [baselineTextRef(EV_TEXT_B, 2)],
             },
             {
               id: REQ_3,
               text: REQ_3_TEXT,
-              category: "training_totk",
+              category: "insurance",
               priority: "optional",
               evidenceReferences: [baselineTextRef(EV_TEXT, 1)],
             },
@@ -1480,9 +1480,9 @@ describe("success", () => {
     expect(
       result.rows.map((row) => [row.requirementId, row.category, row.complianceStatus])
     ).toEqual([
-      [REQ_1, "boq_product", "needs_review"],
-      [REQ_2, "warranty_support", "needs_review"],
-      [REQ_3, "training_totk", "needs_review"],
+      [REQ_1, "schedule_duration", "needs_review"],
+      [REQ_2, "permits_site_access_safety", "needs_review"],
+      [REQ_3, "insurance", "needs_review"],
     ]);
   });
 });

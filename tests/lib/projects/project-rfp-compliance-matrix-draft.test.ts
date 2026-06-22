@@ -809,7 +809,7 @@ describe("success", () => {
     expect(configArtifact).toEqual(configSnapshot);
   });
 
-  it("snapshots new baseline category literals into needs_review rows, ignoring row-supplied category", async () => {
+  it("snapshots previously under-proven Stage 5 baseline category literals into needs_review rows, ignoring row-supplied category", async () => {
     artifactById.set(
       BASELINE_ARTIFACT,
       makeBaselineArtifact({
@@ -817,22 +817,22 @@ describe("success", () => {
           requirements: [
             {
               id: REQ_1,
-              text: "Supply every product line listed in the BoQ.",
-              category: "boq_product",
+              text: "Submit vendor qualification documents and bid submittals.",
+              category: "vendor_qualification_submittals",
               priority: "mandatory",
               evidenceReferences: [baselineTextRef(EV_TEXT, 1), baselineTableRef(EV_TABLE)],
             },
             {
               id: REQ_2,
-              text: "Provide a three-year warranty and support package.",
-              category: "warranty_support",
+              text: "Meet Saudi local-content and regulatory obligations.",
+              category: "legal_regulatory_local_content",
               priority: "preferred",
               evidenceReferences: [baselineTextRef(EV_TEXT_B, 2)],
             },
             {
               id: REQ_3,
-              text: "Run transfer-of-knowledge training.",
-              category: "training_totk",
+              text: "Comply with the cybersecurity and information-security controls.",
+              category: "security_cybersecurity",
               priority: "optional",
               evidenceReferences: [],
             },
@@ -850,9 +850,9 @@ describe("success", () => {
     expect(
       payload.rows.map((row) => [row.requirementId, row.category, row.complianceStatus])
     ).toEqual([
-      [REQ_1, "boq_product", "needs_review"],
-      [REQ_2, "warranty_support", "needs_review"],
-      [REQ_3, "training_totk", "needs_review"],
+      [REQ_1, "vendor_qualification_submittals", "needs_review"],
+      [REQ_2, "legal_regulatory_local_content", "needs_review"],
+      [REQ_3, "security_cybersecurity", "needs_review"],
     ]);
     // The supplied rows carried category "other"; the baseline snapshot wins.
     expect(payload.rows.every((row) => row.category !== "other")).toBe(true);
