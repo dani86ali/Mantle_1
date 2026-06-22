@@ -35,6 +35,12 @@ const TS2 = new Date("2026-06-02T11:30:00.000Z");
 const PAYLOAD_AT = "2026-06-11T08:15:00.000Z";
 const REQ_TEXT = "Provide 48-port PoE access switches for all IDFs.";
 const RESPONSE = "Compliant based on the approved evidence package.";
+const REVIEWED_BY = "u-reviewer";
+const REVIEWED_AT = "2026-06-12T09:00:00.000Z";
+const REVIEWED_AT_2 = "2026-06-12T09:05:00.000Z";
+const SOURCE_PREV = "art-compliance-matrix-prev";
+const SECTION_REF = "SEC-REF-3.2.1";
+const HISTORY_NOTE = "Tightened the access-switch response.";
 
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
@@ -66,6 +72,13 @@ function makePayload(): Record<string, unknown> {
     sourceArtifactIds: [BASELINE, PACKAGE, CONFIG],
     tenantId: TENANT,
     storagePath: "C:/secret/compliance.json",
+    reviewedBy: REVIEWED_BY,
+    reviewedAt: REVIEWED_AT,
+    reviewedDecisionCount: 1,
+    activeRowCount: 2,
+    removedRowCount: 0,
+    sourceComplianceMatrixArtifactId: SOURCE_PREV,
+    sourceComplianceMatrixArtifactVersion: 1,
     rows: [
       {
         id: "RFP-COMP-001",
@@ -77,6 +90,22 @@ function makePayload(): Record<string, unknown> {
         response: RESPONSE,
         rationale: "Matches the mandatory access-switch requirement.",
         notes: "Engineer must still approve.",
+        sectionReference: SECTION_REF,
+        responseLane: "technical",
+        ownerLane: "project_delivery",
+        hldImpact: "required",
+        tpImpact: "potential",
+        boqConfigImpact: "owner_review_required",
+        requiresOwnerReview: true,
+        rowReviewStatus: "reviewed",
+        reviewHistory: [
+          { action: "edited", at: REVIEWED_AT, by: REVIEWED_BY, note: HISTORY_NOTE },
+          {
+            action: "owner_review_requested",
+            at: REVIEWED_AT_2,
+            by: REVIEWED_BY,
+          },
+        ],
         rawAnswer: "RAW-COMPLIANCE-SECRET",
         evidenceReferences: [
           {
@@ -200,6 +229,13 @@ describe("loadRfpComplianceMatrixList", () => {
         not_applicable: 0,
         needs_review: 1,
       },
+      reviewedBy: REVIEWED_BY,
+      reviewedAt: REVIEWED_AT,
+      reviewedDecisionCount: 1,
+      activeRowCount: 2,
+      removedRowCount: 0,
+      sourceComplianceMatrixArtifactId: SOURCE_PREV,
+      sourceComplianceMatrixArtifactVersion: 1,
     });
     const json = JSON.stringify(result);
     expect(json).not.toContain(REQ_TEXT);
@@ -208,6 +244,11 @@ describe("loadRfpComplianceMatrixList", () => {
     expect(json).not.toContain("RAW-TABLE-CELL");
     expect(json).not.toContain("storagePath");
     expect(json).not.toContain(TENANT);
+    // Row-level metadata (section reference, review history) must not leak into
+    // the lean list summary, which carries provenance and identifiers only.
+    expect(json).not.toContain(SECTION_REF);
+    expect(json).not.toContain(HISTORY_NOTE);
+    expect(json).not.toContain("reviewHistory");
   });
 
   it("degrades malformed payload summaries and filters wrong returned types", async () => {
@@ -291,6 +332,31 @@ describe("loadRfpComplianceMatrixDetail", () => {
           originalLineNumber: "1.1",
         },
       ],
+      sectionReference: SECTION_REF,
+      responseLane: "technical",
+      ownerLane: "project_delivery",
+      hldImpact: "required",
+      tpImpact: "potential",
+      boqConfigImpact: "owner_review_required",
+      requiresOwnerReview: true,
+      rowReviewStatus: "reviewed",
+      reviewHistory: [
+        { action: "edited", at: REVIEWED_AT, by: REVIEWED_BY, note: HISTORY_NOTE },
+        {
+          action: "owner_review_requested",
+          at: REVIEWED_AT_2,
+          by: REVIEWED_BY,
+        },
+      ],
+    });
+    expect(result.matrix).toMatchObject({
+      reviewedBy: REVIEWED_BY,
+      reviewedAt: REVIEWED_AT,
+      reviewedDecisionCount: 1,
+      activeRowCount: 2,
+      removedRowCount: 0,
+      sourceComplianceMatrixArtifactId: SOURCE_PREV,
+      sourceComplianceMatrixArtifactVersion: 1,
     });
     const json = JSON.stringify(result);
     expect(json).toContain(REQ_TEXT);
@@ -308,6 +374,204 @@ describe("loadRfpComplianceMatrixDetail", () => {
     ]) {
       expect(json).not.toContain(leak);
     }
+  });
+
+  it("drops malformed metadata and history entries, keeps valid ones", async () => {
+    artifactById.set(
+      ARTIFACT,
+      makeArtifact({
+        payload: {
+          payloadKind: "rfp_compliance_matrix",
+          sourceRequirementsBaselineArtifactId: BASELINE,
+          sourceEvidencePackageArtifactId: PACKAGE,
+          createdBy: "u-engineer",
+          createdAt: PAYLOAD_AT,
+          sourceFileIds: [FILE_RFP],
+          sourceArtifactIds: [BASELINE, PACKAGE],
+          rows: [
+            {
+              id: "RFP-COMP-009",
+              requirementId: "RFP-REQ-009",
+              requirementText: "Malformed metadata requirement.",
+              category: "technical",
+              priority: "mandatory",
+              complianceStatus: "needs_review",
+              response: "Response body.",
+              evidenceReferences: [],
+              sectionReference: 7,
+              responseLane: "made_up_lane",
+              ownerLane: 42,
+              hldImpact: "catastrophic",
+              tpImpact: "",
+              boqConfigImpact: null,
+              requiresOwnerReview: "yes",
+              rowReviewStatus: "archived",
+              notApplicableReason: 5,
+              removedReason: false,
+              reviewHistory: [
+                {
+                  action: "edited",
+                  at: "2026-06-12T10:00:00.000Z",
+                  by: REVIEWED_BY,
+                  note: "Valid entry.",
+                  extraKey: "DROP-EXTRA",
+                },
+                {
+                  action: "bogus",
+                  at: "2026-06-12T10:01:00.000Z",
+                  by: REVIEWED_BY,
+                },
+                { action: "removed", at: "", by: REVIEWED_BY },
+                { action: "removed", at: "2026-06-12T10:02:00.000Z", by: "   " },
+                {
+                  action: "restored",
+                  at: "2026-06-12T10:03:00.000Z",
+                  by: REVIEWED_BY,
+                  note: "   ",
+                },
+                "not-an-object",
+                null,
+              ],
+            },
+          ],
+        },
+      })
+    );
+
+    const result = await loadRfpComplianceMatrixDetail({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: ARTIFACT,
+    });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.matrix.rows[0]).toEqual({
+      id: "RFP-COMP-009",
+      requirementId: "RFP-REQ-009",
+      requirementText: "Malformed metadata requirement.",
+      category: "technical",
+      priority: "mandatory",
+      complianceStatus: "needs_review",
+      response: "Response body.",
+      evidenceReferences: [],
+      reviewHistory: [
+        {
+          action: "edited",
+          at: "2026-06-12T10:00:00.000Z",
+          by: REVIEWED_BY,
+          note: "Valid entry.",
+        },
+        { action: "restored", at: "2026-06-12T10:03:00.000Z", by: REVIEWED_BY },
+      ],
+    });
+    const json = JSON.stringify(result.matrix.rows[0]);
+    for (const dropped of [
+      "made_up_lane",
+      "catastrophic",
+      "archived",
+      "DROP-EXTRA",
+      "bogus",
+    ]) {
+      expect(json).not.toContain(dropped);
+    }
+  });
+
+  it("preserves removed and not_applicable review metadata and history", async () => {
+    artifactById.set(
+      ARTIFACT,
+      makeArtifact({
+        payload: {
+          payloadKind: "rfp_compliance_matrix",
+          sourceRequirementsBaselineArtifactId: BASELINE,
+          sourceEvidencePackageArtifactId: PACKAGE,
+          createdBy: "u-engineer",
+          createdAt: PAYLOAD_AT,
+          sourceFileIds: [FILE_RFP],
+          sourceArtifactIds: [BASELINE, PACKAGE],
+          reviewedBy: REVIEWED_BY,
+          reviewedAt: REVIEWED_AT,
+          reviewedDecisionCount: 1,
+          activeRowCount: 0,
+          removedRowCount: 1,
+          sourceComplianceMatrixArtifactId: SOURCE_PREV,
+          sourceComplianceMatrixArtifactVersion: 2,
+          rows: [
+            {
+              id: "RFP-COMP-010",
+              requirementId: "RFP-REQ-010",
+              requirementText: "Out-of-scope requirement.",
+              category: "commercial",
+              priority: "optional",
+              complianceStatus: "not_applicable",
+              response: "Removed from scope after review.",
+              evidenceReferences: [],
+              rowReviewStatus: "removed",
+              notApplicableReason: "Superseded by RFP-REQ-002.",
+              removedReason: "Out of contract lot scope.",
+              reviewHistory: [
+                {
+                  action: "marked_not_applicable",
+                  at: "2026-06-12T11:00:00.000Z",
+                  by: REVIEWED_BY,
+                  note: "Out of lot.",
+                },
+                {
+                  action: "removed",
+                  at: "2026-06-12T11:01:00.000Z",
+                  by: REVIEWED_BY,
+                  note: "Duplicate requirement.",
+                },
+              ],
+            },
+          ],
+        },
+      })
+    );
+
+    const result = await loadRfpComplianceMatrixDetail({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: ARTIFACT,
+    });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.matrix).toMatchObject({
+      reviewedBy: REVIEWED_BY,
+      reviewedDecisionCount: 1,
+      activeRowCount: 0,
+      removedRowCount: 1,
+      sourceComplianceMatrixArtifactId: SOURCE_PREV,
+      sourceComplianceMatrixArtifactVersion: 2,
+    });
+    expect(result.matrix.rows[0]).toEqual({
+      id: "RFP-COMP-010",
+      requirementId: "RFP-REQ-010",
+      requirementText: "Out-of-scope requirement.",
+      category: "commercial",
+      priority: "optional",
+      complianceStatus: "not_applicable",
+      response: "Removed from scope after review.",
+      evidenceReferences: [],
+      rowReviewStatus: "removed",
+      notApplicableReason: "Superseded by RFP-REQ-002.",
+      removedReason: "Out of contract lot scope.",
+      reviewHistory: [
+        {
+          action: "marked_not_applicable",
+          at: "2026-06-12T11:00:00.000Z",
+          by: REVIEWED_BY,
+          note: "Out of lot.",
+        },
+        {
+          action: "removed",
+          at: "2026-06-12T11:01:00.000Z",
+          by: REVIEWED_BY,
+          note: "Duplicate requirement.",
+        },
+      ],
+    });
   });
 
   it("returns artifact_not_compliance_matrix for wrong type or stage", async () => {

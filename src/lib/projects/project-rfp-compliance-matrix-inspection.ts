@@ -17,10 +17,15 @@ import {
 } from "@/lib/db/project-artifact-store";
 import type { Project, ProjectArtifact } from "@/types/project";
 import type {
+  RfpComplianceImpactLevel,
   RfpComplianceMatrixConfigurationReference,
   RfpComplianceMatrixEvidenceReference,
   RfpComplianceMatrixPayload,
+  RfpComplianceMatrixReviewEvent,
   RfpComplianceMatrixRow,
+  RfpComplianceReviewAction,
+  RfpComplianceReviewLane,
+  RfpComplianceRowReviewStatus,
   RfpComplianceStatus,
 } from "@/lib/projects/project-rfp-compliance-matrix";
 
@@ -41,6 +46,44 @@ const RFP_COMPLIANCE_STATUSES: readonly RfpComplianceStatus[] = [
   "non_compliant",
   "not_applicable",
   "needs_review",
+];
+
+/**
+ * Stage 5 review whitelists, declared locally as runtime values because the
+ * compliance-matrix contract is imported type-only (importing its runtime
+ * constants would widen this read model's import surface). Kept in sync with the
+ * contract unions; the readonly element type makes a drifted literal a compile
+ * error.
+ */
+const RFP_COMPLIANCE_REVIEW_LANES: readonly RfpComplianceReviewLane[] = [
+  "technical",
+  "commercial",
+  "legal",
+  "project_delivery",
+  "security",
+  "safety",
+  "vendor",
+  "customer",
+  "other",
+];
+
+const RFP_COMPLIANCE_IMPACT_LEVELS: readonly RfpComplianceImpactLevel[] = [
+  "none",
+  "potential",
+  "required",
+  "owner_review_required",
+];
+
+const RFP_COMPLIANCE_ROW_REVIEW_STATUSES: readonly RfpComplianceRowReviewStatus[] =
+  ["pending", "reviewed", "removed"];
+
+const RFP_COMPLIANCE_REVIEW_ACTIONS: readonly RfpComplianceReviewAction[] = [
+  "edited",
+  "status_changed",
+  "marked_not_applicable",
+  "removed",
+  "restored",
+  "owner_review_requested",
 ];
 
 export interface RfpComplianceMatrixInspectionProjectSummary {
@@ -65,7 +108,23 @@ export interface RfpComplianceMatrixInspectionArtifactSummary {
   updatedAt: string;
 }
 
-export interface RfpComplianceMatrixInspectionPayloadSummary {
+/**
+ * Optional Stage 5 review provenance stamped by the row-review service onto a
+ * reviewed compliance_matrix version. Surfaced only when present and valid; a
+ * freshly drafted (un-reviewed) payload omits every field.
+ */
+export interface RfpComplianceMatrixInspectionReviewProvenance {
+  reviewedBy?: string;
+  reviewedAt?: string;
+  reviewedDecisionCount?: number;
+  activeRowCount?: number;
+  removedRowCount?: number;
+  sourceComplianceMatrixArtifactId?: string;
+  sourceComplianceMatrixArtifactVersion?: number;
+}
+
+export interface RfpComplianceMatrixInspectionPayloadSummary
+  extends RfpComplianceMatrixInspectionReviewProvenance {
   payloadKind: string;
   sourceRequirementsBaselineArtifactId: string;
   sourceEvidencePackageArtifactId: string;
@@ -115,9 +174,27 @@ export interface RfpComplianceMatrixInspectionRow {
   notes?: string;
   evidenceReferences: RfpComplianceMatrixEvidenceReference[];
   configurationReferences?: RfpComplianceMatrixConfigurationReference[];
+  /**
+   * Optional Stage 5 engineer-owned review metadata, surfaced only when present
+   * and valid. Lanes/impacts/status/history actions are whitelisted; malformed
+   * stored values are dropped, never echoed. These are human review hints only -
+   * never pricing, SKU, catalog, or configuration authority.
+   */
+  sectionReference?: string;
+  responseLane?: RfpComplianceReviewLane;
+  ownerLane?: RfpComplianceReviewLane;
+  hldImpact?: RfpComplianceImpactLevel;
+  tpImpact?: RfpComplianceImpactLevel;
+  boqConfigImpact?: RfpComplianceImpactLevel;
+  requiresOwnerReview?: boolean;
+  rowReviewStatus?: RfpComplianceRowReviewStatus;
+  notApplicableReason?: string;
+  removedReason?: string;
+  reviewHistory?: RfpComplianceMatrixReviewEvent[];
 }
 
-export interface RfpComplianceMatrixInspectionMatrix {
+export interface RfpComplianceMatrixInspectionMatrix
+  extends RfpComplianceMatrixInspectionReviewProvenance {
   payloadKind: RfpComplianceMatrixPayload["payloadKind"];
   sourceRequirementsBaselineArtifactId: string;
   sourceEvidencePackageArtifactId: string;
@@ -183,6 +260,10 @@ function asOptionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function asNonblankString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => asString(entry));
@@ -196,6 +277,70 @@ function emptyStatusCounts(): Record<RfpComplianceStatus, number> {
 
 function isComplianceStatus(value: string): value is RfpComplianceStatus {
   return (RFP_COMPLIANCE_STATUSES as readonly string[]).includes(value);
+}
+
+function asReviewLane(value: unknown): RfpComplianceReviewLane | undefined {
+  return typeof value === "string" &&
+    (RFP_COMPLIANCE_REVIEW_LANES as readonly string[]).includes(value)
+    ? (value as RfpComplianceReviewLane)
+    : undefined;
+}
+
+function asImpactLevel(value: unknown): RfpComplianceImpactLevel | undefined {
+  return typeof value === "string" &&
+    (RFP_COMPLIANCE_IMPACT_LEVELS as readonly string[]).includes(value)
+    ? (value as RfpComplianceImpactLevel)
+    : undefined;
+}
+
+function asRowReviewStatus(
+  value: unknown
+): RfpComplianceRowReviewStatus | undefined {
+  return typeof value === "string" &&
+    (RFP_COMPLIANCE_ROW_REVIEW_STATUSES as readonly string[]).includes(value)
+    ? (value as RfpComplianceRowReviewStatus)
+    : undefined;
+}
+
+function isReviewAction(value: unknown): value is RfpComplianceReviewAction {
+  return (
+    typeof value === "string" &&
+    (RFP_COMPLIANCE_REVIEW_ACTIONS as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Surface review provenance fields only when present and valid: nonblank strings
+ * for the id/timestamp fields and finite numbers for the counts/version. An
+ * un-reviewed payload yields an empty object (every field omitted).
+ */
+function toReviewProvenance(
+  record: Record<string, unknown>
+): RfpComplianceMatrixInspectionReviewProvenance {
+  const reviewedBy = asNonblankString(record.reviewedBy);
+  const reviewedAt = asNonblankString(record.reviewedAt);
+  const reviewedDecisionCount = asOptionalNumber(record.reviewedDecisionCount);
+  const activeRowCount = asOptionalNumber(record.activeRowCount);
+  const removedRowCount = asOptionalNumber(record.removedRowCount);
+  const sourceComplianceMatrixArtifactId = asNonblankString(
+    record.sourceComplianceMatrixArtifactId
+  );
+  const sourceComplianceMatrixArtifactVersion = asOptionalNumber(
+    record.sourceComplianceMatrixArtifactVersion
+  );
+  return {
+    ...(reviewedBy !== undefined ? { reviewedBy } : {}),
+    ...(reviewedAt !== undefined ? { reviewedAt } : {}),
+    ...(reviewedDecisionCount !== undefined ? { reviewedDecisionCount } : {}),
+    ...(activeRowCount !== undefined ? { activeRowCount } : {}),
+    ...(removedRowCount !== undefined ? { removedRowCount } : {}),
+    ...(sourceComplianceMatrixArtifactId !== undefined
+      ? { sourceComplianceMatrixArtifactId }
+      : {}),
+    ...(sourceComplianceMatrixArtifactVersion !== undefined
+      ? { sourceComplianceMatrixArtifactVersion }
+      : {}),
+  };
 }
 
 function toProjectSummary(
@@ -279,6 +424,7 @@ function toPayloadSummary(
     sourceFileIds: toStringArray(record.sourceFileIds),
     sourceArtifactIds: toStringArray(record.sourceArtifactIds),
     statusCounts: toStatusCounts(record.rows),
+    ...toReviewProvenance(record),
   };
 }
 
@@ -365,6 +511,36 @@ function toConfigurationReferences(
   return value.map((entry) => toConfigurationReference(entry));
 }
 
+/**
+ * Whitelisted copy of one stored review-history event, or null for a malformed
+ * value (dropped): the action must be known and at/by nonblank strings. The note
+ * is copied only when a nonblank string; arbitrary extra keys never survive.
+ */
+function toReviewEvent(value: unknown): RfpComplianceMatrixReviewEvent | null {
+  if (!isPlainRecord(value)) return null;
+  if (!isReviewAction(value.action)) return null;
+  const at = asNonblankString(value.at);
+  const by = asNonblankString(value.by);
+  if (at === undefined || by === undefined) return null;
+  const note = asNonblankString(value.note);
+  return {
+    action: value.action,
+    at,
+    by,
+    ...(note !== undefined ? { note } : {}),
+  };
+}
+
+function toReviewHistory(value: unknown): RfpComplianceMatrixReviewEvent[] {
+  if (!Array.isArray(value)) return [];
+  const events: RfpComplianceMatrixReviewEvent[] = [];
+  for (const entry of value) {
+    const event = toReviewEvent(entry);
+    if (event !== null) events.push(event);
+  }
+  return events;
+}
+
 function toRow(entry: unknown): RfpComplianceMatrixInspectionRow {
   const record = toRecord(entry);
   const rationale = asOptionalString(record.rationale);
@@ -372,6 +548,20 @@ function toRow(entry: unknown): RfpComplianceMatrixInspectionRow {
   const configurationReferences = toConfigurationReferences(
     record.configurationReferences
   );
+  const sectionReference = asOptionalString(record.sectionReference);
+  const responseLane = asReviewLane(record.responseLane);
+  const ownerLane = asReviewLane(record.ownerLane);
+  const hldImpact = asImpactLevel(record.hldImpact);
+  const tpImpact = asImpactLevel(record.tpImpact);
+  const boqConfigImpact = asImpactLevel(record.boqConfigImpact);
+  const requiresOwnerReview =
+    typeof record.requiresOwnerReview === "boolean"
+      ? record.requiresOwnerReview
+      : undefined;
+  const rowReviewStatus = asRowReviewStatus(record.rowReviewStatus);
+  const notApplicableReason = asOptionalString(record.notApplicableReason);
+  const removedReason = asOptionalString(record.removedReason);
+  const reviewHistory = toReviewHistory(record.reviewHistory);
   return {
     id: asString(record.id),
     requirementId: asString(record.requirementId),
@@ -386,6 +576,17 @@ function toRow(entry: unknown): RfpComplianceMatrixInspectionRow {
     ...(configurationReferences !== undefined
       ? { configurationReferences }
       : {}),
+    ...(sectionReference !== undefined ? { sectionReference } : {}),
+    ...(responseLane !== undefined ? { responseLane } : {}),
+    ...(ownerLane !== undefined ? { ownerLane } : {}),
+    ...(hldImpact !== undefined ? { hldImpact } : {}),
+    ...(tpImpact !== undefined ? { tpImpact } : {}),
+    ...(boqConfigImpact !== undefined ? { boqConfigImpact } : {}),
+    ...(requiresOwnerReview !== undefined ? { requiresOwnerReview } : {}),
+    ...(rowReviewStatus !== undefined ? { rowReviewStatus } : {}),
+    ...(notApplicableReason !== undefined ? { notApplicableReason } : {}),
+    ...(removedReason !== undefined ? { removedReason } : {}),
+    ...(reviewHistory.length > 0 ? { reviewHistory } : {}),
   };
 }
 
@@ -488,6 +689,7 @@ export async function loadRfpComplianceMatrixDetail(
       createdAt: asString(payload.createdAt),
       sourceFileIds: toStringArray(payload.sourceFileIds),
       sourceArtifactIds: toStringArray(payload.sourceArtifactIds),
+      ...toReviewProvenance(payload),
       rows: (rows as RfpComplianceMatrixRow[]).map((entry) => toRow(entry)),
     },
   };

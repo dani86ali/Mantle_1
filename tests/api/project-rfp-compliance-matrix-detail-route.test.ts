@@ -54,6 +54,13 @@ const MATRIX = {
   createdAt: "2026-06-11T12:00:00.000Z",
   sourceFileIds: ["file-rfp-1"],
   sourceArtifactIds: ["art-requirements-baseline-1", "art-evidence-package-1"],
+  reviewedBy: SESSION.userId,
+  reviewedAt: "2026-06-12T09:00:00.000Z",
+  reviewedDecisionCount: 1,
+  activeRowCount: 1,
+  removedRowCount: 0,
+  sourceComplianceMatrixArtifactId: "art-compliance-matrix-prev",
+  sourceComplianceMatrixArtifactVersion: 1,
   rows: [
     {
       id: "RFP-COMP-001",
@@ -64,6 +71,22 @@ const MATRIX = {
       complianceStatus: "needs_review",
       response: "Compliant.",
       evidenceReferences: [],
+      sectionReference: "SEC-3.1",
+      responseLane: "technical",
+      ownerLane: "project_delivery",
+      hldImpact: "required",
+      tpImpact: "potential",
+      boqConfigImpact: "none",
+      requiresOwnerReview: true,
+      rowReviewStatus: "reviewed",
+      reviewHistory: [
+        {
+          action: "edited",
+          at: "2026-06-12T09:00:00.000Z",
+          by: SESSION.userId,
+          note: "Reviewed the response.",
+        },
+      ],
     },
   ],
 };
