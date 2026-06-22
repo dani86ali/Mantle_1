@@ -60,9 +60,11 @@ const TOTALS = {
 };
 
 const CATEGORY_SOURCE = {
-  source: "honeywell_mvp_demo_mantle_category_fixture",
-  scope: "honeywell_mvp_demo_only",
+  source: "quick_bom_approved_mantle_category_sources",
+  honeywellDemoFixtureIncluded: true,
+  scopedCiscoFixtureIncluded: true,
   demoFixtureAuthority: true,
+  scopedCiscoCategoryAuthority: true,
   productionPricingAuthority: false,
   configurationAuthority: false,
   runtimeAi: false,

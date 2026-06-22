@@ -118,6 +118,17 @@ export interface ProjectBoqPricedBoqReviewPricingSummary {
 export interface ProjectBoqPricedBoqReviewPricingAuthoritySummary {
   profileId?: string;
   scope?: string;
+  currency?: string;
+  pricedSkuCount?: number;
+  missingPriceSkuCount?: number;
+  sources?: ProjectBoqPricedBoqReviewPricingAuthoritySourceSummary[];
+  boundary?: Record<string, boolean>;
+}
+
+/** One allowlisted source entry inside a combined pricing-authority trace. */
+export interface ProjectBoqPricedBoqReviewPricingAuthoritySourceSummary {
+  profileId?: string;
+  scope?: string;
   approvalRecordId?: string;
   activeSource?: string;
   activeSourceFixtureId?: string;
@@ -125,7 +136,6 @@ export interface ProjectBoqPricedBoqReviewPricingAuthoritySummary {
   currency?: string;
   pricedSkuCount?: number;
   missingPriceSkuCount?: number;
-  boundary?: Record<string, boolean>;
 }
 
 /**
@@ -256,8 +266,7 @@ const PRICING_MODES: ReadonlySet<string> = new Set(["margin", "markup"]);
 const BOUNDARY_FLAG_KEYS: readonly string[] = [
   "deterministicPricingAuthority",
   "demoFixtureAuthority",
-  "currentLocalGplSarCsvTemporarilyApproved",
-  "activeRuntimeSourceReadsExternalGplCsv",
+  "scopedCiscoPricingAuthority",
   "productionCiscoPricingAuthority",
   "broadCiscoGeneralPricingAuthority",
   "runtimeAiPricing",
@@ -488,6 +497,24 @@ function toReviewLine(raw: unknown): ProjectBoqPricedBoqReviewLine | null {
   };
 }
 
+/** Allowlist one pricing-authority source entry; drops workbook path/sheet canaries. */
+function toPricingAuthoritySourceSafe(
+  raw: unknown
+): ProjectBoqPricedBoqReviewPricingAuthoritySourceSummary | undefined {
+  if (!isPlainObject(raw)) return undefined;
+  const out: ProjectBoqPricedBoqReviewPricingAuthoritySourceSummary = {};
+  if (typeof raw.profileId === "string") out.profileId = raw.profileId;
+  if (typeof raw.scope === "string") out.scope = raw.scope;
+  if (typeof raw.approvalRecordId === "string") out.approvalRecordId = raw.approvalRecordId;
+  if (typeof raw.activeSource === "string") out.activeSource = raw.activeSource;
+  if (typeof raw.activeSourceFixtureId === "string") out.activeSourceFixtureId = raw.activeSourceFixtureId;
+  if (typeof raw.activeSourceStatus === "string") out.activeSourceStatus = raw.activeSourceStatus;
+  if (typeof raw.currency === "string") out.currency = raw.currency;
+  if (typeof raw.pricedSkuCount === "number") out.pricedSkuCount = raw.pricedSkuCount;
+  if (typeof raw.missingPriceSkuCount === "number") out.missingPriceSkuCount = raw.missingPriceSkuCount;
+  return out;
+}
+
 /**
  * Allowlist the pricing-authority trace into a safe provenance summary. The workbook
  * path and sheet name are excluded by never reading them; boundary flags are copied by
@@ -500,13 +527,14 @@ function toPricingAuthoritySafe(
   const out: ProjectBoqPricedBoqReviewPricingAuthoritySummary = {};
   if (typeof raw.profileId === "string") out.profileId = raw.profileId;
   if (typeof raw.scope === "string") out.scope = raw.scope;
-  if (typeof raw.approvalRecordId === "string") out.approvalRecordId = raw.approvalRecordId;
-  if (typeof raw.activeSource === "string") out.activeSource = raw.activeSource;
-  if (typeof raw.activeSourceFixtureId === "string") out.activeSourceFixtureId = raw.activeSourceFixtureId;
-  if (typeof raw.activeSourceStatus === "string") out.activeSourceStatus = raw.activeSourceStatus;
   if (typeof raw.currency === "string") out.currency = raw.currency;
   if (typeof raw.pricedSkuCount === "number") out.pricedSkuCount = raw.pricedSkuCount;
   if (typeof raw.missingPriceSkuCount === "number") out.missingPriceSkuCount = raw.missingPriceSkuCount;
+  if (Array.isArray(raw.sources)) {
+    out.sources = raw.sources
+      .map((source) => toPricingAuthoritySourceSafe(source))
+      .filter((source): source is ProjectBoqPricedBoqReviewPricingAuthoritySourceSummary => source !== undefined);
+  }
   out.boundary = pickBooleanFlags(raw.boundary, BOUNDARY_FLAG_KEYS);
   return out;
 }
@@ -665,6 +693,9 @@ function toPayloadSummary(
       ? {
           pricingAuthority: {
             ...payload.pricingAuthority,
+            ...(payload.pricingAuthority.sources !== undefined
+              ? { sources: payload.pricingAuthority.sources.map((s) => ({ ...s })) }
+              : {}),
             ...(payload.pricingAuthority.boundary !== undefined
               ? { boundary: { ...payload.pricingAuthority.boundary } }
               : {}),

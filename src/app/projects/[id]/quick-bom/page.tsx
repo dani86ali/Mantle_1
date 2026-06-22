@@ -159,13 +159,23 @@ function ProvenanceBlock({
           className="space-y-0.5"
         >
           <dt className="font-semibold text-text-primary">Pricing authority</dt>
-          <dd>Profile: {pricing.profileId} | Source: {pricing.activeSource}</dd>
-          <dd>Fixture: {pricing.activeSourceFixtureId} ({pricing.activeSourceStatus})</dd>
-          <dd>Approval: {pricing.approvalRecordId}</dd>
+          <dd>Profile: {pricing.profileId}</dd>
+          <dd>Scope: {pricing.scope}</dd>
           <dd>Currency: {pricing.currency} | Priced SKUs: {pricing.pricedSkuCount} | Missing: {pricing.missingPriceSkuCount}</dd>
+          {pricing.sources.map((source, index) => (
+            <dd
+              key={`${source.profileId}:${source.activeSourceFixtureId}`}
+              data-testid={`authority-pricing-source-${artifactType}-${index}`}
+            >
+              Source {index + 1}: {source.profileId} | {source.scope} |{" "}
+              {source.activeSource} / {source.activeSourceFixtureId} ({source.activeSourceStatus}) |{" "}
+              approval {source.approvalRecordId} | {source.currency} | priced{" "}
+              {source.pricedSkuCount} | missing {source.missingPriceSkuCount}
+            </dd>
+          ))}
           <dd>
             Deterministic fixture: {pricing.boundary.demoFixtureAuthority ? "yes" : "no"} |
-            External GPL read: {pricing.boundary.activeRuntimeSourceReadsExternalGplCsv ? "yes" : "no"} |
+            Scoped Cisco: {pricing.boundary.scopedCiscoPricingAuthority ? "yes" : "no"} |
             Production authority: {pricing.boundary.productionCiscoPricingAuthority ? "yes" : "no"} |
             Broad authority: {pricing.boundary.broadCiscoGeneralPricingAuthority ? "yes" : "no"} |
             Runtime AI: {pricing.boundary.runtimeAiPricing ? "on" : "off"} |

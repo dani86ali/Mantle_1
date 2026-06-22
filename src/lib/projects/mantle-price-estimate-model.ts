@@ -119,6 +119,29 @@ function discountPercentFor(unitListPriceSar: number, unitNetPriceSar: number): 
   return round2(((unitListPriceSar - unitNetPriceSar) / unitListPriceSar) * 100);
 }
 
+// Original-cell header carrying an explicit service/support duration in months.
+const SERVICE_DURATION_MONTHS_CELL = "Service Duration (Months)";
+
+// Placeholders that mean "no duration"; matched case-insensitively after trimming.
+const SERVICE_DURATION_PLACEHOLDERS = new Set(["", "n/a", "na", "---", "-", "none"]);
+
+/**
+ * Derive the Mantle service-duration cell from explicit original-cell evidence only.
+ * Never infers duration from SKU, description, or category.
+ */
+function deriveServiceDurationMonths(
+  originalCells: Readonly<Record<string, string>> | undefined
+): string {
+  if (originalCells === undefined) return SERVICE_DURATION_MONTHS_DEFAULT;
+  const raw = originalCells[SERVICE_DURATION_MONTHS_CELL];
+  if (typeof raw !== "string") return SERVICE_DURATION_MONTHS_DEFAULT;
+  const trimmed = raw.trim();
+  if (SERVICE_DURATION_PLACEHOLDERS.has(trimmed.toLowerCase())) {
+    return SERVICE_DURATION_MONTHS_DEFAULT;
+  }
+  return trimmed;
+}
+
 /** Explicit category for an accepted SKU; undefined when no map entry exists. */
 function resolveCategory(
   map: Readonly<Record<string, MantleLineCategory>> | undefined,
@@ -146,7 +169,7 @@ function mapRow(
     ...(line.warning !== undefined ? { warning: line.warning } : {}),
     smartAccountMandatory: SMART_ACCOUNT_MANDATORY_DEFAULT,
     description: line.description,
-    serviceDurationMonths: SERVICE_DURATION_MONTHS_DEFAULT,
+    serviceDurationMonths: deriveServiceDurationMonths(line.originalCells),
     estimatedLeadTimeDays: ESTIMATED_LEAD_TIME_DAYS_DEFAULT,
     pricingTerm: PRICING_TERM_DEFAULT,
     quantity: line.quantity,

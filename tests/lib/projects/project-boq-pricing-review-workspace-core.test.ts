@@ -99,21 +99,41 @@ const BASE_PAYLOAD = {
     },
   },
   pricingAuthority: {
-    profileId: "honeywell-pricing",
-    scope: "honeywell_mvp_demo_only",
-    approvalRecordId: "appr-pricing-1",
-    activeSource: "committed_honeywell_demo_pricing_fixture",
-    activeSourceFixtureId: "honeywell-mvp-demo-pricing-fixture",
-    activeSourceStatus: "approved_demo_fixture",
-    activeSourceWorkbookPath: "WORKBOOK-PATH-CANARY",
-    activeSourceSheetName: "SHEET-NAME-CANARY",
+    profileId: "quick-bom-approved-pricing-sources-profile",
+    scope: "quick_bom_approved_pricing_sources",
     currency: "SAR",
-    pricedSkuCount: 1,
+    pricedSkuCount: 2,
     missingPriceSkuCount: 1,
+    sources: [
+      {
+        profileId: "honeywell-mvp-demo-pricing-authority-profile",
+        scope: "honeywell_mvp_demo_only",
+        approvalRecordId: "appr-honeywell-pricing-1",
+        activeSource: "committed_honeywell_demo_pricing_fixture",
+        activeSourceFixtureId: "honeywell-mvp-demo-pricing-fixture",
+        activeSourceStatus: "approved_demo_fixture",
+        activeSourceWorkbookPath: "WORKBOOK-PATH-CANARY",
+        activeSourceSheetName: "SHEET-NAME-CANARY",
+        currency: "SAR",
+        pricedSkuCount: 1,
+        missingPriceSkuCount: 0,
+      },
+      {
+        profileId: "scoped-cisco-quick-bom-pricing-authority-profile",
+        scope: "scoped_cisco_quick_bom_pricing_source",
+        approvalRecordId: "appr-scoped-cisco-pricing-1",
+        activeSource: "committed_scoped_cisco_pricing_fixture",
+        activeSourceFixtureId: "scoped-cisco-quick-bom-pricing-fixture",
+        activeSourceStatus: "approved_scoped_pricing_source",
+        currency: "SAR",
+        pricedSkuCount: 1,
+        missingPriceSkuCount: 1,
+      },
+    ],
     boundary: {
       deterministicPricingAuthority: true,
       demoFixtureAuthority: true,
-      activeRuntimeSourceReadsExternalGplCsv: false,
+      scopedCiscoPricingAuthority: true,
       productionCiscoPricingAuthority: false,
       broadCiscoGeneralPricingAuthority: false,
       runtimeAiPricing: false,
@@ -377,12 +397,18 @@ describe("loadProjectBoqPricedBoqReviewWorkspaceCore - ok projection", () => {
     const result = await loadCore();
     if (result.status !== "ok") throw new Error("expected ok");
     const pa = result.review.payloadSummary.pricingAuthority!;
-    expect(pa.profileId).toBe("honeywell-pricing");
-    expect(pa.scope).toBe("honeywell_mvp_demo_only");
+    expect(pa.profileId).toBe("quick-bom-approved-pricing-sources-profile");
+    expect(pa.scope).toBe("quick_bom_approved_pricing_sources");
     expect(pa.currency).toBe("SAR");
-    expect(pa.pricedSkuCount).toBe(1);
+    expect(pa.pricedSkuCount).toBe(2);
+    expect(pa.sources).toHaveLength(2);
+    expect(pa.sources![0].profileId).toBe("honeywell-mvp-demo-pricing-authority-profile");
+    expect(pa.sources![0].activeSourceFixtureId).toBe("honeywell-mvp-demo-pricing-fixture");
+    expect(pa.sources![1].profileId).toBe("scoped-cisco-quick-bom-pricing-authority-profile");
+    expect(pa.sources![1].activeSourceFixtureId).toBe("scoped-cisco-quick-bom-pricing-fixture");
     expect(pa.boundary).toBeTruthy();
     expect(pa.boundary!.deterministicPricingAuthority).toBe(true);
+    expect(pa.boundary!.scopedCiscoPricingAuthority).toBe(true);
     expect(pa.boundary!.missingPricesReported).toBe(true);
   });
 
@@ -452,6 +478,15 @@ describe("loadProjectBoqPricedBoqReviewWorkspaceCore - array copying", () => {
     const result = await loadCore();
     if (result.status !== "ok") throw new Error("expected ok");
     expect(result.review.lines).not.toBe(BASE_PAYLOAD.lines);
+  });
+
+  it("returned pricingAuthority.sources is copied, not the payload source array reference", async () => {
+    const result = await loadCore();
+    if (result.status !== "ok") throw new Error("expected ok");
+    const pricingAuthority = result.review.payloadSummary.pricingAuthority;
+    if (!pricingAuthority?.sources) throw new Error("expected sources");
+    expect(pricingAuthority.sources).not.toBe(BASE_PAYLOAD.pricingAuthority.sources);
+    expect(pricingAuthority.sources[0]).not.toBe(BASE_PAYLOAD.pricingAuthority.sources[0]);
   });
 });
 

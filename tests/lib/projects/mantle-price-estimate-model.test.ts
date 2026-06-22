@@ -746,6 +746,73 @@ describe("buildMantlePriceEstimateModel - optional export row ordering", () => {
   });
 });
 
+describe("buildMantlePriceEstimateModel - service duration from original cells", () => {
+  it("maps an explicit 60-month support duration from originalCells to serviceDurationMonths", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({
+          acceptedSku: "SUPPORT-60",
+          originalCells: { A: "1", "Service Duration (Months)": "60" },
+        }),
+      ]),
+    });
+    expect(model.rows[0].serviceDurationMonths).toBe("60");
+  });
+
+  it("preserves an explicit duration on an unpriced/not_accepted line too", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        unpricedLine({
+          status: "not_accepted",
+          acceptedSku: undefined,
+          originalSku: "ORIG-NA",
+          warning: "SKU is not accepted for pricing.",
+          originalCells: { A: "1", "Service Duration (Months)": "36" },
+        }),
+      ]),
+    });
+    expect(model.rows[0].status).toBe("not_accepted");
+    expect(model.rows[0].serviceDurationMonths).toBe("36");
+  });
+
+  it("keeps the default for blank, N/A, or missing service duration cells", () => {
+    const model = buildMantlePriceEstimateModel({
+      payload: payload([
+        pricedLine({ sourceRowNumber: 1, acceptedSku: "A", originalCells: { A: "1" } }),
+        pricedLine({
+          sourceRowNumber: 2,
+          acceptedSku: "B",
+          originalCells: { A: "2", "Service Duration (Months)": "" },
+        }),
+        pricedLine({
+          sourceRowNumber: 3,
+          acceptedSku: "C",
+          originalCells: { A: "3", "Service Duration (Months)": "N/A" },
+        }),
+        pricedLine({
+          sourceRowNumber: 4,
+          acceptedSku: "D",
+          originalCells: { A: "4", "Service Duration (Months)": "  n/a  " },
+        }),
+      ]),
+    });
+    expect(model.rows.map((r) => r.serviceDurationMonths)).toEqual(["---", "---", "---", "---"]);
+  });
+
+  it("does not mutate originalCells when deriving service duration", () => {
+    const lines = [
+      pricedLine({
+        acceptedSku: "SUPPORT-60",
+        originalCells: { A: "1", "Service Duration (Months)": "60" },
+      }),
+    ];
+    const pay = payload(lines);
+    const paySnapshot = structuredClone(pay);
+    buildMantlePriceEstimateModel({ payload: pay });
+    expect(pay).toEqual(paySnapshot);
+  });
+});
+
 describe("buildMantlePriceEstimateModel - surface & isolation", () => {
   const source = readFileSync(
     join(process.cwd(), "src/lib/projects/mantle-price-estimate-model.ts"),

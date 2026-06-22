@@ -83,23 +83,41 @@ const VALID_CONFIG_AUTHORITY = {
   attachesOpticsUnderSwitches: false,
 };
 
-const VALID_PRICING_AUTHORITY = {
+const HONEYWELL_PRICING_SOURCE = {
   profileId: "honeywell-mvp-demo-pricing-authority-profile",
   scope: "honeywell_mvp_demo_only",
-  approvalRecordId: "appr-pricing-1",
+  approvalRecordId: "appr-honeywell-pricing-1",
   activeSource: "committed_honeywell_demo_pricing_fixture",
   activeSourceFixtureId: "honeywell-mvp-demo-pricing-fixture",
   activeSourceStatus: "approved_demo_fixture",
-  activeSourceWorkbookPath: "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
-  activeSourceSheetName: "EstimateDetails_NB167337237YA",
   currency: "SAR",
   pricedSkuCount: 120,
   missingPriceSkuCount: 3,
+};
+
+const SCOPED_CISCO_PRICING_SOURCE = {
+  profileId: "scoped-cisco-quick-bom-pricing-authority-profile",
+  scope: "scoped_cisco_quick_bom_pricing_source",
+  approvalRecordId: "appr-scoped-cisco-pricing-1",
+  activeSource: "committed_scoped_cisco_pricing_fixture",
+  activeSourceFixtureId: "scoped-cisco-quick-bom-pricing-fixture",
+  activeSourceStatus: "approved_scoped_pricing_source",
+  currency: "SAR",
+  pricedSkuCount: 219,
+  missingPriceSkuCount: 1,
+};
+
+const VALID_PRICING_AUTHORITY = {
+  profileId: "quick-bom-approved-pricing-sources-profile",
+  scope: "quick_bom_approved_pricing_sources",
+  currency: "SAR",
+  pricedSkuCount: 339,
+  missingPriceSkuCount: 4,
+  sources: [HONEYWELL_PRICING_SOURCE, SCOPED_CISCO_PRICING_SOURCE],
   boundary: {
     deterministicPricingAuthority: true,
     demoFixtureAuthority: true,
-    currentLocalGplSarCsvTemporarilyApproved: true,
-    activeRuntimeSourceReadsExternalGplCsv: false,
+    scopedCiscoPricingAuthority: true,
     productionCiscoPricingAuthority: false,
     broadCiscoGeneralPricingAuthority: false,
     runtimeAiPricing: false,
@@ -437,13 +455,23 @@ describe("loadProjectQuickBomWorkspace - authorityProvenance", () => {
 
     expect(summary.authorityProvenance).toBeDefined();
     const pa = summary.authorityProvenance!.pricingAuthority!;
-    expect(pa.profileId).toBe("honeywell-mvp-demo-pricing-authority-profile");
-    expect(pa.scope).toBe("honeywell_mvp_demo_only");
-    expect(pa.approvalRecordId).toBe("appr-pricing-1");
-    expect(pa.activeSourceFixtureId).toBe("honeywell-mvp-demo-pricing-fixture");
-    expect(pa.pricedSkuCount).toBe(120);
-    expect(pa.missingPriceSkuCount).toBe(3);
+    expect(pa.profileId).toBe("quick-bom-approved-pricing-sources-profile");
+    expect(pa.scope).toBe("quick_bom_approved_pricing_sources");
+    expect(pa.currency).toBe("SAR");
+    expect(pa.pricedSkuCount).toBe(339);
+    expect(pa.missingPriceSkuCount).toBe(4);
+    expect(pa.sources).toHaveLength(2);
+    expect(pa.sources[0].profileId).toBe("honeywell-mvp-demo-pricing-authority-profile");
+    expect(pa.sources[0].scope).toBe("honeywell_mvp_demo_only");
+    expect(pa.sources[0].approvalRecordId).toBe("appr-honeywell-pricing-1");
+    expect(pa.sources[0].activeSourceFixtureId).toBe("honeywell-mvp-demo-pricing-fixture");
+    expect(pa.sources[0].activeSourceStatus).toBe("approved_demo_fixture");
+    expect(pa.sources[1].profileId).toBe("scoped-cisco-quick-bom-pricing-authority-profile");
+    expect(pa.sources[1].scope).toBe("scoped_cisco_quick_bom_pricing_source");
+    expect(pa.sources[1].activeSourceFixtureId).toBe("scoped-cisco-quick-bom-pricing-fixture");
+    expect(pa.sources[1].activeSourceStatus).toBe("approved_scoped_pricing_source");
     expect(pa.boundary.deterministicPricingAuthority).toBe(true);
+    expect(pa.boundary.scopedCiscoPricingAuthority).toBe(true);
     expect(pa.boundary.runtimeAiPricing).toBe(false);
     expect(pa.boundary.missingPricesReported).toBe(true);
   });
@@ -556,7 +584,11 @@ describe("loadProjectQuickBomWorkspace - authorityProvenance", () => {
     const payload: Record<string, unknown> = {
       secret: PAYLOAD_SENTINEL,
       configurationAuthority: { ...VALID_CONFIG_AUTHORITY, dispositionSummary: { ...VALID_CONFIG_AUTHORITY.dispositionSummary } },
-      pricingAuthority: { ...VALID_PRICING_AUTHORITY, boundary: { ...VALID_PRICING_AUTHORITY.boundary } },
+      pricingAuthority: {
+        ...VALID_PRICING_AUTHORITY,
+        boundary: { ...VALID_PRICING_AUTHORITY.boundary },
+        sources: VALID_PRICING_AUTHORITY.sources.map((s) => ({ ...s })),
+      },
     };
     const artifact = makeArtifact("priced_boq", 1, "approved", { payload });
     mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
@@ -575,6 +607,82 @@ describe("loadProjectQuickBomWorkspace - authorityProvenance", () => {
     expect(prov.pricingAuthority!.boundary).not.toBe(
       (payload["pricingAuthority"] as Record<string, unknown>)["boundary"]
     );
+    expect(prov.pricingAuthority!.sources).not.toBe(
+      (payload["pricingAuthority"] as Record<string, unknown>)["sources"]
+    );
+    expect(prov.pricingAuthority!.sources[0]).not.toBe(
+      ((payload["pricingAuthority"] as Record<string, unknown>)["sources"] as unknown[])[0]
+    );
+  });
+
+  it("rejects a combined pricing trace that does not carry exactly two sources", async () => {
+    const artifact = makeArtifact("priced_boq", 1, "approved", {
+      payload: {
+        secret: PAYLOAD_SENTINEL,
+        pricingAuthority: { ...VALID_PRICING_AUTHORITY, sources: [HONEYWELL_PRICING_SOURCE] },
+      },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const summary = ws.artifacts.find((a) => a.type === "priced_boq")!;
+
+    expect("authorityProvenance" in summary).toBe(false);
+  });
+
+  it("omits pricingAuthority when a source carries an unexpected identity", async () => {
+    const artifact = makeArtifact("priced_boq", 1, "approved", {
+      payload: {
+        secret: PAYLOAD_SENTINEL,
+        pricingAuthority: {
+          ...VALID_PRICING_AUTHORITY,
+          sources: [
+            HONEYWELL_PRICING_SOURCE,
+            { ...SCOPED_CISCO_PRICING_SOURCE, profileId: "broad-cisco-general-pricing-profile" },
+          ],
+        },
+      },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const summary = ws.artifacts.find((a) => a.type === "priced_boq")!;
+
+    expect("authorityProvenance" in summary).toBe(false);
+  });
+
+  it("does not leak workbook path/sheet name injected per-source into the read model", async () => {
+    const artifact = makeArtifact("priced_boq", 1, "approved", {
+      payload: {
+        pricingAuthority: {
+          ...VALID_PRICING_AUTHORITY,
+          sources: [
+            {
+              ...HONEYWELL_PRICING_SOURCE,
+              activeSourceWorkbookPath: "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
+              activeSourceSheetName: "EstimateDetails_NB167337237YA",
+            },
+            SCOPED_CISCO_PRICING_SOURCE,
+          ],
+        },
+      },
+    });
+    mockGetProjectById.mockResolvedValue(makeProject({ stages: STAGES }));
+    mockListArtifacts.mockResolvedValue([artifact]);
+    mockListApprovals.mockResolvedValue([]);
+
+    const ws = expectOk(await loadProjectQuickBomWorkspace(TENANT, PROJECT));
+    const json = JSON.stringify(ws);
+
+    expect(json).not.toContain("activeSourceWorkbookPath");
+    expect(json).not.toContain("activeSourceSheetName");
+    expect(json).not.toContain("Estimate_NB167337237YA.xlsx");
+    const summary = ws.artifacts.find((a) => a.type === "priced_boq")!;
+    expect(summary.authorityProvenance!.pricingAuthority!.sources).toHaveLength(2);
   });
 
   it("does not leak forbidden payload fields into workspace JSON", async () => {

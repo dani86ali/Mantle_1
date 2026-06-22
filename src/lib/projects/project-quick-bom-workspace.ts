@@ -61,7 +61,8 @@ export interface ArtifactConfigAuthorityProvenance {
   attachesOpticsUnderSwitches: boolean;
 }
 
-export interface ArtifactPricingAuthorityProvenance {
+/** One approved pricing source merged into the combined pricing authority trace. */
+export interface ArtifactPricingAuthoritySourceProvenance {
   profileId: string;
   scope: string;
   approvalRecordId: string;
@@ -71,10 +72,19 @@ export interface ArtifactPricingAuthorityProvenance {
   currency: string;
   pricedSkuCount: number;
   missingPriceSkuCount: number;
+}
+
+export interface ArtifactPricingAuthorityProvenance {
+  profileId: string;
+  scope: string;
+  currency: string;
+  pricedSkuCount: number;
+  missingPriceSkuCount: number;
+  sources: ArtifactPricingAuthoritySourceProvenance[];
   boundary: {
     deterministicPricingAuthority: boolean;
     demoFixtureAuthority: boolean;
-    activeRuntimeSourceReadsExternalGplCsv: boolean;
+    scopedCiscoPricingAuthority: boolean;
     productionCiscoPricingAuthority: boolean;
     broadCiscoGeneralPricingAuthority: boolean;
     runtimeAiPricing: boolean;
@@ -192,6 +202,61 @@ function extractConfigAuthority(
   };
 }
 
+/** Expected identity of each combined-trace source, in fixed order: Honeywell then Cisco. */
+interface ExpectedPricingSource {
+  profileId: string;
+  scope: string;
+  activeSource: string;
+  activeSourceStatus: string;
+}
+
+const EXPECTED_PRICING_SOURCES: readonly ExpectedPricingSource[] = [
+  {
+    profileId: "honeywell-mvp-demo-pricing-authority-profile",
+    scope: "honeywell_mvp_demo_only",
+    activeSource: "committed_honeywell_demo_pricing_fixture",
+    activeSourceStatus: "approved_demo_fixture",
+  },
+  {
+    profileId: "scoped-cisco-quick-bom-pricing-authority-profile",
+    scope: "scoped_cisco_quick_bom_pricing_source",
+    activeSource: "committed_scoped_cisco_pricing_fixture",
+    activeSourceStatus: "approved_scoped_pricing_source",
+  },
+];
+
+// Whitelist only provenance fields; injected workbook path/sheet fields are dropped.
+function extractPricingSource(
+  value: unknown,
+  expected: ExpectedPricingSource
+): ArtifactPricingAuthoritySourceProvenance | undefined {
+  if (!isRecord(value)) return undefined;
+  if (
+    value["profileId"] !== expected.profileId ||
+    value["scope"] !== expected.scope ||
+    typeof value["approvalRecordId"] !== "string" ||
+    value["activeSource"] !== expected.activeSource ||
+    typeof value["activeSourceFixtureId"] !== "string" ||
+    value["activeSourceStatus"] !== expected.activeSourceStatus ||
+    value["currency"] !== "SAR" ||
+    !Number.isFinite(value["pricedSkuCount"]) ||
+    !Number.isFinite(value["missingPriceSkuCount"])
+  ) {
+    return undefined;
+  }
+  return {
+    profileId: value["profileId"] as string,
+    scope: value["scope"] as string,
+    approvalRecordId: value["approvalRecordId"] as string,
+    activeSource: value["activeSource"] as string,
+    activeSourceFixtureId: value["activeSourceFixtureId"] as string,
+    activeSourceStatus: value["activeSourceStatus"] as string,
+    currency: value["currency"] as string,
+    pricedSkuCount: value["pricedSkuCount"] as number,
+    missingPriceSkuCount: value["missingPriceSkuCount"] as number,
+  };
+}
+
 function extractPricingAuthority(
   payload: Record<string, unknown>
 ): ArtifactPricingAuthorityProvenance | undefined {
@@ -199,19 +264,19 @@ function extractPricingAuthority(
   if (!isRecord(pa)) return undefined;
   const b = pa["boundary"];
   if (!isRecord(b)) return undefined;
+  const rawSources = pa["sources"];
+  if (!Array.isArray(rawSources) || rawSources.length !== EXPECTED_PRICING_SOURCES.length) {
+    return undefined;
+  }
   if (
-    pa["profileId"] !== "honeywell-mvp-demo-pricing-authority-profile" ||
-    pa["scope"] !== "honeywell_mvp_demo_only" ||
-    typeof pa["approvalRecordId"] !== "string" ||
-    pa["activeSource"] !== "committed_honeywell_demo_pricing_fixture" ||
-    typeof pa["activeSourceFixtureId"] !== "string" ||
-    pa["activeSourceStatus"] !== "approved_demo_fixture" ||
+    pa["profileId"] !== "quick-bom-approved-pricing-sources-profile" ||
+    pa["scope"] !== "quick_bom_approved_pricing_sources" ||
     pa["currency"] !== "SAR" ||
     !Number.isFinite(pa["pricedSkuCount"]) ||
     !Number.isFinite(pa["missingPriceSkuCount"]) ||
     b["deterministicPricingAuthority"] !== true ||
     b["demoFixtureAuthority"] !== true ||
-    b["activeRuntimeSourceReadsExternalGplCsv"] !== false ||
+    b["scopedCiscoPricingAuthority"] !== true ||
     b["productionCiscoPricingAuthority"] !== false ||
     b["broadCiscoGeneralPricingAuthority"] !== false ||
     b["runtimeAiPricing"] !== false ||
@@ -222,20 +287,23 @@ function extractPricingAuthority(
     b["silentSkuSubstitution"] !== false ||
     b["missingPricesReported"] !== true
   ) return undefined;
+  const sources: ArtifactPricingAuthoritySourceProvenance[] = [];
+  for (let i = 0; i < EXPECTED_PRICING_SOURCES.length; i += 1) {
+    const source = extractPricingSource(rawSources[i], EXPECTED_PRICING_SOURCES[i]);
+    if (source === undefined) return undefined;
+    sources.push(source);
+  }
   return {
     profileId: pa["profileId"] as string,
     scope: pa["scope"] as string,
-    approvalRecordId: pa["approvalRecordId"] as string,
-    activeSource: pa["activeSource"] as string,
-    activeSourceFixtureId: pa["activeSourceFixtureId"] as string,
-    activeSourceStatus: pa["activeSourceStatus"] as string,
     currency: pa["currency"] as string,
     pricedSkuCount: pa["pricedSkuCount"] as number,
     missingPriceSkuCount: pa["missingPriceSkuCount"] as number,
+    sources,
     boundary: {
       deterministicPricingAuthority: b["deterministicPricingAuthority"] as boolean,
       demoFixtureAuthority: b["demoFixtureAuthority"] as boolean,
-      activeRuntimeSourceReadsExternalGplCsv: b["activeRuntimeSourceReadsExternalGplCsv"] as boolean,
+      scopedCiscoPricingAuthority: b["scopedCiscoPricingAuthority"] as boolean,
       productionCiscoPricingAuthority: b["productionCiscoPricingAuthority"] as boolean,
       broadCiscoGeneralPricingAuthority: b["broadCiscoGeneralPricingAuthority"] as boolean,
       runtimeAiPricing: b["runtimeAiPricing"] as boolean,

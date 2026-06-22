@@ -886,19 +886,39 @@ const CONFIG_PROVENANCE = {
 };
 
 const PRICING_PROVENANCE = {
-  profileId: "honeywell-mvp-demo-pricing-authority-profile",
-  scope: "honeywell_mvp_demo_only",
-  approvalRecordId: "appr-pricing-1",
-  activeSource: "committed_honeywell_demo_pricing_fixture",
-  activeSourceFixtureId: "honeywell-mvp-demo-pricing-fixture",
-  activeSourceStatus: "approved_demo_fixture",
+  profileId: "quick-bom-approved-pricing-sources-profile",
+  scope: "quick_bom_approved_pricing_sources",
   currency: "SAR",
   pricedSkuCount: 339,
   missingPriceSkuCount: 2,
+  sources: [
+    {
+      profileId: "honeywell-mvp-demo-pricing-authority-profile",
+      scope: "honeywell_mvp_demo_only",
+      approvalRecordId: "appr-honeywell-pricing-1",
+      activeSource: "committed_honeywell_demo_pricing_fixture",
+      activeSourceFixtureId: "honeywell-mvp-demo-pricing-fixture",
+      activeSourceStatus: "approved_demo_fixture",
+      currency: "SAR",
+      pricedSkuCount: 120,
+      missingPriceSkuCount: 1,
+    },
+    {
+      profileId: "scoped-cisco-quick-bom-pricing-authority-profile",
+      scope: "scoped_cisco_quick_bom_pricing_source",
+      approvalRecordId: "appr-scoped-cisco-pricing-1",
+      activeSource: "committed_scoped_cisco_pricing_fixture",
+      activeSourceFixtureId: "scoped-cisco-quick-bom-pricing-fixture",
+      activeSourceStatus: "approved_scoped_pricing_source",
+      currency: "SAR",
+      pricedSkuCount: 219,
+      missingPriceSkuCount: 1,
+    },
+  ],
   boundary: {
     deterministicPricingAuthority: true,
     demoFixtureAuthority: true,
-    activeRuntimeSourceReadsExternalGplCsv: false,
+    scopedCiscoPricingAuthority: true,
     productionCiscoPricingAuthority: false,
     broadCiscoGeneralPricingAuthority: false,
     runtimeAiPricing: false,
@@ -981,15 +1001,23 @@ describe("ProjectQuickBomPage - authority provenance rendering", () => {
     expect(screen.getByTestId("authority-pricing-priced_boq")).toBeInTheDocument();
 
     const pricingBlock = screen.getByTestId("authority-pricing-priced_boq");
-    expect(pricingBlock).toHaveTextContent("honeywell-mvp-demo-pricing-authority-profile");
-    expect(pricingBlock).toHaveTextContent("honeywell-mvp-demo-pricing-fixture");
-    expect(pricingBlock).toHaveTextContent("appr-pricing-1");
+    expect(pricingBlock).toHaveTextContent("quick-bom-approved-pricing-sources-profile");
+    expect(pricingBlock).toHaveTextContent("quick_bom_approved_pricing_sources");
     expect(pricingBlock).toHaveTextContent("SAR");
     expect(pricingBlock).toHaveTextContent("339");
-    expect(pricingBlock).toHaveTextContent("2");
+    expect(pricingBlock).toHaveTextContent("honeywell-mvp-demo-pricing-authority-profile");
+    expect(pricingBlock).toHaveTextContent("honeywell-mvp-demo-pricing-fixture");
+    expect(pricingBlock).toHaveTextContent("appr-honeywell-pricing-1");
+    expect(pricingBlock).toHaveTextContent("approved_demo_fixture");
+    expect(pricingBlock).toHaveTextContent("scoped-cisco-quick-bom-pricing-authority-profile");
+    expect(pricingBlock).toHaveTextContent("scoped-cisco-quick-bom-pricing-fixture");
+    expect(pricingBlock).toHaveTextContent("appr-scoped-cisco-pricing-1");
+    expect(pricingBlock).toHaveTextContent("approved_scoped_pricing_source");
+    expect(screen.getByTestId("authority-pricing-source-priced_boq-0")).toBeInTheDocument();
+    expect(screen.getByTestId("authority-pricing-source-priced_boq-1")).toBeInTheDocument();
     // boundary facts
     expect(pricingBlock.textContent).toMatch(/Deterministic fixture:\s*yes/);
-    expect(pricingBlock.textContent).toMatch(/External GPL read:\s*no/);
+    expect(pricingBlock.textContent).toMatch(/Scoped Cisco:\s*yes/);
     expect(pricingBlock.textContent).toMatch(/Production authority:\s*no/);
     expect(pricingBlock.textContent).toMatch(/Broad authority:\s*no/);
     expect(pricingBlock.textContent).toMatch(/Runtime AI:\s*off/);
