@@ -1300,7 +1300,7 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(primaryText).not.toContain("REMOVED-HISTORY-NOTE-CANARY");
   });
 
-  it("posts a response-only row edit to the rows/review route and reloads list and detail for the returned new matrix version", async () => {
+  it("posts a row edit carrying response, complianceStatus, and notes to the rows/review route and reloads list and detail for the returned new matrix version", async () => {
     const V2_ID = "art-cm-2";
     const V2_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${V2_ID}/compliance-matrix`;
     const ROWS_REVIEW_URL = `${COMPLIANCE_MATRIX_DETAIL_URL}/rows/review`;
@@ -1340,6 +1340,12 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     fireEvent.change(screen.getByTestId("cm-row-response-edit-value-CM-010"), {
       target: { value: "Updated response." },
     });
+    fireEvent.change(screen.getByTestId("cm-row-response-edit-status-CM-010"), {
+      target: { value: "compliant" },
+    });
+    fireEvent.change(screen.getByTestId("cm-row-response-edit-notes-CM-010"), {
+      target: { value: "Reviewed and approved." },
+    });
     await act(async () => {
       fireEvent.click(screen.getByTestId("cm-row-response-edit-submit"));
     });
@@ -1355,7 +1361,11 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
         {
           rowId: "CM-010",
           action: "edit",
-          editedFields: { response: "Updated response." },
+          editedFields: {
+            response: "Updated response.",
+            complianceStatus: "compliant",
+            notes: "Reviewed and approved.",
+          },
         },
       ],
     });
@@ -1399,6 +1409,65 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(
       screen.getByTestId("cm-row-response-edit-submit")
     ).not.toBeDisabled();
+  });
+
+  it("enables submit on a status-only change and posts only the changed complianceStatus", async () => {
+    const ROWS_REVIEW_URL = `${COMPLIANCE_MATRIX_DETAIL_URL}/rows/review`;
+    const calls = stubFetch((url, init) => {
+      if (url === ROWS_REVIEW_URL && init?.method === "POST") {
+        return jsonResponse(
+          {
+            artifact: artifact(
+              COMPLIANCE_MATRIX_ARTIFACT_ID,
+              "compliance_matrix",
+              "needs_review",
+              1
+            ),
+          },
+          200
+        );
+      }
+      return stage5ComplianceFetch(complianceMatrixStage5DetailResponse())(url);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("cm-detail-row");
+
+    expect(screen.getByTestId("cm-row-response-edit-submit")).toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cm-row-response-edit-enable-CM-010"));
+    });
+    // Leave the response and notes at their seeded values; change only status.
+    fireEvent.change(screen.getByTestId("cm-row-response-edit-status-CM-010"), {
+      target: { value: "compliant" },
+    });
+    expect(
+      screen.getByTestId("cm-row-response-edit-submit")
+    ).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cm-row-response-edit-submit"));
+    });
+    await screen.findByTestId("cm-row-response-edit-success");
+
+    const post = calls.find(
+      (call) => call.url === ROWS_REVIEW_URL && call.init?.method === "POST"
+    );
+    expect(post).toBeDefined();
+    expect(JSON.parse(String(post?.init?.body))).toEqual({
+      decisions: [
+        {
+          rowId: "CM-010",
+          action: "edit",
+          editedFields: { complianceStatus: "compliant" },
+        },
+      ],
+    });
   });
 
   it("does not render row response edit controls or submit for an approved compliance matrix", async () => {
@@ -2223,6 +2292,22 @@ describe("ProjectRfpEvidencePage static guards", () => {
   });
 
   it("posts engineer row response edits to the compliance-matrix rows/review route", () => {
+    expect(source).toContain("/compliance-matrix/rows/review");
+  });
+
+  it("introduces no mark_not_applicable, remove, or restore row edit controls and never sends not_applicable from an edit", () => {
+    // The row edit slice exposes only response/status/notes controls.
+    expect(source).toContain("cm-row-response-edit-status-");
+    expect(source).toContain("cm-row-response-edit-notes-");
+    expect(source).not.toContain("cm-row-mark-not-applicable");
+    expect(source).not.toContain("cm-row-response-edit-remove");
+    expect(source).not.toContain("cm-row-response-edit-restore");
+    // The editable status set excludes not_applicable, and the only row decision
+    // action is edit (never marked_not_applicable / removed / restored).
+    expect(source).not.toContain('"not_applicable"');
+    expect(source).not.toContain('"marked_not_applicable"');
+    expect(source).toContain('action: "edit" as const');
+    // The row edit must never reach the artifact-level review route.
     expect(source).toContain("/compliance-matrix/rows/review");
   });
 });

@@ -165,13 +165,87 @@ interface ComplianceMatrixRowReviewResponse {
 }
 
 /**
+ * The four compliance statuses an engineer may set from a row edit. The matrix
+ * may carry other statuses (e.g. not_applicable), but an edit decision must only
+ * send one of these; mark_not_applicable lives outside this response-edit slice.
+ */
+const COMPLIANCE_ROW_EDIT_STATUSES = [
+  "compliant",
+  "partially_compliant",
+  "non_compliant",
+  "needs_review",
+] as const;
+type ComplianceRowEditStatus = (typeof COMPLIANCE_ROW_EDIT_STATUSES)[number];
+
+const COMPLIANCE_ROW_EDIT_STATUS_LABELS: Record<
+  ComplianceRowEditStatus,
+  string
+> = {
+  compliant: "Compliant",
+  partially_compliant: "Partially compliant",
+  non_compliant: "Non compliant",
+  needs_review: "Needs review",
+};
+
+/**
+ * Normalize a row's persisted complianceStatus to an editable status, falling
+ * back to needs_review when the row carries a status outside the editable four.
+ */
+function editableComplianceStatus(status: string): ComplianceRowEditStatus {
+  return (COMPLIANCE_ROW_EDIT_STATUSES as readonly string[]).includes(status)
+    ? (status as ComplianceRowEditStatus)
+    : "needs_review";
+}
+
+/**
  * One active row's in-progress response-edit draft, keyed by row id. The
- * response seeds from the row's current response so an unchanged value stays out
- * of the submitted decisions.
+ * response/complianceStatus/notes each seed from the row's current value so an
+ * unchanged field stays out of the submitted decisions.
  */
 interface ComplianceRowResponseEditDraft {
   enabled: boolean;
   response: string;
+  complianceStatus: ComplianceRowEditStatus;
+  notes: string;
+}
+
+/** The edit decision's editedFields, carrying only changed fields. */
+interface ComplianceRowEditedFields {
+  response?: string;
+  complianceStatus?: ComplianceRowEditStatus;
+  notes?: string;
+}
+
+/**
+ * Build the changed-only editedFields for one active row's enabled draft, or
+ * null when the draft is absent/disabled or holds no change worth submitting.
+ * Shared by submit and the submit-enabled guard so they cannot disagree.
+ */
+function complianceRowEditedFields(
+  row: ComplianceMatrixRow,
+  draft: ComplianceRowResponseEditDraft | undefined
+): ComplianceRowEditedFields | null {
+  if (draft === undefined || !draft.enabled) return null;
+  const editedFields: ComplianceRowEditedFields = {};
+  const response = draft.response.trim();
+  if (response !== "" && response !== row.response.trim()) {
+    editedFields.response = response;
+  }
+  if (draft.complianceStatus !== editableComplianceStatus(row.complianceStatus)) {
+    editedFields.complianceStatus = draft.complianceStatus;
+  }
+  const notes = draft.notes.trim();
+  if (notes !== "" && notes !== (row.notes ?? "").trim()) {
+    editedFields.notes = notes;
+  }
+  if (
+    editedFields.response === undefined &&
+    editedFields.complianceStatus === undefined &&
+    editedFields.notes === undefined
+  ) {
+    return null;
+  }
+  return editedFields;
 }
 
 type ComplianceMatrixReviewDecision = "approved" | "rejected";
@@ -1616,6 +1690,8 @@ function ComplianceMatrixRowView({
     draft: ComplianceRowResponseEditDraft | undefined;
     onToggle: (rowId: string, enabled: boolean) => void;
     onChange: (rowId: string, value: string) => void;
+    onChangeStatus: (rowId: string, value: string) => void;
+    onChangeNotes: (rowId: string, value: string) => void;
   };
 }) {
   const showResponseEdit =
@@ -1661,13 +1737,46 @@ function ComplianceMatrixRowView({
             Edit response
           </label>
           {responseEditEnabled && (
-            <textarea
-              data-testid={`cm-row-response-edit-value-${row.id}`}
-              value={responseEdit.draft?.response ?? ""}
-              onChange={(e) => responseEdit.onChange(row.id, e.target.value)}
-              rows={3}
-              className={FIELD}
-            />
+            <>
+              <textarea
+                data-testid={`cm-row-response-edit-value-${row.id}`}
+                value={responseEdit.draft?.response ?? ""}
+                onChange={(e) => responseEdit.onChange(row.id, e.target.value)}
+                rows={3}
+                className={FIELD}
+              />
+              <label className="flex flex-col text-xs text-text-secondary">
+                Compliance status
+                <select
+                  data-testid={`cm-row-response-edit-status-${row.id}`}
+                  value={
+                    responseEdit.draft?.complianceStatus ?? "needs_review"
+                  }
+                  onChange={(e) =>
+                    responseEdit.onChangeStatus(row.id, e.target.value)
+                  }
+                  className={FIELD}
+                >
+                  {COMPLIANCE_ROW_EDIT_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {COMPLIANCE_ROW_EDIT_STATUS_LABELS[status]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col text-xs text-text-secondary">
+                Notes
+                <textarea
+                  data-testid={`cm-row-response-edit-notes-${row.id}`}
+                  value={responseEdit.draft?.notes ?? ""}
+                  onChange={(e) =>
+                    responseEdit.onChangeNotes(row.id, e.target.value)
+                  }
+                  rows={2}
+                  className={FIELD}
+                />
+              </label>
+            </>
           )}
         </div>
       )}
@@ -2542,10 +2651,17 @@ export default function ProjectRfpEvidencePage() {
         }
         setComplianceDetail({ artifact: body.artifact, matrix: body.matrix });
         // Seed one unchecked response-edit draft per row from its persisted
-        // response so an untouched field never contributes a decision.
+        // response/status/notes so an untouched field never contributes a
+        // decision. complianceStatus falls back to needs_review when the row's
+        // status is outside the editable four.
         const seededEdits: Record<string, ComplianceRowResponseEditDraft> = {};
         for (const row of body.matrix.rows) {
-          seededEdits[row.id] = { enabled: false, response: row.response };
+          seededEdits[row.id] = {
+            enabled: false,
+            response: row.response,
+            complianceStatus: editableComplianceStatus(row.complianceStatus),
+            notes: row.notes ?? "",
+          };
         }
         setComplianceRowResponseEdits(seededEdits);
       } catch {
@@ -2668,43 +2784,74 @@ export default function ProjectRfpEvidencePage() {
     ]
   );
 
-  const setComplianceRowEditEnabled = useCallback(
-    (rowId: string, enabled: boolean): void => {
-      setComplianceRowResponseEdits((prev) => ({
-        ...prev,
-        [rowId]: { enabled, response: prev[rowId]?.response ?? "" },
-      }));
+  const updateComplianceRowEdit = useCallback(
+    (rowId: string, patch: Partial<ComplianceRowResponseEditDraft>): void => {
+      setComplianceRowResponseEdits((prev) => {
+        const existing = prev[rowId];
+        return {
+          ...prev,
+          [rowId]: {
+            enabled: existing?.enabled ?? false,
+            response: existing?.response ?? "",
+            complianceStatus: existing?.complianceStatus ?? "needs_review",
+            notes: existing?.notes ?? "",
+            ...patch,
+          },
+        };
+      });
     },
     []
+  );
+
+  const setComplianceRowEditEnabled = useCallback(
+    (rowId: string, enabled: boolean): void => {
+      updateComplianceRowEdit(rowId, { enabled });
+    },
+    [updateComplianceRowEdit]
   );
 
   const setComplianceRowEditResponse = useCallback(
     (rowId: string, value: string): void => {
-      setComplianceRowResponseEdits((prev) => ({
-        ...prev,
-        [rowId]: { enabled: prev[rowId]?.enabled ?? false, response: value },
-      }));
+      updateComplianceRowEdit(rowId, { response: value });
     },
-    []
+    [updateComplianceRowEdit]
   );
 
-  // Engineer response-only row edit: post one edit decision per active row whose
-  // enabled draft holds a changed nonblank response. The body carries only
-  // { rowId, action: "edit", editedFields: { response } } - never status, notes,
-  // removal, approval, or any provider/pricing/config authority. The route may
-  // return a new compliance_matrix version, so on success the persisted list and
-  // detail are reloaded (no local row mutation) and the drawer retargets the new
-  // artifact id.
+  const setComplianceRowEditStatus = useCallback(
+    (rowId: string, value: string): void => {
+      updateComplianceRowEdit(rowId, {
+        complianceStatus: editableComplianceStatus(value),
+      });
+    },
+    [updateComplianceRowEdit]
+  );
+
+  const setComplianceRowEditNotes = useCallback(
+    (rowId: string, value: string): void => {
+      updateComplianceRowEdit(rowId, { notes: value });
+    },
+    [updateComplianceRowEdit]
+  );
+
+  // Engineer row edit: post one edit decision per active row whose enabled draft
+  // holds a changed field. The body carries only
+  // { rowId, action: "edit", editedFields: { response?, complianceStatus?, notes? } }
+  // with changed fields only - never removal, mark_not_applicable, approval, or
+  // any provider/pricing/config authority. complianceStatus is constrained to the
+  // editable four. The route may return a new compliance_matrix version, so on
+  // success the persisted list and detail are reloaded (no local row mutation)
+  // and the drawer retargets the new artifact id.
   const submitComplianceRowResponseEdits = useCallback(async (): Promise<void> => {
     if (complianceDetail === null || complianceRowEditPending) return;
     const decisions = complianceDetail.matrix.rows
       .filter((row) => row.rowReviewStatus !== "removed")
       .flatMap((row) => {
-        const draft = complianceRowResponseEdits[row.id];
-        if (draft === undefined || !draft.enabled) return [];
-        const response = draft.response.trim();
-        if (response === "" || response === row.response.trim()) return [];
-        return [{ rowId: row.id, action: "edit" as const, editedFields: { response } }];
+        const editedFields = complianceRowEditedFields(
+          row,
+          complianceRowResponseEdits[row.id]
+        );
+        if (editedFields === null) return [];
+        return [{ rowId: row.id, action: "edit" as const, editedFields }];
       });
     if (decisions.length === 0) return;
     const currentArtifactId = complianceDetail.artifact.id;
@@ -3683,17 +3830,18 @@ export default function ProjectRfpEvidencePage() {
             draft: complianceRowResponseEdits[row.id],
             onToggle: setComplianceRowEditEnabled,
             onChange: setComplianceRowEditResponse,
+            onChangeStatus: setComplianceRowEditStatus,
+            onChangeNotes: setComplianceRowEditNotes,
           }
         : undefined;
     const editableRows = complianceDetail.matrix.rows.filter(
       (row) => row.rowReviewStatus !== "removed"
     );
-    const rowEditHasChangedNonblank = editableRows.some((row) => {
-      const draft = complianceRowResponseEdits[row.id];
-      if (draft === undefined || !draft.enabled) return false;
-      const response = draft.response.trim();
-      return response !== "" && response !== row.response.trim();
-    });
+    const rowEditHasChangedNonblank = editableRows.some(
+      (row) =>
+        complianceRowEditedFields(row, complianceRowResponseEdits[row.id]) !==
+        null
+    );
     const rowEditHasBlankEnabled = editableRows.some((row) => {
       const draft = complianceRowResponseEdits[row.id];
       return draft?.enabled === true && draft.response.trim() === "";
