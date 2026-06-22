@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 const { mockRequireAuth, mockGetExecutor, mockGenerate } = vi.hoisted(() => ({
   mockRequireAuth: vi.fn(),
@@ -439,12 +439,59 @@ describe(".../rfp/compliance-matrix/generate - route surface", () => {
 });
 
 describe("configured compliance executor factory (real module)", () => {
-  it("returns null until a live provider adapter is explicitly approved", async () => {
-    const factory = await vi.importActual<{
+  // Drives the REAL factory and REAL Anthropic adapter (no mock) to prove the
+  // live wiring seam: null when the API key is missing/blank, a function when
+  // it is set. The returned executor is never invoked, so no network is hit.
+  const REAL_FACTORY_ENV_KEYS = [
+    "ANTHROPIC_API_KEY",
+    "BOMATIC_RFP_COMPLIANCE_MATRIX_DRAFTING_MODEL",
+    "BOMATIC_RFP_COMPLIANCE_MATRIX_DRAFTING_MAX_TOKENS",
+  ];
+  let savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    savedEnv = {};
+    for (const key of REAL_FACTORY_ENV_KEYS) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of REAL_FACTORY_ENV_KEYS) {
+      const value = savedEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  async function loadRealFactory() {
+    return vi.importActual<{
       getConfiguredRfpComplianceMatrixDraftingExecutor: () => unknown;
     }>("@/lib/projects/project-rfp-compliance-matrix-drafting-executor");
+  }
 
-    expect(factory.getConfiguredRfpComplianceMatrixDraftingExecutor()).toBeNull();
+  it("returns null when ANTHROPIC_API_KEY is missing or blank", async () => {
+    const factory = await loadRealFactory();
+
+    expect(
+      factory.getConfiguredRfpComplianceMatrixDraftingExecutor()
+    ).toBeNull();
+
+    process.env.ANTHROPIC_API_KEY = "   ";
+    expect(
+      factory.getConfiguredRfpComplianceMatrixDraftingExecutor()
+    ).toBeNull();
+  });
+
+  it("returns a drafting executor function (never invoked) when ANTHROPIC_API_KEY is set", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
+    const factory = await loadRealFactory();
+
+    const executor =
+      factory.getConfiguredRfpComplianceMatrixDraftingExecutor();
+
+    expect(typeof executor).toBe("function");
   });
 });
 
@@ -477,15 +524,31 @@ describe("route and factory module purity (static source check)", () => {
     ]);
   });
 
-  it("factory imports only the compliance drafting executor type and no provider module", () => {
+  it("factory imports only the neutral drafting type and the compliance Anthropic adapter factory, reading only the approved env vars by dot access", () => {
     const froms = Array.from(
       factorySource.matchAll(/from\s+"([^"]+)"/g),
       (m) => m[1]
     );
     expect(froms).toEqual([
       "@/lib/projects/project-rfp-compliance-matrix-drafting",
+      "@/lib/projects/project-rfp-compliance-matrix-drafting-anthropic",
     ]);
-    expect(factorySource).not.toContain("process.env");
+    // The live factory now reads configuration, but only the three approved
+    // env vars and only by dot access; it still imports no provider SDK
+    // directly (proven against "@anthropic-ai" in the combined check below).
+    expect(factorySource).not.toContain("process.env[");
+    const envReads = Array.from(
+      factorySource.matchAll(/process\.env\.([A-Za-z0-9_]+)/g),
+      (m) => m[1]
+    );
+    expect(envReads.length).toBeGreaterThan(0);
+    for (const name of envReads) {
+      expect([
+        "ANTHROPIC_API_KEY",
+        "BOMATIC_RFP_COMPLIANCE_MATRIX_DRAFTING_MODEL",
+        "BOMATIC_RFP_COMPLIANCE_MATRIX_DRAFTING_MAX_TOKENS",
+      ]).toContain(name);
+    }
   });
 
   it("route/factory import no DB, stores, approval, evidence, raw files, pricing, SKU, catalog, config decision, export, AI, provider, engine, or UI modules", () => {

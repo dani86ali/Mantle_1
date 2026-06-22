@@ -6,24 +6,24 @@ import { describe, it, expect, vi } from "vitest";
 // fake client through config.client, so no real client is constructed and
 // the network is never reached. The adapter module is one of exactly three
 // Project-chain modules allowed to import @anthropic-ai/sdk (the others are
-// the extraction-delta and compliance-matrix drafting adapters), proven by
-// the static source checks at the bottom of this suite.
+// the requirements and extraction-delta drafting adapters), proven by the
+// static source checks at the bottom of this suite.
 import {
-  createAnthropicRfpRequirementCandidateDraftingExecutor,
-  type AnthropicRfpDraftingMessageRequest,
-  type AnthropicRfpDraftingMessageResponse,
-} from "@/lib/projects/project-rfp-requirements-candidate-drafting-anthropic";
-import type { RfpCandidateDraftingExecutorInput } from "@/lib/projects/project-rfp-requirements-candidate-drafting";
+  createAnthropicRfpComplianceMatrixDraftingExecutor,
+  type AnthropicRfpComplianceMatrixDraftingMessageRequest,
+  type AnthropicRfpComplianceMatrixDraftingMessageResponse,
+} from "@/lib/projects/project-rfp-compliance-matrix-drafting-anthropic";
+import type { RfpComplianceMatrixDraftingExecutorInput } from "@/lib/projects/project-rfp-compliance-matrix-drafting";
 
 const REQUEST_FAILED_MESSAGE =
-  "RFP requirement candidate drafting request failed.";
+  "RFP compliance matrix drafting request failed.";
 const NO_TEXT_MESSAGE =
-  "RFP requirement candidate drafting returned no text output.";
+  "RFP compliance matrix drafting returned no text output.";
 const INVALID_JSON_MESSAGE =
-  "RFP requirement candidate drafting returned output that is not valid JSON.";
+  "RFP compliance matrix drafting returned output that is not valid JSON.";
 
-/** A full, valid whitelisted executor input exactly as the contract sends. */
-const EXECUTOR_INPUT: RfpCandidateDraftingExecutorInput = {
+/** A full, valid whitelisted executor input (with config) as the contract sends. */
+const EXECUTOR_INPUT: RfpComplianceMatrixDraftingExecutorInput = {
   project: {
     id: "proj-rfp-1",
     name: "STC RFP Bid",
@@ -32,6 +32,63 @@ const EXECUTOR_INPUT: RfpCandidateDraftingExecutorInput = {
     createdAt: "2026-06-01T10:00:00.000Z",
     updatedAt: "2026-06-02T11:30:00.000Z",
   },
+  requirementsBaseline: {
+    id: "art-requirements-baseline-1",
+    projectId: "proj-rfp-1",
+    stageId: "requirements_baseline_review",
+    type: "requirements_baseline",
+    status: "approved",
+    version: 1,
+    sourceFileIds: ["file-rfp-1"],
+    sourceArtifactIds: ["art-evidence-package-1"],
+    createdAt: "2026-06-01T10:05:00.000Z",
+    updatedAt: "2026-06-01T10:06:00.000Z",
+  },
+  evidencePackage: {
+    id: "art-evidence-package-1",
+    projectId: "proj-rfp-1",
+    stageId: "intake_package_review",
+    type: "evidence_package",
+    status: "approved",
+    version: 1,
+    sourceFileIds: ["file-rfp-1", "file-boq-1"],
+    sourceArtifactIds: ["art-input-package-1"],
+    createdAt: "2026-06-01T10:05:00.000Z",
+    updatedAt: "2026-06-01T10:06:00.000Z",
+  },
+  configurationExpansion: {
+    id: "art-config-expansion-1",
+    projectId: "proj-rfp-1",
+    stageId: "configuration_expansion_review",
+    type: "configuration_expansion",
+    status: "approved",
+    version: 1,
+    sourceFileIds: ["file-boq-1"],
+    sourceArtifactIds: ["art-priced-boq-1"],
+    createdAt: "2026-06-01T10:05:00.000Z",
+    updatedAt: "2026-06-01T10:06:00.000Z",
+  },
+  requirements: [
+    {
+      id: "RFP-REQ-001",
+      text: "Contractor shall supply PoE access switches.",
+      category: "technical",
+      priority: "mandatory",
+      title: "PoE access switches",
+      notes: "From the RFP scope text.",
+      evidenceReferences: [
+        {
+          evidenceId: "evidence-text-1",
+          sourceFileId: "file-rfp-1",
+          evidenceKind: "rfp_document_text_chunk",
+          inputPackageArtifactId: "art-input-package-1",
+          chunkIndex: 1,
+          chunkCount: 2,
+          charCount: 44,
+        },
+      ],
+    },
+  ],
   evidence: [
     {
       evidenceId: "evidence-text-1",
@@ -56,54 +113,86 @@ const EXECUTOR_INPUT: RfpCandidateDraftingExecutorInput = {
       rows: [["item", "qty"]],
     },
   ],
+  configurationLines: [
+    {
+      lineId: "line-1",
+      origin: "customer",
+      sku: "C9300-48P",
+      description: "48-port PoE+ access switch",
+    },
+  ],
   requestedBy: "engineer@stc.example",
   sourceFileIds: ["file-rfp-1", "file-boq-1"],
-  sourceArtifactIds: ["art-input-package-1"],
+  sourceArtifactIds: [
+    "art-requirements-baseline-1",
+    "art-evidence-package-1",
+    "art-config-expansion-1",
+  ],
+};
+
+/** The same input with no approved configuration_expansion supplied. */
+const EXECUTOR_INPUT_NO_CONFIG: RfpComplianceMatrixDraftingExecutorInput = {
+  project: EXECUTOR_INPUT.project,
+  requirementsBaseline: EXECUTOR_INPUT.requirementsBaseline,
+  evidencePackage: EXECUTOR_INPUT.evidencePackage,
+  requirements: EXECUTOR_INPUT.requirements,
+  evidence: EXECUTOR_INPUT.evidence,
+  requestedBy: EXECUTOR_INPUT.requestedBy,
+  sourceFileIds: EXECUTOR_INPUT.sourceFileIds,
+  sourceArtifactIds: ["art-requirements-baseline-1", "art-evidence-package-1"],
 };
 
 /** Raw model output, including fields only the contract sanitizer may drop. */
 const RAW_MODEL_OUTPUT = {
-  candidates: [
+  rows: [
     {
-      text: "The contractor shall supply PoE access switches.",
+      requirementId: "RFP-REQ-001",
+      response: "The proposed design supplies PoE access switches per the BoQ.",
+      rationale: "Maps requirement RFP-REQ-001 to the cited evidence chunk.",
+      notes: "Confirm port counts during review.",
       evidenceIds: ["evidence-text-1"],
-      category: "technical",
-      priority: "mandatory",
-      title: "PoE access switches",
-      notes: "From the RFP scope text.",
-      status: "model-asserted-status",
+      configurationLineIds: ["line-1"],
+      complianceStatus: "model-asserted-status",
       unitPrice: 999,
     },
   ],
   modelCommentary: "unsanitized extra field the contract must drop later",
 };
 
-function textResponse(...texts: string[]): AnthropicRfpDraftingMessageResponse {
+function textResponse(
+  ...texts: string[]
+): AnthropicRfpComplianceMatrixDraftingMessageResponse {
   return { content: texts.map((text) => ({ type: "text", text })) };
 }
 
-function makeClient(response: AnthropicRfpDraftingMessageResponse) {
-  const create = vi.fn((request: AnthropicRfpDraftingMessageRequest) => {
-    void request;
-    return Promise.resolve(response);
-  });
+function makeClient(
+  response: AnthropicRfpComplianceMatrixDraftingMessageResponse
+) {
+  const create = vi.fn(
+    (request: AnthropicRfpComplianceMatrixDraftingMessageRequest) => {
+      void request;
+      return Promise.resolve(response);
+    }
+  );
   return { create, client: { messages: { create } } };
 }
 
 function makeRejectingClient(reason: unknown) {
-  const create = vi.fn((request: AnthropicRfpDraftingMessageRequest) => {
-    void request;
-    return Promise.reject(reason);
-  });
+  const create = vi.fn(
+    (request: AnthropicRfpComplianceMatrixDraftingMessageRequest) => {
+      void request;
+      return Promise.reject(reason);
+    }
+  );
   return { create, client: { messages: { create } } };
 }
 
-describe("createAnthropicRfpRequirementCandidateDraftingExecutor - request shape", () => {
+describe("createAnthropicRfpComplianceMatrixDraftingExecutor - request shape", () => {
   it("calls messages.create once with the configured model, max_tokens, and temperature and no function-calling fields", async () => {
     const { create, client } = makeClient(
       textResponse(JSON.stringify(RAW_MODEL_OUTPUT))
     );
-    const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+    const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
       apiKey: "test-api-key",
       model: "model-override-1",
       maxTokens: 2048,
@@ -135,7 +224,7 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - request shape
     const { create, client } = makeClient(
       textResponse(JSON.stringify(RAW_MODEL_OUTPUT))
     );
-    const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+    const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
       apiKey: "test-api-key",
       client,
     });
@@ -154,41 +243,26 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - request shape
     ]);
   });
 
-  it("sends a system instruction restricted to evidence-grounded candidate JSON that forbids every other authority", async () => {
+  it("omits temperature when it is configured as a non-finite value", async () => {
     const { create, client } = makeClient(
       textResponse(JSON.stringify(RAW_MODEL_OUTPUT))
     );
-    const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+    const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
       apiKey: "test-api-key",
+      temperature: Number.NaN,
       client,
     });
 
     await executor(EXECUTOR_INPUT);
 
-    const system = create.mock.calls[0][0].system
-      .replace(/\s+/g, " ")
-      .toLowerCase();
-    expect(system).toContain("only from the json evidence entries");
-    expect(system).toContain("never invent facts");
-    expect(system).toContain("no authority");
-    expect(system).toContain("pricing");
-    expect(system).toContain("sku selection");
-    expect(system).toContain("catalog lookups");
-    expect(system).toContain("product configuration");
-    expect(system).toContain("compliance matrix");
-    expect(system).toContain("hld");
-    expect(system).toContain("proposal writing");
-    expect(system).toContain("export or document generation");
-    expect(system).toContain("validation of any kind");
-    expect(system).toContain("strict json only");
-    expect(system).toContain('{"candidates":[...]}');
+    expect("temperature" in create.mock.calls[0][0]).toBe(false);
   });
 
-  it("drafts for every customer obligation class, lists the full category taxonomy, and pins human-review and non-authority language", async () => {
+  it("sends a system instruction restricted to candidate compliance rows from the approved artifacts that forbids every authority", async () => {
     const { create, client } = makeClient(
       textResponse(JSON.stringify(RAW_MODEL_OUTPUT))
     );
-    const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+    const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
       apiKey: "test-api-key",
       client,
     });
@@ -199,82 +273,60 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - request shape
       .replace(/\s+/g, " ")
       .toLowerCase();
 
-    // (1) Drafts candidate requirements for EVERY customer obligation class,
-    // not only technical scope, naming each obligation class explicitly.
-    expect(system).toContain("every customer obligation");
-    expect(system).toContain("not only technical scope");
-    for (const obligation of [
-      "technical scope",
-      "boq and product requirements",
-      "installation, configuration, and testing",
-      "documentation",
-      "training and transfer of knowledge (totk)",
-      "schedule and project duration",
-      "warranty and support",
-      "permits, site access, and safety",
-      "legal, regulatory, saudi, and local-content",
-      "insurance",
-      "commercial and contractual requirements",
-      "vendor qualification and submittals",
-      "security and cybersecurity",
-      "any other customer obligations",
-    ]) {
-      expect(system).toContain(obligation);
-    }
-
-    // (2) The full expanded RFP_REQUIREMENT_CATEGORIES taxonomy, in order.
+    // (1) Drafts only from the approved baseline, evidence, and optional config.
+    expect(system).toContain("only from the approved requirements_baseline");
+    expect(system).toContain("approved evidence_package");
+    expect(system).toContain("configuration_expansion");
+    expect(system).toContain("never invent facts");
+    expect(system).toContain("exactly one row per approved baseline requirement");
     expect(system).toContain(
-      "category (one of technical, commercial, compliance, delivery, " +
-        "security, support, legal, other, boq_product, " +
-        "installation_configuration_testing, documentation, training_totk, " +
-        "schedule_duration, warranty_support, permits_site_access_safety, " +
-        "legal_regulatory_local_content, insurance, commercial_contractual, " +
-        "vendor_qualification_submittals, security_cybersecurity)"
+      "copy every requirementid, evidenceid, and configurationlineid exactly"
     );
-    for (const category of [
-      "technical",
-      "commercial",
-      "compliance",
-      "delivery",
-      "security",
-      "support",
-      "legal",
-      "other",
-      "boq_product",
-      "installation_configuration_testing",
-      "documentation",
-      "training_totk",
-      "schedule_duration",
-      "warranty_support",
-      "permits_site_access_safety",
-      "legal_regulatory_local_content",
-      "insurance",
-      "commercial_contractual",
-      "vendor_qualification_submittals",
-      "security_cybersecurity",
-    ]) {
-      expect(system).toContain(category);
-    }
 
-    // (3) Strict non-authority and human review stay pinned, including no
-    // legal/commercial/local-content/safety/insurance determinations.
+    // (2) No authority of any kind; the model never decides compliance.
     expect(system).toContain("no authority");
     expect(system).toContain("make no business decisions");
-    expect(system).toContain("approve or validate anything");
+    expect(system).toContain("approve anything");
+    expect(system).toContain("final compliance decision");
+    expect(system).toContain("comply or not-comply status");
     expect(system).toContain(
-      "make legal, commercial, local-content, safety, or insurance determinations"
+      "legal, commercial, local-content, safety, or insurance determination"
     );
-    expect(system).toContain("act as the hld, tp, or proposal authority");
+    expect(system).toContain("pricing");
+    expect(system).toContain("sku selection or replacement");
+    expect(system).toContain("catalog lookup");
+    expect(system).toContain("product configuration decisions");
+    expect(system).toContain("hld, lld, tp, or proposal authority");
+    expect(system).toContain("export or document generation");
+    expect(system).toContain("validation of any kind");
+
+    // (3) Authority-owner rows are flagged for human review, not declared met.
+    expect(system).toContain("requiring review by the right human owner");
+    expect(system).toContain("never as satisfied by technical design");
     expect(system).toContain("unapproved draft");
     expect(system).toContain("human-reviewed");
     expect(system).toContain("human-approved");
+
+    // (4) Strict JSON shape; the neutral sanitizer (not the model) owns status.
+    expect(system).toContain("strict json only");
+    expect(system).toContain('{"rows":[...]}');
+    expect(system).toContain("requirementid (required");
+    expect(system).toContain("response");
+    expect(system).toContain("rationale");
+    expect(system).toContain("notes");
+    expect(system).toContain("evidenceids");
+    expect(system).toContain("configurationlineids");
+    expect(system).toContain(
+      "do not include a compliancestatus, status, approval"
+    );
+    expect(system).toContain("needs_review");
   });
 
   it("sends exactly one user turn whose content is the whitelisted executor input serialized verbatim", async () => {
     const { create, client } = makeClient(
       textResponse(JSON.stringify(RAW_MODEL_OUTPUT))
     );
-    const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+    const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
       apiKey: "test-api-key",
       client,
     });
@@ -289,26 +341,75 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - request shape
       unknown
     >;
     expect(Object.keys(parsed).sort()).toEqual([
+      "configurationExpansion",
+      "configurationLines",
       "evidence",
+      "evidencePackage",
       "project",
       "requestedBy",
+      "requirements",
+      "requirementsBaseline",
       "sourceArtifactIds",
       "sourceFileIds",
     ]);
     expect(parsed).toStrictEqual({
       project: EXECUTOR_INPUT.project,
+      requirementsBaseline: EXECUTOR_INPUT.requirementsBaseline,
+      evidencePackage: EXECUTOR_INPUT.evidencePackage,
+      configurationExpansion: EXECUTOR_INPUT.configurationExpansion,
+      requirements: EXECUTOR_INPUT.requirements,
       evidence: EXECUTOR_INPUT.evidence,
+      configurationLines: EXECUTOR_INPUT.configurationLines,
       requestedBy: EXECUTOR_INPUT.requestedBy,
       sourceFileIds: EXECUTOR_INPUT.sourceFileIds,
       sourceArtifactIds: EXECUTOR_INPUT.sourceArtifactIds,
     });
   });
 
-  it("never forwards decoy authority or storage fields smuggled onto the input object", async () => {
+  it("omits the optional configuration fields when no configuration_expansion was supplied", async () => {
     const { create, client } = makeClient(
       textResponse(JSON.stringify(RAW_MODEL_OUTPUT))
     );
-    const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+    const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
+      apiKey: "test-api-key",
+      client,
+    });
+
+    await executor(EXECUTOR_INPUT_NO_CONFIG);
+
+    const parsed = JSON.parse(create.mock.calls[0][0].messages[0].content) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(parsed).sort()).toEqual([
+      "evidence",
+      "evidencePackage",
+      "project",
+      "requestedBy",
+      "requirements",
+      "requirementsBaseline",
+      "sourceArtifactIds",
+      "sourceFileIds",
+    ]);
+    expect("configurationExpansion" in parsed).toBe(false);
+    expect("configurationLines" in parsed).toBe(false);
+    expect(parsed).toStrictEqual({
+      project: EXECUTOR_INPUT_NO_CONFIG.project,
+      requirementsBaseline: EXECUTOR_INPUT_NO_CONFIG.requirementsBaseline,
+      evidencePackage: EXECUTOR_INPUT_NO_CONFIG.evidencePackage,
+      requirements: EXECUTOR_INPUT_NO_CONFIG.requirements,
+      evidence: EXECUTOR_INPUT_NO_CONFIG.evidence,
+      requestedBy: EXECUTOR_INPUT_NO_CONFIG.requestedBy,
+      sourceFileIds: EXECUTOR_INPUT_NO_CONFIG.sourceFileIds,
+      sourceArtifactIds: EXECUTOR_INPUT_NO_CONFIG.sourceArtifactIds,
+    });
+  });
+
+  it("never forwards decoy authority, storage, or pricing fields smuggled onto the input object", async () => {
+    const { create, client } = makeClient(
+      textResponse(JSON.stringify(RAW_MODEL_OUTPUT))
+    );
+    const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
       apiKey: "test-api-key",
       client,
     });
@@ -318,8 +419,10 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - request shape
       storagePath: "C:/secret-store/never-send.json",
       internalScratch: "ARBITRARY-CONTENT-VALUE",
       approval: { decision: "approved" },
+      unitPrice: 1234,
+      catalogLookup: { sku: "ATTACKER-SKU-9000" },
       executor: "attacker-executor",
-    } as unknown as RfpCandidateDraftingExecutorInput;
+    } as unknown as RfpComplianceMatrixDraftingExecutorInput;
 
     await executor(decoyInput);
 
@@ -329,13 +432,16 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - request shape
     expect(serialized).not.toContain("attacker");
     expect(serialized).not.toContain("secret-store");
     expect(serialized).not.toContain("ARBITRARY-CONTENT-VALUE");
+    expect(serialized).not.toContain("unitPrice");
+    expect(serialized).not.toContain("catalogLookup");
+    expect(serialized).not.toContain("ATTACKER-SKU-9000");
   });
 
   it("builds the executor without calling the client; one create call per invocation afterwards", async () => {
     const { create, client } = makeClient(
       textResponse(JSON.stringify(RAW_MODEL_OUTPUT))
     );
-    const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+    const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
       apiKey: "",
       client,
     });
@@ -348,17 +454,19 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - request shape
 
   it("throws a fixed setup error when no client is injected and apiKey is blank", () => {
     expect(() =>
-      createAnthropicRfpRequirementCandidateDraftingExecutor({ apiKey: "   " })
+      createAnthropicRfpComplianceMatrixDraftingExecutor({ apiKey: "   " })
     ).toThrow(
       "A nonblank apiKey is required when no drafting client is injected."
     );
   });
 });
 
-describe("createAnthropicRfpRequirementCandidateDraftingExecutor - response handling", () => {
+describe("createAnthropicRfpComplianceMatrixDraftingExecutor - response handling", () => {
   it("returns the parsed JSON verbatim as unknown, leaving sanitization to the drafting contract", async () => {
-    const { client } = makeClient(textResponse(JSON.stringify(RAW_MODEL_OUTPUT)));
-    const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+    const { client } = makeClient(
+      textResponse(JSON.stringify(RAW_MODEL_OUTPUT))
+    );
+    const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
       apiKey: "test-api-key",
       client,
     });
@@ -379,7 +487,7 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - response hand
         { type: "text", text: serialized.slice(splitAt) },
       ],
     });
-    const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+    const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
       apiKey: "test-api-key",
       client,
     });
@@ -389,7 +497,9 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - response hand
     expect(output).toStrictEqual(RAW_MODEL_OUTPUT);
   });
 
-  const NO_TEXT_CASES: Array<[string, AnthropicRfpDraftingMessageResponse]> = [
+  const NO_TEXT_CASES: Array<
+    [string, AnthropicRfpComplianceMatrixDraftingMessageResponse]
+  > = [
     ["an empty content array", { content: [] }],
     ["only non-text content entries", { content: [{ type: "thinking" }] }],
     ["only whitespace text", textResponse("   ", "\n\t")],
@@ -399,7 +509,7 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - response hand
     "rejects %s with the fixed generic no-text error",
     async (_label, response) => {
       const { client } = makeClient(response);
-      const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+      const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
         apiKey: "test-api-key",
         client,
       });
@@ -418,7 +528,7 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - response hand
     const { client } = makeClient(
       textResponse("SECRET-MODEL-PROSE: here is your answer, not JSON {")
     );
-    const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+    const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
       apiKey: "test-api-key",
       client,
     });
@@ -445,7 +555,7 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - response hand
     "maps %s to the fixed generic request error with no provider detail",
     async (_label, reason) => {
       const { client } = makeRejectingClient(reason);
-      const executor = createAnthropicRfpRequirementCandidateDraftingExecutor({
+      const executor = createAnthropicRfpComplianceMatrixDraftingExecutor({
         apiKey: "test-api-key",
         client,
       });
@@ -464,8 +574,12 @@ describe("createAnthropicRfpRequirementCandidateDraftingExecutor - response hand
   );
 });
 
-describe("Anthropic drafting adapter module purity (static source check)", () => {
+describe("Anthropic compliance-matrix drafting adapter module purity (static source check)", () => {
   const ADAPTER_PATH = join(
+    process.cwd(),
+    "src/lib/projects/project-rfp-compliance-matrix-drafting-anthropic.ts"
+  );
+  const REQUIREMENTS_ADAPTER_PATH = join(
     process.cwd(),
     "src/lib/projects/project-rfp-requirements-candidate-drafting-anthropic.ts"
   );
@@ -473,13 +587,9 @@ describe("Anthropic drafting adapter module purity (static source check)", () =>
     process.cwd(),
     "src/lib/projects/project-rfp-extraction-delta-candidate-drafting-anthropic.ts"
   );
-  const COMPLIANCE_MATRIX_ADAPTER_PATH = join(
-    process.cwd(),
-    "src/lib/projects/project-rfp-compliance-matrix-drafting-anthropic.ts"
-  );
   const TEST_PATH = join(
     process.cwd(),
-    "tests/lib/projects/project-rfp-requirements-candidate-drafting-anthropic.test.ts"
+    "tests/lib/projects/project-rfp-compliance-matrix-drafting-anthropic.test.ts"
   );
   const adapterSource = readFileSync(ADAPTER_PATH, "utf8");
 
@@ -496,20 +606,22 @@ describe("Anthropic drafting adapter module purity (static source check)", () =>
     return files;
   }
 
-  it("imports exactly the Anthropic SDK and the drafting contract type, in that order", () => {
+  it("imports exactly the Anthropic SDK and the compliance-matrix drafting contract type, in that order", () => {
     const froms = Array.from(
       adapterSource.matchAll(/from\s+"([^"]+)"/g),
       (m) => m[1]
     );
     expect(froms).toEqual([
       "@anthropic-ai/sdk",
-      "@/lib/projects/project-rfp-requirements-candidate-drafting",
+      "@/lib/projects/project-rfp-compliance-matrix-drafting",
     ]);
     const importLines = adapterSource
       .split(/\r?\n/)
       .filter((line) => /^\s*import\b/.test(line));
     expect(importLines).toHaveLength(2);
-    expect(importLines[0]).toMatch(/^import Anthropic from "@anthropic-ai\/sdk";$/);
+    expect(importLines[0]).toMatch(
+      /^import Anthropic from "@anthropic-ai\/sdk";$/
+    );
     expect(importLines[1]).toMatch(/^import type \{/);
   });
 
@@ -527,8 +639,8 @@ describe("Anthropic drafting adapter module purity (static source check)", () =>
     }
     expect(offenders.sort()).toEqual(
       [
+        REQUIREMENTS_ADAPTER_PATH,
         EXTRACTION_DELTA_ADAPTER_PATH,
-        COMPLIANCE_MATRIX_ADAPTER_PATH,
         ADAPTER_PATH,
       ].sort()
     );
@@ -559,6 +671,12 @@ describe("Anthropic drafting adapter module purity (static source check)", () =>
       'from "@/lib/projects/config-expansion',
       'from "@/lib/projects/files',
       'from "@/lib/projects/project-rfp-evidence-persistence',
+      // The compliance-matrix generation, draft, and payload modules (exact
+      // modules, closing quote: the drafting-contract import legitimately
+      // shares the project-rfp-compliance-matrix prefix).
+      'from "@/lib/projects/project-rfp-compliance-matrix-generation',
+      'from "@/lib/projects/project-rfp-compliance-matrix-draft"',
+      'from "@/lib/projects/project-rfp-compliance-matrix"',
       'from "@/coordinator',
       'from "@/engines',
       'from "@/components',

@@ -1,16 +1,68 @@
 /**
- * Configured RFP compliance-matrix drafting executor factory (Stage 4).
+ * Configured RFP compliance-matrix drafting executor factory (Stage 5).
+ * Source of truth: C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md
  *
- * No live provider adapter is approved for compliance-matrix drafting yet. This
- * factory is the future wiring seam, but today it returns null unconditionally so
- * routes can expose a controlled 503 without loading approved evidence bodies or
- * creating a compliance_matrix artifact. It imports only the provider-neutral
- * executor type and constructs no AI/client/SDK.
+ * The single wiring seam between the provider-neutral compliance-matrix
+ * drafting contract (src/lib/projects/project-rfp-compliance-matrix-drafting.ts)
+ * and the approved live Anthropic drafting adapter
+ * (src/lib/projects/project-rfp-compliance-matrix-drafting-anthropic.ts).
+ * Configuration is read HERE and nowhere else, through exactly three
+ * environment variables:
+ *
+ * - ANTHROPIC_API_KEY enables drafting when nonblank. When missing or blank
+ *   this factory returns null and constructs nothing; the generate route maps
+ *   null to 503 rfp_compliance_matrix_drafting_unavailable, and no approved
+ *   evidence is loaded while drafting is unconfigured.
+ * - BOMATIC_RFP_COMPLIANCE_MATRIX_DRAFTING_MODEL optionally overrides the
+ *   adapter's default model when nonblank.
+ * - BOMATIC_RFP_COMPLIANCE_MATRIX_DRAFTING_MAX_TOKENS optionally overrides the
+ *   adapter's default max output tokens, applied only when it parses to a
+ *   positive finite integer; anything else is ignored.
+ *
+ * The factory only constructs the executor - it never invokes it, reads no
+ * evidence, DB, store, file, route, or raw document, and performs no network
+ * call itself. Executor output stays untrusted either way: the drafting
+ * contract validates and sanitizes whatever any executor resolves with, the
+ * drafted rows are an unapproved needs_review draft only, and a human approval
+ * is still required before any downstream stage may rely on it.
  */
 import type {
   RfpComplianceMatrixDraftingExecutor,
 } from "@/lib/projects/project-rfp-compliance-matrix-drafting";
+import {
+  createAnthropicRfpComplianceMatrixDraftingExecutor,
+} from "@/lib/projects/project-rfp-compliance-matrix-drafting-anthropic";
 
+/** The optional max-tokens override; positive finite integers only. */
+function parseMaxTokensOverride(raw: string | undefined): number | undefined {
+  if (typeof raw !== "string" || raw.trim() === "") return undefined;
+  const parsed = Number(raw.trim());
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * The configured compliance-matrix drafting executor, or null while
+ * ANTHROPIC_API_KEY is missing or blank. Callers must treat null as
+ * "compliance matrix drafting unavailable" and skip the generation
+ * orchestrator entirely. The returned executor is never called here.
+ */
 export function getConfiguredRfpComplianceMatrixDraftingExecutor(): RfpComplianceMatrixDraftingExecutor | null {
-  return null;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (typeof apiKey !== "string" || apiKey.trim() === "") return null;
+
+  const modelOverride =
+    process.env.BOMATIC_RFP_COMPLIANCE_MATRIX_DRAFTING_MODEL;
+  const maxTokensOverride = parseMaxTokensOverride(
+    process.env.BOMATIC_RFP_COMPLIANCE_MATRIX_DRAFTING_MAX_TOKENS
+  );
+
+  return createAnthropicRfpComplianceMatrixDraftingExecutor({
+    apiKey: apiKey.trim(),
+    ...(typeof modelOverride === "string" && modelOverride.trim() !== ""
+      ? { model: modelOverride.trim() }
+      : {}),
+    ...(maxTokensOverride !== undefined
+      ? { maxTokens: maxTokensOverride }
+      : {}),
+  });
 }
