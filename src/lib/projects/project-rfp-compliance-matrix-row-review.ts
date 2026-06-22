@@ -756,10 +756,13 @@ function appendEvent(
 }
 
 /**
- * Apply edit fields onto a fresh row copy and append one history event:
- * status_changed when complianceStatus is edited; owner_review_requested when
- * requiresOwnerReview transitions to true without a complianceStatus edit;
- * otherwise edited. Only whitelisted fields change; rowReviewStatus is untouched.
+ * Apply edit fields onto a fresh row copy, mark the row reviewed (the engineer
+ * has reviewed it), and append one history event: status_changed when
+ * complianceStatus is edited; owner_review_requested when requiresOwnerReview
+ * transitions to true without a complianceStatus edit; otherwise edited. Editing
+ * complianceStatus always moves the row off not_applicable (the editable
+ * whitelist excludes not_applicable), so any stale notApplicableReason is
+ * cleared. Only whitelisted fields change.
  */
 function applyEdit(
   base: RfpComplianceMatrixRow,
@@ -774,6 +777,7 @@ function applyEdit(
   if (edits.notes !== undefined) next.notes = edits.notes;
   if (edits.complianceStatus !== undefined) {
     next.complianceStatus = edits.complianceStatus;
+    delete next.notApplicableReason;
   }
   if (edits.sectionReference !== undefined) {
     next.sectionReference = edits.sectionReference;
@@ -788,6 +792,7 @@ function applyEdit(
   if (edits.requiresOwnerReview !== undefined) {
     next.requiresOwnerReview = edits.requiresOwnerReview;
   }
+  next.rowReviewStatus = "reviewed";
   const action: RfpComplianceReviewAction =
     edits.complianceStatus !== undefined
       ? "status_changed"

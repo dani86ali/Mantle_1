@@ -609,7 +609,7 @@ describe("reviewRfpComplianceMatrixRows - row review persistence", () => {
       notes: "Reviewed by the lead engineer.",
       sectionReference: "RFP-SECTION-3.2.1",
     });
-    expect(editedRow).not.toHaveProperty("rowReviewStatus");
+    expect(editedRow.rowReviewStatus).toBe("reviewed");
     expect(editedRow).not.toHaveProperty("removedReason");
     expect(editedRow.reviewHistory).toHaveLength(1);
     expect(editedRow.reviewHistory?.at(-1)).toEqual({
@@ -768,6 +768,105 @@ describe("reviewRfpComplianceMatrixRows - row review persistence", () => {
     expect(payload.reviewedDecisionCount).toBe(1);
     expect(payload.activeRowCount).toBe(3);
     expect(payload.removedRowCount).toBe(0);
+  });
+
+  it("stamps rowReviewStatus reviewed and appends an edited event on a response-only edit", async () => {
+    const result = await review({
+      decisions: [
+        {
+          rowId: "RFP-COMP-001",
+          action: "edit",
+          editedFields: { response: "  Refined response only.  " },
+        },
+      ],
+    });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    const call = mockCreateArtifact.mock.calls[0][0] as CreateArtifactCall;
+    const payload = call.payload as RfpComplianceMatrixReviewedPayload;
+    const editedRow = payload.rows[0];
+    expect(editedRow.id).toBe("RFP-COMP-001");
+    expect(editedRow.response).toBe("Refined response only.");
+    expect(editedRow.rowReviewStatus).toBe("reviewed");
+    expect(editedRow.reviewHistory).toHaveLength(1);
+    expect(editedRow.reviewHistory?.at(-1)).toEqual({
+      action: "edited",
+      at: REVIEWED_AT.toISOString(),
+      by: REVIEWED_BY,
+    });
+  });
+
+  it("clears a stale notApplicableReason when an edit moves a not_applicable row back into scope", async () => {
+    mockGetArtifact.mockResolvedValue(
+      makeComplianceMatrixArtifact({
+        payload: makePayload({
+          rows: [
+            makeRow("RFP-COMP-001", "RFP-REQ-001", {
+              complianceStatus: "not_applicable",
+              rowReviewStatus: "reviewed",
+              notApplicableReason: "Marked out of scope earlier.",
+            }),
+          ],
+        }),
+      })
+    );
+
+    const result = await review({
+      decisions: [
+        {
+          rowId: "RFP-COMP-001",
+          action: "edit",
+          editedFields: { complianceStatus: "compliant" },
+        },
+      ],
+    });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    const call = mockCreateArtifact.mock.calls[0][0] as CreateArtifactCall;
+    const payload = call.payload as RfpComplianceMatrixReviewedPayload;
+    const editedRow = payload.rows[0];
+    expect(editedRow.complianceStatus).toBe("compliant");
+    expect(editedRow.rowReviewStatus).toBe("reviewed");
+    expect(editedRow).not.toHaveProperty("notApplicableReason");
+    expect(editedRow.reviewHistory?.at(-1)).toEqual({
+      action: "status_changed",
+      at: REVIEWED_AT.toISOString(),
+      by: REVIEWED_BY,
+    });
+  });
+
+  it("still blocks an edit decision against an already-removed row", async () => {
+    mockGetArtifact.mockResolvedValue(
+      makeComplianceMatrixArtifact({
+        payload: makePayload({
+          rows: [
+            makeRow("RFP-COMP-001", "RFP-REQ-001", {
+              complianceStatus: "not_applicable",
+              rowReviewStatus: "removed",
+              removedReason: "Removed earlier.",
+            }),
+          ],
+        }),
+      })
+    );
+
+    const result = await review({
+      decisions: [
+        {
+          rowId: "RFP-COMP-001",
+          action: "edit",
+          editedFields: { response: "Trying to edit a removed row." },
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      status: "row_already_removed",
+      rowIds: ["RFP-COMP-001"],
+    });
+    expect(mockCreateArtifact).not.toHaveBeenCalled();
   });
 });
 
