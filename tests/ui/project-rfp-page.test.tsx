@@ -1300,6 +1300,136 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(primaryText).not.toContain("REMOVED-HISTORY-NOTE-CANARY");
   });
 
+  it("posts a response-only row edit to the rows/review route and reloads list and detail for the returned new matrix version", async () => {
+    const V2_ID = "art-cm-2";
+    const V2_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${V2_ID}/compliance-matrix`;
+    const ROWS_REVIEW_URL = `${COMPLIANCE_MATRIX_DETAIL_URL}/rows/review`;
+    const ARTIFACT_REVIEW_URL = `${COMPLIANCE_MATRIX_DETAIL_URL}/review`;
+    const v2Detail = complianceMatrixStage5DetailResponse();
+    v2Detail.artifact = artifact(V2_ID, "compliance_matrix", "needs_review", 2, [
+      BASELINE_ARTIFACT_ID,
+      EVIDENCE_PACKAGE_APPROVED_ID,
+      CONFIG_EXPANSION_ARTIFACT_ID,
+    ]);
+
+    const calls = stubFetch((url, init) => {
+      if (url === ROWS_REVIEW_URL && init?.method === "POST") {
+        return jsonResponse(
+          {
+            artifact: artifact(V2_ID, "compliance_matrix", "needs_review", 2),
+            payloadSummary: {},
+          },
+          200
+        );
+      }
+      if (url === V2_DETAIL_URL) return jsonResponse(v2Detail);
+      return stage5ComplianceFetch(complianceMatrixStage5DetailResponse())(url);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("review-drawer");
+    await screen.findByTestId("cm-detail-row");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cm-row-response-edit-enable-CM-010"));
+    });
+    fireEvent.change(screen.getByTestId("cm-row-response-edit-value-CM-010"), {
+      target: { value: "Updated response." },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cm-row-response-edit-submit"));
+    });
+
+    await screen.findByTestId("cm-row-response-edit-success");
+
+    const post = calls.find(
+      (call) => call.url === ROWS_REVIEW_URL && call.init?.method === "POST"
+    );
+    expect(post).toBeDefined();
+    expect(JSON.parse(String(post?.init?.body))).toEqual({
+      decisions: [
+        {
+          rowId: "CM-010",
+          action: "edit",
+          editedFields: { response: "Updated response." },
+        },
+      ],
+    });
+    // The response edit never reaches the artifact-level review route.
+    expect(
+      calls.some(
+        (call) =>
+          call.url === ARTIFACT_REVIEW_URL && call.init?.method === "POST"
+      )
+    ).toBe(false);
+    // The persisted list and the detail for the returned v2 id are reloaded.
+    expect(
+      calls.filter((call) => call.url === COMPLIANCE_MATRIX_LIST_URL).length
+    ).toBeGreaterThanOrEqual(2);
+    expect(calls.some((call) => call.url === V2_DETAIL_URL)).toBe(true);
+  });
+
+  it("keeps the row response edit submit disabled until an enabled row holds a changed nonblank response", async () => {
+    stubFetch(stage5ComplianceFetch(complianceMatrixStage5DetailResponse()));
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("cm-detail-row");
+
+    expect(screen.getByTestId("cm-row-response-edit-submit")).toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cm-row-response-edit-enable-CM-010"));
+    });
+    fireEvent.change(screen.getByTestId("cm-row-response-edit-value-CM-010"), {
+      target: { value: "   " },
+    });
+    expect(screen.getByTestId("cm-row-response-edit-submit")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("cm-row-response-edit-value-CM-010"), {
+      target: { value: "Reworded compliant response." },
+    });
+    expect(
+      screen.getByTestId("cm-row-response-edit-submit")
+    ).not.toBeDisabled();
+  });
+
+  it("does not render row response edit controls or submit for an approved compliance matrix", async () => {
+    const approvedDetail = complianceMatrixStage5DetailResponse();
+    approvedDetail.artifact = artifact(
+      COMPLIANCE_MATRIX_ARTIFACT_ID,
+      "compliance_matrix",
+      "approved",
+      1,
+      [BASELINE_ARTIFACT_ID, EVIDENCE_PACKAGE_APPROVED_ID, CONFIG_EXPANSION_ARTIFACT_ID]
+    );
+    stubFetch(stage5ComplianceFetch(approvedDetail));
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("cm-detail-row");
+
+    // Stage 5 metadata still renders for the approved matrix.
+    expect(screen.getByTestId("cm-detail-section-reference")).toHaveTextContent(
+      "SEC-REF-3.2.1"
+    );
+    // No engineer row response edit surface on an approved matrix.
+    expect(
+      screen.queryByTestId("cm-row-response-edit-enable-CM-010")
+    ).toBeNull();
+    expect(screen.queryByTestId("cm-row-response-edit-submit")).toBeNull();
+  });
+
   it("auto-generates requirements from the latest approved evidence package without a primary selection", async () => {
     const calls = stubFetch((url) => {
       if (url === EVIDENCE_PACKAGE_LIST_URL) {
@@ -2090,5 +2220,9 @@ describe("ProjectRfpEvidencePage static guards", () => {
     expect(source).toContain("requirementsBaselineArtifactId");
     expect(source).not.toContain("evidenceIds");
     expect(source).not.toContain("rawPdf");
+  });
+
+  it("posts engineer row response edits to the compliance-matrix rows/review route", () => {
+    expect(source).toContain("/compliance-matrix/rows/review");
   });
 });

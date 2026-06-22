@@ -155,6 +155,25 @@ interface ComplianceMatrixReviewResponse {
   artifact?: RfpComplianceMatrixInspectionArtifactSummary;
 }
 
+/**
+ * Fields the page reads from the success response of
+ * POST .../compliance-matrix/rows/review. The returned artifact id may be a new
+ * compliance_matrix version, so the page reloads detail against it.
+ */
+interface ComplianceMatrixRowReviewResponse {
+  artifact?: RfpComplianceMatrixInspectionArtifactSummary;
+}
+
+/**
+ * One active row's in-progress response-edit draft, keyed by row id. The
+ * response seeds from the row's current response so an unchanged value stays out
+ * of the submitted decisions.
+ */
+interface ComplianceRowResponseEditDraft {
+  enabled: boolean;
+  response: string;
+}
+
 type ComplianceMatrixReviewDecision = "approved" | "rejected";
 type ComplianceMatrixRow = RfpComplianceMatrixInspectionMatrix["rows"][number];
 type ComplianceMatrixEvidenceReference =
@@ -317,6 +336,8 @@ const COMPLIANCE_DETAIL_ERROR = "Unable to load compliance matrix detail.";
 const COMPLIANCE_APPROVE_SUCCESS = "Compliance matrix approved.";
 const COMPLIANCE_REJECT_SUCCESS = "Compliance matrix rejected.";
 const COMPLIANCE_REVIEW_ERROR = "Unable to review compliance matrix.";
+const COMPLIANCE_ROW_EDIT_SUCCESS = "Compliance row responses updated.";
+const COMPLIANCE_ROW_EDIT_ERROR = "Unable to update compliance row responses.";
 
 /** Exact UI copy required for the extraction-delta failure states. */
 const DELTA_LIST_ERROR = "Unable to load extraction deltas.";
@@ -1585,11 +1606,21 @@ function ComplianceMatrixRowView({
   row,
   evidenceContextById,
   compiledLabelById,
+  responseEdit,
 }: {
   row: ComplianceMatrixRow;
   evidenceContextById: Map<string, EvidenceReferenceContext>;
   compiledLabelById: Map<string, string>;
+  // Present only for active (non-removed) rows while the matrix needs review.
+  responseEdit?: {
+    draft: ComplianceRowResponseEditDraft | undefined;
+    onToggle: (rowId: string, enabled: boolean) => void;
+    onChange: (rowId: string, value: string) => void;
+  };
 }) {
+  const showResponseEdit =
+    responseEdit !== undefined && row.rowReviewStatus !== "removed";
+  const responseEditEnabled = responseEdit?.draft?.enabled ?? false;
   return (
     <li
       data-testid="cm-detail-row"
@@ -1618,6 +1649,28 @@ function ComplianceMatrixRowView({
       >
         {row.response}
       </p>
+      {showResponseEdit && responseEdit !== undefined && (
+        <div className="mt-2 space-y-1">
+          <label className="flex items-center gap-1 text-xs text-text-secondary">
+            <input
+              type="checkbox"
+              data-testid={`cm-row-response-edit-enable-${row.id}`}
+              checked={responseEditEnabled}
+              onChange={(e) => responseEdit.onToggle(row.id, e.target.checked)}
+            />
+            Edit response
+          </label>
+          {responseEditEnabled && (
+            <textarea
+              data-testid={`cm-row-response-edit-value-${row.id}`}
+              value={responseEdit.draft?.response ?? ""}
+              onChange={(e) => responseEdit.onChange(row.id, e.target.value)}
+              rows={3}
+              className={FIELD}
+            />
+          )}
+        </div>
+      )}
       {row.rationale !== undefined && (
         <p className="mt-1 text-xs text-text-secondary">
           Rationale: {row.rationale}
@@ -2008,6 +2061,17 @@ export default function ProjectRfpEvidencePage() {
     string | null
   >(null);
   const [complianceReviewSuccess, setComplianceReviewSuccess] = useState<
+    string | null
+  >(null);
+  const [complianceRowResponseEdits, setComplianceRowResponseEdits] = useState<
+    Record<string, ComplianceRowResponseEditDraft>
+  >({});
+  const [complianceRowEditPending, setComplianceRowEditPending] =
+    useState(false);
+  const [complianceRowEditError, setComplianceRowEditError] = useState<
+    string | null
+  >(null);
+  const [complianceRowEditSuccess, setComplianceRowEditSuccess] = useState<
     string | null
   >(null);
 
@@ -2456,6 +2520,9 @@ export default function ProjectRfpEvidencePage() {
       setComplianceReviewNote("");
       setComplianceReviewError(null);
       setComplianceReviewSuccess(null);
+      setComplianceRowResponseEdits({});
+      setComplianceRowEditError(null);
+      setComplianceRowEditSuccess(null);
       setComplianceDetailLoading(true);
       try {
         const res = await fetch(
@@ -2474,6 +2541,13 @@ export default function ProjectRfpEvidencePage() {
           return;
         }
         setComplianceDetail({ artifact: body.artifact, matrix: body.matrix });
+        // Seed one unchecked response-edit draft per row from its persisted
+        // response so an untouched field never contributes a decision.
+        const seededEdits: Record<string, ComplianceRowResponseEditDraft> = {};
+        for (const row of body.matrix.rows) {
+          seededEdits[row.id] = { enabled: false, response: row.response };
+        }
+        setComplianceRowResponseEdits(seededEdits);
       } catch {
         setComplianceDetailError(COMPLIANCE_DETAIL_ERROR);
       } finally {
@@ -2593,6 +2667,87 @@ export default function ProjectRfpEvidencePage() {
       loadComplianceList,
     ]
   );
+
+  const setComplianceRowEditEnabled = useCallback(
+    (rowId: string, enabled: boolean): void => {
+      setComplianceRowResponseEdits((prev) => ({
+        ...prev,
+        [rowId]: { enabled, response: prev[rowId]?.response ?? "" },
+      }));
+    },
+    []
+  );
+
+  const setComplianceRowEditResponse = useCallback(
+    (rowId: string, value: string): void => {
+      setComplianceRowResponseEdits((prev) => ({
+        ...prev,
+        [rowId]: { enabled: prev[rowId]?.enabled ?? false, response: value },
+      }));
+    },
+    []
+  );
+
+  // Engineer response-only row edit: post one edit decision per active row whose
+  // enabled draft holds a changed nonblank response. The body carries only
+  // { rowId, action: "edit", editedFields: { response } } - never status, notes,
+  // removal, approval, or any provider/pricing/config authority. The route may
+  // return a new compliance_matrix version, so on success the persisted list and
+  // detail are reloaded (no local row mutation) and the drawer retargets the new
+  // artifact id.
+  const submitComplianceRowResponseEdits = useCallback(async (): Promise<void> => {
+    if (complianceDetail === null || complianceRowEditPending) return;
+    const decisions = complianceDetail.matrix.rows
+      .filter((row) => row.rowReviewStatus !== "removed")
+      .flatMap((row) => {
+        const draft = complianceRowResponseEdits[row.id];
+        if (draft === undefined || !draft.enabled) return [];
+        const response = draft.response.trim();
+        if (response === "" || response === row.response.trim()) return [];
+        return [{ rowId: row.id, action: "edit" as const, editedFields: { response } }];
+      });
+    if (decisions.length === 0) return;
+    const currentArtifactId = complianceDetail.artifact.id;
+    setComplianceRowEditPending(true);
+    setComplianceRowEditError(null);
+    setComplianceRowEditSuccess(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${id}/rfp/artifacts/${currentArtifactId}/compliance-matrix/rows/review`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decisions }),
+        }
+      );
+      const body = (await res
+        .json()
+        .catch(() => null)) as ComplianceMatrixRowReviewResponse | null;
+      if (!res.ok) {
+        setComplianceRowEditError(COMPLIANCE_ROW_EDIT_ERROR);
+        return;
+      }
+      setComplianceRowResponseEdits({});
+      const nextArtifactId = body?.artifact?.id ?? currentArtifactId;
+      if (nextArtifactId !== currentArtifactId) {
+        setDrawer({ kind: "compliance", activeId: nextArtifactId });
+      }
+      void loadComplianceList();
+      await loadComplianceDetail(nextArtifactId);
+      setComplianceRowEditSuccess(COMPLIANCE_ROW_EDIT_SUCCESS);
+    } catch {
+      setComplianceRowEditError(COMPLIANCE_ROW_EDIT_ERROR);
+    } finally {
+      setComplianceRowEditPending(false);
+    }
+  }, [
+    complianceDetail,
+    complianceRowEditPending,
+    complianceRowResponseEdits,
+    id,
+    loadComplianceDetail,
+    loadComplianceList,
+  ]);
 
   const submitDeltaReview = useCallback(async (): Promise<void> => {
     if (deltaDetail === null || deltaReviewPending) return;
@@ -3521,6 +3676,32 @@ export default function ProjectRfpEvidencePage() {
 
   function renderComplianceDrawerContent(): ReactNode {
     if (complianceDetail === null) return null;
+    const rowEditActive = complianceDetail.artifact.status === "needs_review";
+    const responseEditProp = (row: ComplianceMatrixRow) =>
+      rowEditActive
+        ? {
+            draft: complianceRowResponseEdits[row.id],
+            onToggle: setComplianceRowEditEnabled,
+            onChange: setComplianceRowEditResponse,
+          }
+        : undefined;
+    const editableRows = complianceDetail.matrix.rows.filter(
+      (row) => row.rowReviewStatus !== "removed"
+    );
+    const rowEditHasChangedNonblank = editableRows.some((row) => {
+      const draft = complianceRowResponseEdits[row.id];
+      if (draft === undefined || !draft.enabled) return false;
+      const response = draft.response.trim();
+      return response !== "" && response !== row.response.trim();
+    });
+    const rowEditHasBlankEnabled = editableRows.some((row) => {
+      const draft = complianceRowResponseEdits[row.id];
+      return draft?.enabled === true && draft.response.trim() === "";
+    });
+    const rowEditSubmitDisabled =
+      complianceRowEditPending ||
+      !rowEditHasChangedNonblank ||
+      rowEditHasBlankEnabled;
     return (
       <div data-testid="cm-detail-panel" className="space-y-3">
         <div className={SUBTLE_CARD}>
@@ -3563,6 +3744,7 @@ export default function ProjectRfpEvidencePage() {
               row={row}
               evidenceContextById={evidenceContextById}
               compiledLabelById={compiledReferenceLabelById}
+              responseEdit={responseEditProp(row)}
             />
           ))}
         </ol>
@@ -3578,10 +3760,39 @@ export default function ProjectRfpEvidencePage() {
                   row={row}
                   evidenceContextById={evidenceContextById}
                   compiledLabelById={compiledReferenceLabelById}
+                  responseEdit={responseEditProp(row)}
                 />
               ))}
             </ol>
           </details>
+        )}
+        {(complianceRowEditError || complianceRowEditSuccess || rowEditActive) && (
+          <div className="space-y-2">
+            {complianceRowEditError && (
+              <div data-testid="cm-row-response-edit-error" className={ERROR_BOX}>
+                {complianceRowEditError}
+              </div>
+            )}
+            {complianceRowEditSuccess && (
+              <p
+                data-testid="cm-row-response-edit-success"
+                className="text-xs text-text-secondary"
+              >
+                {complianceRowEditSuccess}
+              </p>
+            )}
+            {rowEditActive && (
+              <button
+                type="button"
+                data-testid="cm-row-response-edit-submit"
+                disabled={rowEditSubmitDisabled}
+                onClick={() => void submitComplianceRowResponseEdits()}
+                className={ACTION_BTN}
+              >
+                Save response edits
+              </button>
+            )}
+          </div>
         )}
         {isReviewableStatus(complianceDetail.artifact.status) ? (
           <div className="sticky bottom-0 border-t border-[var(--border)] bg-bg-primary pt-3">
