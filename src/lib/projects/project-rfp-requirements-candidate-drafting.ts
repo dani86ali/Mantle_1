@@ -118,6 +118,18 @@ const RFP_REQUIREMENT_CATEGORY_FLAGS: Record<RfpRequirementCategory, true> = {
   support: true,
   legal: true,
   other: true,
+  boq_product: true,
+  installation_configuration_testing: true,
+  documentation: true,
+  training_totk: true,
+  schedule_duration: true,
+  warranty_support: true,
+  permits_site_access_safety: true,
+  legal_regulatory_local_content: true,
+  insurance: true,
+  commercial_contractual: true,
+  vendor_qualification_submittals: true,
+  security_cybersecurity: true,
 };
 const RFP_REQUIREMENT_PRIORITY_FLAGS: Record<RfpRequirementPriority, true> = {
   mandatory: true,

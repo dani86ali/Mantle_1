@@ -71,7 +71,12 @@ export type RfpBaselineEvidenceKind =
   | typeof RFP_TEXT_CHUNK_EVIDENCE_KIND
   | typeof RFP_TABLE_EVIDENCE_KIND;
 
-/** Reviewable requirement classification; candidates default to "other". */
+/**
+ * Reviewable requirement classification. The first eight literals are the
+ * original baseline set (candidates default to "other"); the rest are the
+ * Stage 5 RFP obligation categories. This array is the single source of truth -
+ * every compiler-locked category flag record mirrors exactly this set.
+ */
 export const RFP_REQUIREMENT_CATEGORIES = [
   "technical",
   "commercial",
@@ -81,6 +86,18 @@ export const RFP_REQUIREMENT_CATEGORIES = [
   "support",
   "legal",
   "other",
+  "boq_product",
+  "installation_configuration_testing",
+  "documentation",
+  "training_totk",
+  "schedule_duration",
+  "warranty_support",
+  "permits_site_access_safety",
+  "legal_regulatory_local_content",
+  "insurance",
+  "commercial_contractual",
+  "vendor_qualification_submittals",
+  "security_cybersecurity",
 ] as const;
 export type RfpRequirementCategory =
   (typeof RFP_REQUIREMENT_CATEGORIES)[number];

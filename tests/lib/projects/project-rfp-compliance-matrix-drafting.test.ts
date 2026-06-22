@@ -1432,6 +1432,59 @@ describe("success", () => {
       [TENANT, PROJECT, CONFIG_ARTIFACT],
     ]);
   });
+
+  it("snapshots new baseline category literals into needs_review rows", async () => {
+    artifactById.set(
+      BASELINE_ARTIFACT,
+      makeBaselineArtifact({
+        payload: makeBaselinePayload({
+          requirements: [
+            {
+              id: REQ_1,
+              text: REQ_1_TEXT,
+              category: "boq_product",
+              priority: "mandatory",
+              evidenceReferences: [baselineTableRef(EV_TABLE)],
+            },
+            {
+              id: REQ_2,
+              text: REQ_2_TEXT,
+              category: "warranty_support",
+              priority: "preferred",
+              evidenceReferences: [baselineTextRef(EV_TEXT_B, 2)],
+            },
+            {
+              id: REQ_3,
+              text: REQ_3_TEXT,
+              category: "training_totk",
+              priority: "optional",
+              evidenceReferences: [baselineTextRef(EV_TEXT, 1)],
+            },
+          ],
+        }),
+      })
+    );
+    // The executor even tries to force a non-review status; the contract ignores it.
+    const executor = vi.fn(async () => ({
+      rows: [
+        { requirementId: REQ_1, response: "Compliant.", complianceStatus: "compliant" },
+        { requirementId: REQ_2, response: "Reviewing." },
+        { requirementId: REQ_3, response: "Planned." },
+      ],
+    }));
+
+    const result = await draft({ executor });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(
+      result.rows.map((row) => [row.requirementId, row.category, row.complianceStatus])
+    ).toEqual([
+      [REQ_1, "boq_product", "needs_review"],
+      [REQ_2, "warranty_support", "needs_review"],
+      [REQ_3, "training_totk", "needs_review"],
+    ]);
+  });
 });
 
 describe("store failures bubble unhidden", () => {

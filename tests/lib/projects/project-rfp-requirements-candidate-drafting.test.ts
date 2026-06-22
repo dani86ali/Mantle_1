@@ -1215,6 +1215,44 @@ describe("executor failure and untrusted output", () => {
       }))
     ).toEqual(combos);
   });
+
+  it("accepts each newly added Stage 5 category literal", async () => {
+    const NEW_CATEGORIES = [
+      "boq_product",
+      "installation_configuration_testing",
+      "documentation",
+      "training_totk",
+      "schedule_duration",
+      "warranty_support",
+      "permits_site_access_safety",
+      "legal_regulatory_local_content",
+      "insurance",
+      "commercial_contractual",
+      "vendor_qualification_submittals",
+      "security_cybersecurity",
+    ] as const;
+    // Each new literal must belong to the published baseline category taxonomy.
+    for (const category of NEW_CATEGORIES) {
+      expect(RFP_REQUIREMENT_CATEGORIES as readonly string[]).toContain(category);
+    }
+
+    const executor = vi.fn(async () => ({
+      candidates: NEW_CATEGORIES.map((category, index) => ({
+        text: `Obligation ${index + 1}.`,
+        evidenceIds: [EV_TEXT],
+        category,
+      })),
+    }));
+
+    const result = await draft({ executor });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.candidateCount).toBe(NEW_CATEGORIES.length);
+    expect(result.candidates.map((candidate) => candidate.category)).toEqual([
+      ...NEW_CATEGORIES,
+    ]);
+  });
 });
 
 describe("success", () => {

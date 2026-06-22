@@ -34,6 +34,7 @@ vi.mock("@/lib/db/project-artifact-store", () => ({
 
 import {
   createRfpRequirementsBaselineDraft,
+  RFP_REQUIREMENT_CATEGORIES,
   RFP_REQUIREMENTS_BASELINE_PAYLOAD_KIND,
   type CreateRfpRequirementsBaselineDraftInput,
   type CreateRfpRequirementsBaselineDraftResult,
@@ -761,6 +762,110 @@ describe("success", () => {
     mockCreateArtifact.mockRejectedValue(new Error("artifact insert failed"));
 
     await expect(draft()).rejects.toThrow("artifact insert failed");
+  });
+});
+
+describe("expanded Stage 5 requirement category taxonomy", () => {
+  it("snapshots the expanded category set, preserving the original baseline literals in order", () => {
+    expect(RFP_REQUIREMENT_CATEGORIES).toEqual([
+      "technical",
+      "commercial",
+      "compliance",
+      "delivery",
+      "security",
+      "support",
+      "legal",
+      "other",
+      "boq_product",
+      "installation_configuration_testing",
+      "documentation",
+      "training_totk",
+      "schedule_duration",
+      "warranty_support",
+      "permits_site_access_safety",
+      "legal_regulatory_local_content",
+      "insurance",
+      "commercial_contractual",
+      "vendor_qualification_submittals",
+      "security_cybersecurity",
+    ]);
+  });
+
+  it("creates representative nontechnical obligations using the new category literals", async () => {
+    const candidates: RfpRequirementsBaselineCandidateInput[] = [
+      {
+        text: "Supply every product line listed in the BoQ.",
+        category: "boq_product",
+        priority: "mandatory",
+        evidenceIds: [EV_TABLE],
+      },
+      {
+        text: "Perform on-site installation, configuration, and testing.",
+        category: "installation_configuration_testing",
+        priority: "mandatory",
+        evidenceIds: [EV_TEXT],
+      },
+      {
+        text: "Deliver as-built documentation for the solution.",
+        category: "documentation",
+        priority: "preferred",
+        evidenceIds: [EV_TEXT],
+      },
+      {
+        text: "Run transfer-of-knowledge training for operators.",
+        category: "training_totk",
+        priority: "preferred",
+        evidenceIds: [EV_TEXT_B],
+      },
+      {
+        text: "Provide a three-year warranty and support package.",
+        category: "warranty_support",
+        priority: "mandatory",
+        evidenceIds: [EV_TEXT_B],
+      },
+      {
+        text: "Meet local content and regulatory obligations.",
+        category: "legal_regulatory_local_content",
+        priority: "mandatory",
+        evidenceIds: [EV_TEXT, EV_TABLE],
+      },
+    ];
+
+    const result = await draft({ candidates });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+
+    const call = mockCreateArtifact.mock.calls[0][0];
+    expect(call.status).toBe("needs_review");
+    const storedRequirements = call.payload.requirements as Array<{
+      id: string;
+      category: string;
+      evidenceReferences: unknown[];
+    }>;
+    expect(storedRequirements.map((requirement) => requirement.id)).toEqual([
+      "RFP-REQ-001",
+      "RFP-REQ-002",
+      "RFP-REQ-003",
+      "RFP-REQ-004",
+      "RFP-REQ-005",
+      "RFP-REQ-006",
+    ]);
+    expect(storedRequirements.map((requirement) => requirement.category)).toEqual([
+      "boq_product",
+      "installation_configuration_testing",
+      "documentation",
+      "training_totk",
+      "warranty_support",
+      "legal_regulatory_local_content",
+    ]);
+    // Each obligation still carries at least one locator-only evidence reference.
+    expect(
+      storedRequirements.every(
+        (requirement) => requirement.evidenceReferences.length >= 1
+      )
+    ).toBe(true);
+    expect(result.payloadSummary.requirementCount).toBe(6);
   });
 });
 

@@ -808,6 +808,55 @@ describe("success", () => {
     expect(evidencePackageArtifact).toEqual(evidenceSnapshot);
     expect(configArtifact).toEqual(configSnapshot);
   });
+
+  it("snapshots new baseline category literals into needs_review rows, ignoring row-supplied category", async () => {
+    artifactById.set(
+      BASELINE_ARTIFACT,
+      makeBaselineArtifact({
+        payload: makeBaselinePayload({
+          requirements: [
+            {
+              id: REQ_1,
+              text: "Supply every product line listed in the BoQ.",
+              category: "boq_product",
+              priority: "mandatory",
+              evidenceReferences: [baselineTextRef(EV_TEXT, 1), baselineTableRef(EV_TABLE)],
+            },
+            {
+              id: REQ_2,
+              text: "Provide a three-year warranty and support package.",
+              category: "warranty_support",
+              priority: "preferred",
+              evidenceReferences: [baselineTextRef(EV_TEXT_B, 2)],
+            },
+            {
+              id: REQ_3,
+              text: "Run transfer-of-knowledge training.",
+              category: "training_totk",
+              priority: "optional",
+              evidenceReferences: [],
+            },
+          ],
+        }),
+      })
+    );
+
+    const result = await createRfpComplianceMatrixDraft(draftInput());
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    const payload = mockCreateArtifact.mock.calls[0][0]
+      .payload as RfpComplianceMatrixPayload;
+    expect(
+      payload.rows.map((row) => [row.requirementId, row.category, row.complianceStatus])
+    ).toEqual([
+      [REQ_1, "boq_product", "needs_review"],
+      [REQ_2, "warranty_support", "needs_review"],
+      [REQ_3, "training_totk", "needs_review"],
+    ]);
+    // The supplied rows carried category "other"; the baseline snapshot wins.
+    expect(payload.rows.every((row) => row.category !== "other")).toBe(true);
+  });
 });
 
 describe("store failures bubble", () => {
