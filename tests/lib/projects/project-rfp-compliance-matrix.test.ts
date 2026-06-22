@@ -4,12 +4,18 @@ import { describe, it, expect } from "vitest";
 import {
   RFP_COMPLIANCE_MATRIX_PAYLOAD_KIND,
   RFP_COMPLIANCE_STATUSES,
+  RFP_COMPLIANCE_REVIEW_LANES,
+  RFP_COMPLIANCE_IMPACT_LEVELS,
+  RFP_COMPLIANCE_ROW_REVIEW_STATUSES,
+  RFP_COMPLIANCE_REVIEW_ACTIONS,
   buildRfpComplianceMatrixPayloadSummary,
   copyRfpComplianceMatrixPayload,
   type RfpComplianceMatrixPayload,
   type RfpComplianceMatrixRow,
   type RfpComplianceMatrixEvidenceReference,
   type RfpComplianceMatrixConfigurationReference,
+  type RfpComplianceReviewAction,
+  type RfpComplianceMatrixReviewEvent,
 } from "@/lib/projects/project-rfp-compliance-matrix";
 
 // The two evidence-reference kinds, declared locally exactly like the contract
@@ -110,6 +116,70 @@ function makeRows(): RfpComplianceMatrixRow[] {
   ];
 }
 
+const SECTION_REF = "RFP-SECTION-3.2.1";
+const NA_REASON = "Out-of-scope per clause 4; excluded by the engineer.";
+const REMOVED_REASON = "Duplicate of RFP-COMP-001; removed by the engineer.";
+const REVIEWER = "lead-engineer@stc.example";
+const REVIEW_AT_1 = "2026-06-11T08:00:00.000Z";
+const REVIEW_AT_2 = "2026-06-12T10:15:00.000Z";
+const REVIEW_NOTE = "Tightened the response wording.";
+
+/** Every Stage 5 metadata key - used to assert presence, omission, and lean summaries. */
+const METADATA_KEYS = [
+  "sectionReference",
+  "responseLane",
+  "ownerLane",
+  "hldImpact",
+  "tpImpact",
+  "boqConfigImpact",
+  "requiresOwnerReview",
+  "rowReviewStatus",
+  "notApplicableReason",
+  "removedReason",
+  "reviewHistory",
+] as const;
+
+function reviewEvent(
+  action: RfpComplianceReviewAction,
+  at: string,
+  note?: string
+): RfpComplianceMatrixReviewEvent {
+  const event: RfpComplianceMatrixReviewEvent = { action, at, by: REVIEWER };
+  if (note !== undefined) event.note = note;
+  return event;
+}
+
+/** A row carrying every Stage 5 engineer-owned metadata field. */
+function fullMetadataRow(): RfpComplianceMatrixRow {
+  return {
+    id: "RFP-COMP-010",
+    requirementId: "RFP-REQ-010",
+    requirementText: "Provide redundant core switching with sub-second failover.",
+    category: "technical",
+    priority: "mandatory",
+    complianceStatus: "partially_compliant",
+    response: "Redundant cores offered; failover target under validation.",
+    rationale: "HA pair configured; convergence test pending.",
+    notes: "Owner sign-off requested from the network lead.",
+    evidenceReferences: [textRef("evidence-text-10", 1), tableRef()],
+    configurationReferences: [configRef()],
+    sectionReference: SECTION_REF,
+    responseLane: "technical",
+    ownerLane: "security",
+    hldImpact: "required",
+    tpImpact: "potential",
+    boqConfigImpact: "owner_review_required",
+    requiresOwnerReview: true,
+    rowReviewStatus: "reviewed",
+    notApplicableReason: NA_REASON,
+    removedReason: REMOVED_REASON,
+    reviewHistory: [
+      reviewEvent("edited", REVIEW_AT_1, REVIEW_NOTE),
+      reviewEvent("owner_review_requested", REVIEW_AT_2),
+    ],
+  };
+}
+
 function makePayload(
   overrides: Partial<RfpComplianceMatrixPayload> = {}
 ): RfpComplianceMatrixPayload {
@@ -148,6 +218,48 @@ describe("payload kind and row/status constants", () => {
 
   it("uses the deterministic RFP-COMP-001 row-id convention", () => {
     for (const row of makeRows()) expect(row.id).toMatch(ROW_ID);
+  });
+
+  it("exposes the Stage 5 review lanes in order", () => {
+    expect(RFP_COMPLIANCE_REVIEW_LANES).toEqual([
+      "technical",
+      "commercial",
+      "legal",
+      "project_delivery",
+      "security",
+      "safety",
+      "vendor",
+      "customer",
+      "other",
+    ]);
+  });
+
+  it("exposes the Stage 5 impact levels in order", () => {
+    expect(RFP_COMPLIANCE_IMPACT_LEVELS).toEqual([
+      "none",
+      "potential",
+      "required",
+      "owner_review_required",
+    ]);
+  });
+
+  it("exposes the per-row review statuses in order", () => {
+    expect(RFP_COMPLIANCE_ROW_REVIEW_STATUSES).toEqual([
+      "pending",
+      "reviewed",
+      "removed",
+    ]);
+  });
+
+  it("exposes the engineer review actions in order", () => {
+    expect(RFP_COMPLIANCE_REVIEW_ACTIONS).toEqual([
+      "edited",
+      "status_changed",
+      "marked_not_applicable",
+      "removed",
+      "restored",
+      "owner_review_requested",
+    ]);
   });
 });
 
@@ -422,6 +534,155 @@ describe("locator-only purity - no body, authority, or pricing fields are carrie
   });
 });
 
+describe("Stage 5 engineer-owned row metadata", () => {
+  it("omits every absent metadata key on minimal rows", () => {
+    const copy = copyRfpComplianceMatrixPayload(makePayload());
+
+    for (const row of copy.rows) {
+      for (const key of METADATA_KEYS) expect(row).not.toHaveProperty(key);
+    }
+  });
+
+  it("round-trips a row populated with every metadata field", () => {
+    const payload = makePayload({ rows: [fullMetadataRow()] });
+    const copy = copyRfpComplianceMatrixPayload(payload);
+
+    expect(copy.rows[0]).toEqual(fullMetadataRow());
+    expect(JSON.parse(JSON.stringify(copy))).toEqual(copy);
+    for (const key of METADATA_KEYS) expect(copy.rows[0]).toHaveProperty(key);
+  });
+
+  it("deep-copies reviewHistory so copy mutations never reach the original", () => {
+    const payload = makePayload({ rows: [fullMetadataRow()] });
+    const snapshot = structuredClone(payload);
+    const copy = copyRfpComplianceMatrixPayload(payload);
+
+    expect(copy.rows[0].reviewHistory).not.toBe(payload.rows[0].reviewHistory);
+    expect(copy.rows[0].reviewHistory?.[0]).not.toBe(
+      payload.rows[0].reviewHistory?.[0]
+    );
+
+    const history = copy.rows[0].reviewHistory;
+    if (history !== undefined) {
+      history[0].note = "MUTATED-NOTE";
+      history[0].action = "removed";
+      history.push(reviewEvent("restored", REVIEW_AT_2));
+    }
+
+    expect(payload).toEqual(snapshot);
+  });
+
+  it("strips arbitrary extra keys from rows and review events", () => {
+    const dirtyEvent = {
+      ...reviewEvent("status_changed", REVIEW_AT_1, "Set to reviewed."),
+      tenantId: "tenant-secret",
+      internalScore: 42,
+      reviewerIp: "10.0.0.1",
+    } as unknown as RfpComplianceMatrixReviewEvent;
+    const dirtyRow = {
+      ...fullMetadataRow(),
+      tenantId: "tenant-secret",
+      storagePath: "/secret/path",
+      unitPrice: 1234.5,
+      reviewHistory: [dirtyEvent],
+    } as unknown as RfpComplianceMatrixRow;
+
+    const copy = copyRfpComplianceMatrixPayload(makePayload({ rows: [dirtyRow] }));
+    const serialized = JSON.stringify(copy);
+    for (const leak of [
+      "tenantId",
+      "storagePath",
+      "unitPrice",
+      "internalScore",
+      "reviewerIp",
+    ]) {
+      expect(serialized).not.toContain(leak);
+    }
+
+    const copiedRow = copy.rows[0];
+    expect(copiedRow).not.toHaveProperty("tenantId");
+    expect(copiedRow).not.toHaveProperty("storagePath");
+    expect(copiedRow).not.toHaveProperty("unitPrice");
+    expect(Object.keys(copiedRow.reviewHistory![0]).sort()).toEqual([
+      "action",
+      "at",
+      "by",
+      "note",
+    ]);
+  });
+
+  it("preserves removed and not_applicable reasons with their review history", () => {
+    const removedRow: RfpComplianceMatrixRow = {
+      id: "RFP-COMP-020",
+      requirementId: "RFP-REQ-020",
+      requirementText: "Legacy clause superseded by addendum.",
+      category: "technical",
+      priority: "optional",
+      complianceStatus: "needs_review",
+      response: "Superseded; not part of this bid.",
+      evidenceReferences: [],
+      rowReviewStatus: "removed",
+      removedReason: REMOVED_REASON,
+      reviewHistory: [reviewEvent("removed", REVIEW_AT_1, "Removed as superseded.")],
+    };
+    const notApplicableRow: RfpComplianceMatrixRow = {
+      id: "RFP-COMP-021",
+      requirementId: "RFP-REQ-021",
+      requirementText: "On-site spares depot.",
+      category: "support",
+      priority: "optional",
+      complianceStatus: "not_applicable",
+      response: "Not applicable to this engagement.",
+      evidenceReferences: [],
+      notApplicableReason: NA_REASON,
+      reviewHistory: [
+        reviewEvent("marked_not_applicable", REVIEW_AT_2, "Marked N/A by engineer."),
+      ],
+    };
+
+    const copy = copyRfpComplianceMatrixPayload(
+      makePayload({ rows: [removedRow, notApplicableRow] })
+    );
+
+    expect(copy.rows[0].rowReviewStatus).toBe("removed");
+    expect(copy.rows[0].removedReason).toBe(REMOVED_REASON);
+    expect(copy.rows[0].reviewHistory).toEqual([
+      {
+        action: "removed",
+        at: REVIEW_AT_1,
+        by: REVIEWER,
+        note: "Removed as superseded.",
+      },
+    ]);
+    expect(copy.rows[1].complianceStatus).toBe("not_applicable");
+    expect(copy.rows[1].notApplicableReason).toBe(NA_REASON);
+    expect(copy.rows[1].reviewHistory).toEqual([
+      {
+        action: "marked_not_applicable",
+        at: REVIEW_AT_2,
+        by: REVIEWER,
+        note: "Marked N/A by engineer.",
+      },
+    ]);
+  });
+
+  it("keeps the payload summary lean - no metadata field surfaces", () => {
+    const payload = makePayload({ rows: [fullMetadataRow(), ...makeRows()] });
+    const summary = buildRfpComplianceMatrixPayloadSummary(payload);
+    const serialized = JSON.stringify(summary);
+
+    for (const key of METADATA_KEYS) {
+      expect(summary).not.toHaveProperty(key);
+      expect(serialized).not.toContain(key);
+    }
+    for (const value of [SECTION_REF, NA_REASON, REMOVED_REASON, REVIEW_NOTE]) {
+      expect(serialized).not.toContain(value);
+    }
+    expect(summary.rowCount).toBe(4);
+    expect(summary.statusCounts.partially_compliant).toBe(1);
+  });
+});
+
 describe("module purity (static source check)", () => {
   const SRC_PATH = join(
     process.cwd(),
@@ -468,6 +729,10 @@ describe("module purity (static source check)", () => {
       'from "@/lib/projects/project-rfp-evidence',
       'from "@/lib/projects/project-rfp-extraction',
       'from "@/lib/projects/project-rfp-config-expansion',
+      'from "@/lib/projects/project-rfp-compliance-matrix-',
+      'from "@/lib/projects/project-rfp-requirements-baseline-',
+      'from "@/lib/projects/project-rfp-hld',
+      'from "@/lib/projects/project-rfp-tp',
       'from "@/lib/projects/project-boq',
       'from "@/lib/projects/config-expansion',
       'from "@/lib/projects/pricing"',

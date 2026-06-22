@@ -11,7 +11,12 @@
  * or approves no artifact, calls no AI/model, performs no OCR, and makes no SKU,
  * catalog, pricing, configuration, or compliance decision. Rows are NOT generated
  * here; the deterministic row-id convention (RFP-COMP-001, RFP-COMP-002, ...) is
- * documented for the drafting service. Every evidence reference is a locator-only
+ * documented for the drafting service. Optional Stage 5 engineer-owned review
+ * metadata (section reference, response/owner lanes, advisory HLD/TP/BoQ-config
+ * impact hints, an owner-review flag, a per-row review status, not-applicable
+ * and removed reasons, and a review-event history) is human-owned contract data
+ * only: it is computed nowhere here and encodes no pricing, SKU, catalog, or
+ * configuration decision. Every evidence reference is a locator-only
  * snapshot (ids, kind, counts, positions) - never raw evidence text or table rows;
  * every configuration reference carries line/source identifiers and descriptive
  * fields only - never a price, margin, discount, currency, catalog-lookup, or
@@ -93,6 +98,77 @@ const CONFIGURATION_REFERENCE_KEYS = [
 ] as const;
 
 /**
+ * Review/owner lanes a compliance row can be routed to during Stage 5 review.
+ * Generic organizational lanes ONLY; they encode no pricing, SKU, catalog, or
+ * configuration authority. Reused for both responseLane and ownerLane.
+ */
+export const RFP_COMPLIANCE_REVIEW_LANES = [
+  "technical",
+  "commercial",
+  "legal",
+  "project_delivery",
+  "security",
+  "safety",
+  "vendor",
+  "customer",
+  "other",
+] as const;
+export type RfpComplianceReviewLane = (typeof RFP_COMPLIANCE_REVIEW_LANES)[number];
+
+/**
+ * Advisory downstream-impact hint an engineer records on a row (HLD, TP, or
+ * BoQ/config). It is a human review flag ONLY: this contract computes no HLD, TP,
+ * or BoQ/config impact and makes no pricing, SKU, catalog, or configuration
+ * decision from it.
+ */
+export const RFP_COMPLIANCE_IMPACT_LEVELS = [
+  "none",
+  "potential",
+  "required",
+  "owner_review_required",
+] as const;
+export type RfpComplianceImpactLevel =
+  (typeof RFP_COMPLIANCE_IMPACT_LEVELS)[number];
+
+/** Per-row review lifecycle state, distinct from the compliance outcome. */
+export const RFP_COMPLIANCE_ROW_REVIEW_STATUSES = [
+  "pending",
+  "reviewed",
+  "removed",
+] as const;
+export type RfpComplianceRowReviewStatus =
+  (typeof RFP_COMPLIANCE_ROW_REVIEW_STATUSES)[number];
+
+/** Engineer review actions recorded, in order, in a row's review history. */
+export const RFP_COMPLIANCE_REVIEW_ACTIONS = [
+  "edited",
+  "status_changed",
+  "marked_not_applicable",
+  "removed",
+  "restored",
+  "owner_review_requested",
+] as const;
+export type RfpComplianceReviewAction =
+  (typeof RFP_COMPLIANCE_REVIEW_ACTIONS)[number];
+
+/**
+ * One engineer review event in a row's audit trail: WHAT was done, WHEN, and by
+ * WHOM, plus an optional human note. Human-owned contract data ONLY; it carries no
+ * row body and no pricing, SKU, catalog, or configuration authority.
+ */
+export interface RfpComplianceMatrixReviewEvent {
+  action: RfpComplianceReviewAction;
+  /** ISO timestamp the engineer recorded the action at. */
+  at: string;
+  /** Engineer who performed the action (id/email snapshot). */
+  by: string;
+  note?: string;
+}
+
+/** Whitelisted review-event keys, copied when present; extra keys are dropped. */
+const REVIEW_EVENT_KEYS = ["action", "at", "by", "note"] as const;
+
+/**
  * One reviewable compliance-matrix row: a requirement snapshot from the approved
  * requirements_baseline plus the human-reviewable compliance response and its
  * locator-only references. The drafting service assigns the deterministic id
@@ -115,6 +191,25 @@ export interface RfpComplianceMatrixRow {
   evidenceReferences: RfpComplianceMatrixEvidenceReference[];
   /** Optional locator-only configuration_expansion references; never pricing/authority. */
   configurationReferences?: RfpComplianceMatrixConfigurationReference[];
+  /**
+   * Optional Stage 5 engineer-owned review metadata. Every field below is
+   * human-supplied contract data: this module computes none of it, and none of it
+   * encodes pricing, SKU, catalog, or configuration authority. The HLD/TP/BoQ
+   * impact fields are advisory review hints only - no HLD, TP, or BoQ/config is
+   * computed here. Absent fields are omitted by the copy helper (never emitted as
+   * undefined); removed/not_applicable reasons are preserved, never auto-deleted.
+   */
+  sectionReference?: string;
+  responseLane?: RfpComplianceReviewLane;
+  ownerLane?: RfpComplianceReviewLane;
+  hldImpact?: RfpComplianceImpactLevel;
+  tpImpact?: RfpComplianceImpactLevel;
+  boqConfigImpact?: RfpComplianceImpactLevel;
+  requiresOwnerReview?: boolean;
+  rowReviewStatus?: RfpComplianceRowReviewStatus;
+  notApplicableReason?: string;
+  removedReason?: string;
+  reviewHistory?: RfpComplianceMatrixReviewEvent[];
 }
 
 /** Whitelisted scalar row keys (references are deep-copied separately). */
@@ -128,6 +223,16 @@ const ROW_SCALAR_KEYS = [
   "response",
   "rationale",
   "notes",
+  "sectionReference",
+  "responseLane",
+  "ownerLane",
+  "hldImpact",
+  "tpImpact",
+  "boqConfigImpact",
+  "requiresOwnerReview",
+  "rowReviewStatus",
+  "notApplicableReason",
+  "removedReason",
 ] as const;
 
 /** The compliance_matrix draft artifact payload. */
@@ -236,6 +341,13 @@ function copyRow(row: RfpComplianceMatrixRow): RfpComplianceMatrixRow {
       ? {
           configurationReferences: row.configurationReferences.map((reference) =>
             pickDefined(reference, CONFIGURATION_REFERENCE_KEYS)
+          ),
+        }
+      : {}),
+    ...(row.reviewHistory !== undefined
+      ? {
+          reviewHistory: row.reviewHistory.map((event) =>
+            pickDefined(event, REVIEW_EVENT_KEYS)
           ),
         }
       : {}),
