@@ -67,37 +67,60 @@ export interface ConfigurationAuthorityTrace {
 }
 
 /**
- * Lean pricing authority trace embedded in `PricedBoqArtifactPayload` as provenance.
- * Built by the caller (project-quick-bom-pricing) from the approved Honeywell demo
- * pricing authority profile and passed in; this module never imports that profile.
+ * Per-source identity/count entry inside a combined pricing authority trace. One entry
+ * per approved pricing source merged into the trace. Provenance only; carries NO
+ * workbook path or sheet name.
  */
-export interface PricingAuthorityTrace {
-  profileId: "honeywell-mvp-demo-pricing-authority-profile";
-  scope: "honeywell_mvp_demo_only";
+export interface PricingAuthorityTraceSource {
+  profileId: string;
+  scope: string;
   approvalRecordId: string;
-  activeSource: "committed_honeywell_demo_pricing_fixture";
+  activeSource: string;
   activeSourceFixtureId: string;
-  activeSourceStatus: "approved_demo_fixture";
-  activeSourceWorkbookPath: string;
-  activeSourceSheetName: string;
+  activeSourceStatus: string;
   currency: "SAR";
   pricedSkuCount: number;
   missingPriceSkuCount: number;
-  boundary: {
-    deterministicPricingAuthority: true;
-    demoFixtureAuthority: true;
-    currentLocalGplSarCsvTemporarilyApproved: true;
-    activeRuntimeSourceReadsExternalGplCsv: false;
-    productionCiscoPricingAuthority: false;
-    broadCiscoGeneralPricingAuthority: false;
-    runtimeAiPricing: false;
-    runtimeCatalogLookup: false;
-    configurationAuthority: false;
-    replacementAuthority: false;
-    skuSubstitutionAuthority: false;
-    silentSkuSubstitution: false;
-    missingPricesReported: true;
-  };
+}
+
+/**
+ * Combined pricing-source authority boundary flags carried on the trace. Every signal
+ * is fixed: deterministic, fixture/scoped-Cisco demo authority only, and explicitly NOT
+ * production, broad-Cisco, runtime-AI, runtime-catalog, configuration, replacement, or
+ * silent-substitution authority.
+ */
+export interface PricingAuthorityTraceBoundary {
+  deterministicPricingAuthority: true;
+  demoFixtureAuthority: true;
+  scopedCiscoPricingAuthority: true;
+  productionCiscoPricingAuthority: false;
+  broadCiscoGeneralPricingAuthority: false;
+  runtimeAiPricing: false;
+  runtimeCatalogLookup: false;
+  configurationAuthority: false;
+  replacementAuthority: false;
+  skuSubstitutionAuthority: false;
+  silentSkuSubstitution: false;
+  missingPricesReported: true;
+}
+
+/**
+ * Lean pricing authority trace embedded in `PricedBoqArtifactPayload` as provenance.
+ * Built by the caller (project-boq-pricing-core) from the combined approved Quick BoM
+ * pricing authority profile and passed in; this module never imports that profile.
+ * Generalized for the combined profile: profileId/scope are strings (or the specific
+ * combined literals the caller supplies), the boundary carries the combined safe flags,
+ * and `sources` lists each merged approved source. No workbook path or sheet name is
+ * required or carried at any level.
+ */
+export interface PricingAuthorityTrace {
+  profileId: string;
+  scope: string;
+  currency: "SAR";
+  pricedSkuCount: number;
+  missingPriceSkuCount: number;
+  boundary: PricingAuthorityTraceBoundary;
+  sources: PricingAuthorityTraceSource[];
 }
 
 /**
@@ -226,6 +249,7 @@ export function buildPricedBoqArtifactPayload(
           pricingAuthority: {
             ...input.pricingAuthority,
             boundary: { ...input.pricingAuthority.boundary },
+            sources: input.pricingAuthority.sources.map((s) => ({ ...s })),
           },
         }
       : {}),

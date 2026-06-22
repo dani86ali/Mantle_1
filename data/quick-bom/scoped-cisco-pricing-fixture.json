@@ -1,0 +1,920 @@
+{
+  "fixtureId": "scoped-cisco-quick-bom-pricing-fixture",
+  "scope": "scoped_cisco_quick_bom_pricing_source",
+  "status": "approved_scoped_pricing_source",
+  "boundary": {
+    "deterministicPricingAuthority": true,
+    "scopedCiscoPricingAuthority": true,
+    "productionCiscoPricingAuthority": false,
+    "broadCiscoGeneralPricingAuthority": false,
+    "runtimeAiPricing": false,
+    "runtimeCatalogLookup": false,
+    "configurationAuthority": false,
+    "replacementAuthority": false,
+    "skuSubstitutionAuthority": false,
+    "silentSkuSubstitution": false,
+    "missingPricesReported": true
+  },
+  "currency": "SAR",
+  "skuCount": 43,
+  "rowOrderOccurrenceCount": 44,
+  "supportServiceOccurrenceCount": 4,
+  "scopedExtendedListPriceTotalSar": 1005238.42,
+  "sourceEvidence": {
+    "primarySourceType": "approved_scoped_workbook",
+    "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+    "sheetName": "EstimateDetails_JL164850184VT",
+    "derivationNote": "unit_sar_list_price_is_workbook_listprice_column",
+    "note": "Scoped Cisco collaboration and industrial switching Quick BoM pricing source derived from an approved workbook; SAR-only; not production Cisco pricing authority and not catalog/configuration/replacement authority."
+  },
+  "supportServiceSkus": [
+    "CON-SNT-CSKITEK9",
+    "CON-SNT-CS5HEJMI",
+    "CON-SNT-IEM35B2S",
+    "CON-SNT-I1002SLM"
+  ],
+  "unitListPriceSarBySku": {
+    "CS-KIT-EQX-C-K9": {
+      "currency": "SAR",
+      "unitListPriceSar": 222859.31
+    },
+    "CON-SNT-CSKITEK9": {
+      "currency": "SAR",
+      "unitListPriceSar": 98109.4
+    },
+    "CS-MIC-TABLE-J": {
+      "currency": "SAR",
+      "unitListPriceSar": 2633.79
+    },
+    "CON-SNT-CS5HEJMI": {
+      "currency": "SAR",
+      "unitListPriceSar": 1444.7
+    },
+    "PWR-CORD-GBR-F": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CAB-HDMI-MUL4K-9M": {
+      "currency": "SAR",
+      "unitListPriceSar": 3767.64
+    },
+    "CAB-EQX-SCREENS": {
+      "currency": "SAR",
+      "unitListPriceSar": 405.2
+    },
+    "CS-CODEC-EQ-K9-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-RQUADCAM-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-PANO-DNAM4-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-EQX-SPK-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-EQX-BASS-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-EQX-FAN-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-EQX-CENTER-MOD-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-EQX-SIDE-MOD-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-EQX-FRAME-C-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-EQX-VESA-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "PSU-12VDC-120W-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "PSU-24VDC-270W-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-EQX-ANT-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-PWR-STRIP4-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "PWR-CAB-INT-3.0M-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "PWR-CAB-INT-0.22M-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CAB-ETH-5M-GR-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CAB-2HDMI-1.5M-GR-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CAB-ETH-1.5M-GR-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CAB-EQX-SPKR-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "PWR-CAB-INT-1.45M-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CAB-CAT5E-12M-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-T10-TS-LX-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-EQX-FSK-ST-C-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-EQX-FSK-RC-C-": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "CS-KIT-EQX-FSK-C": {
+      "currency": "SAR",
+      "unitListPriceSar": 48623.85
+    },
+    "IEM-3500-14T2S=": {
+      "currency": "SAR",
+      "unitListPriceSar": 16998.09
+    },
+    "CON-SNT-IEM35B2S": {
+      "currency": "SAR",
+      "unitListPriceSar": 7848.75
+    },
+    "PWR-IE480W-PCAC-L=": {
+      "currency": "SAR",
+      "unitListPriceSar": 11899.17
+    },
+    "IE-1000-4P2S-LM": {
+      "currency": "SAR",
+      "unitListPriceSar": 7129.97
+    },
+    "CON-SNT-I1002SLM": {
+      "currency": "SAR",
+      "unitListPriceSar": 3299.05
+    },
+    "IOT-UTILITIES": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "IOT-UTIL-OTHER": {
+      "currency": "SAR",
+      "unitListPriceSar": 0
+    },
+    "PWR-IE170W-PC-AC=": {
+      "currency": "SAR",
+      "unitListPriceSar": 7869.16
+    },
+    "CAB-TA-UK=": {
+      "currency": "SAR",
+      "unitListPriceSar": 275.41
+    },
+    "STK-RACK-DINRAIL=": {
+      "currency": "SAR",
+      "unitListPriceSar": 596.16
+    }
+  },
+  "categoryBySku": {
+    "CS-KIT-EQX-C-K9": "product",
+    "CON-SNT-CSKITEK9": "service",
+    "CS-MIC-TABLE-J": "product",
+    "CON-SNT-CS5HEJMI": "service",
+    "PWR-CORD-GBR-F": "product",
+    "CAB-HDMI-MUL4K-9M": "product",
+    "CAB-EQX-SCREENS": "product",
+    "CS-CODEC-EQ-K9-": "product",
+    "CS-RQUADCAM-": "product",
+    "CS-PANO-DNAM4-": "product",
+    "CS-EQX-SPK-": "product",
+    "CS-EQX-BASS-": "product",
+    "CS-EQX-FAN-": "product",
+    "CS-EQX-CENTER-MOD-": "product",
+    "CS-EQX-SIDE-MOD-": "product",
+    "CS-EQX-FRAME-C-": "product",
+    "CS-EQX-VESA-": "product",
+    "PSU-12VDC-120W-": "product",
+    "PSU-24VDC-270W-": "product",
+    "CS-EQX-ANT-": "product",
+    "CS-PWR-STRIP4-": "product",
+    "PWR-CAB-INT-3.0M-": "product",
+    "PWR-CAB-INT-0.22M-": "product",
+    "CAB-ETH-5M-GR-": "product",
+    "CAB-2HDMI-1.5M-GR-": "product",
+    "CAB-ETH-1.5M-GR-": "product",
+    "CAB-EQX-SPKR-": "product",
+    "PWR-CAB-INT-1.45M-": "product",
+    "CAB-CAT5E-12M-": "product",
+    "CS-T10-TS-LX-": "product",
+    "CS-EQX-FSK-ST-C-": "product",
+    "CS-EQX-FSK-RC-C-": "product",
+    "CS-KIT-EQX-FSK-C": "product",
+    "IEM-3500-14T2S=": "product",
+    "CON-SNT-IEM35B2S": "service",
+    "PWR-IE480W-PCAC-L=": "product",
+    "IE-1000-4P2S-LM": "product",
+    "CON-SNT-I1002SLM": "service",
+    "IOT-UTILITIES": "product",
+    "IOT-UTIL-OTHER": "product",
+    "PWR-IE170W-PC-AC=": "product",
+    "CAB-TA-UK=": "product",
+    "STK-RACK-DINRAIL=": "product"
+  },
+  "priceSourceEvidenceBySku": {
+    "CS-KIT-EQX-C-K9": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.0",
+          "sourceQuantity": 2,
+          "rawListPrice": 222859.31,
+          "rawExtendedListPrice": 445718.62
+        }
+      ]
+    },
+    "CON-SNT-CSKITEK9": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.0.1",
+          "sourceQuantity": 2,
+          "rawListPrice": 98109.4,
+          "rawExtendedListPrice": 196218.8
+        }
+      ]
+    },
+    "CS-MIC-TABLE-J": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.1",
+          "sourceQuantity": 6,
+          "rawListPrice": 2633.79,
+          "rawExtendedListPrice": 15802.74
+        }
+      ]
+    },
+    "CON-SNT-CS5HEJMI": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.1.0.1",
+          "sourceQuantity": 6,
+          "rawListPrice": 1444.7,
+          "rawExtendedListPrice": 8668.2
+        }
+      ]
+    },
+    "PWR-CORD-GBR-F": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.2",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CAB-HDMI-MUL4K-9M": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.3",
+          "sourceQuantity": 2,
+          "rawListPrice": 3767.64,
+          "rawExtendedListPrice": 7535.28
+        }
+      ]
+    },
+    "CAB-EQX-SCREENS": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.4",
+          "sourceQuantity": 2,
+          "rawListPrice": 405.2,
+          "rawExtendedListPrice": 810.4
+        }
+      ]
+    },
+    "CS-CODEC-EQ-K9-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.5",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-RQUADCAM-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.6",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-PANO-DNAM4-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.7",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-EQX-SPK-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.8",
+          "sourceQuantity": 12,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-EQX-BASS-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.9",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-EQX-FAN-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.10",
+          "sourceQuantity": 4,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-EQX-CENTER-MOD-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.11",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-EQX-SIDE-MOD-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.12",
+          "sourceQuantity": 4,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-EQX-FRAME-C-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.13",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-EQX-VESA-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.14",
+          "sourceQuantity": 4,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "PSU-12VDC-120W-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.15",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "PSU-24VDC-270W-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.16",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-EQX-ANT-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.17",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-PWR-STRIP4-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.18",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "PWR-CAB-INT-3.0M-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.19",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "PWR-CAB-INT-0.22M-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.20",
+          "sourceQuantity": 4,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CAB-ETH-5M-GR-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.21",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CAB-2HDMI-1.5M-GR-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.22",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CAB-ETH-1.5M-GR-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.23",
+          "sourceQuantity": 4,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CAB-EQX-SPKR-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.24",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "PWR-CAB-INT-1.45M-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.25",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CAB-CAT5E-12M-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.26",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-T10-TS-LX-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.27",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-EQX-FSK-ST-C-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.28",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-EQX-FSK-RC-C-": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.29",
+          "sourceQuantity": 2,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "CS-KIT-EQX-FSK-C": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "1.30",
+          "sourceQuantity": 2,
+          "rawListPrice": 48623.85,
+          "rawExtendedListPrice": 97247.7
+        }
+      ]
+    },
+    "IEM-3500-14T2S=": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "2.0",
+          "sourceQuantity": 3,
+          "rawListPrice": 16998.09,
+          "rawExtendedListPrice": 50994.27
+        }
+      ]
+    },
+    "CON-SNT-IEM35B2S": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "2.0.1",
+          "sourceQuantity": 3,
+          "rawListPrice": 7848.75,
+          "rawExtendedListPrice": 23546.25
+        }
+      ]
+    },
+    "PWR-IE480W-PCAC-L=": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "3.0",
+          "sourceQuantity": 3,
+          "rawListPrice": 11899.17,
+          "rawExtendedListPrice": 35697.51
+        }
+      ]
+    },
+    "IE-1000-4P2S-LM": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "4.0",
+          "sourceQuantity": 6,
+          "rawListPrice": 7129.97,
+          "rawExtendedListPrice": 42779.82
+        }
+      ]
+    },
+    "CON-SNT-I1002SLM": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "4.0.1",
+          "sourceQuantity": 6,
+          "rawListPrice": 3299.05,
+          "rawExtendedListPrice": 19794.3
+        }
+      ]
+    },
+    "IOT-UTILITIES": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "4.1",
+          "sourceQuantity": 6,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "IOT-UTIL-OTHER": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "4.2",
+          "sourceQuantity": 6,
+          "rawListPrice": 0,
+          "rawExtendedListPrice": 0
+        }
+      ]
+    },
+    "PWR-IE170W-PC-AC=": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "5.0",
+          "sourceQuantity": 6,
+          "rawListPrice": 7869.16,
+          "rawExtendedListPrice": 47214.96
+        }
+      ]
+    },
+    "CAB-TA-UK=": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "6.0",
+          "sourceQuantity": 9,
+          "rawListPrice": 275.41,
+          "rawExtendedListPrice": 2478.69
+        }
+      ]
+    },
+    "STK-RACK-DINRAIL=": {
+      "sourceType": "approved_scoped_workbook",
+      "workbookPath": "C:/Pre-Sales/Benchmarck_Files/MARAFIQObsolete_Network_Hardware_Replacement.xlsx",
+      "sheetName": "EstimateDetails_JL164850184VT",
+      "sourceLines": [
+        {
+          "lineNumber": "7.0",
+          "sourceQuantity": 9,
+          "rawListPrice": 596.16,
+          "rawExtendedListPrice": 5365.44
+        },
+        {
+          "lineNumber": "8.0",
+          "sourceQuantity": 9,
+          "rawListPrice": 596.16,
+          "rawExtendedListPrice": 5365.44
+        }
+      ]
+    }
+  },
+  "mantleRowOrderSkuSequence": [
+    "CS-KIT-EQX-C-K9",
+    "CON-SNT-CSKITEK9",
+    "CS-MIC-TABLE-J",
+    "CON-SNT-CS5HEJMI",
+    "PWR-CORD-GBR-F",
+    "CAB-HDMI-MUL4K-9M",
+    "CAB-EQX-SCREENS",
+    "CS-CODEC-EQ-K9-",
+    "CS-RQUADCAM-",
+    "CS-PANO-DNAM4-",
+    "CS-EQX-SPK-",
+    "CS-EQX-BASS-",
+    "CS-EQX-FAN-",
+    "CS-EQX-CENTER-MOD-",
+    "CS-EQX-SIDE-MOD-",
+    "CS-EQX-FRAME-C-",
+    "CS-EQX-VESA-",
+    "PSU-12VDC-120W-",
+    "PSU-24VDC-270W-",
+    "CS-EQX-ANT-",
+    "CS-PWR-STRIP4-",
+    "PWR-CAB-INT-3.0M-",
+    "PWR-CAB-INT-0.22M-",
+    "CAB-ETH-5M-GR-",
+    "CAB-2HDMI-1.5M-GR-",
+    "CAB-ETH-1.5M-GR-",
+    "CAB-EQX-SPKR-",
+    "PWR-CAB-INT-1.45M-",
+    "CAB-CAT5E-12M-",
+    "CS-T10-TS-LX-",
+    "CS-EQX-FSK-ST-C-",
+    "CS-EQX-FSK-RC-C-",
+    "CS-KIT-EQX-FSK-C",
+    "IEM-3500-14T2S=",
+    "CON-SNT-IEM35B2S",
+    "PWR-IE480W-PCAC-L=",
+    "IE-1000-4P2S-LM",
+    "CON-SNT-I1002SLM",
+    "IOT-UTILITIES",
+    "IOT-UTIL-OTHER",
+    "PWR-IE170W-PC-AC=",
+    "CAB-TA-UK=",
+    "STK-RACK-DINRAIL=",
+    "STK-RACK-DINRAIL="
+  ],
+  "mantleRowOrderQuantities": [
+    2,
+    2,
+    6,
+    6,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    12,
+    2,
+    4,
+    2,
+    4,
+    2,
+    4,
+    2,
+    2,
+    2,
+    2,
+    2,
+    4,
+    2,
+    2,
+    4,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    3,
+    3,
+    3,
+    6,
+    6,
+    6,
+    6,
+    6,
+    9,
+    9,
+    9
+  ],
+  "knownLimitations": [
+    "Scoped to the approved Cisco collaboration and industrial switching SKUs only; out-of-scope or non-Cisco SKUs are missing-price report-only.",
+    "SAR-only list prices; carries no discount, margin, markup, VAT, FX, or sell-price authority.",
+    "Not production Cisco pricing authority, not broad Cisco-general pricing, not catalog/configuration/replacement authority.",
+    "Unit price is the workbook ListPrice column; zero-list rows are recorded as 0 SAR, not omitted."
+  ]
+}

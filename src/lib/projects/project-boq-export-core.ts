@@ -21,14 +21,15 @@
  * AUTHORITY BOUNDARY: export consumes only an approved priced_boq artifact. It never
  * re-prices, re-resolves SKUs, re-expands configuration, infers categories from SKU
  * text/description, or reads normalized_boq/sku_resolution/configuration_expansion
- * directly. For this MVP demo wiring only, the committed Honeywell demo fixture supplies
- * the ONLY categoryByAcceptedSku source (via {@link getHoneywellDemoMantleCategoryByAcceptedSku})
+ * directly. For this wiring, the combined approved Quick BoM category/export sources (the
+ * Honeywell MVP demo fixture plus the scoped Cisco fixture) supply the ONLY
+ * categoryByAcceptedSku source (via {@link getQuickBomApprovedMantleCategoryByAcceptedSku})
  * AND the ONLY Mantle export presentation row-order source (via
- * {@link getHoneywellDemoMantleRowOrderSkuSequence}, which orders the generated workbook
- * rows to the approved CCW benchmark). That fixture is TEMPORARY demo category/export-bucket
+ * {@link getQuickBomApprovedMantleRowOrderSkuSequence}, which orders the generated workbook
+ * rows to the approved benchmark). Those fixtures are demo/scoped category/export-bucket
  * and export-ordering metadata only: not pricing authority, not configuration authority,
  * not production Cisco authority, not catalog lookup, not runtime AI, not replacement
- * authority, and it authorizes no silent SKU substitution or re-resolution. Missing
+ * authority, and they authorize no silent SKU substitution or re-resolution. Missing
  * categories stay the lower Mantle model's warning/default behavior; this core infers no
  * categories and re-orders nothing itself.
  *
@@ -58,9 +59,11 @@ import { join } from "node:path";
 import { getProjectById } from "@/lib/db/project-store";
 import { createMantleExportArtifact } from "@/lib/projects/mantle-export-artifact";
 import {
-  getHoneywellDemoMantleCategoryByAcceptedSku,
-  getHoneywellDemoMantleRowOrderSkuSequence,
-} from "@/lib/projects/honeywell-demo-pricing-fixture";
+  getQuickBomApprovedMantleCategoryByAcceptedSku,
+  getQuickBomApprovedMantleRowOrderSkuSequence,
+  getQuickBomApprovedCategorySourceSummary,
+  type QuickBomApprovedCategorySourceSummary,
+} from "@/lib/projects/quick-bom-approved-pricing-sources";
 import type {
   CreateMantleExportArtifactResult,
   MantleExportArtifactPayload,
@@ -96,24 +99,6 @@ export type ProjectBoqExportType = MantleExportArtifactPayload["exportType"];
 
 /** The Mantle total-bucket roll-up echoed onto the summaries (no per-line detail). */
 export type ProjectBoqExportTotals = MantleExportArtifactPayload["totals"];
-
-/**
- * Category-source boundary block surfaced on every export payload summary. It records
- * that the Mantle line categories came from the TEMPORARY Honeywell MVP demo fixture
- * and carry demo authority only - never pricing, configuration, production, AI,
- * catalog, or replacement authority.
- */
-const CATEGORY_SOURCE = {
-  source: "honeywell_mvp_demo_mantle_category_fixture",
-  scope: "honeywell_mvp_demo_only",
-  demoFixtureAuthority: true,
-  productionPricingAuthority: false,
-  configurationAuthority: false,
-  runtimeAi: false,
-  runtimeCatalogLookup: false,
-  replacementAuthority: false,
-  silentSkuSubstitution: false,
-} as const;
 
 /** Caller-facing export request shared by every BoQ export lane (no lane config). */
 export interface ProjectBoqExportPackageRequest {
@@ -159,8 +144,14 @@ export interface ProjectBoqExportArtifactSummary {
   updatedAt: string;
 }
 
-/** The category-source boundary block carried on the payload summary. */
-export type ProjectBoqExportCategorySourceSummary = typeof CATEGORY_SOURCE;
+/**
+ * The category-source boundary block carried on the payload summary. It records that the
+ * Mantle line categories and export row order came from the combined approved Quick BoM
+ * category/export sources (the Honeywell MVP demo fixture plus the scoped Cisco fixture)
+ * and carry demo/scoped authority only - never pricing, configuration, production, AI,
+ * catalog, or replacement authority.
+ */
+export type ProjectBoqExportCategorySourceSummary = QuickBomApprovedCategorySourceSummary;
 
 /**
  * Serializable export-payload summary: the export type, provenance ids/versions, the
@@ -283,7 +274,7 @@ function toPayloadSummary(payload: MantleExportArtifactPayload): ProjectBoqExpor
     rowCount: payload.rowCount,
     totals: { ...payload.totals },
     warnings: [...payload.warnings],
-    categorySource: { ...CATEGORY_SOURCE },
+    categorySource: getQuickBomApprovedCategorySourceSummary(),
   };
 }
 
@@ -314,10 +305,10 @@ function translateDelegateError(
  * Create a Mantle `export_package` artifact from one already-approved `priced_boq`
  * artifact, tenant-scoped on every store/service call. It verifies the Project within its
  * tenant (not_found / wrong_mode against the caller-supplied `expectedMode`, lean summary)
- * BEFORE generating a path or loading the demo category fixture, then generates a unique
- * server-side workbook output path (labelled with the lane-pinned `fileNamePrefix`) and
- * delegates the load+map+write+persist to {@link createMantleExportArtifact} - passing the
- * committed Honeywell MVP demo Mantle category map and export row order as the only such
+ * BEFORE generating a path or loading the combined category sources, then generates a
+ * unique server-side workbook output path (labelled with the lane-pinned `fileNamePrefix`)
+ * and delegates the load+map+write+persist to {@link createMantleExportArtifact} - passing
+ * the combined approved Quick BoM Mantle category map and export row order as the only such
  * sources. If the delegate throws after a workbook may have been written, the generated
  * path is removed best-effort (never masking the original error) before the known failure
  * is translated into a safe status or anything unexpected is re-thrown. On success it
@@ -336,12 +327,12 @@ export async function createProjectBoqExportPackageCore(
     return { status: "wrong_mode", project: toProjectSummary(project) };
   }
 
-  // The workbook path is generated server-side (never from input/body); the demo
-  // fixture getters each return a fresh copy and are the ONLY source of the Mantle
-  // category map and the Mantle export presentation row order (order evidence only).
+  // The workbook path is generated server-side (never from input/body); the combined
+  // approved Quick BoM getters each return a fresh copy and are the ONLY source of the
+  // Mantle category map and the Mantle export presentation row order (order evidence only).
   const outputPath = generateOutputPath(fileNamePrefix, projectId, pricedBoqArtifactId);
-  const categoryByAcceptedSku = getHoneywellDemoMantleCategoryByAcceptedSku();
-  const rowOrderSkuSequence = getHoneywellDemoMantleRowOrderSkuSequence();
+  const categoryByAcceptedSku = getQuickBomApprovedMantleCategoryByAcceptedSku();
+  const rowOrderSkuSequence = getQuickBomApprovedMantleRowOrderSkuSequence();
 
   let result: CreateMantleExportArtifactResult;
   try {

@@ -6,16 +6,18 @@ import type { Project, ProjectArtifact, ProjectMode } from "@/types/project";
 
 // Mock the three composed boundaries plus node:fs/promises: the project store (verify
 // the Project), the deterministic Mantle export-artifact service (load + map + write +
-// persist), the committed demo category/row-order fixture getters (the only such
-// sources), and rm (so the best-effort cleanup on a delegate failure can be asserted). No
-// real DB and no real workbook write here; the shared core is exercised in isolation.
+// persist), the combined approved Quick BoM category/row-order/summary getters (the only
+// such sources), and rm (so the best-effort cleanup on a delegate failure can be
+// asserted). No real DB and no real workbook write here; the shared core is exercised in
+// isolation.
 vi.mock("@/lib/db/project-store", () => ({ getProjectById: vi.fn() }));
 vi.mock("@/lib/projects/mantle-export-artifact", () => ({
   createMantleExportArtifact: vi.fn(),
 }));
-vi.mock("@/lib/projects/honeywell-demo-pricing-fixture", () => ({
-  getHoneywellDemoMantleCategoryByAcceptedSku: vi.fn(),
-  getHoneywellDemoMantleRowOrderSkuSequence: vi.fn(),
+vi.mock("@/lib/projects/quick-bom-approved-pricing-sources", () => ({
+  getQuickBomApprovedMantleCategoryByAcceptedSku: vi.fn(),
+  getQuickBomApprovedMantleRowOrderSkuSequence: vi.fn(),
+  getQuickBomApprovedCategorySourceSummary: vi.fn(),
 }));
 vi.mock("node:fs/promises", () => ({ rm: vi.fn() }));
 
@@ -32,15 +34,17 @@ import {
   type MantleExportArtifactPayload,
 } from "@/lib/projects/mantle-export-artifact";
 import {
-  getHoneywellDemoMantleCategoryByAcceptedSku,
-  getHoneywellDemoMantleRowOrderSkuSequence,
-} from "@/lib/projects/honeywell-demo-pricing-fixture";
+  getQuickBomApprovedMantleCategoryByAcceptedSku,
+  getQuickBomApprovedMantleRowOrderSkuSequence,
+  getQuickBomApprovedCategorySourceSummary,
+} from "@/lib/projects/quick-bom-approved-pricing-sources";
 import { rm } from "node:fs/promises";
 
 const getProjectMock = vi.mocked(getProjectById);
 const createMock = vi.mocked(createMantleExportArtifact);
-const getCategoryMock = vi.mocked(getHoneywellDemoMantleCategoryByAcceptedSku);
-const getRowOrderMock = vi.mocked(getHoneywellDemoMantleRowOrderSkuSequence);
+const getCategoryMock = vi.mocked(getQuickBomApprovedMantleCategoryByAcceptedSku);
+const getRowOrderMock = vi.mocked(getQuickBomApprovedMantleRowOrderSkuSequence);
+const getCategorySummaryMock = vi.mocked(getQuickBomApprovedCategorySourceSummary);
 const rmMock = vi.mocked(rm);
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
@@ -88,11 +92,14 @@ const TOTALS = {
 
 const WARNINGS = ["demo-export-warning-1"];
 
-// Mirror of the core CATEGORY_SOURCE boundary block carried on every payload summary.
+// Mirror of the combined approved Quick BoM category-source summary carried on every
+// payload summary (returned by the mocked getQuickBomApprovedCategorySourceSummary).
 const CATEGORY_SOURCE_SUMMARY = {
-  source: "honeywell_mvp_demo_mantle_category_fixture",
-  scope: "honeywell_mvp_demo_only",
+  source: "quick_bom_approved_mantle_category_sources",
+  honeywellDemoFixtureIncluded: true,
+  scopedCiscoFixtureIncluded: true,
   demoFixtureAuthority: true,
+  scopedCiscoCategoryAuthority: true,
   productionPricingAuthority: false,
   configurationAuthority: false,
   runtimeAi: false,
@@ -223,6 +230,9 @@ beforeEach(() => {
   getProjectMock.mockResolvedValue(makeProject());
   getCategoryMock.mockReturnValue(categoryMap);
   getRowOrderMock.mockReturnValue(rowOrderSequence);
+  getCategorySummaryMock.mockReturnValue(
+    structuredClone(CATEGORY_SOURCE_SUMMARY) as ReturnType<typeof getQuickBomApprovedCategorySourceSummary>
+  );
   createMock.mockResolvedValue(makeDelegateResult());
   rmMock.mockResolvedValue(undefined);
 });
@@ -560,14 +570,16 @@ describe("createProjectBoqExportPackageCore - ok summaries", () => {
     });
   });
 
-  it("marks the category source as demo-only authority, never pricing/config/production/AI/catalog/replacement", async () => {
+  it("marks the category source as combined category/export provenance, never pricing/config/production/AI/catalog/replacement", async () => {
     const result = await createProjectBoqExportPackageCore(input());
 
     if (result.status !== "ok") throw new Error("unreachable");
     const src = result.payloadSummary.categorySource;
-    expect(src.source).toBe("honeywell_mvp_demo_mantle_category_fixture");
-    expect(src.scope).toBe("honeywell_mvp_demo_only");
+    expect(src.source).toBe("quick_bom_approved_mantle_category_sources");
+    expect(src.honeywellDemoFixtureIncluded).toBe(true);
+    expect(src.scopedCiscoFixtureIncluded).toBe(true);
     expect(src.demoFixtureAuthority).toBe(true);
+    expect(src.scopedCiscoCategoryAuthority).toBe(true);
     expect(src.productionPricingAuthority).toBe(false);
     expect(src.configurationAuthority).toBe(false);
     expect(src.runtimeAi).toBe(false);
@@ -646,14 +658,15 @@ describe("module purity and surface (static source check)", () => {
   const importLines = source.split("\n").filter((l) => /^\s*import\b/.test(l));
   const joinedImports = importLines.join("\n");
 
-  it("imports the node builtins, the project store, the mantle export service, the demo fixture, and project types", () => {
+  it("imports the node builtins, the project store, the mantle export service, the approved pricing sources, and project types", () => {
     expect(source).toContain('from "node:crypto"');
     expect(source).toContain('from "node:fs/promises"');
     expect(source).toContain('from "node:os"');
     expect(source).toContain('from "node:path"');
     expect(source).toContain('from "@/lib/db/project-store"');
     expect(source).toContain('from "@/lib/projects/mantle-export-artifact"');
-    expect(source).toContain('from "@/lib/projects/honeywell-demo-pricing-fixture"');
+    expect(source).toContain('from "@/lib/projects/quick-bom-approved-pricing-sources"');
+    expect(source).not.toContain('from "@/lib/projects/honeywell-demo-pricing-fixture"');
     expect(source).toContain('from "@/types/project"');
   });
 

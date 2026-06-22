@@ -18,11 +18,13 @@
  *
  * AUTHORITY BOUNDARY: pricing is deterministic. The Project-owned `pricingConfig` is
  * the only margin/markup/VAT/rounding authority (copied fresh per call), and the
- * committed Honeywell MVP demo SAR price fixture is the ONLY unit-price source for
- * this MVP demo wiring. That fixture is TEMPORARY demo pricing authority only: not
- * production Cisco pricing, not broad Cisco-general pricing, not runtime AI pricing,
- * not catalog lookup, not replacement authority, and it authorizes no silent SKU
- * substitution. Missing prices stay missing_price warnings inside the priced_boq
+ * combined approved Quick BoM SAR price sources (the Honeywell MVP demo fixture plus
+ * the scoped Cisco fixture) are the ONLY unit-price source for this wiring. Those
+ * fixtures are demo/scoped pricing authority only: not production Cisco pricing, not
+ * broad Cisco-general pricing, not runtime AI pricing, not catalog lookup, not
+ * replacement authority, and they authorize no silent SKU substitution. The combined
+ * source maps are disjoint and never silently overwrite across sources. Missing prices
+ * stay missing_price warnings inside the priced_boq
  * payload; this core never invents or substitutes a price. configurationAuthority is
  * separate provenance only - never pricing authority. Pricing approval stays the
  * existing exact-artifact approval flow - this core approves nothing. External
@@ -49,8 +51,12 @@ import {
   type PricingAuthorityTrace,
   type ConfigurationAuthorityTrace,
 } from "@/lib/projects/priced-boq-artifact";
-import { getHoneywellDemoUnitListPriceSarBySku } from "@/lib/projects/honeywell-demo-pricing-fixture";
-import { getHoneywellDemoPricingAuthorityProfile } from "@/lib/projects/honeywell-demo-pricing-authority";
+import {
+  getQuickBomApprovedUnitListPriceSarBySku,
+  getQuickBomApprovedPricingAuthorityProfile,
+  getQuickBomApprovedPricingSourceSummary,
+  type QuickBomApprovedPricingSourceSummary,
+} from "@/lib/projects/quick-bom-approved-pricing-sources";
 import type {
   Project,
   ProjectArtifact,
@@ -88,23 +94,6 @@ const PRICING_CONFIG_MESSAGES: readonly string[] = [
 // or caller fault (the caller supplies no prices).
 const NON_SAR_PRICE_MESSAGE = "Accepted SKU price must be in SAR.";
 const UNIT_LIST_MESSAGE = "unitListPriceSar must be a finite nonnegative number.";
-
-/**
- * Pricing-source boundary block surfaced on every priced_boq payload summary. It
- * records that the unit prices came from the TEMPORARY Honeywell MVP demo fixture and
- * carry demo authority only - never production, AI, catalog, or replacement authority.
- */
-const PRICING_SOURCE = {
-  source: "honeywell_mvp_demo_pricing_fixture",
-  scope: "honeywell_mvp_demo_only",
-  currency: "SAR",
-  demoFixtureAuthority: true,
-  productionPricingAuthority: false,
-  runtimeAiPricing: false,
-  runtimeCatalogLookup: false,
-  replacementAuthority: false,
-  silentSkuSubstitution: false,
-} as const;
 
 /** Caller-facing pricing request shared by every BoQ pricing lane; carries no pricing authority. */
 export interface CreateProjectBoqPricedBoqRequest {
@@ -148,8 +137,13 @@ export interface ProjectBoqPricingArtifactSummary {
 /** Deterministic priced-BoQ roll-up counts/totals (no per-line detail). */
 export type ProjectBoqPricingSummary = PricedBoqArtifactPayload["summary"];
 
-/** The pricing-source boundary block carried on the payload summary. */
-export type ProjectBoqPricingSourceSummary = typeof PRICING_SOURCE;
+/**
+ * The pricing-source boundary block carried on the payload summary. It records that the
+ * unit prices came from the combined approved Quick BoM pricing sources (the Honeywell
+ * MVP demo fixture plus the scoped Cisco fixture) and carry demo/scoped authority only -
+ * never production, AI, catalog, or replacement authority.
+ */
+export type ProjectBoqPricingSourceSummary = QuickBomApprovedPricingSourceSummary;
 
 /**
  * Serializable priced-payload summary: provenance ids/versions, the copied source
@@ -249,9 +243,15 @@ function toPayloadSummary(payload: PricedBoqArtifactPayload): ProjectBoqPricingP
     sourceSkuResolutionArtifactVersion: payload.sourceSkuResolutionArtifactVersion,
     sourceFileIds: [...payload.sourceFileIds],
     pricingConfig: { ...payload.pricingConfig },
-    pricingSource: { ...PRICING_SOURCE },
+    pricingSource: getQuickBomApprovedPricingSourceSummary(),
     ...(payload.pricingAuthority !== undefined
-      ? { pricingAuthority: { ...payload.pricingAuthority, boundary: { ...payload.pricingAuthority.boundary } } }
+      ? {
+          pricingAuthority: {
+            ...payload.pricingAuthority,
+            boundary: { ...payload.pricingAuthority.boundary },
+            sources: payload.pricingAuthority.sources.map((s) => ({ ...s })),
+          },
+        }
       : {}),
     ...(payload.configurationAuthority !== undefined
       ? {
@@ -290,7 +290,7 @@ function translateDelegateError(
  * `pricingConfig` to exist (pricing_config_missing) BEFORE any artifact load or
  * pricing. For a Project with a pricingConfig it delegates the load+price+persist to
  * {@link createPricedBoqArtifact} - passing a FRESH copy of the Project pricingConfig
- * and the committed Honeywell MVP demo SAR price map as the only unit-price source -
+ * and the combined approved Quick BoM SAR price map as the only unit-price source -
  * translating that service's known failures into safe statuses and re-throwing
  * anything unexpected. On success it returns lean, serializable summaries of the
  * created artifact, its payload (no lines/amounts/price map), and the pricing counts.
@@ -312,27 +312,34 @@ export async function createProjectBoqPricedBoq(
   }
 
   // Pricing authority: the Project-owned config (copied fresh so the delegate cannot
-  // reach the live Project object) and the demo fixture price map (a fresh deep copy
-  // from its getter) are the ONLY pricing inputs; the caller supplies no price/config.
+  // reach the live Project object) and the combined approved Quick BoM price map (a
+  // fresh deep copy from its getter) are the ONLY pricing inputs; the caller supplies
+  // no price/config.
   const pricingConfig: ProjectPricingConfig = { ...project.pricingConfig };
-  const unitListPriceSarBySku = getHoneywellDemoUnitListPriceSarBySku();
+  const unitListPriceSarBySku = getQuickBomApprovedUnitListPriceSarBySku();
 
-  // Build a lean pricing authority trace from the approved Honeywell demo profile.
-  // This is provenance only and does not change pricing math or the price source.
-  const profile = getHoneywellDemoPricingAuthorityProfile();
+  // Build a lean pricing authority trace from the combined approved Quick BoM pricing
+  // profile. This is provenance only and does not change pricing math or the price
+  // source. It carries no workbook path or sheet name at any level.
+  const profile = getQuickBomApprovedPricingAuthorityProfile();
   const pricingAuthority: PricingAuthorityTrace = {
     profileId: profile.profileId,
     scope: profile.scope,
-    approvalRecordId: profile.approvalRecordId,
-    activeSource: profile.activeSource,
-    activeSourceFixtureId: profile.activeSourceFixtureId,
-    activeSourceStatus: profile.activeSourceStatus,
-    activeSourceWorkbookPath: profile.activeSourceWorkbookPath,
-    activeSourceSheetName: profile.activeSourceSheetName,
     currency: profile.currency,
     pricedSkuCount: profile.pricedSkuCount,
     missingPriceSkuCount: profile.missingPriceSkuCount,
     boundary: { ...profile.boundary },
+    sources: profile.sources.map((s) => ({
+      profileId: s.profileId,
+      scope: s.scope,
+      approvalRecordId: s.approvalRecordId,
+      activeSource: s.activeSource,
+      activeSourceFixtureId: s.activeSourceFixtureId,
+      activeSourceStatus: s.activeSourceStatus,
+      currency: s.currency,
+      pricedSkuCount: s.pricedSkuCount,
+      missingPriceSkuCount: s.missingPriceSkuCount,
+    })),
   };
 
   let result: CreatePricedBoqArtifactResult;

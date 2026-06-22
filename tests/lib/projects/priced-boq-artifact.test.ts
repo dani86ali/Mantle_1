@@ -44,22 +44,15 @@ function sar(unitListPriceSar: number): ExplicitSarUnitPrice {
 
 function trace(overrides: Partial<PricingAuthorityTrace> = {}): PricingAuthorityTrace {
   return {
-    profileId: "honeywell-mvp-demo-pricing-authority-profile",
-    scope: "honeywell_mvp_demo_only",
-    approvalRecordId: "prompt-119-user-approved-honeywell-demo-pricing-authority",
-    activeSource: "committed_honeywell_demo_pricing_fixture",
-    activeSourceFixtureId: "honeywell-mvp-demo-pricing-fixture",
-    activeSourceStatus: "approved_demo_fixture",
-    activeSourceWorkbookPath: "C:/Pre-Sales/Benchmarck_Files/Estimate_NB167337237YA.xlsx",
-    activeSourceSheetName: "EstimateDetails_NB167337237YA",
+    profileId: "quick-bom-approved-pricing-sources-profile",
+    scope: "quick_bom_approved_pricing_sources",
     currency: "SAR",
-    pricedSkuCount: 50,
+    pricedSkuCount: 60,
     missingPriceSkuCount: 0,
     boundary: {
       deterministicPricingAuthority: true,
       demoFixtureAuthority: true,
-      currentLocalGplSarCsvTemporarilyApproved: true,
-      activeRuntimeSourceReadsExternalGplCsv: false,
+      scopedCiscoPricingAuthority: true,
       productionCiscoPricingAuthority: false,
       broadCiscoGeneralPricingAuthority: false,
       runtimeAiPricing: false,
@@ -70,6 +63,30 @@ function trace(overrides: Partial<PricingAuthorityTrace> = {}): PricingAuthority
       silentSkuSubstitution: false,
       missingPricesReported: true,
     },
+    sources: [
+      {
+        profileId: "honeywell-mvp-demo-pricing-authority-profile",
+        scope: "honeywell_mvp_demo_only",
+        approvalRecordId: "prompt-119-user-approved-honeywell-demo-pricing-authority",
+        activeSource: "committed_honeywell_demo_pricing_fixture",
+        activeSourceFixtureId: "honeywell-mvp-demo-pricing-fixture",
+        activeSourceStatus: "approved_demo_fixture",
+        currency: "SAR",
+        pricedSkuCount: 50,
+        missingPriceSkuCount: 0,
+      },
+      {
+        profileId: "scoped-cisco-quick-bom-pricing-authority-profile",
+        scope: "scoped_cisco_quick_bom_pricing_source",
+        approvalRecordId: "user-approved-scoped-cisco-quick-bom-pricing-authority",
+        activeSource: "committed_scoped_cisco_pricing_fixture",
+        activeSourceFixtureId: "scoped-cisco-quick-bom-pricing-fixture",
+        activeSourceStatus: "approved_scoped_pricing_source",
+        currency: "SAR",
+        pricedSkuCount: 10,
+        missingPriceSkuCount: 0,
+      },
+    ],
     ...overrides,
   };
 }
@@ -691,18 +708,20 @@ describe("pricingAuthority trace - buildPricedBoqArtifactPayload", () => {
     expect(payload.pricingAuthority).toEqual(t);
   });
 
-  it("does not alias the supplied trace or its boundary", () => {
+  it("does not alias the supplied trace, its boundary, or its source entries", () => {
     const t = trace();
     const payload = buildPricedBoqArtifactPayload({ ...baseInput(), pricingAuthority: t });
     expect(payload.pricingAuthority).not.toBe(t);
     expect(payload.pricingAuthority!.boundary).not.toBe(t.boundary);
+    expect(payload.pricingAuthority!.sources).not.toBe(t.sources);
+    expect(payload.pricingAuthority!.sources[0]).not.toBe(t.sources[0]);
   });
 
   it("mutating the input trace after the call does not corrupt the payload", () => {
     const t = trace();
     const payload = buildPricedBoqArtifactPayload({ ...baseInput(), pricingAuthority: t });
-    (t as { approvalRecordId: string }).approvalRecordId = "mutated";
-    expect(payload.pricingAuthority!.approvalRecordId).toBe(
+    (t.sources[0] as { approvalRecordId: string }).approvalRecordId = "mutated";
+    expect(payload.pricingAuthority!.sources[0].approvalRecordId).toBe(
       "prompt-119-user-approved-honeywell-demo-pricing-authority"
     );
   });
