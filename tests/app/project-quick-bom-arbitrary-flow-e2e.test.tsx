@@ -78,6 +78,7 @@ import {
   locateMantlePriceEstimateLayout,
   MANTLE_PRICE_ESTIMATE_SHEET_NAME,
 } from "@/lib/projects/mantle-layout-locator";
+import { getScopedCiscoPricingFixture } from "@/lib/projects/scoped-cisco-pricing-fixture";
 
 type ProjectRow = {
   id: string;
@@ -2508,11 +2509,10 @@ describe("Cisco collaboration + industrial recognition scope app chain E2E (test
   // Item Name / Description / Quantity / Service Duration (Months) / Included Item).
   // This proves the newly approved deterministic same-SKU recognition scope flows
   // through the app: upload -> normalize -> SKU review -> SKU approval -> configuration
-  // expansion -> configuration approval -> priced_boq draft, WITHOUT introducing any
-  // Cisco pricing authority. The active pricing source stays the committed Honeywell
-  // MVP demo fixture only, so accepted Cisco rows surface as `missing_price` (recognition
-  // is not pricing eligibility). No export_package is created (Cisco pricing authority is
-  // not approved) and priced_boq is left at needs_review.
+  // expansion -> configuration approval -> priced_boq draft. The active pricing source
+  // is the approved combined Honeywell + scoped Cisco pricing profile, so accepted
+  // scoped Cisco rows price deterministically while manual/non-Cisco rows are preserved
+  // as not_accepted. No export_package is created until the priced_boq is approved.
   const MIXED_CISCO_HEADER =
     "Line Number,Item Name,Description,Quantity,Service Duration (Months),Included Item";
   // [lineNumber, sku, description, quantity, serviceDuration, includedItem]
@@ -2588,7 +2588,7 @@ describe("Cisco collaboration + industrial recognition scope app chain E2E (test
     }
   }
 
-  it("recognizes mixed Cisco SKUs as same-SKU, classifies manual rows, and reaches a Cisco-unpriced priced_boq draft", async () => {
+  it("recognizes mixed Cisco SKUs as same-SKU, classifies manual rows, and reaches a scoped-priced priced_boq draft", async () => {
     const project = await createArbitraryProject();
     const calls = dispatchQuickBomFetch();
     let view = render(<ProjectQuickBomPage />);
@@ -2848,8 +2848,8 @@ describe("Cisco collaboration + industrial recognition scope app chain E2E (test
     const pricedArtifact = hoisted.store.latestArtifact("priced_boq");
     const pricedLines = (pricedArtifact.payload.lines ?? []) as Array<{ status: string }>;
     expect(pricedLines).toHaveLength(20);
-    expect(pricedLines.filter((l) => l.status === "priced")).toHaveLength(0);
-    expect(pricedLines.filter((l) => l.status === "missing_price")).toHaveLength(16);
+    expect(pricedLines.filter((l) => l.status === "priced")).toHaveLength(16);
+    expect(pricedLines.filter((l) => l.status === "missing_price")).toHaveLength(0);
     expect(pricedLines.filter((l) => l.status === "not_accepted")).toHaveLength(4);
     const pricedSummary = pricedArtifact.payload.summary as {
       inputLineCount: number;
@@ -2858,21 +2858,34 @@ describe("Cisco collaboration + industrial recognition scope app chain E2E (test
       notAcceptedCount: number;
     };
     expect(pricedSummary.inputLineCount).toBe(20);
-    expect(pricedSummary.pricedLineCount).toBe(0);
-    expect(pricedSummary.missingPriceCount).toBe(16);
+    expect(pricedSummary.pricedLineCount).toBe(16);
+    expect(pricedSummary.missingPriceCount).toBe(0);
     expect(pricedSummary.notAcceptedCount).toBe(4);
 
-    // Pricing source remains the committed Honeywell MVP demo scope; no Cisco pricing
-    // authority is introduced.
+    // Pricing source is the approved combined profile: Honeywell first, scoped Cisco
+    // second. It remains deterministic fixture authority, not broad/production Cisco
+    // pricing authority.
     const pricingAuthority = pricedArtifact.payload.pricingAuthority as {
       scope?: string;
       profileId?: string;
-      activeSource?: string;
+      sources?: Array<{ profileId?: string; scope?: string; activeSource?: string }>;
       boundary?: Record<string, boolean>;
     };
-    expect(pricingAuthority.scope).toBe("honeywell_mvp_demo_only");
-    expect(pricingAuthority.profileId).toBe("honeywell-mvp-demo-pricing-authority-profile");
-    expect(pricingAuthority.activeSource).toBe("committed_honeywell_demo_pricing_fixture");
+    expect(pricingAuthority.scope).toBe("quick_bom_approved_pricing_sources");
+    expect(pricingAuthority.profileId).toBe("quick-bom-approved-pricing-sources-profile");
+    expect(pricingAuthority.sources).toHaveLength(2);
+    expect(pricingAuthority.sources?.[0].profileId).toBe(
+      "honeywell-mvp-demo-pricing-authority-profile"
+    );
+    expect(pricingAuthority.sources?.[0].activeSource).toBe(
+      "committed_honeywell_demo_pricing_fixture"
+    );
+    expect(pricingAuthority.sources?.[1].profileId).toBe(
+      "scoped-cisco-quick-bom-pricing-authority-profile"
+    );
+    expect(pricingAuthority.sources?.[1].activeSource).toBe(
+      "committed_scoped_cisco_pricing_fixture"
+    );
     expect(pricingAuthority.boundary?.productionCiscoPricingAuthority).toBe(false);
     expect(pricingAuthority.boundary?.broadCiscoGeneralPricingAuthority).toBe(false);
 
@@ -2883,8 +2896,8 @@ describe("Cisco collaboration + industrial recognition scope app chain E2E (test
     expect(screen.getAllByTestId("priced-review-line")).toHaveLength(20);
     const pricedReviewText = screen.getByTestId("priced-review-summary").textContent ?? "";
     expect(pricedReviewText).toContain("20 lines");
-    expect(pricedReviewText).toContain("0 priced");
-    expect(pricedReviewText).toContain("16 missing price");
+    expect(pricedReviewText).toContain("16 priced");
+    expect(pricedReviewText).toContain("0 missing price");
     // The priced review panel is read-only: it never POSTs.
     expect(
       calls.filter((c) => c.method === "POST" && /\/priced-boq\/review$/.test(c.url))
@@ -2925,33 +2938,15 @@ describe("Cisco collaboration + industrial recognition scope app chain E2E (test
   });
 });
 
-describe("scoped Cisco comparison workbook app chain E2E (test-only evidence)", () => {
+describe("scoped Cisco comparison fixture app chain E2E (test-only evidence)", () => {
   // Evidence/regression proof that the deterministic same-SKU recognition scope flows
-  // through the app for the ACTUAL scoped comparison workbook (a mixed Cisco
-  // collaboration + industrial-switching estimate). The workbook item rows are parsed
-  // and emitted as an accepted Quick BoM Format #1 CSV, then four non-Cisco manual
-  // commercial lines are appended. The app runs upload -> normalize -> SKU review ->
-  // SKU approval -> configuration expansion -> configuration approval -> priced_boq
-  // draft, WITHOUT introducing any Cisco pricing authority, catalog lookup,
-  // replacement, or substitution. The active pricing source stays the committed demo
-  // fixture only, so recognized Cisco rows surface as `missing_price` (recognition is
-  // not pricing eligibility). priced_boq is left at needs_review and no export_package
-  // is created.
-  const COMPARISON_WORKBOOK_PATH =
-    "C:\\Pre-Sales\\Benchmarck_Files\\MARAFIQObsolete_Network_Hardware_Replacement.xlsx";
-  const COMPARISON_SHEET_NAME = "EstimateDetails_JL164850184VT";
-  // Comparison workbook column layout (1-based), confirmed from the sheet header row.
-  const WB_COL = {
-    lineNumber: 1,
-    itemName: 2,
-    description: 4,
-    serviceDuration: 6,
-    includedItem: 8,
-    quantity: 9,
-    listPrice: 11,
-    extendedListPrice: 12,
-    serviceType: 15,
-  };
+  // through the app for the committed scoped Cisco pricing fixture (a mixed Cisco
+  // collaboration + industrial-switching estimate). The fixture item rows are emitted
+  // as an accepted Quick BoM Format #1 CSV, then four non-Cisco manual commercial lines
+  // are appended. The app runs upload -> normalize -> SKU review -> SKU approval ->
+  // configuration expansion -> configuration approval -> priced_boq draft, using only
+  // the approved combined pricing source profile. priced_boq is left at needs_review
+  // and no export_package is created.
   const EXPECTED_CISCO_ITEM_ROWS = 44;
   const EXPECTED_INCLUDED_ITEM_ROWS = 25;
 
@@ -2989,41 +2984,37 @@ describe("scoped Cisco comparison workbook app chain E2E (test-only evidence)", 
     ["9004.0", "INSURANCE-POLICY", "Insurance policy", 1, "N/A", "No"],
   ];
 
-  /**
-   * Parse the comparison workbook item rows. An item row needs a Line Number, an Item
-   * Name/SKU, a positive Quantity, and a numeric ListPrice (0 allowed). A blank Extended
-   * ListPrice cell is read as 0.
-   */
-  function parseComparisonItemRows(worksheet: ExcelJS.Worksheet): ComparisonItemRow[] {
-    const rows: ComparisonItemRow[] = [];
-    for (let r = 1; r <= worksheet.rowCount; r += 1) {
-      const wsRow = worksheet.getRow(r);
-      const lineNumber = cellText(wsRow.getCell(WB_COL.lineNumber));
-      const sku = cellText(wsRow.getCell(WB_COL.itemName));
-      const quantity = numericCell(wsRow.getCell(WB_COL.quantity));
-      const listPrice = numericCell(wsRow.getCell(WB_COL.listPrice));
-      if (
-        lineNumber === "" ||
-        sku === "" ||
-        quantity === null ||
-        quantity <= 0 ||
-        listPrice === null
-      ) {
-        continue;
-      }
-      rows.push({
+  function isFixtureIncludedItem(lineNumber: string): boolean {
+    const match = /^1\.(\d+)$/.exec(lineNumber);
+    if (match === null) return false;
+    const itemNumber = Number(match[1]);
+    return itemNumber >= 5 && itemNumber <= 29;
+  }
+
+  function buildFixtureCiscoRows(): ComparisonItemRow[] {
+    const fixture = getScopedCiscoPricingFixture();
+    const occurrenceBySku: Record<string, number> = {};
+    return fixture.mantleRowOrderSkuSequence.map((sku, index) => {
+      const occurrence = occurrenceBySku[sku] ?? 0;
+      occurrenceBySku[sku] = occurrence + 1;
+      const sourceEvidence = fixture.priceSourceEvidenceBySku[sku];
+      const sourceLine =
+        sourceEvidence.sourceLines[occurrence] ?? sourceEvidence.sourceLines[0];
+      const lineNumber = sourceLine.lineNumber;
+      const quantity = fixture.mantleRowOrderQuantities[index];
+      const unitPrice = fixture.unitListPriceSarBySku[sku]?.unitListPriceSar ?? 0;
+      return {
         lineNumber,
         sku,
-        description: cellText(wsRow.getCell(WB_COL.description)),
+        description: `Approved scoped Cisco item ${sku}`,
         quantity,
-        serviceDuration: cellText(wsRow.getCell(WB_COL.serviceDuration)),
-        includedItem: cellText(wsRow.getCell(WB_COL.includedItem)),
-        listPrice,
-        extended: numericCell(wsRow.getCell(WB_COL.extendedListPrice)) ?? 0,
-        serviceType: cellText(wsRow.getCell(WB_COL.serviceType)),
-      });
-    }
-    return rows;
+        serviceDuration: fixture.supportServiceSkus.includes(sku) ? "60" : "N/A",
+        includedItem: isFixtureIncludedItem(lineNumber) ? "Yes" : "No",
+        listPrice: unitPrice,
+        extended: sourceLine.rawExtendedListPrice,
+        serviceType: fixture.categoryBySku[sku] === "service" ? "Service" : "Product",
+      };
+    });
   }
 
   /** RFC-4180 CSV escaping; descriptions contain commas and quotes. */
@@ -3083,13 +3074,9 @@ describe("scoped Cisco comparison workbook app chain E2E (test-only evidence)", 
     }
   }
 
-  it("recognizes the scoped Cisco comparison workbook SKUs, classifies manual rows, and reaches a Cisco-unpriced priced_boq draft", async () => {
-    // --- 0. Parse the comparison workbook and generate an accepted Quick BoM CSV -----
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(COMPARISON_WORKBOOK_PATH);
-    const worksheet = workbook.getWorksheet(COMPARISON_SHEET_NAME);
-    expect(worksheet, `sheet ${COMPARISON_SHEET_NAME}`).toBeDefined();
-    const ciscoRows = parseComparisonItemRows(worksheet as ExcelJS.Worksheet);
+  it("recognizes the scoped Cisco comparison fixture SKUs, classifies manual rows, and reaches a scoped-priced priced_boq draft", async () => {
+    // --- 0. Generate an accepted Quick BoM CSV from the committed fixture ------------
+    const ciscoRows = buildFixtureCiscoRows();
     expect(ciscoRows).toHaveLength(EXPECTED_CISCO_ITEM_ROWS);
 
     const ciscoSkuSequence = ciscoRows.map((r) => r.sku);
@@ -3394,10 +3381,10 @@ describe("scoped Cisco comparison workbook app chain E2E (test-only evidence)", 
     const pricedArtifact = hoisted.store.latestArtifact("priced_boq");
     const pricedLines = (pricedArtifact.payload.lines ?? []) as Array<{ status: string }>;
     expect(pricedLines).toHaveLength(totalLineCount);
-    expect(pricedLines.filter((l) => l.status === "priced")).toHaveLength(0);
-    expect(pricedLines.filter((l) => l.status === "missing_price")).toHaveLength(
+    expect(pricedLines.filter((l) => l.status === "priced")).toHaveLength(
       EXPECTED_CISCO_ITEM_ROWS
     );
+    expect(pricedLines.filter((l) => l.status === "missing_price")).toHaveLength(0);
     expect(pricedLines.filter((l) => l.status === "not_accepted")).toHaveLength(
       MANUAL_ROWS.length
     );
@@ -3408,20 +3395,33 @@ describe("scoped Cisco comparison workbook app chain E2E (test-only evidence)", 
       notAcceptedCount: number;
     };
     expect(pricedSummary.inputLineCount).toBe(totalLineCount);
-    expect(pricedSummary.pricedLineCount).toBe(0);
-    expect(pricedSummary.missingPriceCount).toBe(EXPECTED_CISCO_ITEM_ROWS);
+    expect(pricedSummary.pricedLineCount).toBe(EXPECTED_CISCO_ITEM_ROWS);
+    expect(pricedSummary.missingPriceCount).toBe(0);
     expect(pricedSummary.notAcceptedCount).toBe(MANUAL_ROWS.length);
 
-    // Pricing source remains the committed demo scope; no Cisco pricing authority.
+    // Pricing source is the approved combined profile, not broad/production Cisco
+    // pricing authority.
     const pricingAuthority = pricedArtifact.payload.pricingAuthority as {
       scope?: string;
       profileId?: string;
-      activeSource?: string;
+      sources?: Array<{ profileId?: string; scope?: string; activeSource?: string }>;
       boundary?: Record<string, boolean>;
     };
-    expect(pricingAuthority.scope).toBe("honeywell_mvp_demo_only");
-    expect(pricingAuthority.profileId).toBe("honeywell-mvp-demo-pricing-authority-profile");
-    expect(pricingAuthority.activeSource).toBe("committed_honeywell_demo_pricing_fixture");
+    expect(pricingAuthority.scope).toBe("quick_bom_approved_pricing_sources");
+    expect(pricingAuthority.profileId).toBe("quick-bom-approved-pricing-sources-profile");
+    expect(pricingAuthority.sources).toHaveLength(2);
+    expect(pricingAuthority.sources?.[0].profileId).toBe(
+      "honeywell-mvp-demo-pricing-authority-profile"
+    );
+    expect(pricingAuthority.sources?.[0].activeSource).toBe(
+      "committed_honeywell_demo_pricing_fixture"
+    );
+    expect(pricingAuthority.sources?.[1].profileId).toBe(
+      "scoped-cisco-quick-bom-pricing-authority-profile"
+    );
+    expect(pricingAuthority.sources?.[1].activeSource).toBe(
+      "committed_scoped_cisco_pricing_fixture"
+    );
     expect(pricingAuthority.boundary?.productionCiscoPricingAuthority).toBe(false);
     expect(pricingAuthority.boundary?.broadCiscoGeneralPricingAuthority).toBe(false);
 
@@ -3432,8 +3432,8 @@ describe("scoped Cisco comparison workbook app chain E2E (test-only evidence)", 
     expect(screen.getAllByTestId("priced-review-line")).toHaveLength(totalLineCount);
     const pricedReviewText = screen.getByTestId("priced-review-summary").textContent ?? "";
     expect(pricedReviewText).toContain(`${totalLineCount} lines`);
-    expect(pricedReviewText).toContain("0 priced");
-    expect(pricedReviewText).toContain(`${EXPECTED_CISCO_ITEM_ROWS} missing price`);
+    expect(pricedReviewText).toContain(`${EXPECTED_CISCO_ITEM_ROWS} priced`);
+    expect(pricedReviewText).toContain("0 missing price");
     // The priced review panel is read-only: it never POSTs.
     expect(
       calls.filter((c) => c.method === "POST" && /\/priced-boq\/review$/.test(c.url))
@@ -3447,7 +3447,6 @@ describe("scoped Cisco comparison workbook app chain E2E (test-only evidence)", 
     // catalog/AI, replacement, or substitution anywhere in the DOM ------------------
     const dom = document.body.textContent ?? "";
     expect(dom).not.toContain("scoped-comparison-upload.csv");
-    expect(dom).not.toContain(COMPARISON_WORKBOOK_PATH);
     expect(dom).not.toContain("MARAFIQObsolete_Network_Hardware_Replacement.xlsx");
     expect(dom).not.toContain("activeSourceWorkbookPath");
     expect(dom).not.toContain("unitListPriceSarBySku");

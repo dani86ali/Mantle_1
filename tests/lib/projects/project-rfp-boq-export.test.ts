@@ -8,20 +8,21 @@ import type { Project, ProjectArtifact } from "@/types/project";
 // export-package core. Per the task, the RFP lane must reject quick_bom projects as
 // wrong_mode and pass rfp projects THROUGH THE CORE BEHAVIOR, so this test drives the
 // REAL core (mocking only the project store, the deterministic Mantle export delegate,
-// the committed demo fixture getters, and rm) rather than mocking the core. That proves
+// the combined approved category/export source getters, and rm) rather than mocking the core. That proves
 // the wrapper truly pins expectedMode = "rfp" and the "bomatic-rfp-boq-export" filename
 // prefix: an rfp project exports, a quick_bom project is rejected before any fixture or
 // delegate read, the caller ids are forwarded tenant-scoped, and the lane adds no pricing
-// or export authority (the delegate still receives only the demo fixture map and the six
-// server-derived fields). The full summary / canary / cleanup behavior is proven
+// or export authority (the delegate still receives only the combined approved category
+// map, row-order sequence, and the six server-derived fields). The full summary / canary / cleanup behavior is proven
 // exhaustively in the core's own test.
 vi.mock("@/lib/db/project-store", () => ({ getProjectById: vi.fn() }));
 vi.mock("@/lib/projects/mantle-export-artifact", () => ({
   createMantleExportArtifact: vi.fn(),
 }));
-vi.mock("@/lib/projects/honeywell-demo-pricing-fixture", () => ({
-  getHoneywellDemoMantleCategoryByAcceptedSku: vi.fn(),
-  getHoneywellDemoMantleRowOrderSkuSequence: vi.fn(),
+vi.mock("@/lib/projects/quick-bom-approved-pricing-sources", () => ({
+  getQuickBomApprovedMantleCategoryByAcceptedSku: vi.fn(),
+  getQuickBomApprovedMantleRowOrderSkuSequence: vi.fn(),
+  getQuickBomApprovedCategorySourceSummary: vi.fn(),
 }));
 vi.mock("node:fs/promises", () => ({ rm: vi.fn() }));
 
@@ -34,15 +35,17 @@ import {
   type MantleExportArtifactPayload,
 } from "@/lib/projects/mantle-export-artifact";
 import {
-  getHoneywellDemoMantleCategoryByAcceptedSku,
-  getHoneywellDemoMantleRowOrderSkuSequence,
-} from "@/lib/projects/honeywell-demo-pricing-fixture";
+  getQuickBomApprovedMantleCategoryByAcceptedSku,
+  getQuickBomApprovedMantleRowOrderSkuSequence,
+  getQuickBomApprovedCategorySourceSummary,
+} from "@/lib/projects/quick-bom-approved-pricing-sources";
 import { rm } from "node:fs/promises";
 
 const getProjectMock = vi.mocked(getProjectById);
 const createMock = vi.mocked(createMantleExportArtifact);
-const getCategoryMock = vi.mocked(getHoneywellDemoMantleCategoryByAcceptedSku);
-const getRowOrderMock = vi.mocked(getHoneywellDemoMantleRowOrderSkuSequence);
+const getCategoryMock = vi.mocked(getQuickBomApprovedMantleCategoryByAcceptedSku);
+const getRowOrderMock = vi.mocked(getQuickBomApprovedMantleRowOrderSkuSequence);
+const getCategorySourceSummaryMock = vi.mocked(getQuickBomApprovedCategorySourceSummary);
 const rmMock = vi.mocked(rm);
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
@@ -160,6 +163,19 @@ beforeEach(() => {
   getProjectMock.mockResolvedValue(makeProject());
   getCategoryMock.mockReturnValue(categoryMap);
   getRowOrderMock.mockReturnValue(rowOrderSequence);
+  getCategorySourceSummaryMock.mockReturnValue({
+    source: "quick_bom_approved_mantle_category_sources",
+    honeywellDemoFixtureIncluded: true,
+    scopedCiscoFixtureIncluded: true,
+    demoFixtureAuthority: true,
+    scopedCiscoCategoryAuthority: true,
+    productionPricingAuthority: false,
+    configurationAuthority: false,
+    runtimeAi: false,
+    runtimeCatalogLookup: false,
+    replacementAuthority: false,
+    silentSkuSubstitution: false,
+  });
   createMock.mockResolvedValue(makeDelegateResult());
   rmMock.mockResolvedValue(undefined);
 });
@@ -204,7 +220,7 @@ describe("createProjectRfpBoqExportPackage - pins rfp (through core behavior)", 
     expect(arg.pricedBoqArtifactId).toBe(PRICED_ID);
   });
 
-  it("adds no pricing/export authority: the delegate gets only the demo fixture map and the six server-derived fields", async () => {
+  it("adds no pricing/export authority: the delegate gets only the combined approved category sources and the six server-derived fields", async () => {
     await createProjectRfpBoqExportPackage(input());
 
     const arg = createMock.mock.calls[0][0];
