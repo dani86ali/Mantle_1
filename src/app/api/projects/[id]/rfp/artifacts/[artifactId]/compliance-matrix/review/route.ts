@@ -118,6 +118,64 @@ export async function POST(
         { status: 409 }
       );
     }
+    if (result.status === "invalid_compliance_matrix_payload") {
+      return NextResponse.json(
+        {
+          code: "compliance_matrix_payload_invalid",
+          error: "Compliance matrix payload is not approval-ready.",
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "no_active_rows") {
+      return NextResponse.json(
+        {
+          code: "compliance_matrix_no_active_rows",
+          error: "Compliance matrix has no active rows to approve.",
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "rows_need_review") {
+      return NextResponse.json(
+        {
+          code: "compliance_matrix_rows_need_review",
+          error: "Some compliance rows still need a compliance decision.",
+          rowIds: result.rowIds,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "rows_not_reviewed") {
+      return NextResponse.json(
+        {
+          code: "compliance_matrix_rows_not_reviewed",
+          error: "Some compliance rows are not marked reviewed.",
+          rowIds: result.rowIds,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "not_applicable_reason_required") {
+      return NextResponse.json(
+        {
+          code: "compliance_matrix_not_applicable_reason_required",
+          error: "Some not-applicable rows are missing a reason.",
+          rowIds: result.rowIds,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "removed_reason_required") {
+      return NextResponse.json(
+        {
+          code: "compliance_matrix_removed_reason_required",
+          error: "Some removed rows are missing a reason.",
+          rowIds: result.rowIds,
+        },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json(
       {

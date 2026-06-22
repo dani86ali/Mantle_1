@@ -139,6 +139,46 @@ it("maps service results without leaking unexpected errors", async () => {
   expect(JSON.stringify(await failed.json())).not.toContain("secret-stack");
 });
 
+it("maps approval-gate block statuses to 409 with stable codes and rowIds", async () => {
+  const cases: Array<[Record<string, unknown>, string, string[] | undefined]> = [
+    [{ status: "invalid_compliance_matrix_payload" }, "compliance_matrix_payload_invalid", undefined],
+    [{ status: "no_active_rows" }, "compliance_matrix_no_active_rows", undefined],
+    [
+      { status: "rows_need_review", rowIds: ["RFP-COMP-002"] },
+      "compliance_matrix_rows_need_review",
+      ["RFP-COMP-002"],
+    ],
+    [
+      { status: "rows_not_reviewed", rowIds: ["RFP-COMP-003"] },
+      "compliance_matrix_rows_not_reviewed",
+      ["RFP-COMP-003"],
+    ],
+    [
+      { status: "not_applicable_reason_required", rowIds: ["RFP-COMP-004"] },
+      "compliance_matrix_not_applicable_reason_required",
+      ["RFP-COMP-004"],
+    ],
+    [
+      { status: "removed_reason_required", rowIds: ["RFP-COMP-005"] },
+      "compliance_matrix_removed_reason_required",
+      ["RFP-COMP-005"],
+    ],
+  ];
+
+  for (const [result, code, rowIds] of cases) {
+    mockReview.mockReset().mockResolvedValueOnce(result);
+    const res = await POST(req(), PARAMS);
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json.code).toBe(code);
+    if (rowIds) {
+      expect(json.rowIds).toEqual(rowIds);
+    } else {
+      expect(json.rowIds).toBeUndefined();
+    }
+  }
+});
+
 it("exports POST only and keeps route imports narrow", () => {
   expect(typeof routeModule.POST).toBe("function");
   for (const method of ["GET", "PUT", "PATCH", "DELETE"]) {

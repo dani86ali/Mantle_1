@@ -55,6 +55,50 @@ function makeProject(overrides: Partial<Project> = {}): Project {
   };
 }
 
+function makeRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "RFP-COMP-001",
+    requirementId: "RFP-REQ-001",
+    requirementText: "req",
+    category: "technical",
+    priority: "must",
+    complianceStatus: "compliant",
+    response: "ok",
+    evidenceReferences: [],
+    rowReviewStatus: "reviewed",
+    ...overrides,
+  };
+}
+
+function makePayload(rows: Record<string, unknown>[]): Record<string, unknown> {
+  return {
+    payloadKind: "rfp_compliance_matrix",
+    sourceRequirementsBaselineArtifactId: "art-requirements-baseline-1",
+    sourceEvidencePackageArtifactId: "art-evidence-1",
+    createdBy: "u-drafter",
+    createdAt: "2026-06-01T00:00:00.000Z",
+    sourceFileIds: ["file-rfp-1"],
+    sourceArtifactIds: ["art-requirements-baseline-1"],
+    rows,
+  };
+}
+
+// A fully reviewed, mixed-status matrix: one removed row plus four active rows
+// covering compliant, partially_compliant, non_compliant, and not_applicable.
+function reviewedMixedRows(): Record<string, unknown>[] {
+  return [
+    makeRow({ id: "RFP-COMP-001", complianceStatus: "compliant", response: "PAYLOAD-SECRET" }),
+    makeRow({ id: "RFP-COMP-002", complianceStatus: "partially_compliant" }),
+    makeRow({ id: "RFP-COMP-003", complianceStatus: "non_compliant" }),
+    makeRow({
+      id: "RFP-COMP-004",
+      complianceStatus: "not_applicable",
+      notApplicableReason: "out of scope",
+    }),
+    makeRow({ id: "RFP-COMP-005", rowReviewStatus: "removed", removedReason: "duplicate" }),
+  ];
+}
+
 function makeArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
   return {
     id: ARTIFACT,
@@ -63,7 +107,7 @@ function makeArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact
     type: "compliance_matrix",
     status: "needs_review",
     version: 1,
-    payload: { secret: "PAYLOAD-SECRET" },
+    payload: makePayload(reviewedMixedRows()),
     sourceFileIds: ["file-rfp-1"],
     sourceArtifactIds: ["art-requirements-baseline-1"],
     createdAt: TS1,
@@ -184,6 +228,154 @@ describe("reviewRfpComplianceMatrixArtifact", () => {
   });
 });
 
+describe("approval payload gates (decision: approved)", () => {
+  async function approve(payload: unknown) {
+    mockGetArtifactById.mockResolvedValueOnce(
+      makeArtifact({ payload: payload as Record<string, unknown> })
+    );
+    return reviewRfpComplianceMatrixArtifact({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: ARTIFACT,
+      decision: "approved",
+      decidedBy: DECIDER,
+    });
+  }
+
+  it("approves a fully reviewed mixed matrix without leaking payload or tenant", async () => {
+    const result = await reviewRfpComplianceMatrixArtifact({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: ARTIFACT,
+      decision: "approved",
+      decidedBy: DECIDER,
+    });
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(result)).not.toContain("PAYLOAD-SECRET");
+    expect(JSON.stringify(result)).not.toContain(TENANT);
+  });
+
+  it("blocks an invalid / non-matrix payload before approval", async () => {
+    for (const payload of [
+      null,
+      "nope",
+      { secret: "PAYLOAD-SECRET" },
+      { payloadKind: "rfp_compliance_matrix" },
+      { payloadKind: "something_else", rows: [] },
+      makePayload([makeRow({ id: "" })]),
+    ]) {
+      mockCreateApproval.mockClear();
+      const result = await approve(payload);
+      expect(result.status).toBe("invalid_compliance_matrix_payload");
+      expect(mockCreateApproval).not.toHaveBeenCalled();
+    }
+  });
+
+  it("blocks when there are zero active (non-removed) rows", async () => {
+    const result = await approve(
+      makePayload([
+        makeRow({ id: "RFP-COMP-001", rowReviewStatus: "removed", removedReason: "dup" }),
+      ])
+    );
+    expect(result.status).toBe("no_active_rows");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("blocks active rows still needing review or with an unknown status", async () => {
+    const needsReview = await approve(
+      makePayload([
+        makeRow({ id: "RFP-COMP-001" }),
+        makeRow({ id: "RFP-COMP-002", complianceStatus: "needs_review" }),
+      ])
+    );
+    expect(needsReview).toEqual({
+      status: "rows_need_review",
+      rowIds: ["RFP-COMP-002"],
+    });
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+
+    const unknownStatus = await approve(
+      makePayload([makeRow({ id: "RFP-COMP-009", complianceStatus: "totally_made_up" })])
+    );
+    expect(unknownStatus).toEqual({
+      status: "rows_need_review",
+      rowIds: ["RFP-COMP-009"],
+    });
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("blocks active rows not explicitly marked reviewed", async () => {
+    const result = await approve(
+      makePayload([
+        makeRow({ id: "RFP-COMP-001" }),
+        makeRow({ id: "RFP-COMP-002", rowReviewStatus: "pending" }),
+        makeRow({ id: "RFP-COMP-003", rowReviewStatus: undefined }),
+      ])
+    );
+    expect(result).toEqual({
+      status: "rows_not_reviewed",
+      rowIds: ["RFP-COMP-002", "RFP-COMP-003"],
+    });
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("blocks active not_applicable rows missing a reason", async () => {
+    const result = await approve(
+      makePayload([
+        makeRow({ id: "RFP-COMP-001", complianceStatus: "not_applicable", notApplicableReason: "   " }),
+      ])
+    );
+    expect(result).toEqual({
+      status: "not_applicable_reason_required",
+      rowIds: ["RFP-COMP-001"],
+    });
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("blocks removed rows missing a reason", async () => {
+    const result = await approve(
+      makePayload([
+        makeRow({ id: "RFP-COMP-001" }),
+        makeRow({ id: "RFP-COMP-002", rowReviewStatus: "removed" }),
+      ])
+    );
+    expect(result).toEqual({
+      status: "removed_reason_required",
+      rowIds: ["RFP-COMP-002"],
+    });
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+});
+
+describe("rejection ignores approval readiness", () => {
+  it("records a rejection even when the payload is not approval-ready", async () => {
+    mockGetArtifactById.mockResolvedValueOnce(
+      makeArtifact({ payload: { secret: "PAYLOAD-SECRET" } })
+    );
+    mockCreateApproval.mockResolvedValueOnce(makeCreated("rejected"));
+
+    const result = await reviewRfpComplianceMatrixArtifact({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: ARTIFACT,
+      decision: "rejected",
+      decidedBy: DECIDER,
+      note: "incomplete",
+    });
+
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledWith({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: ARTIFACT,
+      decision: "rejected",
+      decidedBy: DECIDER,
+      note: "incomplete",
+    });
+  });
+});
+
 describe("module purity (static source check)", () => {
   const SRC_PATH = join(
     process.cwd(),
@@ -195,13 +387,14 @@ describe("module purity (static source check)", () => {
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports only project store, artifact store, approval store, approval helper, and canonical types", () => {
+  it("imports only the stores, approval helper, the pure matrix contract, and canonical types", () => {
     const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
     expect(froms).toEqual([
       "@/lib/db/project-store",
       "@/lib/db/project-artifact-store",
       "@/lib/db/project-approval-store",
       "@/lib/projects/approvals",
+      "@/lib/projects/project-rfp-compliance-matrix",
       "@/types/project",
     ]);
   });
