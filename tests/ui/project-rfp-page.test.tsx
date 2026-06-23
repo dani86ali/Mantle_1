@@ -3002,7 +3002,9 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(gateStatus).toHaveTextContent(
       "Complete the BoQ configuration review before compliance."
     );
-    expect(gateStatus).toHaveTextContent("configuration_expansion");
+    // The next Quick BoM step shows as a human label, not the raw token.
+    expect(gateStatus).toHaveTextContent("Next Quick BoM step: Configuration expansion.");
+    expect(gateStatus.textContent ?? "").not.toContain("configuration_expansion");
   });
 
   it("enables compliance generation under an approved no-BoQ service-only exception and sends its artifact id as the configuration expansion id", async () => {

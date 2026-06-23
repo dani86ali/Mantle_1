@@ -542,11 +542,24 @@ type RfpBoqConfigurationGate =
   ProjectRfpBoqWorkspace["readiness"]["configurationGate"];
 
 /**
+ * Human-readable label for a Quick BoM next-step id. A known BoQ spine key maps
+ * to its operator label; an unrecognized id degrades to its underscored token
+ * spelled as spaced words, never the raw underscored id.
+ */
+function nextStepLabel(nextStepId: string): string {
+  if ((BOQ_SPINE_KEYS as readonly string[]).includes(nextStepId)) {
+    return BOQ_SPINE_LABELS[nextStepId as BoqSpineKey];
+  }
+  return nextStepId.replaceAll("_", " ");
+}
+
+/**
  * Operator-language one-liner for the BoQ/configuration gate. An approved normal
  * configuration expansion reads as approved; an approved no-BoQ service-only
  * exception reads as waived (with its human reason when present); an unsatisfied
- * normal gate shows the gate message plus the next Quick BoM step when one is
- * known. Never the raw status literal or a primary artifact id.
+ * normal gate shows the gate message plus the next Quick BoM step (as a human
+ * label) when one is known. Never the raw status literal, a raw underscored step
+ * id, or a primary artifact id.
  */
 function configurationGateStatusLine(
   gate: RfpBoqConfigurationGate,
@@ -564,7 +577,9 @@ function configurationGateStatusLine(
     return "Configuration expansion is approved.";
   }
   const nextStep =
-    nextStepId !== null ? ` Next Quick BoM step: ${nextStepId}.` : "";
+    nextStepId !== null
+      ? ` Next Quick BoM step: ${nextStepLabel(nextStepId)}.`
+      : "";
   return `${gate.message}${nextStep}`;
 }
 
