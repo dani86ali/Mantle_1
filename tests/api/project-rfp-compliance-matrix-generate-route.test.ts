@@ -222,7 +222,7 @@ describe("POST .../rfp/compliance-matrix/generate - body and authority", () => {
     expect(serialized).not.toContain("C9300-48T");
   });
 
-  it("omits configurationExpansionArtifactId when not supplied", async () => {
+  it("rejects a missing configurationExpansionArtifactId before executor and generation", async () => {
     const res = await POST(
       req({
         requirementsBaselineArtifactId: BASELINE,
@@ -231,9 +231,9 @@ describe("POST .../rfp/compliance-matrix/generate - body and authority", () => {
       PARAMS
     );
 
-    expect(res.status).toBe(201);
-    const arg = mockGenerate.mock.calls[0][0] as Record<string, unknown>;
-    expect(arg).not.toHaveProperty("configurationExpansionArtifactId");
+    expect(res.status).toBe(400);
+    expect(mockGetExecutor).not.toHaveBeenCalled();
+    expect(mockGenerate).not.toHaveBeenCalled();
   });
 });
 
@@ -245,7 +245,7 @@ describe("POST .../rfp/compliance-matrix/generate - malformed body", () => {
     expect(await res.json()).toEqual({
       code: "invalid_rfp_compliance_matrix_generation_request",
       error:
-        "requirementsBaselineArtifactId and evidencePackageArtifactId must be nonblank strings; configurationExpansionArtifactId is optional but must be nonblank when supplied.",
+        "requirementsBaselineArtifactId, evidencePackageArtifactId, and configurationExpansionArtifactId must be nonblank strings.",
     });
     expect(mockGetExecutor).not.toHaveBeenCalled();
     expect(mockGenerate).not.toHaveBeenCalled();
@@ -256,6 +256,13 @@ describe("POST .../rfp/compliance-matrix/generate - malformed body", () => {
     ["array", []],
     ["missing baseline", { evidencePackageArtifactId: EVIDENCE_PACKAGE }],
     ["missing package", { requirementsBaselineArtifactId: BASELINE }],
+    [
+      "missing config",
+      {
+        requirementsBaselineArtifactId: BASELINE,
+        evidencePackageArtifactId: EVIDENCE_PACKAGE,
+      },
+    ],
     ["blank baseline", { ...VALID_BODY, requirementsBaselineArtifactId: "   " }],
     ["blank package", { ...VALID_BODY, evidencePackageArtifactId: "" }],
     ["blank config", { ...VALID_BODY, configurationExpansionArtifactId: " " }],

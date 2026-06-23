@@ -3,7 +3,8 @@
  *
  * POST - generate ONE needs_review compliance_matrix artifact by drafting
  * candidate rows from an approved requirements_baseline, approved final
- * evidence_package, and optional approved configuration_expansion. The route is
+ * evidence_package, and a required approved configuration_expansion (or the
+ * approved no-BoQ/service-only exception artifact). The route is
  * transport only: auth, minimal body parsing, configured-executor availability,
  * and HTTP mapping. It does not read stores, evidence bodies, raw files, pricing,
  * SKU/config authority, catalog, approvals, exports, or provider SDKs.
@@ -22,7 +23,7 @@ import {
 interface ParsedGenerateBody {
   requirementsBaselineArtifactId: string;
   evidencePackageArtifactId: string;
-  configurationExpansionArtifactId?: string;
+  configurationExpansionArtifactId: string;
 }
 
 function invalidRequest(): NextResponse {
@@ -30,7 +31,7 @@ function invalidRequest(): NextResponse {
     {
       code: "invalid_rfp_compliance_matrix_generation_request",
       error:
-        "requirementsBaselineArtifactId and evidencePackageArtifactId must be nonblank strings; configurationExpansionArtifactId is optional but must be nonblank when supplied.",
+        "requirementsBaselineArtifactId, evidencePackageArtifactId, and configurationExpansionArtifactId must be nonblank strings.",
     },
     { status: 400 }
   );
@@ -59,18 +60,15 @@ function parseGenerateBody(body: unknown): ParsedGenerateBody | null {
     return null;
   }
   if (
-    configurationExpansionArtifactId !== undefined &&
-    (typeof configurationExpansionArtifactId !== "string" ||
-      configurationExpansionArtifactId.trim() === "")
+    typeof configurationExpansionArtifactId !== "string" ||
+    configurationExpansionArtifactId.trim() === ""
   ) {
     return null;
   }
   return {
     requirementsBaselineArtifactId,
     evidencePackageArtifactId,
-    ...(configurationExpansionArtifactId !== undefined
-      ? { configurationExpansionArtifactId }
-      : {}),
+    configurationExpansionArtifactId,
   };
 }
 
@@ -295,12 +293,8 @@ export async function POST(
       projectId: params.id,
       requirementsBaselineArtifactId: parsed.requirementsBaselineArtifactId,
       evidencePackageArtifactId: parsed.evidencePackageArtifactId,
-      ...(parsed.configurationExpansionArtifactId !== undefined
-        ? {
-            configurationExpansionArtifactId:
-              parsed.configurationExpansionArtifactId,
-          }
-        : {}),
+      configurationExpansionArtifactId:
+        parsed.configurationExpansionArtifactId,
       requestedBy: session.userId,
       executor,
     });
@@ -322,12 +316,8 @@ export async function POST(
           requirementsBaselineArtifactId:
             result.requirementsBaselineArtifactId,
           evidencePackageArtifactId: result.evidencePackageArtifactId,
-          ...(result.configurationExpansionArtifactId !== undefined
-            ? {
-                configurationExpansionArtifactId:
-                  result.configurationExpansionArtifactId,
-              }
-            : {}),
+          configurationExpansionArtifactId:
+            result.configurationExpansionArtifactId,
           sourceFileIds: result.sourceFileIds,
           sourceArtifactIds: result.sourceArtifactIds,
         },
