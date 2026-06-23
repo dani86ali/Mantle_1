@@ -420,10 +420,15 @@ describe("module purity and surface (static source check)", () => {
     }
   });
 
-  it("exposes the creation service and the field catalog as runtime exports", () => {
+  it("exposes the creation service, field catalog, and payload kind as runtime exports", () => {
     expect(Object.keys(serviceModule).sort()).toEqual(
-      ["RFP_HLD_INTAKE_FIELDS", "createRfpHldIntakeDraft"].sort()
+      [
+        "RFP_HLD_INTAKE_FIELDS",
+        "RFP_HLD_INTAKE_PAYLOAD_KIND",
+        "createRfpHldIntakeDraft",
+      ].sort()
     );
+    expect(serviceModule.RFP_HLD_INTAKE_PAYLOAD_KIND).toBe("rfp_hld_intake");
   });
 
   it("keeps the source and test files ASCII-only", () => {

@@ -95,9 +95,17 @@ export interface RfpHldIntakeStatusCounts {
   not_applicable: number;
 }
 
-/** The persisted `hld_intake` payload (full answers live here, not in the result). */
-type RfpHldIntakePayload = {
-  payloadKind: "rfp_hld_intake";
+/** Stable discriminator for the persisted `hld_intake` payload. */
+export const RFP_HLD_INTAKE_PAYLOAD_KIND = "rfp_hld_intake" as const;
+
+/**
+ * The persisted `hld_intake` payload (full answers live here, not in the result).
+ * Exported for type-only consumers (inspection/approval); it is an object type
+ * alias (not an interface) so it stays assignable to Record<string, unknown> for
+ * the artifact store's payload parameter.
+ */
+export type RfpHldIntakePayload = {
+  payloadKind: typeof RFP_HLD_INTAKE_PAYLOAD_KIND;
   createdBy: string;
   createdAt: string;
   answers: RfpHldIntakeAnswer[];
@@ -141,7 +149,7 @@ export interface RfpHldIntakeArtifactSummary {
 
 /** Lean payload summary: provenance and counts only, never the full answer values. */
 export interface RfpHldIntakePayloadSummary {
-  payloadKind: "rfp_hld_intake";
+  payloadKind: typeof RFP_HLD_INTAKE_PAYLOAD_KIND;
   createdBy: string;
   createdAt: string;
   answerCount: number;
@@ -303,7 +311,7 @@ export async function createRfpHldIntakeDraft(
 
   const createdAt = (input.createdAt ?? new Date()).toISOString();
   const payload: RfpHldIntakePayload = {
-    payloadKind: "rfp_hld_intake",
+    payloadKind: RFP_HLD_INTAKE_PAYLOAD_KIND,
     createdBy,
     createdAt,
     answers,
