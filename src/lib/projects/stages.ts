@@ -97,9 +97,17 @@ export const PROJECT_STAGE_DEFINITIONS: readonly ProjectStageDefinition[] = [
     order: 60,
     label: "HLD / Design Delta Review",
     purpose:
-      "Review the HLD and design deltas; design must not modify the customer BoQ.",
+      "Review HLD readiness and the HLD/design deltas: confirm the approved upstream design inputs (requirements baseline, compliance matrix, configured BoQ, and engineer design intake) are captured in the readiness snapshot before HLD work. HLD starts from approved artifacts and approved intake, never raw RFP files, and must not modify the customer BoQ. The structured HLD model, diagrams, and document are future contracts only. (Stage 6)",
     activeInModes: ["rfp"],
-    artifactTypes: ["hld_design_delta"],
+    artifactTypes: [
+      "hld_design_delta",
+      "hld_intake",
+      "hld_readiness_snapshot",
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
+      "design_knowledge_pack",
+    ],
   },
   {
     stageId: "boq_pricing_review",

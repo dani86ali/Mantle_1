@@ -19,8 +19,23 @@ const VALID_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "requirements_baseline",
   "compliance_matrix",
   "hld_design_delta",
+  "hld_intake",
+  "hld_readiness_snapshot",
+  "hld_design_model",
+  "hld_diagram",
+  "hld_document",
+  "design_knowledge_pack",
   "technical_proposal",
   "export_package",
+];
+
+/** The Stage 6 HLD readiness spine artifact types. (Prompt 462) */
+const STAGE_6_HLD_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
+  "hld_intake",
+  "hld_readiness_snapshot",
+  "hld_design_model",
+  "hld_diagram",
+  "hld_document",
 ];
 
 const ids = (defs: readonly { stageId: string }[]) => defs.map((d) => d.stageId);
@@ -190,5 +205,55 @@ describe("artifact metadata", () => {
       "extraction_delta",
       "evidence_package",
     ]);
+  });
+
+  it("hld_design_delta_review carries the legacy delta plus the Stage 6 HLD spine", () => {
+    const hld = PROJECT_STAGE_DEFINITIONS.find(
+      (d) => d.stageId === "hld_design_delta_review"
+    );
+    // The Stage 6 HLD readiness/design artifacts attach to the existing HLD
+    // stage as a contract-level change; no new TP or HLD-generation stage.
+    expect(hld?.artifactTypes).toEqual([
+      "hld_design_delta",
+      "hld_intake",
+      "hld_readiness_snapshot",
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
+      "design_knowledge_pack",
+    ]);
+    for (const type of STAGE_6_HLD_ARTIFACT_TYPES) {
+      expect(hld?.artifactTypes).toContain(type);
+      // each new literal is part of the valid artifact set
+      expect(VALID_ARTIFACT_TYPES).toContain(type);
+    }
+  });
+
+  it("hld_design_delta_review includes design_knowledge_pack alongside HLD spine types", () => {
+    const hld = PROJECT_STAGE_DEFINITIONS.find(
+      (d) => d.stageId === "hld_design_delta_review"
+    );
+    expect(hld?.artifactTypes).toContain("design_knowledge_pack");
+    expect(VALID_ARTIFACT_TYPES).toContain("design_knowledge_pack");
+  });
+
+  it("design_knowledge_pack does not appear on unrelated stages", () => {
+    const unrelatedStages = PROJECT_STAGE_DEFINITIONS.filter(
+      (d) => d.stageId !== "hld_design_delta_review"
+    );
+    for (const def of unrelatedStages) {
+      expect(def.artifactTypes).not.toContain("design_knowledge_pack");
+    }
+  });
+
+  it("does not introduce any new stage for the Stage 6 HLD spine", () => {
+    // Stage count and the HLD stage's order/mode are unchanged; readiness is a
+    // contract-level addition to the existing RFP HLD stage only.
+    expect(PROJECT_STAGE_DEFINITIONS).toHaveLength(10);
+    const hld = PROJECT_STAGE_DEFINITIONS.find(
+      (d) => d.stageId === "hld_design_delta_review"
+    );
+    expect(hld?.order).toBe(60);
+    expect(hld?.activeInModes).toEqual(["rfp"]);
   });
 });

@@ -34,6 +34,27 @@ const EVIDENCE_PACKAGE_ARTIFACT_ID = "art-ep-1";
 const EVIDENCE_PACKAGE_APPROVED_ID = "art-ep-approved-1";
 const EVIDENCE_PACKAGE_DETAIL_URL = `${EVIDENCE_PACKAGE_LIST_URL}/${EVIDENCE_PACKAGE_ARTIFACT_ID}`;
 const RFP_BOQ_WORKSPACE_URL = `/api/projects/${PROJECT_ID}/rfp/boq`;
+const HLD_READINESS_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-readiness-snapshot`;
+const HLD_READINESS_SNAPSHOT_ID = "art-hld-rs-1";
+const HLD_READINESS_APPROVED_ID = "art-hld-rs-approved-1";
+const HLD_READINESS_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_READINESS_SNAPSHOT_ID}/hld-readiness-snapshot`;
+const HLD_READINESS_APPROVED_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_READINESS_APPROVED_ID}/hld-readiness-snapshot`;
+const HLD_INTAKE_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-intake`;
+const HLD_INTAKE_ARTIFACT_ID = "art-hld-intake-1";
+const HLD_INTAKE_APPROVED_ID = "art-hld-intake-approved-1";
+const HLD_INTAKE_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_INTAKE_ARTIFACT_ID}/hld-intake`;
+const HLD_INTAKE_REVIEW_URL = `${HLD_INTAKE_DETAIL_URL}/review`;
+const HLD_INTAKE_FIELD_IDS = [
+  "existing_network_context",
+  "target_topology_intent",
+  "site_room_context",
+  "resiliency_expectations",
+  "wan_lan_boundaries",
+  "rack_power_assumptions",
+  "implementation_constraints",
+  "exclusions",
+  "diagram_notes",
+];
 const INPUT_PACKAGE_URL = `/api/projects/${PROJECT_ID}/rfp/input-package`;
 const INPUT_PACKAGE_ARTIFACT_ID = "art-ip-1";
 const CONFIG_EXPANSION_ARTIFACT_ID = "art-config-1";
@@ -918,6 +939,155 @@ function workspaceWithConfigurationGate(
   };
 }
 
+function hldReadinessListBlocked(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 1,
+    artifacts: [
+      {
+        id: HLD_READINESS_SNAPSHOT_ID,
+        projectId: PROJECT_ID,
+        type: "hld_readiness_snapshot",
+        status: "needs_review",
+        version: 1,
+        payloadSummary: {
+          payloadKind: "hld_readiness_snapshot",
+          coveredDomainCount: 1,
+          missingInputCount: 2,
+        },
+      },
+    ],
+    readiness: {
+      status: "blocked",
+      canCreateReadinessSnapshot: false,
+      coveredDomains: ["core_networking"],
+      excludedDomains: [],
+      missingKnowledgePackDomains: [],
+      missingInputs: ["HLD-MISSING-INPUT-1-CANARY", "HLD-MISSING-INPUT-2-CANARY"],
+      validationMessages: ["HLD-VALIDATION-MSG-CANARY"],
+      assumptions: [{ fieldId: "hld_assumption_canary", label: "HLD-ASSUMPTION-CANARY", status: "active" }],
+      sourceArtifactIds: [COMPLIANCE_MATRIX_ARTIFACT_ID],
+    },
+  };
+}
+
+function hldReadinessListReady(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 1,
+    artifacts: [
+      {
+        id: HLD_READINESS_APPROVED_ID,
+        projectId: PROJECT_ID,
+        type: "hld_readiness_snapshot",
+        status: "approved",
+        version: 1,
+        payloadSummary: {
+          payloadKind: "hld_readiness_snapshot",
+          coveredDomainCount: 3,
+          missingInputCount: 0,
+        },
+      },
+    ],
+    readiness: {
+      status: "ready",
+      canCreateReadinessSnapshot: true,
+      coveredDomains: ["core_networking", "security", "compute"],
+      excludedDomains: [],
+      missingKnowledgePackDomains: [],
+      missingInputs: [],
+      validationMessages: [],
+      assumptions: [{ fieldId: "hld_assumption_ready_canary", label: "HLD-ASSUMPTION-READY-CANARY", status: "active" }],
+      sourceArtifactIds: [COMPLIANCE_MATRIX_ARTIFACT_ID],
+    },
+  };
+}
+
+function hldReadinessSnapshotDetail(
+  id = HLD_READINESS_SNAPSHOT_ID,
+  status = "needs_review"
+): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: {
+      id,
+      projectId: PROJECT_ID,
+      type: "hld_readiness_snapshot",
+      status,
+      version: 1,
+      sourceArtifactIds: [COMPLIANCE_MATRIX_ARTIFACT_ID],
+    },
+    snapshot: {
+      payloadKind: "hld_readiness_snapshot",
+      readinessStatus: status === "approved" ? "ready" : "blocked",
+      coveredDomains: ["core_networking", "HLD-COVERED-DOMAIN-CANARY"],
+      missingInputs: status === "approved" ? [] : ["HLD-SNAPSHOT-MISSING-CANARY"],
+      validationMessages: ["HLD-SNAPSHOT-VALIDATION-CANARY"],
+      assumptions: [{ fieldId: "hld_snapshot_assumption_canary", label: "HLD-SNAPSHOT-ASSUMPTION-CANARY", status: "active" }],
+    },
+  };
+}
+
+function hldIntakeListItem(
+  id = HLD_INTAKE_ARTIFACT_ID,
+  status = "needs_review",
+  version = 1
+): Record<string, unknown> {
+  return {
+    id,
+    projectId: PROJECT_ID,
+    type: "hld_intake",
+    status,
+    version,
+    payloadSummary: {
+      payloadKind: "hld_intake",
+      answeredCount: 1,
+      fieldCount: 9,
+    },
+  };
+}
+
+function hldIntakeListResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 2,
+    artifacts: [
+      hldIntakeListItem(HLD_INTAKE_ARTIFACT_ID, "needs_review", 2),
+      hldIntakeListItem(HLD_INTAKE_APPROVED_ID, "approved", 1),
+    ],
+  };
+}
+
+function hldIntakeDetailResponse(
+  id = HLD_INTAKE_ARTIFACT_ID,
+  status = "needs_review"
+): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: {
+      id,
+      projectId: PROJECT_ID,
+      type: "hld_intake",
+      status,
+      version: 1,
+      sourceArtifactIds: [COMPLIANCE_MATRIX_ARTIFACT_ID],
+    },
+    intake: {
+      payloadKind: "hld_intake",
+      answers: [
+        {
+          fieldId: "existing_network_context",
+          status: "answered",
+          value: "HLD-INTAKE-ANSWER-CANARY",
+          notes: "HLD-INTAKE-NOTE-CANARY",
+        },
+        { fieldId: "exclusions", status: "unknown" },
+      ],
+      sourceArtifactIds: [COMPLIANCE_MATRIX_ARTIFACT_ID],
+    },
+  };
+}
+
 function stubFetch(
   handler?: (url: string, init?: RequestInit) => Response | Promise<Response>
 ): FetchCall[] {
@@ -943,6 +1113,19 @@ function stubFetch(
         return jsonResponse(evidencePackageDetailResponse(EVIDENCE_PACKAGE_APPROVED_ID, "approved"));
       }
       if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      if (url === HLD_READINESS_LIST_URL) return jsonResponse(hldReadinessListBlocked());
+      if (url === HLD_READINESS_DETAIL_URL) return jsonResponse(hldReadinessSnapshotDetail());
+      if (url === HLD_READINESS_APPROVED_DETAIL_URL) {
+        return jsonResponse(hldReadinessSnapshotDetail(HLD_READINESS_APPROVED_ID, "approved"));
+      }
+      if (url === HLD_INTAKE_REVIEW_URL) return jsonResponse({ artifactStatus: "approved" });
+      if (url === HLD_INTAKE_LIST_URL) {
+        if (init?.method === "POST") {
+          return jsonResponse({ artifact: hldIntakeListItem() }, 201);
+        }
+        return jsonResponse(hldIntakeListResponse());
+      }
+      if (url === HLD_INTAKE_DETAIL_URL) return jsonResponse(hldIntakeDetailResponse());
       if (url === REVIEW_URL) {
         return jsonResponse({ artifactStatus: "approved", artifact: baselineListItem() });
       }
@@ -978,6 +1161,7 @@ function stage5ComplianceFetch(
       return jsonResponse({ project: projectContext() }, 200);
     }
     if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+    if (url === HLD_READINESS_LIST_URL) return jsonResponse(hldReadinessListBlocked());
     return jsonResponse({}, 200);
   };
 }
@@ -3267,6 +3451,284 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
   });
 });
 
+describe("ProjectRfpEvidencePage - Stage 6.5 HLD readiness surface", () => {
+  it("shows blocked readiness section with humanized missing inputs from GET", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const section = await screen.findByTestId("hld-readiness-section");
+    expect(section).toBeInTheDocument();
+
+    const missingBox = await screen.findByTestId("hld-readiness-missing-inputs");
+    expect(missingBox).toHaveTextContent("HLD-MISSING-INPUT-1-CANARY");
+    expect(missingBox).toHaveTextContent("HLD-MISSING-INPUT-2-CANARY");
+    expect(screen.getByTestId("hld-readiness-status")).toHaveTextContent("Blocked");
+  });
+
+  it("does not expose raw HLD snapshot artifact IDs as primary visible text", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-readiness-section");
+    expect(document.body.textContent ?? "").not.toContain(HLD_READINESS_SNAPSHOT_ID);
+  });
+
+  it("opens drawer with covered domains and validation messages on approved snapshot inspect; source IDs only inside technical details", async () => {
+    stubFetch((url) => {
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      if (url === HLD_READINESS_LIST_URL) return jsonResponse(hldReadinessListReady());
+      if (url === HLD_READINESS_APPROVED_DETAIL_URL) {
+        return jsonResponse(hldReadinessSnapshotDetail(HLD_READINESS_APPROVED_ID, "approved"));
+      }
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const inspectBtn = await screen.findByTestId("hld-readiness-snapshot-inspect-approved");
+    await act(async () => { fireEvent.click(inspectBtn); });
+
+    const drawer = await screen.findByTestId("review-drawer");
+    const domainSection = await screen.findByTestId("hld-readiness-drawer-covered-domains");
+    expect(domainSection).toHaveTextContent("HLD-COVERED-DOMAIN-CANARY");
+    const validationSection = await screen.findByTestId("hld-readiness-drawer-validation");
+    expect(validationSection).toHaveTextContent("HLD-SNAPSHOT-VALIDATION-CANARY");
+
+    // Source artifact IDs must live inside TechnicalDetails (collapsed), not as bare primary text in the drawer.
+    const techDetails = drawer.querySelector("[data-testid='hld-readiness-drawer-source-ids']");
+    expect(techDetails).not.toBeNull();
+    expect(techDetails?.textContent ?? "").toContain(COMPLIANCE_MATRIX_ARTIFACT_ID);
+    // The drawer content section must NOT render the source ID as a standalone visible paragraph.
+    const drawerContent = await screen.findByTestId("hld-readiness-drawer-content");
+    const contentOutsideTech = drawerContent.cloneNode(true) as HTMLElement;
+    contentOutsideTech.querySelector("[data-testid='hld-readiness-drawer-source-ids']")?.remove();
+    expect(contentOutsideTech.textContent ?? "").not.toContain(COMPLIANCE_MATRIX_ARTIFACT_ID);
+  });
+
+  it("HLD generation button is disabled/future-labeled and no POST is made to HLD routes", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-readiness-section");
+    const btn = screen.getByTestId("hld-generation-disabled");
+    expect(btn).toBeDisabled();
+    expect(btn.textContent ?? "").toMatch(/future/i);
+
+    const hldPostRoutes = [
+      "/rfp/hld-readiness-snapshot",
+      "/rfp/hld-model",
+      "/rfp/hld-diagram",
+      "/rfp/hld-document",
+      "/rfp/hld-proposal",
+    ];
+    const postCalls = calls.filter(
+      (c) => c.init?.method === "POST" && hldPostRoutes.some((r) => c.url.includes(r))
+    );
+    expect(postCalls).toHaveLength(0);
+  });
+});
+
+describe("ProjectRfpEvidencePage - Stage 6.2 HLD intake surface", () => {
+  function lastBody(calls: FetchCall[], url: string): Record<string, unknown> {
+    const matching = calls.filter(
+      (c) => c.url === url && c.init?.method === "POST"
+    );
+    const body = matching[matching.length - 1]?.init?.body;
+    return JSON.parse(String(body)) as Record<string, unknown>;
+  }
+
+  // Switch every field to unknown so the create guard (answered needs a value)
+  // is satisfied; tests then configure only the fields under test.
+  function clearAllToUnknown(): void {
+    for (const fieldId of HLD_INTAKE_FIELD_IDS) {
+      fireEvent.change(screen.getByTestId(`hld-intake-status-${fieldId}`), {
+        target: { value: "unknown" },
+      });
+    }
+  }
+
+  it("renders the compact intake panel and creates a draft with exactly { answers }", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const panel = await screen.findByTestId("hld-intake-panel");
+    expect(panel).toBeInTheDocument();
+    // The compact form is a collapsed details, not a giant always-open raw form.
+    expect(screen.getByTestId("hld-intake-form").tagName).toBe("DETAILS");
+
+    clearAllToUnknown();
+    fireEvent.change(
+      screen.getByTestId("hld-intake-status-existing_network_context"),
+      { target: { value: "answered" } }
+    );
+    fireEvent.change(
+      screen.getByTestId("hld-intake-value-existing_network_context"),
+      { target: { value: "Existing core is a Cisco spine-leaf fabric." } }
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-intake-create"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some((c) => c.url === HLD_INTAKE_LIST_URL && c.init?.method === "POST")
+      ).toBe(true);
+    });
+    const body = lastBody(calls, HLD_INTAKE_LIST_URL);
+    expect(Object.keys(body)).toEqual(["answers"]);
+    const answers = body.answers as Record<string, unknown>[];
+    expect(answers).toHaveLength(9);
+    // No tenant/project/user/artifact/status-of-artifact field rides along.
+    expect(body).not.toHaveProperty("tenantId");
+    expect(body).not.toHaveProperty("projectId");
+    expect(body).not.toHaveProperty("artifactId");
+    expect(body).not.toHaveProperty("status");
+  });
+
+  it("sends trimmed values for answered fields, omits value for unknown/not applicable, and notes only when nonblank", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("hld-intake-panel");
+
+    clearAllToUnknown();
+    // Answered field: trimmed value and trimmed note.
+    fireEvent.change(
+      screen.getByTestId("hld-intake-status-target_topology_intent"),
+      { target: { value: "answered" } }
+    );
+    fireEvent.change(
+      screen.getByTestId("hld-intake-value-target_topology_intent"),
+      { target: { value: "   Collapsed core with redundant aggregation.   " } }
+    );
+    fireEvent.change(
+      screen.getByTestId("hld-intake-notes-target_topology_intent"),
+      { target: { value: "  pending customer confirmation  " } }
+    );
+    // Not-applicable field (no value sent).
+    fireEvent.change(screen.getByTestId("hld-intake-status-diagram_notes"), {
+      target: { value: "not_applicable" },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-intake-create"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some((c) => c.url === HLD_INTAKE_LIST_URL && c.init?.method === "POST")
+      ).toBe(true);
+    });
+    const answers = (lastBody(calls, HLD_INTAKE_LIST_URL).answers ??
+      []) as Record<string, unknown>[];
+    const byField = new Map(answers.map((a) => [a.fieldId, a]));
+
+    const answered = byField.get("target_topology_intent");
+    expect(answered?.status).toBe("answered");
+    expect(answered?.value).toBe("Collapsed core with redundant aggregation.");
+    expect(answered?.notes).toBe("pending customer confirmation");
+
+    const unknown = byField.get("exclusions");
+    expect(unknown?.status).toBe("unknown");
+    expect(unknown).not.toHaveProperty("value");
+    expect(unknown).not.toHaveProperty("notes");
+
+    const notApplicable = byField.get("diagram_notes");
+    expect(notApplicable?.status).toBe("not_applicable");
+    expect(notApplicable).not.toHaveProperty("value");
+  });
+
+  it("inspects a current intake into the drawer with answers and no raw artifact ID as primary text", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-intake-inspect-current");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    await screen.findByTestId("review-drawer");
+    const content = await screen.findByTestId("hld-intake-drawer-content");
+    expect(content).toHaveTextContent("HLD-INTAKE-ANSWER-CANARY");
+    expect(content).toHaveTextContent("HLD-INTAKE-NOTE-CANARY");
+
+    // The raw artifact id stays inside the collapsed technical details only.
+    const audit = content.querySelector("[data-testid='hld-intake-drawer-audit']");
+    expect(audit?.textContent ?? "").toContain(HLD_INTAKE_ARTIFACT_ID);
+    const primary = content.cloneNode(true) as HTMLElement;
+    primary
+      .querySelector("[data-testid='hld-intake-drawer-audit']")
+      ?.remove();
+    expect(primary.textContent ?? "").not.toContain(HLD_INTAKE_ARTIFACT_ID);
+  });
+
+  it("approves an intake posting only { decision }, refreshes lists, and makes no HLD generation POST", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-intake-inspect-current");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-intake-review");
+
+    const intakeGetsBefore = calls.filter(
+      (c) => c.url === HLD_INTAKE_LIST_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+    const readinessGetsBefore = calls.filter(
+      (c) => c.url === HLD_READINESS_LIST_URL
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-intake-approve"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some((c) => c.url === HLD_INTAKE_REVIEW_URL && c.init?.method === "POST")
+      ).toBe(true);
+    });
+    const reviewBody = JSON.parse(
+      String(
+        calls.filter((c) => c.url === HLD_INTAKE_REVIEW_URL).slice(-1)[0]?.init?.body
+      )
+    ) as Record<string, unknown>;
+    expect(Object.keys(reviewBody)).toEqual(["decision"]);
+    expect(reviewBody.decision).toBe("approved");
+
+    // Review refreshes both the intake list and the HLD readiness list.
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) => c.url === HLD_INTAKE_LIST_URL && (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(intakeGetsBefore);
+      expect(
+        calls.filter((c) => c.url === HLD_READINESS_LIST_URL).length
+      ).toBeGreaterThan(readinessGetsBefore);
+    });
+
+    // No HLD generation/model/diagram/document/proposal POST ever happens.
+    const generationRoutes = [
+      "/rfp/hld-model",
+      "/rfp/hld-diagram",
+      "/rfp/hld-document",
+      "/rfp/hld-proposal",
+      "/rfp/hld-readiness-snapshot",
+    ];
+    const generationPosts = calls.filter(
+      (c) =>
+        c.init?.method === "POST" &&
+        generationRoutes.some((r) => c.url.includes(r))
+    );
+    expect(generationPosts).toHaveLength(0);
+  });
+});
+
 describe("ProjectRfpEvidencePage static guards", () => {
   const SRC_PATH = join(process.cwd(), "src/app/projects/[id]/rfp/page.tsx");
   const TEST_PATH = join(process.cwd(), "tests/ui/project-rfp-page.test.tsx");
@@ -3305,6 +3767,8 @@ describe("ProjectRfpEvidencePage static guards", () => {
     expect(source).toContain("/rfp/evidence-package");
     expect(source).toContain("/rfp/requirements-baseline/generate");
     expect(source).toContain("/rfp/compliance-matrix/generate");
+    expect(source).toContain("/rfp/hld-readiness-snapshot");
+    expect(source).toContain("/rfp/hld-intake");
     expect(source).toContain("evidencePackageArtifactId");
     expect(source).toContain("requirementsBaselineArtifactId");
     expect(source).not.toContain("evidenceIds");

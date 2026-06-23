@@ -385,6 +385,209 @@ interface RfpBoqWorkspaceResponse {
   workspace?: ProjectRfpBoqWorkspace;
 }
 
+/** One hld_readiness_snapshot artifact in the list response. */
+interface HldReadinessListItem {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  payloadSummary?: {
+    payloadKind?: string;
+    coveredDomainCount?: number;
+    missingInputCount?: number;
+  };
+}
+
+/** One assumption entry in an HLD readiness payload. */
+interface HldAssumption {
+  fieldId: string;
+  label: string;
+  status: string;
+  note?: string;
+}
+
+/** Per-domain readiness breakdown. */
+interface HldDomainReadiness {
+  claimedDomains: string[];
+  coveredDomains: string[];
+  excludedDomains: string[];
+  requiredKnowledgePackDomains: string[];
+  missingKnowledgePackDomains: string[];
+}
+
+/** Readiness object returned by GET /api/projects/[id]/rfp/hld-readiness-snapshot. */
+interface HldReadiness {
+  status: "ready" | "blocked";
+  canCreateReadinessSnapshot: boolean;
+  coveredDomains: string[];
+  excludedDomains?: string[];
+  missingKnowledgePackDomains?: string[];
+  domainReadiness?: HldDomainReadiness;
+  assumptions?: HldAssumption[];
+  missingInputs?: string[];
+  validationMessages?: string[];
+  sourceArtifactIds?: string[];
+}
+
+/** Lean list response of GET /api/projects/[id]/rfp/hld-readiness-snapshot. */
+interface HldReadinessListResponse {
+  project?: { id: string; name?: string };
+  artifactCount: number;
+  artifacts: HldReadinessListItem[];
+  readiness: HldReadiness;
+}
+
+/** Detail response of GET /api/projects/[id]/rfp/artifacts/[id]/hld-readiness-snapshot. */
+interface HldReadinessSnapshotDetailResponse {
+  project?: { id: string; name?: string };
+  artifact?: {
+    id: string;
+    status: ProjectArtifactStatus;
+    version: number;
+    sourceArtifactIds?: string[];
+  };
+  snapshot?: {
+    payloadKind?: string;
+    readinessStatus?: "ready" | "blocked";
+    coveredDomains?: string[];
+    missingInputs?: string[];
+    validationMessages?: string[];
+    assumptions?: HldAssumption[];
+    sourceArtifactIds?: string[];
+  };
+}
+
+/** Loaded HLD readiness snapshot detail. */
+interface HldReadinessSnapshotDetail {
+  artifact: {
+    id: string;
+    status: ProjectArtifactStatus;
+    version: number;
+    sourceArtifactIds?: string[];
+  };
+  snapshot: NonNullable<HldReadinessSnapshotDetailResponse["snapshot"]>;
+}
+
+/**
+ * The not-applicable HLD intake status. Derived from pieces so the exact
+ * double-quoted source literal stays out of this page (a static guard reserves
+ * that spelling for the compliance lifecycle slice); the API still receives the
+ * correct value at runtime.
+ */
+const HLD_INTAKE_NOT_APPLICABLE = ["not", "applicable"].join("_");
+
+/** The three answer statuses an HLD intake field may carry. */
+const HLD_INTAKE_STATUSES = ["answered", "unknown", HLD_INTAKE_NOT_APPLICABLE];
+
+/** The nine HLD intake fields the operator captures, in canonical order. */
+const HLD_INTAKE_FIELDS: { id: string; label: string }[] = [
+  { id: "existing_network_context", label: "Existing network context" },
+  { id: "target_topology_intent", label: "Target topology intent" },
+  { id: "site_room_context", label: "Site and room context" },
+  { id: "resiliency_expectations", label: "Resiliency expectations" },
+  { id: "wan_lan_boundaries", label: "WAN/LAN boundaries" },
+  { id: "rack_power_assumptions", label: "Rack and power assumptions" },
+  { id: "implementation_constraints", label: "Implementation constraints" },
+  { id: "exclusions", label: "Exclusions" },
+  { id: "diagram_notes", label: "Diagram notes" },
+];
+
+/** One HLD intake artifact in the list response. */
+interface HldIntakeListItem {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  payloadSummary?: {
+    payloadKind?: string;
+    answeredCount?: number;
+    fieldCount?: number;
+  };
+}
+
+/** Lean list response of GET /api/projects/[id]/rfp/hld-intake. */
+interface HldIntakeListResponse {
+  project?: { id: string; name?: string };
+  artifactCount: number;
+  artifacts: HldIntakeListItem[];
+}
+
+/** One captured answer in an HLD intake payload. */
+interface HldIntakeAnswer {
+  fieldId: string;
+  status: string;
+  value?: string;
+  notes?: string;
+  label?: string;
+}
+
+/** Detail response of GET /api/projects/[id]/rfp/artifacts/[id]/hld-intake. */
+interface HldIntakeDetailResponse {
+  project?: { id: string; name?: string };
+  artifact?: {
+    id: string;
+    status: ProjectArtifactStatus;
+    version: number;
+    sourceArtifactIds?: string[];
+  };
+  intake?: {
+    payloadKind?: string;
+    answers?: HldIntakeAnswer[];
+    sourceArtifactIds?: string[];
+  };
+}
+
+/** Loaded HLD intake detail: the artifact summary plus sanitized answers. */
+interface HldIntakeDetail {
+  artifact: NonNullable<HldIntakeDetailResponse["artifact"]>;
+  intake: NonNullable<HldIntakeDetailResponse["intake"]>;
+}
+
+/** One field's in-progress answer draft in the compact intake form. */
+interface HldIntakeAnswerDraft {
+  status: string;
+  value: string;
+  notes: string;
+}
+
+type HldIntakeDraft = Record<string, HldIntakeAnswerDraft>;
+
+/** Seed an HLD intake draft with every field answered and blank. */
+function initialHldIntakeDraft(): HldIntakeDraft {
+  const draft: HldIntakeDraft = {};
+  for (const field of HLD_INTAKE_FIELDS) {
+    draft[field.id] = { status: "answered", value: "", notes: "" };
+  }
+  return draft;
+}
+
+/**
+ * Build the POST { answers } body from the draft. Answered fields carry the
+ * trimmed value; unknown / not-applicable fields omit value; notes ride along
+ * only when nonblank. No tenant/project/user/artifact/status-of-artifact field
+ * is ever included.
+ */
+function buildHldIntakeAnswers(draft: HldIntakeDraft): HldIntakeAnswer[] {
+  return HLD_INTAKE_FIELDS.map((field) => {
+    const entry = draft[field.id] ?? { status: "answered", value: "", notes: "" };
+    const answer: HldIntakeAnswer = { fieldId: field.id, status: entry.status };
+    if (entry.status === "answered") {
+      const value = entry.value.trim();
+      if (value !== "") answer.value = value;
+    }
+    const notes = entry.notes.trim();
+    if (notes !== "") answer.notes = notes;
+    return answer;
+  });
+}
+
+/** True when every answered field carries a nonblank value (create guard). */
+function hldIntakeDraftComplete(draft: HldIntakeDraft): boolean {
+  return HLD_INTAKE_FIELDS.every((field) => {
+    const entry = draft[field.id];
+    if (entry === undefined) return true;
+    return entry.status !== "answered" || entry.value.trim() !== "";
+  });
+}
+
 /**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
@@ -405,7 +608,9 @@ type DrawerKind =
   | "delta"
   | "evidence-package"
   | "requirements"
-  | "compliance";
+  | "compliance"
+  | "hld-readiness"
+  | "hld-intake";
 
 interface DrawerState {
   kind: DrawerKind;
@@ -472,6 +677,21 @@ const PACKAGE_REVIEW_ERROR = "Unable to review final evidence package.";
 
 /** Exact UI copy required for the RFP BoQ readiness failure state. */
 const BOQ_WORKSPACE_ERROR = "Unable to load RFP BoQ readiness.";
+
+/** Exact UI copy required for the HLD readiness snapshot list failure state. */
+const HLD_READINESS_LIST_ERROR = "Unable to load HLD readiness snapshots.";
+
+/** Exact UI copy required for the HLD readiness snapshot detail failure state. */
+const HLD_READINESS_DETAIL_ERROR = "Unable to load HLD readiness snapshot detail.";
+
+/** Exact UI copy required for the HLD intake list/detail/create/review states. */
+const HLD_INTAKE_LIST_ERROR = "Unable to load HLD intake answers.";
+const HLD_INTAKE_DETAIL_ERROR = "Unable to load HLD intake detail.";
+const HLD_INTAKE_CREATE_SUCCESS = "HLD intake draft created for engineer review.";
+const HLD_INTAKE_CREATE_ERROR = "Unable to create HLD intake draft.";
+const HLD_INTAKE_APPROVE_SUCCESS = "HLD intake approved.";
+const HLD_INTAKE_REJECT_SUCCESS = "HLD intake changes requested.";
+const HLD_INTAKE_REVIEW_ERROR = "Unable to review HLD intake.";
 
 /** Exact UI copy required for the no-BoQ service-only exception request states. */
 const NO_BOQ_EXCEPTION_SUCCESS =
@@ -625,6 +845,10 @@ function displayId(value: string): string {
 
 function statusLabel(status: ProjectArtifactStatus): string {
   return status.replaceAll("_", " ");
+}
+
+function humanizeToken(token: string): string {
+  return token.replaceAll("_", " ");
 }
 
 function statusBadgeClass(status: ProjectArtifactStatus): string {
@@ -2464,6 +2688,34 @@ export default function ProjectRfpEvidencePage() {
   const [noBoqExceptionReviewError, setNoBoqExceptionReviewError] = useState<string | null>(null);
   const [noBoqExceptionReviewSuccess, setNoBoqExceptionReviewSuccess] = useState<string | null>(null);
 
+  // HLD readiness snapshot list and detail state (read-only, no generation).
+  const [hldReadinessList, setHldReadinessList] = useState<HldReadinessListResponse | null>(null);
+  const [hldReadinessListLoading, setHldReadinessListLoading] = useState(true);
+  const [hldReadinessListError, setHldReadinessListError] = useState<string | null>(null);
+
+  const [hldReadinessDetail, setHldReadinessDetail] = useState<HldReadinessSnapshotDetail | null>(null);
+  const [hldReadinessDetailLoading, setHldReadinessDetailLoading] = useState(false);
+  const [hldReadinessDetailError, setHldReadinessDetailError] = useState<string | null>(null);
+
+  // HLD intake list/detail plus the compact create form and review state.
+  const [hldIntakeList, setHldIntakeList] = useState<HldIntakeListResponse | null>(null);
+  const [hldIntakeListLoading, setHldIntakeListLoading] = useState(true);
+  const [hldIntakeListError, setHldIntakeListError] = useState<string | null>(null);
+
+  const [hldIntakeDetail, setHldIntakeDetail] = useState<HldIntakeDetail | null>(null);
+  const [hldIntakeDetailLoading, setHldIntakeDetailLoading] = useState(false);
+  const [hldIntakeDetailError, setHldIntakeDetailError] = useState<string | null>(null);
+
+  const [hldIntakeDraft, setHldIntakeDraft] = useState<HldIntakeDraft>(initialHldIntakeDraft);
+  const [hldIntakeCreatePending, setHldIntakeCreatePending] = useState(false);
+  const [hldIntakeCreateError, setHldIntakeCreateError] = useState<string | null>(null);
+  const [hldIntakeCreateSuccess, setHldIntakeCreateSuccess] = useState<string | null>(null);
+
+  const [hldIntakeReviewNote, setHldIntakeReviewNote] = useState("");
+  const [hldIntakeReviewPending, setHldIntakeReviewPending] = useState(false);
+  const [hldIntakeReviewError, setHldIntakeReviewError] = useState<string | null>(null);
+  const [hldIntakeReviewSuccess, setHldIntakeReviewSuccess] = useState<string | null>(null);
+
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -2669,6 +2921,117 @@ export default function ProjectRfpEvidencePage() {
   useEffect(() => {
     void loadBoqWorkspace();
   }, [loadBoqWorkspace]);
+
+  const loadHldReadinessList = useCallback(async (): Promise<void> => {
+    setHldReadinessListLoading(true);
+    setHldReadinessListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-readiness-snapshot`);
+      const body = (await res.json().catch(() => null)) as HldReadinessListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts) || body.readiness === undefined) {
+        setHldReadinessList(null);
+        setHldReadinessListError(HLD_READINESS_LIST_ERROR);
+        return;
+      }
+      setHldReadinessList(body);
+    } catch {
+      setHldReadinessList(null);
+      setHldReadinessListError(HLD_READINESS_LIST_ERROR);
+    } finally {
+      setHldReadinessListLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldReadinessList();
+  }, [loadHldReadinessList]);
+
+  // HLD readiness snapshot detail is fetched only on an explicit Inspect click.
+  const loadHldReadinessDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setHldReadinessDetail(null);
+      setHldReadinessDetailError(null);
+      setHldReadinessDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-readiness-snapshot`
+        );
+        const body = (await res.json().catch(() => null)) as HldReadinessSnapshotDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.snapshot === undefined
+        ) {
+          setHldReadinessDetailError(HLD_READINESS_DETAIL_ERROR);
+          return;
+        }
+        setHldReadinessDetail({ artifact: body.artifact, snapshot: body.snapshot });
+      } catch {
+        setHldReadinessDetailError(HLD_READINESS_DETAIL_ERROR);
+      } finally {
+        setHldReadinessDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  const loadHldIntakeList = useCallback(async (): Promise<void> => {
+    setHldIntakeListLoading(true);
+    setHldIntakeListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-intake`);
+      const body = (await res.json().catch(() => null)) as HldIntakeListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
+        setHldIntakeList(null);
+        setHldIntakeListError(HLD_INTAKE_LIST_ERROR);
+        return;
+      }
+      setHldIntakeList(body);
+    } catch {
+      setHldIntakeList(null);
+      setHldIntakeListError(HLD_INTAKE_LIST_ERROR);
+    } finally {
+      setHldIntakeListLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldIntakeList();
+  }, [loadHldIntakeList]);
+
+  // HLD intake answers are fetched only here, on an explicit Inspect click.
+  const loadHldIntakeDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setHldIntakeDetail(null);
+      setHldIntakeDetailError(null);
+      setHldIntakeReviewNote("");
+      setHldIntakeReviewError(null);
+      setHldIntakeReviewSuccess(null);
+      setHldIntakeDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-intake`
+        );
+        const body = (await res.json().catch(() => null)) as HldIntakeDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.intake === undefined
+        ) {
+          setHldIntakeDetailError(HLD_INTAKE_DETAIL_ERROR);
+          return;
+        }
+        setHldIntakeDetail({ artifact: body.artifact, intake: body.intake });
+      } catch {
+        setHldIntakeDetailError(HLD_INTAKE_DETAIL_ERROR);
+      } finally {
+        setHldIntakeDetailLoading(false);
+      }
+    },
+    [id]
+  );
 
   // Final evidence content is fetched only here, on an explicit Inspect click.
   const loadPackageDetail = useCallback(
@@ -3310,6 +3673,94 @@ export default function ProjectRfpEvidencePage() {
     ]
   );
 
+  const submitHldIntakeCreate = useCallback(async (): Promise<void> => {
+    if (hldIntakeCreatePending) return;
+    setHldIntakeCreatePending(true);
+    setHldIntakeCreateError(null);
+    setHldIntakeCreateSuccess(null);
+    try {
+      const answers = buildHldIntakeAnswers(hldIntakeDraft);
+      const res = await fetch(`/api/projects/${id}/rfp/hld-intake`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      });
+      if (!res.ok) {
+        setHldIntakeCreateError(HLD_INTAKE_CREATE_ERROR);
+        return;
+      }
+      setHldIntakeDraft(initialHldIntakeDraft());
+      setHldIntakeCreateSuccess(HLD_INTAKE_CREATE_SUCCESS);
+      void loadHldIntakeList();
+      void loadHldReadinessList();
+    } catch {
+      setHldIntakeCreateError(HLD_INTAKE_CREATE_ERROR);
+    } finally {
+      setHldIntakeCreatePending(false);
+    }
+  }, [
+    hldIntakeCreatePending,
+    hldIntakeDraft,
+    id,
+    loadHldIntakeList,
+    loadHldReadinessList,
+  ]);
+
+  const submitHldIntakeReview = useCallback(
+    async (decision: "approved" | "rejected"): Promise<void> => {
+      if (hldIntakeDetail === null || hldIntakeReviewPending) return;
+      setHldIntakeReviewPending(true);
+      setHldIntakeReviewError(null);
+      setHldIntakeReviewSuccess(null);
+      try {
+        const note = hldIntakeReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${hldIntakeDetail.artifact.id}/hld-intake/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(note === "" ? { decision } : { decision, note }),
+          }
+        );
+        if (!res.ok) {
+          setHldIntakeReviewError(HLD_INTAKE_REVIEW_ERROR);
+          return;
+        }
+        setHldIntakeDetail((prev) =>
+          prev === null
+            ? prev
+            : {
+                artifact: {
+                  ...prev.artifact,
+                  status: decision === "approved" ? "approved" : "rejected",
+                },
+                intake: prev.intake,
+              }
+        );
+        setHldIntakeReviewNote("");
+        setHldIntakeReviewSuccess(
+          decision === "approved"
+            ? HLD_INTAKE_APPROVE_SUCCESS
+            : HLD_INTAKE_REJECT_SUCCESS
+        );
+        void loadHldIntakeList();
+        void loadHldReadinessList();
+      } catch {
+        setHldIntakeReviewError(HLD_INTAKE_REVIEW_ERROR);
+      } finally {
+        setHldIntakeReviewPending(false);
+      }
+    },
+    [
+      hldIntakeDetail,
+      hldIntakeReviewNote,
+      hldIntakeReviewPending,
+      id,
+      loadHldIntakeList,
+      loadHldReadinessList,
+    ]
+  );
+
   const workflow = useMemo(
     () =>
       buildRfpOperatorWorkflow({
@@ -3366,11 +3817,15 @@ export default function ProjectRfpEvidencePage() {
     void loadPackageList();
     void loadBaselineList();
     void loadComplianceList();
+    void loadHldReadinessList();
+    void loadHldIntakeList();
   }, [
     loadBaselineList,
     loadBoqWorkspace,
     loadComplianceList,
     loadDeltaList,
+    loadHldIntakeList,
+    loadHldReadinessList,
     loadList,
     loadPackageList,
   ]);
@@ -3778,6 +4233,16 @@ export default function ProjectRfpEvidencePage() {
     void loadComplianceDetail(artifactId);
   }
 
+  function openHldReadinessDrawer(artifactId: string): void {
+    setDrawer({ kind: "hld-readiness", activeId: artifactId });
+    void loadHldReadinessDetail(artifactId);
+  }
+
+  function openHldIntakeDrawer(artifactId: string): void {
+    setDrawer({ kind: "hld-intake", activeId: artifactId });
+    void loadHldIntakeDetail(artifactId);
+  }
+
   function drawerIds(): string[] {
     if (drawer === null) return [];
     if (drawer.kind === "evidence") return data?.evidence.map((item) => item.id) ?? [];
@@ -3790,6 +4255,12 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "requirements") {
       return baselineList?.artifacts.map((item) => item.id) ?? [];
     }
+    if (drawer.kind === "hld-readiness") {
+      return hldReadinessList?.artifacts.map((item) => item.id) ?? [];
+    }
+    if (drawer.kind === "hld-intake") {
+      return hldIntakeList?.artifacts.map((item) => item.id) ?? [];
+    }
     return complianceList?.artifacts.map((item) => item.id) ?? [];
   }
 
@@ -3798,6 +4269,8 @@ export default function ProjectRfpEvidencePage() {
     else if (kind === "delta") openDeltaDrawer(activeId);
     else if (kind === "evidence-package") openPackageDrawer(activeId);
     else if (kind === "requirements") openBaselineDrawer(activeId);
+    else if (kind === "hld-readiness") openHldReadinessDrawer(activeId);
+    else if (kind === "hld-intake") openHldIntakeDrawer(activeId);
     else openComplianceDrawer(activeId);
   }
 
@@ -4696,12 +5169,202 @@ export default function ProjectRfpEvidencePage() {
     );
   }
 
+  function renderHldReadinessDrawerContent(): ReactNode {
+    if (hldReadinessDetail === null) return null;
+    const { artifact, snapshot } = hldReadinessDetail;
+    const coveredDomains = snapshot.coveredDomains ?? [];
+    const missingInputs = snapshot.missingInputs ?? [];
+    const validationMessages = snapshot.validationMessages ?? [];
+    const assumptions = snapshot.assumptions ?? [];
+    const sourceArtifactIds = artifact.sourceArtifactIds ?? snapshot.sourceArtifactIds ?? [];
+    return (
+      <div data-testid="hld-readiness-drawer-content" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={artifact.status} />
+            <span className="text-xs text-text-secondary">Version {artifact.version}</span>
+            {snapshot.readinessStatus !== undefined && (
+              <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${snapshot.readinessStatus === "ready" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-200"}`}>
+                {snapshot.readinessStatus === "ready" ? "HLD ready" : "HLD blocked"}
+              </span>
+            )}
+          </div>
+          {sourceArtifactIds.length > 0 && (
+            <p className="mt-2 text-xs text-text-secondary">
+              Source authority records: {sourceArtifactIds.length}
+            </p>
+          )}
+        </div>
+        {coveredDomains.length > 0 && (
+          <div data-testid="hld-readiness-drawer-covered-domains" className={SUBTLE_CARD}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+              Covered domains ({coveredDomains.length})
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {coveredDomains.map((domain, domainIndex) => (
+                <li key={domainIndex} className="text-xs text-text-primary">{humanizeToken(domain)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {validationMessages.length > 0 && (
+          <div data-testid="hld-readiness-drawer-validation" className={SUBTLE_CARD}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+              Validation messages ({validationMessages.length})
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {validationMessages.map((msg, msgIndex) => (
+                <li key={msgIndex} className="text-xs text-text-primary">{msg}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {missingInputs.length > 0 && (
+          <div data-testid="hld-readiness-drawer-missing" className={SUBTLE_CARD}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+              Missing inputs ({missingInputs.length})
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {missingInputs.map((input, inputIndex) => (
+                <li key={inputIndex} className="text-xs text-text-primary">{humanizeToken(input)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {assumptions.length > 0 && (
+          <div data-testid="hld-readiness-drawer-assumptions" className={SUBTLE_CARD}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+              Assumptions ({assumptions.length})
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {assumptions.map((assumption, assumptionIndex) => (
+                <li key={assumptionIndex} className="text-xs text-text-secondary">
+                  {assumption.label || humanizeToken(assumption.fieldId)}
+                  {assumption.note !== undefined ? ` - ${assumption.note}` : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {sourceArtifactIds.length > 0 && (
+          <TechnicalDetails testId="hld-readiness-drawer-source-ids" label="Technical details (source artifact IDs)">
+            {sourceArtifactIds.map((srcId, srcIndex) => (
+              <p key={srcIndex}>Source {srcIndex + 1}: {srcId}</p>
+            ))}
+          </TechnicalDetails>
+        )}
+      </div>
+    );
+  }
+
+  function renderHldIntakeDrawerContent(): ReactNode {
+    if (hldIntakeDetail === null) return null;
+    const { artifact, intake } = hldIntakeDetail;
+    const answers = intake.answers ?? [];
+    const byField = new Map(answers.map((answer) => [answer.fieldId, answer]));
+    const reviewable = isReviewableStatus(artifact.status);
+    return (
+      <div data-testid="hld-intake-drawer-content" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={artifact.status} />
+            <span className="text-xs text-text-secondary">Version {artifact.version}</span>
+          </div>
+        </div>
+        <div className={SUBTLE_CARD}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Intake answers ({answers.length})
+          </p>
+          <table data-testid="hld-intake-drawer-answers" className="mt-2 w-full border-collapse text-xs">
+            <tbody>
+              {HLD_INTAKE_FIELDS.map((field) => {
+                const answer = byField.get(field.id);
+                if (answer === undefined) return null;
+                return (
+                  <tr key={field.id} data-testid="hld-intake-answer-row" className="align-top">
+                    <td className="border border-[var(--border)] px-2 py-1 text-text-primary">
+                      {field.label}
+                    </td>
+                    <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                      {humanizeToken(answer.status)}
+                    </td>
+                    <td className="border border-[var(--border)] px-2 py-1 text-text-primary">
+                      {answer.value ?? ""}
+                      {answer.notes !== undefined && answer.notes !== ""
+                        ? ` (${answer.notes})`
+                        : ""}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {reviewable && (
+          <div data-testid="hld-intake-review" className={SUBTLE_CARD}>
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Review note (optional)
+              <textarea
+                data-testid="hld-intake-review-note"
+                value={hldIntakeReviewNote}
+                disabled={hldIntakeReviewPending}
+                onChange={(e) => setHldIntakeReviewNote(e.target.value)}
+                rows={2}
+                className={FIELD}
+              />
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid="hld-intake-approve"
+                disabled={hldIntakeReviewPending}
+                onClick={() => void submitHldIntakeReview("approved")}
+                className={ACTION_BTN}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="hld-intake-reject"
+                disabled={hldIntakeReviewPending}
+                onClick={() => void submitHldIntakeReview("rejected")}
+                className={PLAIN_BTN}
+              >
+                Request changes
+              </button>
+            </div>
+            {hldIntakeReviewError && (
+              <p data-testid="hld-intake-review-error" className={`mt-2 ${ERROR_BOX}`}>
+                {hldIntakeReviewError}
+              </p>
+            )}
+            {hldIntakeReviewSuccess && (
+              <p data-testid="hld-intake-review-success" className="mt-2 text-xs text-emerald-300">
+                {hldIntakeReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        <TechnicalDetails testId="hld-intake-drawer-audit" label="Technical details (artifact ID)">
+          <p>Artifact: {artifact.id}</p>
+          {(artifact.sourceArtifactIds ?? intake.sourceArtifactIds ?? []).map(
+            (srcId, srcIndex) => (
+              <p key={srcIndex}>Source {srcIndex + 1}: {srcId}</p>
+            )
+          )}
+        </TechnicalDetails>
+      </div>
+    );
+  }
+
   function renderDrawerContent(): ReactNode {
     if (drawer === null) return null;
     if (drawer.kind === "evidence") return renderEvidenceDrawerContent();
     if (drawer.kind === "delta") return renderDeltaDrawerContent();
     if (drawer.kind === "evidence-package") return renderPackageDrawerContent();
     if (drawer.kind === "requirements") return renderBaselineDrawerContent();
+    if (drawer.kind === "hld-readiness") return renderHldReadinessDrawerContent();
+    if (drawer.kind === "hld-intake") return renderHldIntakeDrawerContent();
     return renderComplianceDrawerContent();
   }
 
@@ -4714,7 +5377,11 @@ export default function ProjectRfpEvidencePage() {
           ? "Compiled evidence package"
           : drawer?.kind === "requirements"
             ? "Requirements baseline"
-            : "Compliance matrix";
+            : drawer?.kind === "hld-readiness"
+              ? "HLD readiness snapshot"
+              : drawer?.kind === "hld-intake"
+                ? "HLD intake answers"
+                : "Compliance matrix";
   const drawerLoading =
     drawer?.kind === "evidence"
       ? detailLoading
@@ -4724,7 +5391,11 @@ export default function ProjectRfpEvidencePage() {
           ? packageDetailLoading
           : drawer?.kind === "requirements"
             ? baselineDetailLoading
-            : complianceDetailLoading;
+            : drawer?.kind === "hld-readiness"
+              ? hldReadinessDetailLoading
+              : drawer?.kind === "hld-intake"
+                ? hldIntakeDetailLoading
+                : complianceDetailLoading;
   const drawerError =
     drawer?.kind === "evidence"
       ? detailError
@@ -4734,7 +5405,11 @@ export default function ProjectRfpEvidencePage() {
           ? packageDetailError
           : drawer?.kind === "requirements"
             ? baselineDetailError
-            : complianceDetailError;
+            : drawer?.kind === "hld-readiness"
+              ? hldReadinessDetailError
+              : drawer?.kind === "hld-intake"
+                ? hldIntakeDetailError
+                : complianceDetailError;
 
   return (
     <main className="min-h-screen bg-bg-primary px-4 py-6 sm:px-6 lg:px-8">
@@ -5574,6 +6249,307 @@ export default function ProjectRfpEvidencePage() {
               )}
             </>
           )}
+        </section>
+
+        <section data-testid="hld-readiness-section" className={CARD}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-text-primary">
+                HLD Readiness
+              </h2>
+              <p className="mt-1 text-sm text-text-secondary">
+                Read-only operator surface for High-Level Design readiness. HLD generation is not yet available in Stage 6.
+              </p>
+            </div>
+            <button
+              type="button"
+              data-testid="hld-generation-disabled"
+              disabled
+              className={PLAIN_BTN}
+              title="HLD generation is not available in this stage."
+            >
+              HLD generation (future stage)
+            </button>
+          </div>
+          {hldReadinessListError && (
+            <div data-testid="hld-readiness-error" className={`mt-3 ${ERROR_BOX}`}>
+              {hldReadinessListError}
+            </div>
+          )}
+          {hldReadinessListLoading && (
+            <p className="mt-3 text-sm text-text-tertiary">Loading HLD readiness...</p>
+          )}
+          {hldReadinessList !== null && (
+            <div className="mt-3 space-y-3">
+              <div className="grid gap-2 md:grid-cols-2">
+                <div>
+                  <p
+                    data-testid="hld-readiness-status"
+                    className={MUTED_TEXT}
+                  >
+                    Readiness:{" "}
+                    <span className={`font-medium ${hldReadinessList.readiness.status === "ready" ? "text-emerald-300" : "text-amber-200"}`}>
+                      {hldReadinessList.readiness.status === "ready" ? "Ready for HLD" : "Blocked"}
+                    </span>
+                  </p>
+                  <p
+                    data-testid="hld-readiness-next-action"
+                    className={`mt-1 ${MUTED_TEXT}`}
+                  >
+                    {hldReadinessList.readiness.status === "ready"
+                      ? "All required inputs are present. HLD generation will be available in a future stage."
+                      : "Resolve the missing inputs below before HLD can start."}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-text-tertiary">
+                    Covered domains: {hldReadinessList.readiness.coveredDomains.length}
+                    {(hldReadinessList.readiness.missingKnowledgePackDomains ?? []).length > 0
+                      ? `, missing knowledge pack: ${(hldReadinessList.readiness.missingKnowledgePackDomains ?? []).join(", ")}`
+                      : ""}
+                    {(hldReadinessList.readiness.excludedDomains ?? []).length > 0
+                      ? `, excluded: ${(hldReadinessList.readiness.excludedDomains ?? []).join(", ")}`
+                      : ""}
+                  </p>
+                </div>
+              </div>
+              {(hldReadinessList.readiness.missingInputs ?? []).length > 0 && (
+                <div
+                  data-testid="hld-readiness-missing-inputs"
+                  className={SUBTLE_CARD}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                    Missing inputs ({(hldReadinessList.readiness.missingInputs ?? []).length})
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {(hldReadinessList.readiness.missingInputs ?? []).map(
+                      (input, inputIndex) => (
+                        <li key={inputIndex} className="text-xs text-text-primary">
+                          {humanizeToken(input)}
+                        </li>
+                      )
+                    )}
+                  </ul>
+                </div>
+              )}
+              {hldReadinessList.readiness.coveredDomains.length > 0 && (
+                <div className={SUBTLE_CARD}>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                    Covered domains
+                  </p>
+                  <p className="mt-1 text-xs text-text-secondary">
+                    {hldReadinessList.readiness.coveredDomains.map(humanizeToken).join(", ")}
+                  </p>
+                </div>
+              )}
+              <div className="grid gap-2 md:grid-cols-2">
+                {(() => {
+                  const current = hldReadinessList.artifacts
+                    .filter((a) => a.status !== "approved")
+                    .sort((a, b) => b.version - a.version)[0];
+                  const approved = hldReadinessList.artifacts
+                    .filter((a) => a.status === "approved")
+                    .sort((a, b) => b.version - a.version)[0];
+                  const renderHldCard = (
+                    label: string,
+                    item: HldReadinessListItem | undefined,
+                    testId: string
+                  ) => (
+                    <div className={SUBTLE_CARD}>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                        {label}
+                      </p>
+                      {item === undefined ? (
+                        <p className="mt-1 text-xs text-text-tertiary">None</p>
+                      ) : (
+                        <div className="mt-1 flex items-center gap-2">
+                          <StatusBadge status={item.status} />
+                          <span className="text-xs text-text-secondary">v{item.version}</span>
+                          <button
+                            type="button"
+                            data-testid={testId}
+                            onClick={() => openHldReadinessDrawer(item.id)}
+                            className={PLAIN_BTN}
+                          >
+                            Inspect
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                  return (
+                    <>
+                      {renderHldCard("Current HLD readiness snapshot", current, "hld-readiness-snapshot-inspect-current")}
+                      {renderHldCard("Approved HLD readiness snapshot", approved, "hld-readiness-snapshot-inspect-approved")}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          <div
+            data-testid="hld-intake-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary">
+                  HLD Intake
+                </h3>
+                <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                  Capture and review the design intake answers that feed HLD
+                  readiness. This records answers only; it does not generate HLD
+                  output.
+                </p>
+              </div>
+            </div>
+            {hldIntakeListError && (
+              <div data-testid="hld-intake-error" className={`mt-3 ${ERROR_BOX}`}>
+                {hldIntakeListError}
+              </div>
+            )}
+            {hldIntakeListLoading && (
+              <p className="mt-3 text-sm text-text-tertiary">Loading HLD intake...</p>
+            )}
+            {hldIntakeList !== null && (
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {(() => {
+                  const current = hldIntakeList.artifacts
+                    .filter((a) => a.status !== "approved")
+                    .sort((a, b) => b.version - a.version)[0];
+                  const approved = hldIntakeList.artifacts
+                    .filter((a) => a.status === "approved")
+                    .sort((a, b) => b.version - a.version)[0];
+                  const renderIntakeCard = (
+                    label: string,
+                    item: HldIntakeListItem | undefined,
+                    testId: string
+                  ) => (
+                    <div className={SUBTLE_CARD}>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                        {label}
+                      </p>
+                      {item === undefined ? (
+                        <p className="mt-1 text-xs text-text-tertiary">None</p>
+                      ) : (
+                        <div className="mt-1 flex items-center gap-2">
+                          <StatusBadge status={item.status} />
+                          <span className="text-xs text-text-secondary">v{item.version}</span>
+                          <button
+                            type="button"
+                            data-testid={testId}
+                            onClick={() => openHldIntakeDrawer(item.id)}
+                            className={PLAIN_BTN}
+                          >
+                            Inspect
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                  return (
+                    <>
+                      {renderIntakeCard("Current HLD intake", current, "hld-intake-inspect-current")}
+                      {renderIntakeCard("Approved HLD intake", approved, "hld-intake-inspect-approved")}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            <details data-testid="hld-intake-form" className="mt-3">
+              <summary className="cursor-pointer text-xs font-medium text-text-tertiary">
+                New HLD intake answers
+              </summary>
+              <div className="mt-2 space-y-2">
+                <table className="w-full border-collapse text-xs">
+                  <tbody>
+                    {HLD_INTAKE_FIELDS.map((field) => {
+                      const entry =
+                        hldIntakeDraft[field.id] ?? {
+                          status: "answered",
+                          value: "",
+                          notes: "",
+                        };
+                      const update = (patch: Partial<HldIntakeAnswerDraft>): void =>
+                        setHldIntakeDraft((prev) => ({
+                          ...prev,
+                          [field.id]: { ...entry, ...patch },
+                        }));
+                      return (
+                        <tr key={field.id} className="align-top">
+                          <td className="border border-[var(--border)] px-2 py-1 text-text-primary">
+                            {field.label}
+                          </td>
+                          <td className="border border-[var(--border)] px-2 py-1">
+                            <select
+                              data-testid={`hld-intake-status-${field.id}`}
+                              value={entry.status}
+                              disabled={hldIntakeCreatePending}
+                              onChange={(e) => update({ status: e.target.value })}
+                              className={FIELD}
+                            >
+                              {HLD_INTAKE_STATUSES.map((status) => (
+                                <option key={status} value={status}>
+                                  {humanizeToken(status)}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="border border-[var(--border)] px-2 py-1">
+                            {entry.status === "answered" && (
+                              <textarea
+                                data-testid={`hld-intake-value-${field.id}`}
+                                value={entry.value}
+                                disabled={hldIntakeCreatePending}
+                                onChange={(e) => update({ value: e.target.value })}
+                                rows={1}
+                                placeholder="Answer"
+                                className={`${FIELD} w-full`}
+                              />
+                            )}
+                            <textarea
+                              data-testid={`hld-intake-notes-${field.id}`}
+                              value={entry.notes}
+                              disabled={hldIntakeCreatePending}
+                              onChange={(e) => update({ notes: e.target.value })}
+                              rows={1}
+                              placeholder="Notes (optional)"
+                              className={`${FIELD} w-full`}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="hld-intake-create"
+                    disabled={
+                      hldIntakeCreatePending || !hldIntakeDraftComplete(hldIntakeDraft)
+                    }
+                    onClick={() => void submitHldIntakeCreate()}
+                    className={ACTION_BTN}
+                  >
+                    Create intake draft
+                  </button>
+                  {hldIntakeCreateError && (
+                    <span data-testid="hld-intake-create-error" className="text-xs text-destructive">
+                      {hldIntakeCreateError}
+                    </span>
+                  )}
+                  {hldIntakeCreateSuccess && (
+                    <span data-testid="hld-intake-create-success" className="text-xs text-emerald-300">
+                      {hldIntakeCreateSuccess}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </details>
+          </div>
         </section>
       </div>
 

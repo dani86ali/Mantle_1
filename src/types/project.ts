@@ -56,6 +56,25 @@ export type ProjectArtifactStatus =
  * it is candidate/review metadata and never final authority. `evidence_package`
  * is the human-approved final RFP evidence package - the only evidence
  * authority requirements generation may build on.
+ *
+ * Stage 6 HLD readiness spine (BOMATIC_POST_STAGE4_HLD_IMPLEMENTATION_PLAN.md):
+ * `hld_intake` is the approved engineer design-intake answers artifact - an
+ * input authority, like `input_package`, never free-form AI output.
+ * `hld_readiness_snapshot` is the durable record that the approved upstream
+ * design inputs (requirements baseline, compliance matrix, configured BoQ, and
+ * intake answers, plus any approved design knowledge) are in place before HLD
+ * work may begin. `hld_design_model`, `hld_diagram`, and `hld_document` are
+ * FUTURE/PLACEHOLDER contracts only - the structured HLD model, its topology
+ * diagrams, and the reviewable HLD document - declared here so the stage and
+ * staleness contracts stay type-complete. This slice defines the contracts
+ * only and adds NO model/diagram/document generation behavior. The legacy
+ * `hld_design_delta` artifact is unchanged.
+ *
+ * `design_knowledge_pack` is the approved domain knowledge artifact for HLD
+ * readiness (Stage 6.3): structured solution patterns, validated topology
+ * options, and design constraints curated per-project. Its payload schema and
+ * domain readiness helper are defined in a separate prompt. It feeds
+ * `hld_readiness_snapshot` via a direct staleness edge.
  */
 export type ProjectArtifactType =
   | "input_package"
@@ -68,6 +87,12 @@ export type ProjectArtifactType =
   | "requirements_baseline"
   | "compliance_matrix"
   | "hld_design_delta"
+  | "hld_intake"
+  | "hld_readiness_snapshot"
+  | "hld_design_model"
+  | "hld_diagram"
+  | "hld_document"
+  | "design_knowledge_pack"
   | "technical_proposal"
   | "export_package";
 
