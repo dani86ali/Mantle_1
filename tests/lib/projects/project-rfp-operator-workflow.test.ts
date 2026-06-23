@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildRfpOperatorWorkflow,
   type RfpArtifactSummaryInput,
+  type RfpConfigurationGateInput,
 } from "@/lib/projects/project-rfp-operator-workflow";
 
 const inputApproved: RfpArtifactSummaryInput[] = [
@@ -16,6 +17,36 @@ const evidenceApproved: RfpArtifactSummaryInput[] = [
 const requirementsApproved: RfpArtifactSummaryInput[] = [
   { id: "rb", status: "approved", version: 1 },
 ];
+
+// An approved normal configuration expansion clears the gate (BoQ present).
+const satisfiedNormalGate: RfpConfigurationGateInput = {
+  required: true,
+  satisfied: true,
+  waived: false,
+  status: "configuration_expansion_approved",
+  message: "Configuration expansion is approved for this RFP BoQ package.",
+  approvedConfigurationExpansionArtifactId: "ce-approved",
+};
+
+// An approved no-BoQ service-only exception waives the gate (no BoQ).
+const satisfiedNoBoqExceptionGate: RfpConfigurationGateInput = {
+  required: false,
+  satisfied: true,
+  waived: true,
+  status: "no_boq_exception_approved",
+  message: "An approved no-BoQ service-only exception waives the configuration gate.",
+  noBoqExceptionArtifactId: "exception-1",
+  noBoqExceptionReason: "Service-only engagement; no hardware BoQ.",
+};
+
+// Requirements satisfied upstream, but the configuration gate is still open.
+const unsatisfiedGate: RfpConfigurationGateInput = {
+  required: true,
+  satisfied: false,
+  waived: false,
+  status: "requires_configuration_expansion",
+  message: "An approved configuration expansion is required for this RFP BoQ package.",
+};
 
 describe("buildRfpOperatorWorkflow - active vs history selection", () => {
   it("selects the highest-version reviewable and approved artifacts", () => {
@@ -193,36 +224,68 @@ describe("buildRfpOperatorWorkflow - automatic generation inputs", () => {
     expect(wf.generationInputs.requirementsBaseline.ready).toBe(false);
   });
 
-  it("auto-uses latest approved baseline, evidence, and optional config expansion for compliance", () => {
+  it("is ready for compliance with a satisfied normal configuration gate and passes the approved config id", () => {
     const wf = buildRfpOperatorWorkflow({
       evidencePackages: [{ id: "ep", status: "approved", version: 2 }],
       requirementsBaselines: [{ id: "rb", status: "approved", version: 3 }],
+      // The configuration-expansion review track is still surfaced for the UI,
+      // but the compliance config id is sourced from the gate, not this track.
       configurationExpansions: [
         { id: "ce-1", status: "approved", version: 1 },
         { id: "ce-2", status: "approved", version: 2 },
-        { id: "ce-draft", status: "needs_review", version: 3 },
       ],
+      configurationGate: satisfiedNormalGate,
     });
     const cm = wf.generationInputs.complianceMatrix;
 
     expect(cm.requirementsBaselineArtifactId).toBe("rb");
     expect(cm.evidencePackageArtifactId).toBe("ep");
-    // The optional config-expansion input is the highest approved, not the draft.
-    expect(cm.configurationExpansionArtifactId).toBe("ce-2");
+    // The approved normal configuration-expansion id flows from the gate, not
+    // the track (whose latest approved is "ce-2") - the gate is authoritative.
+    expect(wf.configurationExpansion?.latestApproved?.id).toBe("ce-2");
+    expect(cm.configurationExpansionArtifactId).toBe("ce-approved");
     expect(cm.ready).toBe(true);
+    // The gate is surfaced verbatim so the UI can render its human-readable status.
+    expect(wf.configurationGate).toEqual(satisfiedNormalGate);
   });
 
-  it("treats configuration expansion as optional for compliance readiness", () => {
+  it("is ready for compliance with an approved no-BoQ exception gate, waived, passing the exception id", () => {
     const wf = buildRfpOperatorWorkflow({
       evidencePackages: [{ id: "ep", status: "approved", version: 1 }],
       requirementsBaselines: [{ id: "rb", status: "approved", version: 1 }],
+      configurationGate: satisfiedNoBoqExceptionGate,
     });
-    expect(wf.configurationExpansion).toBeUndefined();
-    expect(wf.generationInputs.complianceMatrix.configurationExpansionArtifactId).toBeUndefined();
-    expect(wf.generationInputs.complianceMatrix.ready).toBe(true);
+    const cm = wf.generationInputs.complianceMatrix;
 
+    expect(cm.ready).toBe(true);
+    // A waived gate authorizes the no-BoQ exception artifact as the config id.
+    expect(cm.configurationExpansionArtifactId).toBe("exception-1");
+    expect(wf.configurationGate?.waived).toBe(true);
+  });
+
+  it("is not ready for compliance without a satisfied configuration gate", () => {
+    // No gate provided: be conservative even with both upstream gates approved.
+    const noGate = buildRfpOperatorWorkflow({
+      evidencePackages: [{ id: "ep", status: "approved", version: 1 }],
+      requirementsBaselines: [{ id: "rb", status: "approved", version: 1 }],
+    });
+    expect(noGate.configurationGate).toBeUndefined();
+    expect(noGate.generationInputs.complianceMatrix.configurationExpansionArtifactId).toBeUndefined();
+    expect(noGate.generationInputs.complianceMatrix.ready).toBe(false);
+
+    // An unsatisfied gate also leaves compliance not ready and surfaces no id.
+    const blocked = buildRfpOperatorWorkflow({
+      evidencePackages: [{ id: "ep", status: "approved", version: 1 }],
+      requirementsBaselines: [{ id: "rb", status: "approved", version: 1 }],
+      configurationGate: unsatisfiedGate,
+    });
+    expect(blocked.generationInputs.complianceMatrix.ready).toBe(false);
+    expect(blocked.generationInputs.complianceMatrix.configurationExpansionArtifactId).toBeUndefined();
+
+    // A satisfied gate without an approved baseline is still not ready.
     const missingBaseline = buildRfpOperatorWorkflow({
       evidencePackages: [{ id: "ep", status: "approved", version: 1 }],
+      configurationGate: satisfiedNormalGate,
     });
     expect(missingBaseline.generationInputs.complianceMatrix.ready).toBe(false);
   });
@@ -273,6 +336,19 @@ describe("buildRfpOperatorWorkflow - next action progression", () => {
       evidencePackages: evidenceApproved,
       requirementsBaselines: requirementsApproved,
     });
+    // Requirements and evidence are approved, but the BoQ/configuration gate
+    // must be completed before compliance can be generated.
+    expect(wf.nextAction).toMatchObject({
+      id: "complete_boq_configuration",
+      stage: "configuration",
+    });
+
+    wf = buildRfpOperatorWorkflow({
+      inputPackages: inputApproved,
+      evidencePackages: evidenceApproved,
+      requirementsBaselines: requirementsApproved,
+      configurationGate: satisfiedNormalGate,
+    });
     expect(wf.nextAction).toMatchObject({
       id: "generate_compliance_matrix",
       stage: "compliance",
@@ -282,6 +358,7 @@ describe("buildRfpOperatorWorkflow - next action progression", () => {
       inputPackages: inputApproved,
       evidencePackages: evidenceApproved,
       requirementsBaselines: requirementsApproved,
+      configurationGate: satisfiedNormalGate,
       complianceMatrices: [{ id: "cm", status: "needs_review", version: 1 }],
     });
     expect(wf.nextAction.id).toBe("review_compliance_matrix");
@@ -290,9 +367,63 @@ describe("buildRfpOperatorWorkflow - next action progression", () => {
       inputPackages: inputApproved,
       evidencePackages: evidenceApproved,
       requirementsBaselines: requirementsApproved,
+      configurationGate: satisfiedNormalGate,
       complianceMatrices: [{ id: "cm", status: "approved", version: 1 }],
     });
     expect(wf.nextAction).toMatchObject({ id: "stage_5_ready", stage: "stage_5" });
+  });
+});
+
+describe("buildRfpOperatorWorkflow - configuration gate before compliance", () => {
+  it("requires completing the BoQ/configuration gate before generating compliance", () => {
+    // Requirements and evidence approved, but no configuration gate provided.
+    const noGate = buildRfpOperatorWorkflow({
+      inputPackages: inputApproved,
+      evidencePackages: evidenceApproved,
+      requirementsBaselines: requirementsApproved,
+    });
+    expect(noGate.nextAction).toMatchObject({
+      id: "complete_boq_configuration",
+      stage: "configuration",
+      label: "Complete BoQ/configuration review",
+    });
+    // No gate message available: fall back to a generic human-readable reason.
+    expect(noGate.nextAction.reason).toBe(
+      "The BoQ/configuration gate must be cleared before compliance."
+    );
+  });
+
+  it("surfaces the gate's own human-readable reason when the gate is unsatisfied", () => {
+    const blocked = buildRfpOperatorWorkflow({
+      inputPackages: inputApproved,
+      evidencePackages: evidenceApproved,
+      requirementsBaselines: requirementsApproved,
+      configurationGate: unsatisfiedGate,
+    });
+    expect(blocked.nextAction.id).toBe("complete_boq_configuration");
+    expect(blocked.nextAction.reason).toBe(unsatisfiedGate.message);
+  });
+
+  it("advances to compliance generation once the configuration gate is satisfied", () => {
+    const cleared = buildRfpOperatorWorkflow({
+      inputPackages: inputApproved,
+      evidencePackages: evidenceApproved,
+      requirementsBaselines: requirementsApproved,
+      configurationGate: satisfiedNormalGate,
+    });
+    expect(cleared.nextAction.id).toBe("generate_compliance_matrix");
+  });
+
+  it("keeps reviewing an existing compliance draft regardless of the gate", () => {
+    const withDraft = buildRfpOperatorWorkflow({
+      inputPackages: inputApproved,
+      evidencePackages: evidenceApproved,
+      requirementsBaselines: requirementsApproved,
+      complianceMatrices: [{ id: "cm", status: "needs_review", version: 1 }],
+    });
+    // The draft-review behavior is unchanged: an open compliance draft is
+    // reviewed even though no configuration gate has been provided.
+    expect(withDraft.nextAction.id).toBe("review_compliance_matrix");
   });
 });
 

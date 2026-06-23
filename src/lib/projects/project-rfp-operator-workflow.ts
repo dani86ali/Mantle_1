@@ -1,11 +1,12 @@
 /**
  * Pure UI-facing RFP operator workflow / readiness helper (Stage 4.5).
  *
- * Turns lean RFP artifact-list summaries plus persisted evidence counts into a
- * single operator workflow model: per-stage active/current artifacts, collapsed
- * review history, automatic generation inputs (artifact ids for API calls
- * only), the one next operator action, and a duplicate-draft guard per review
- * stage.
+ * Turns lean RFP artifact-list summaries, persisted evidence counts, and an
+ * explicit BoQ/configuration gate into a single operator workflow model:
+ * per-stage active/current artifacts, collapsed review history, automatic
+ * generation inputs (artifact ids for API calls only), the one next operator
+ * action, and a duplicate-draft guard per review stage. Compliance drafting is
+ * gated: it stays not-ready until the configuration gate is satisfied.
  *
  * PURE: the only import is the type-only canonical artifact-status union. It
  * reads nothing, writes nothing, and makes no runtime authority decision (no
@@ -47,6 +48,27 @@ export interface RfpPersistedEvidenceInput {
   tableEvidenceCount?: number;
 }
 
+/**
+ * Lean, serializable BoQ/configuration gate input. A type-only mirror of the
+ * read-only readiness gate (project-rfp-boq-readiness) - this module never
+ * imports that helper, so it stays pure. `status` is a plain string: whatever
+ * gate-status value the caller derived is carried through verbatim for the UI.
+ * Compliance may proceed only when this gate is `satisfied` - cleared either by
+ * an approved normal configuration expansion (id in
+ * approvedConfigurationExpansionArtifactId) or by an approved no-BoQ
+ * service-only exception (`waived`, id in noBoqExceptionArtifactId).
+ */
+export interface RfpConfigurationGateInput {
+  required: boolean;
+  satisfied: boolean;
+  waived: boolean;
+  status: string;
+  message: string;
+  approvedConfigurationExpansionArtifactId?: string;
+  noBoqExceptionArtifactId?: string;
+  noBoqExceptionReason?: string;
+}
+
 /** All lean inputs; every list defaults to empty when omitted. */
 export interface RfpOperatorWorkflowInput {
   /** Files staged for the first input package (no input package yet). */
@@ -57,6 +79,8 @@ export interface RfpOperatorWorkflowInput {
   requirementsBaselines?: readonly RfpArtifactSummaryInput[];
   complianceMatrices?: readonly RfpArtifactSummaryInput[];
   configurationExpansions?: readonly RfpArtifactSummaryInput[];
+  /** Explicit BoQ/configuration gate; absent means compliance is not ready. */
+  configurationGate?: RfpConfigurationGateInput;
   evidence?: RfpPersistedEvidenceInput;
 }
 
@@ -146,6 +170,7 @@ export type RfpOperatorStage =
   | "input_package"
   | "evidence"
   | "requirements"
+  | "configuration"
   | "compliance"
   | "stage_5";
 
@@ -158,6 +183,7 @@ export type RfpNextActionId =
   | "review_evidence_package"
   | "generate_requirements_baseline"
   | "review_requirements_baseline"
+  | "complete_boq_configuration"
   | "generate_compliance_matrix"
   | "review_compliance_matrix"
   | "stage_5_ready";
@@ -178,6 +204,8 @@ export interface RfpOperatorWorkflow {
   requirementsBaseline: RfpArtifactTrack;
   complianceMatrix: RfpArtifactTrack;
   configurationExpansion?: RfpArtifactTrack;
+  /** Pass-through BoQ/configuration gate so the UI can render its status. */
+  configurationGate?: RfpConfigurationGateInput;
   evidence: RfpPersistedEvidenceStatus;
   generationInputs: RfpGenerationInputs;
   nextAction: RfpOperatorNextAction;
@@ -268,19 +296,38 @@ function buildTrack(items: readonly RfpArtifactSummaryInput[]): RfpArtifactTrack
 }
 
 /**
- * Derive automatic generation inputs. Requirements drafting auto-uses the
- * latest approved evidence package; compliance drafting auto-uses the latest
- * approved requirements baseline and evidence package, plus the optional
- * approved configuration expansion. These ids feed API calls only.
+ * The configuration artifact id a satisfied gate authorizes for compliance: the
+ * approved normal configuration-expansion id, or - when the gate is waived by an
+ * approved no-BoQ service-only exception - that exception's id. An absent or
+ * unsatisfied gate authorizes nothing (undefined).
+ */
+function resolveGateConfigurationArtifactId(
+  gate: RfpConfigurationGateInput | undefined
+): string | undefined {
+  if (gate === undefined || gate.satisfied !== true) return undefined;
+  return gate.waived
+    ? gate.noBoqExceptionArtifactId
+    : gate.approvedConfigurationExpansionArtifactId;
+}
+
+/**
+ * Derive automatic generation inputs. Requirements drafting auto-uses the latest
+ * approved evidence package. Compliance drafting auto-uses the latest approved
+ * requirements baseline and evidence package, and is gated on the explicit
+ * configuration gate: it is ready only when both upstream artifacts are approved
+ * AND the gate is satisfied with a concrete configuration artifact id (an
+ * approved normal configuration expansion, or an approved no-BoQ exception when
+ * waived).
+ * A missing gate is never ready. These ids feed API calls only.
  */
 function buildGenerationInputs(
   evidencePackage: RfpArtifactTrack,
   requirementsBaseline: RfpArtifactTrack,
-  configurationExpansion: RfpArtifactTrack | undefined
+  configurationGate: RfpConfigurationGateInput | undefined
 ): RfpGenerationInputs {
   const evidenceId = evidencePackage.latestApproved?.id;
   const requirementsId = requirementsBaseline.latestApproved?.id;
-  const configId = configurationExpansion?.latestApproved?.id;
+  const configId = resolveGateConfigurationArtifactId(configurationGate);
   return {
     requirementsBaseline: {
       ...(evidenceId !== undefined
@@ -298,7 +345,10 @@ function buildGenerationInputs(
       ...(configId !== undefined
         ? { configurationExpansionArtifactId: configId }
         : {}),
-      ready: requirementsId !== undefined && evidenceId !== undefined,
+      ready:
+        requirementsId !== undefined &&
+        evidenceId !== undefined &&
+        configId !== undefined,
     },
   };
 }
@@ -313,6 +363,7 @@ function buildNextAction(
   evidencePackage: RfpArtifactTrack,
   requirementsBaseline: RfpArtifactTrack,
   complianceMatrix: RfpArtifactTrack,
+  configurationGate: RfpConfigurationGateInput | undefined,
   uploadedFileCount: number
 ): RfpOperatorNextAction {
   if (inputPackage.current !== undefined) {
@@ -380,6 +431,20 @@ function buildNextAction(
     };
   }
   if (complianceMatrix.latestApproved === undefined) {
+    // Requirements and evidence are approved here, but compliance may not be
+    // drafted until the BoQ/configuration gate is cleared - by an approved
+    // configuration expansion, or an approved no-BoQ service-only exception.
+    if (resolveGateConfigurationArtifactId(configurationGate) === undefined) {
+      return {
+        id: "complete_boq_configuration",
+        stage: "configuration",
+        label: "Complete BoQ/configuration review",
+        reason:
+          configurationGate && configurationGate.message
+            ? configurationGate.message
+            : "The BoQ/configuration gate must be cleared before compliance.",
+      };
+    }
     return {
       id: "generate_compliance_matrix",
       stage: "compliance",
@@ -428,17 +493,21 @@ export function buildRfpOperatorWorkflow(
     requirementsBaseline,
     complianceMatrix,
     ...(configurationExpansion !== undefined ? { configurationExpansion } : {}),
+    ...(input.configurationGate !== undefined
+      ? { configurationGate: input.configurationGate }
+      : {}),
     evidence,
     generationInputs: buildGenerationInputs(
       evidencePackage,
       requirementsBaseline,
-      configurationExpansion
+      input.configurationGate
     ),
     nextAction: buildNextAction(
       inputPackage,
       evidencePackage,
       requirementsBaseline,
       complianceMatrix,
+      input.configurationGate,
       input.uploadedFileCount ?? 0
     ),
   };
