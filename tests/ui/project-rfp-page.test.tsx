@@ -3072,6 +3072,199 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
       NO_BOQ_EXCEPTION_ARTIFACT_ID
     );
   });
+
+  it("requests a service-only (no-BoQ) exception when the gate requires a BoQ or exception, posting only the reason and surfacing it for review", async () => {
+    const NO_BOQ_EXCEPTION_URL = `/api/projects/${PROJECT_ID}/rfp/boq/no-boq-exception`;
+    const REASON = "Pure professional services engagement; no hardware in scope.";
+    const requiresGate = {
+      required: true,
+      satisfied: false,
+      waived: false,
+      status: "requires_boq_upload_or_exception",
+      message:
+        "Upload a BoQ file or record an approved no-BoQ service-only exception.",
+    };
+    const pendingGate = {
+      required: true,
+      satisfied: false,
+      waived: false,
+      status: "no_boq_exception_pending_review",
+      message: "A no-BoQ service-only exception is pending review.",
+      noBoqExceptionArtifactId: NO_BOQ_EXCEPTION_ARTIFACT_ID,
+      noBoqExceptionReason: REASON,
+    };
+    let exceptionRecorded = false;
+    const calls = stubFetch((url) => {
+      if (url === NO_BOQ_EXCEPTION_URL) {
+        exceptionRecorded = true;
+        return jsonResponse({ ok: true }, 201);
+      }
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse("approved"));
+      if (url === EVIDENCE_PACKAGE_LIST_URL) {
+        return jsonResponse(evidencePackageApprovedOnlyResponse());
+      }
+      if (url === COMPLIANCE_MATRIX_LIST_URL) {
+        return jsonResponse({ project: projectContext(), artifactCount: 0, artifacts: [] });
+      }
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) {
+        return jsonResponse(
+          workspaceWithConfigurationGate(exceptionRecorded ? pendingGate : requiresGate)
+        );
+      }
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    // The exception request form is visible and its submit stays disabled until
+    // a nonblank reason is entered.
+    const submit = await screen.findByTestId("rfp-no-boq-exception-submit");
+    expect(screen.getByTestId("rfp-no-boq-exception-form")).toBeInTheDocument();
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("rfp-no-boq-exception-reason"), {
+      target: { value: `  ${REASON}  ` },
+    });
+    await waitFor(() => expect(submit).not.toBeDisabled());
+
+    await act(async () => {
+      fireEvent.click(submit);
+    });
+
+    // The request posts exactly the trimmed reason; it never approves anything.
+    await waitFor(() => {
+      const post = calls.find(
+        (call) =>
+          call.url === NO_BOQ_EXCEPTION_URL && call.init?.method === "POST"
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post?.init?.body))).toEqual({ reason: REASON });
+    });
+    expect(
+      calls.some(
+        (call) =>
+          call.url === `/api/projects/${PROJECT_ID}/rfp/boq/approvals` &&
+          call.init?.method === "POST"
+      )
+    ).toBe(false);
+
+    // After refresh the exception reads as pending review with its human reason,
+    // and the raw exception artifact id stays out of the visible page text.
+    expect(
+      await screen.findByTestId("rfp-no-boq-exception-review")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("rfp-no-boq-exception-review-reason")
+    ).toHaveTextContent(REASON);
+    expect(screen.queryByTestId("rfp-no-boq-exception-form")).toBeNull();
+    expect(document.body.textContent ?? "").not.toContain(
+      NO_BOQ_EXCEPTION_ARTIFACT_ID
+    );
+  });
+
+  it("approves a pending no-BoQ service-only exception with a note and enables compliance once it is waived", async () => {
+    const APPROVALS_URL = `/api/projects/${PROJECT_ID}/rfp/boq/approvals`;
+    const REASON = "Service-only engagement; no hardware BoQ.";
+    const NOTE = "Confirmed service-only scope with the account team.";
+    const pendingGate = {
+      required: true,
+      satisfied: false,
+      waived: false,
+      status: "no_boq_exception_pending_review",
+      message: "A no-BoQ service-only exception is pending review.",
+      noBoqExceptionArtifactId: NO_BOQ_EXCEPTION_ARTIFACT_ID,
+      noBoqExceptionReason: REASON,
+    };
+    const approvedGate = {
+      required: true,
+      satisfied: true,
+      waived: true,
+      status: "no_boq_exception_approved",
+      message:
+        "An approved no-BoQ service-only exception waives the configuration gate.",
+      noBoqExceptionArtifactId: NO_BOQ_EXCEPTION_ARTIFACT_ID,
+      noBoqExceptionReason: REASON,
+    };
+    let approved = false;
+    const calls = stubFetch((url) => {
+      if (url === APPROVALS_URL) {
+        approved = true;
+        return jsonResponse({ ok: true }, 200);
+      }
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse("approved"));
+      if (url === EVIDENCE_PACKAGE_LIST_URL) {
+        return jsonResponse(evidencePackageApprovedOnlyResponse());
+      }
+      if (url === COMPLIANCE_MATRIX_LIST_URL) {
+        return jsonResponse({ project: projectContext(), artifactCount: 0, artifacts: [] });
+      }
+      if (url === COMPLIANCE_MATRIX_GENERATE_URL) {
+        return jsonResponse({ artifact: complianceMatrixListItem(), draftSummary: {} }, 201);
+      }
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) {
+        return jsonResponse(
+          workspaceWithConfigurationGate(approved ? approvedGate : pendingGate)
+        );
+      }
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    // The pending-review controls show the reason; the raw artifact id is hidden.
+    expect(
+      await screen.findByTestId("rfp-no-boq-exception-review")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("rfp-no-boq-exception-review-reason")
+    ).toHaveTextContent(REASON);
+    expect(document.body.textContent ?? "").not.toContain(
+      NO_BOQ_EXCEPTION_ARTIFACT_ID
+    );
+
+    // Compliance generation is blocked while the exception is still pending.
+    const generate = await screen.findByTestId("generate-compliance");
+    expect(generate).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("rfp-no-boq-exception-note"), {
+      target: { value: NOTE },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-no-boq-exception-approve"));
+    });
+
+    // The decision posts the artifact id, the approve decision, and the note.
+    await waitFor(() => {
+      const post = calls.find(
+        (call) => call.url === APPROVALS_URL && call.init?.method === "POST"
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post?.init?.body))).toEqual({
+        artifactId: NO_BOQ_EXCEPTION_ARTIFACT_ID,
+        decision: "approved",
+        note: NOTE,
+      });
+    });
+
+    // After refresh the gate reads as approved/waived service-only and compliance
+    // generation is enabled from the approved baseline and evidence.
+    await waitFor(() => {
+      expect(screen.getByTestId("rfp-config-gate-status")).toHaveTextContent(
+        "waived"
+      );
+    });
+    expect(screen.getByTestId("rfp-config-gate-status")).toHaveTextContent(
+      "service-only"
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("generate-compliance")).not.toBeDisabled();
+    });
+    expect(document.body.textContent ?? "").not.toContain(
+      NO_BOQ_EXCEPTION_ARTIFACT_ID
+    );
+  });
 });
 
 describe("ProjectRfpEvidencePage static guards", () => {

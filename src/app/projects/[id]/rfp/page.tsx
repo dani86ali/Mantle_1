@@ -473,6 +473,19 @@ const PACKAGE_REVIEW_ERROR = "Unable to review final evidence package.";
 /** Exact UI copy required for the RFP BoQ readiness failure state. */
 const BOQ_WORKSPACE_ERROR = "Unable to load RFP BoQ readiness.";
 
+/** Exact UI copy required for the no-BoQ service-only exception request states. */
+const NO_BOQ_EXCEPTION_SUCCESS =
+  "Service-only (no-BoQ) exception requested for engineer review.";
+const NO_BOQ_EXCEPTION_ERROR = "Unable to request service-only exception.";
+
+/** Exact UI copy required for the no-BoQ service-only exception review states. */
+const NO_BOQ_EXCEPTION_APPROVE_SUCCESS =
+  "Service-only (no-BoQ) exception approved.";
+const NO_BOQ_EXCEPTION_REJECT_SUCCESS =
+  "Service-only (no-BoQ) exception rejected.";
+const NO_BOQ_EXCEPTION_REVIEW_ERROR =
+  "Unable to review service-only exception.";
+
 const UPLOAD_ERROR = "Unable to upload RFP file.";
 const INPUT_PACKAGE_ERROR = "Unable to create input package.";
 const INPUT_PACKAGE_REVIEW_ERROR = "Unable to review input package.";
@@ -2439,6 +2452,18 @@ export default function ProjectRfpEvidencePage() {
   const [boqWorkspaceLoading, setBoqWorkspaceLoading] = useState(true);
   const [boqWorkspaceError, setBoqWorkspaceError] = useState<string | null>(null);
 
+  // No-BoQ service-only exception request (gate requires_boq_upload_or_exception).
+  const [noBoqExceptionReason, setNoBoqExceptionReason] = useState("");
+  const [noBoqExceptionPending, setNoBoqExceptionPending] = useState(false);
+  const [noBoqExceptionError, setNoBoqExceptionError] = useState<string | null>(null);
+  const [noBoqExceptionSuccess, setNoBoqExceptionSuccess] = useState<string | null>(null);
+
+  // No-BoQ service-only exception review (gate no_boq_exception_pending_review).
+  const [noBoqExceptionNote, setNoBoqExceptionNote] = useState("");
+  const [noBoqExceptionReviewPending, setNoBoqExceptionReviewPending] = useState(false);
+  const [noBoqExceptionReviewError, setNoBoqExceptionReviewError] = useState<string | null>(null);
+  const [noBoqExceptionReviewSuccess, setNoBoqExceptionReviewSuccess] = useState<string | null>(null);
+
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -3503,6 +3528,75 @@ export default function ProjectRfpEvidencePage() {
       loadBoqWorkspace,
       workflow.inputPackage.current?.id,
     ]
+  );
+
+  // Record a no-BoQ service-only exception request (needs_review only). This
+  // never approves the exception; it surfaces it for an engineer to review.
+  const submitNoBoqException = useCallback(async (): Promise<void> => {
+    const reason = noBoqExceptionReason.trim();
+    if (reason === "" || noBoqExceptionPending) return;
+    setNoBoqExceptionPending(true);
+    setNoBoqExceptionError(null);
+    setNoBoqExceptionSuccess(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/boq/no-boq-exception`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) {
+        setNoBoqExceptionError(NO_BOQ_EXCEPTION_ERROR);
+        return;
+      }
+      setNoBoqExceptionReason("");
+      setNoBoqExceptionSuccess(NO_BOQ_EXCEPTION_SUCCESS);
+      refreshRfpLists();
+    } catch {
+      setNoBoqExceptionError(NO_BOQ_EXCEPTION_ERROR);
+    } finally {
+      setNoBoqExceptionPending(false);
+    }
+  }, [id, noBoqExceptionPending, noBoqExceptionReason, refreshRfpLists]);
+
+  // Record an explicit engineer approve/reject on the pending no-BoQ exception.
+  // The exception artifact id rides only in the POST body, never in visible text.
+  const submitNoBoqExceptionReview = useCallback(
+    async (decision: "approved" | "rejected"): Promise<void> => {
+      const artifactId =
+        boqWorkspace?.readiness.configurationGate.noBoqExceptionArtifactId;
+      if (artifactId === undefined || noBoqExceptionReviewPending) return;
+      setNoBoqExceptionReviewPending(true);
+      setNoBoqExceptionReviewError(null);
+      setNoBoqExceptionReviewSuccess(null);
+      try {
+        const note = noBoqExceptionNote.trim();
+        const res = await fetch(`/api/projects/${id}/rfp/boq/approvals`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            note === ""
+              ? { artifactId, decision }
+              : { artifactId, decision, note }
+          ),
+        });
+        if (!res.ok) {
+          setNoBoqExceptionReviewError(NO_BOQ_EXCEPTION_REVIEW_ERROR);
+          return;
+        }
+        setNoBoqExceptionNote("");
+        setNoBoqExceptionReviewSuccess(
+          decision === "approved"
+            ? NO_BOQ_EXCEPTION_APPROVE_SUCCESS
+            : NO_BOQ_EXCEPTION_REJECT_SUCCESS
+        );
+        refreshRfpLists();
+      } catch {
+        setNoBoqExceptionReviewError(NO_BOQ_EXCEPTION_REVIEW_ERROR);
+      } finally {
+        setNoBoqExceptionReviewPending(false);
+      }
+    },
+    [boqWorkspace, id, noBoqExceptionNote, noBoqExceptionReviewPending, refreshRfpLists]
   );
 
   const submitPrepareEvidenceReview = useCallback(async (): Promise<void> => {
@@ -5344,15 +5438,139 @@ export default function ProjectRfpEvidencePage() {
                 </p>
               </div>
               {boqWorkspace.readiness.configurationGate && (
-                <p
-                  data-testid="rfp-config-gate-status"
-                  className={`mt-3 ${MUTED_TEXT}`}
-                >
-                  {configurationGateStatusLine(
-                    boqWorkspace.readiness.configurationGate,
-                    boqWorkspace.readiness.quickBomReadiness.nextStepId ?? null
+                <div className="mt-3 space-y-2">
+                  <p data-testid="rfp-config-gate-status" className={MUTED_TEXT}>
+                    {configurationGateStatusLine(
+                      boqWorkspace.readiness.configurationGate,
+                      boqWorkspace.readiness.quickBomReadiness.nextStepId ?? null
+                    )}
+                  </p>
+                  {boqWorkspace.readiness.configurationGate.status ===
+                    "requires_boq_upload_or_exception" && (
+                    <div
+                      data-testid="rfp-no-boq-exception-form"
+                      className={SUBTLE_CARD}
+                    >
+                      <p className={MUTED_TEXT}>
+                        No BoQ for this RFP? Request a service-only (no-BoQ)
+                        exception for an engineer to review.
+                      </p>
+                      <textarea
+                        data-testid="rfp-no-boq-exception-reason"
+                        value={noBoqExceptionReason}
+                        onChange={(e) => setNoBoqExceptionReason(e.target.value)}
+                        rows={2}
+                        placeholder="Why is this RFP service-only with no BoQ?"
+                        className={`${FIELD} mt-2 w-full`}
+                      />
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          data-testid="rfp-no-boq-exception-submit"
+                          onClick={() => void submitNoBoqException()}
+                          disabled={
+                            noBoqExceptionReason.trim() === "" ||
+                            noBoqExceptionPending
+                          }
+                          className={ACTION_BTN}
+                        >
+                          Request service-only exception
+                        </button>
+                      </div>
+                      {noBoqExceptionError && (
+                        <p
+                          data-testid="rfp-no-boq-exception-error"
+                          className={`mt-2 ${ERROR_BOX}`}
+                        >
+                          {noBoqExceptionError}
+                        </p>
+                      )}
+                      {noBoqExceptionSuccess && (
+                        <p
+                          data-testid="rfp-no-boq-exception-success"
+                          className="mt-2 text-xs text-emerald-300"
+                        >
+                          {noBoqExceptionSuccess}
+                        </p>
+                      )}
+                    </div>
                   )}
-                </p>
+                  {boqWorkspace.readiness.configurationGate.status ===
+                    "no_boq_exception_pending_review" && (
+                    <div
+                      data-testid="rfp-no-boq-exception-review"
+                      className={SUBTLE_CARD}
+                    >
+                      <p className={MUTED_TEXT}>
+                        A service-only (no-BoQ) exception is pending engineer
+                        review.
+                      </p>
+                      {boqWorkspace.readiness.configurationGate
+                        .noBoqExceptionReason !== undefined &&
+                        boqWorkspace.readiness.configurationGate.noBoqExceptionReason.trim() !==
+                          "" && (
+                          <p
+                            data-testid="rfp-no-boq-exception-review-reason"
+                            className="mt-1 text-xs text-text-primary"
+                          >
+                            Reason:{" "}
+                            {
+                              boqWorkspace.readiness.configurationGate
+                                .noBoqExceptionReason
+                            }
+                          </p>
+                        )}
+                      <textarea
+                        data-testid="rfp-no-boq-exception-note"
+                        value={noBoqExceptionNote}
+                        onChange={(e) => setNoBoqExceptionNote(e.target.value)}
+                        rows={2}
+                        placeholder="Optional decision note"
+                        className={`${FIELD} mt-2 w-full`}
+                      />
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          data-testid="rfp-no-boq-exception-approve"
+                          onClick={() =>
+                            void submitNoBoqExceptionReview("approved")
+                          }
+                          disabled={noBoqExceptionReviewPending}
+                          className={ACTION_BTN}
+                        >
+                          Approve exception
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="rfp-no-boq-exception-reject"
+                          onClick={() =>
+                            void submitNoBoqExceptionReview("rejected")
+                          }
+                          disabled={noBoqExceptionReviewPending}
+                          className={PLAIN_BTN}
+                        >
+                          Reject exception
+                        </button>
+                      </div>
+                      {noBoqExceptionReviewError && (
+                        <p
+                          data-testid="rfp-no-boq-exception-review-error"
+                          className={`mt-2 ${ERROR_BOX}`}
+                        >
+                          {noBoqExceptionReviewError}
+                        </p>
+                      )}
+                      {noBoqExceptionReviewSuccess && (
+                        <p
+                          data-testid="rfp-no-boq-exception-review-success"
+                          className="mt-2 text-xs text-emerald-300"
+                        >
+                          {noBoqExceptionReviewSuccess}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </>
           )}
