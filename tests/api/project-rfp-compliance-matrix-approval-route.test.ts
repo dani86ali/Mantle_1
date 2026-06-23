@@ -179,6 +179,43 @@ it("maps approval-gate block statuses to 409 with stable codes and rowIds", asyn
   }
 });
 
+it("maps the Stage 5A configuration-gate blocks to 409 with stable codes", async () => {
+  mockReview
+    .mockReset()
+    .mockResolvedValueOnce({ status: "missing_source_configuration" });
+  let res = await POST(req(), PARAMS);
+  expect(res.status).toBe(409);
+  let json = await res.json();
+  expect(json.code).toBe("compliance_matrix_source_configuration_missing");
+
+  mockReview.mockReset().mockResolvedValueOnce({
+    status: "configuration_gate_unsatisfied",
+    gateStatus: "requires_boq_normalization",
+    gateMessage:
+      "BoQ must be normalized before configuration expansion can be approved.",
+  });
+  res = await POST(req(), PARAMS);
+  expect(res.status).toBe(409);
+  json = await res.json();
+  expect(json.code).toBe("compliance_matrix_configuration_gate_unsatisfied");
+  expect(json.gateStatus).toBe("requires_boq_normalization");
+  expect(json.gateMessage).toBe(
+    "BoQ must be normalized before configuration expansion can be approved."
+  );
+
+  mockReview.mockReset().mockResolvedValueOnce({
+    status: "configuration_gate_mismatch",
+    authorizedConfigurationExpansionArtifactId: "art-config-expansion-2",
+  });
+  res = await POST(req(), PARAMS);
+  expect(res.status).toBe(409);
+  json = await res.json();
+  expect(json.code).toBe("compliance_matrix_configuration_gate_mismatch");
+  expect(json.authorizedConfigurationExpansionArtifactId).toBe(
+    "art-config-expansion-2"
+  );
+});
+
 it("exports POST only and keeps route imports narrow", () => {
   expect(typeof routeModule.POST).toBe("function");
   for (const method of ["GET", "PUT", "PATCH", "DELETE"]) {
