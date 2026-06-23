@@ -528,7 +528,7 @@ function complianceMatrixMixedDetailResponse(): Record<string, unknown> {
           requirementText: "Supplier shall provide an on-site spare depot.",
           category: "commercial",
           priority: "low",
-          complianceStatus: "removed",
+          complianceStatus: "not_applicable",
           response: "Removed from scope by the engineer.",
           sectionReference: "SEC-6.1",
           rowReviewStatus: "removed",

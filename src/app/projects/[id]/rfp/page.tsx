@@ -4145,6 +4145,7 @@ export default function ProjectRfpEvidencePage() {
         return row.rowReviewStatus !== "removed";
       if (complianceStatusFilter === "removed")
         return row.rowReviewStatus === "removed";
+      if (row.rowReviewStatus === "removed") return false;
       if (complianceStatusFilter === "na")
         return row.complianceStatus === naStatus;
       return row.complianceStatus === complianceStatusFilter;
@@ -4190,18 +4191,29 @@ export default function ProjectRfpEvidencePage() {
       total: allRows.length,
       active: allRows.filter((row) => row.rowReviewStatus !== "removed").length,
       needsReview: allRows.filter(
-        (row) => row.complianceStatus === "needs_review"
+        (row) =>
+          row.rowReviewStatus !== "removed" &&
+          row.complianceStatus === "needs_review"
       ).length,
-      compliant: allRows.filter((row) => row.complianceStatus === "compliant")
-        .length,
+      compliant: allRows.filter(
+        (row) =>
+          row.rowReviewStatus !== "removed" &&
+          row.complianceStatus === "compliant"
+      ).length,
       partial: allRows.filter(
-        (row) => row.complianceStatus === "partially_compliant"
+        (row) =>
+          row.rowReviewStatus !== "removed" &&
+          row.complianceStatus === "partially_compliant"
       ).length,
       nonCompliant: allRows.filter(
-        (row) => row.complianceStatus === "non_compliant"
+        (row) =>
+          row.rowReviewStatus !== "removed" &&
+          row.complianceStatus === "non_compliant"
       ).length,
-      notApplicable: allRows.filter((row) => row.complianceStatus === naStatus)
-        .length,
+      notApplicable: allRows.filter(
+        (row) =>
+          row.rowReviewStatus !== "removed" && row.complianceStatus === naStatus
+      ).length,
       removed: allRows.filter((row) => row.rowReviewStatus === "removed").length,
     };
     const isApprovedMatrix = complianceDetail.artifact.status === "approved";
