@@ -44,6 +44,11 @@ const HLD_INTAKE_ARTIFACT_ID = "art-hld-intake-1";
 const HLD_INTAKE_APPROVED_ID = "art-hld-intake-approved-1";
 const HLD_INTAKE_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_INTAKE_ARTIFACT_ID}/hld-intake`;
 const HLD_INTAKE_REVIEW_URL = `${HLD_INTAKE_DETAIL_URL}/review`;
+const HLD_KNOWLEDGE_PACK_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-knowledge-packs`;
+const HLD_KNOWLEDGE_PACK_ARTIFACT_ID = "art-hld-pack-1";
+const HLD_KNOWLEDGE_PACK_APPROVED_ID = "art-hld-pack-approved-1";
+const HLD_KNOWLEDGE_PACK_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_KNOWLEDGE_PACK_ARTIFACT_ID}/hld-knowledge-pack`;
+const HLD_KNOWLEDGE_PACK_REVIEW_URL = `${HLD_KNOWLEDGE_PACK_DETAIL_URL}/review`;
 const HLD_INTAKE_FIELD_IDS = [
   "existing_network_context",
   "target_topology_intent",
@@ -962,7 +967,14 @@ function hldReadinessListBlocked(): Record<string, unknown> {
       canCreateReadinessSnapshot: false,
       coveredDomains: ["core_networking"],
       excludedDomains: [],
-      missingKnowledgePackDomains: [],
+      missingKnowledgePackDomains: ["campus_switching"],
+      domainReadiness: {
+        claimedDomains: ["security", "campus_switching"],
+        coveredDomains: ["security"],
+        excludedDomains: [],
+        requiredKnowledgePackDomains: ["security", "campus_switching"],
+        missingKnowledgePackDomains: ["campus_switching"],
+      },
       missingInputs: ["HLD-MISSING-INPUT-1-CANARY", "HLD-MISSING-INPUT-2-CANARY"],
       validationMessages: ["HLD-VALIDATION-MSG-CANARY"],
       assumptions: [{ fieldId: "hld_assumption_canary", label: "HLD-ASSUMPTION-CANARY", status: "active" }],
@@ -1088,6 +1100,86 @@ function hldIntakeDetailResponse(
   };
 }
 
+function hldKnowledgePackListItem(
+  id = HLD_KNOWLEDGE_PACK_ARTIFACT_ID,
+  status = "needs_review",
+  version = 2,
+  domain = "security"
+): Record<string, unknown> {
+  return {
+    id,
+    projectId: PROJECT_ID,
+    type: "design_knowledge_pack",
+    status,
+    version,
+    payloadSummary: {
+      payloadKind: "rfp_hld_design_knowledge_pack",
+      source: "manual_operator_entry",
+      createdBy: "user-1",
+      createdAt: "2026-06-20T09:00:00.000Z",
+      domain,
+      title: `${domain === "security" ? "Security" : "Campus"} design guidance`,
+      entryCount: 3,
+      sectionCounts: {
+        designPrinciples: 1,
+        topologyGuidance: 1,
+        constraints: 1,
+        assumptions: 0,
+        exclusions: 0,
+        validationNotes: 0,
+      },
+    },
+  };
+}
+
+function hldKnowledgePackListResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 2,
+    artifacts: [
+      // The needs_review (v2) revision and the approved (v1) baseline both cover
+      // "security" -- a claimed domain that readiness reports as covered. This
+      // keeps both a current and an approved pack visible without contradicting
+      // the readiness fixture, which reports campus_switching as still missing
+      // (no approved pack) until the create-flow test posts a draft for it.
+      hldKnowledgePackListItem(HLD_KNOWLEDGE_PACK_ARTIFACT_ID, "needs_review", 2, "security"),
+      hldKnowledgePackListItem(HLD_KNOWLEDGE_PACK_APPROVED_ID, "approved", 1, "security"),
+    ],
+  };
+}
+
+function hldKnowledgePackDetailResponse(
+  id = HLD_KNOWLEDGE_PACK_ARTIFACT_ID,
+  status = "needs_review"
+): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: {
+      id,
+      projectId: PROJECT_ID,
+      type: "design_knowledge_pack",
+      status,
+      version: 2,
+      sourceArtifactIds: [],
+    },
+    pack: {
+      payloadKind: "rfp_hld_design_knowledge_pack",
+      source: "manual_operator_entry",
+      createdBy: "user-1",
+      createdAt: "2026-06-20T09:00:00.000Z",
+      domain: "security",
+      title: "Security design guidance",
+      designPrinciples: ["HLD-PACK-PRINCIPLE-CANARY"],
+      topologyGuidance: ["HLD-PACK-TOPOLOGY-CANARY"],
+      constraints: ["HLD-PACK-CONSTRAINT-CANARY"],
+      assumptions: [],
+      exclusions: [],
+      validationNotes: [],
+      entryCount: 3,
+    },
+  };
+}
+
 function stubFetch(
   handler?: (url: string, init?: RequestInit) => Response | Promise<Response>
 ): FetchCall[] {
@@ -1126,6 +1218,18 @@ function stubFetch(
         return jsonResponse(hldIntakeListResponse());
       }
       if (url === HLD_INTAKE_DETAIL_URL) return jsonResponse(hldIntakeDetailResponse());
+      if (url === HLD_KNOWLEDGE_PACK_REVIEW_URL) {
+        return jsonResponse({ artifactStatus: "approved" });
+      }
+      if (url === HLD_KNOWLEDGE_PACK_LIST_URL) {
+        if (init?.method === "POST") {
+          return jsonResponse({ artifact: hldKnowledgePackListItem() }, 201);
+        }
+        return jsonResponse(hldKnowledgePackListResponse());
+      }
+      if (url === HLD_KNOWLEDGE_PACK_DETAIL_URL) {
+        return jsonResponse(hldKnowledgePackDetailResponse());
+      }
       if (url === REVIEW_URL) {
         return jsonResponse({ artifactStatus: "approved", artifact: baselineListItem() });
       }
@@ -3729,6 +3833,197 @@ describe("ProjectRfpEvidencePage - Stage 6.2 HLD intake surface", () => {
   });
 });
 
+describe("ProjectRfpEvidencePage - Stage 6A HLD design knowledge packs", () => {
+  it("surfaces a missing knowledge-pack domain and keeps HLD generation disabled/future-labeled", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const panel = await screen.findByTestId("hld-knowledge-pack-panel");
+    expect(panel).toBeInTheDocument();
+
+    const missing = await screen.findAllByTestId("hld-knowledge-pack-missing-domain");
+    expect(missing.length).toBeGreaterThanOrEqual(1);
+    expect(missing.map((m) => m.textContent).join(" ")).toContain("campus switching");
+    expect(
+      screen.getByTestId("hld-knowledge-pack-create-domain-campus_switching")
+    ).toBeInTheDocument();
+
+    // The disabled/future-labeled HLD generation control stays disabled.
+    const gen = screen.getByTestId("hld-generation-disabled");
+    expect(gen).toBeDisabled();
+    expect(gen.textContent ?? "").toMatch(/future/i);
+  });
+
+  it("creates a manual pack draft posting only allowed content fields with trimmed newline-split arrays", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    const createBtn = await screen.findByTestId(
+      "hld-knowledge-pack-create-domain-campus_switching"
+    );
+    await act(async () => {
+      fireEvent.click(createBtn);
+    });
+
+    // The form is hidden until a domain is selected, not a giant always-open form.
+    const form = await screen.findByTestId("hld-knowledge-pack-form");
+    expect(form).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("hld-knowledge-pack-title"), {
+      target: { value: "  Campus switching pack  " },
+    });
+    fireEvent.change(
+      screen.getByTestId("hld-knowledge-pack-section-designPrinciples"),
+      { target: { value: "  Redundant uplinks  \n\n  Stacked access  \n" } }
+    );
+    // Whitespace-only section drops to an empty array, not a blank entry.
+    fireEvent.change(
+      screen.getByTestId("hld-knowledge-pack-section-constraints"),
+      { target: { value: "   " } }
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-knowledge-pack-create"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_KNOWLEDGE_PACK_LIST_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls
+      .filter(
+        (c) => c.url === HLD_KNOWLEDGE_PACK_LIST_URL && c.init?.method === "POST"
+      )
+      .slice(-1)[0];
+    const body = JSON.parse(String(post?.init?.body)) as Record<string, unknown>;
+
+    expect(Object.keys(body).sort()).toEqual([
+      "assumptions",
+      "constraints",
+      "designPrinciples",
+      "domain",
+      "exclusions",
+      "title",
+      "topologyGuidance",
+      "validationNotes",
+    ]);
+    expect(body.domain).toBe("campus_switching");
+    expect(body.title).toBe("Campus switching pack");
+    expect(body.designPrinciples).toEqual(["Redundant uplinks", "Stacked access"]);
+    expect(body.constraints).toEqual([]);
+
+    // No tenant/project/authority/configuration field rides along.
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "createdBy",
+      "status",
+      "stage",
+      "stageId",
+      "type",
+      "payloadKind",
+      "source",
+      "payload",
+      "artifactId",
+      "sku",
+      "pricing",
+    ]) {
+      expect(body).not.toHaveProperty(forbidden);
+    }
+  });
+
+  it("inspects and approves a needs_review pack, posting only { decision } and refreshing the pack and readiness lists", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    // The needs_review (v2) pack sorts first; inspect it.
+    const inspects = await screen.findAllByTestId("hld-knowledge-pack-inspect");
+    await act(async () => {
+      fireEvent.click(inspects[0]);
+    });
+
+    await screen.findByTestId("review-drawer");
+    const content = await screen.findByTestId("hld-knowledge-pack-drawer-content");
+    expect(content).toHaveTextContent("HLD-PACK-PRINCIPLE-CANARY");
+
+    const packGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_KNOWLEDGE_PACK_LIST_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+    const readinessGetsBefore = calls.filter(
+      (c) => c.url === HLD_READINESS_LIST_URL
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-knowledge-pack-approve"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_KNOWLEDGE_PACK_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const reviewBody = JSON.parse(
+      String(
+        calls
+          .filter((c) => c.url === HLD_KNOWLEDGE_PACK_REVIEW_URL)
+          .slice(-1)[0]?.init?.body
+      )
+    ) as Record<string, unknown>;
+    expect(Object.keys(reviewBody)).toEqual(["decision"]);
+    expect(reviewBody.decision).toBe("approved");
+
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_KNOWLEDGE_PACK_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(packGetsBefore);
+      expect(
+        calls.filter((c) => c.url === HLD_READINESS_LIST_URL).length
+      ).toBeGreaterThan(readinessGetsBefore);
+    });
+  });
+
+  it("keeps raw pack artifact ids out of primary text and only inside collapsed technical details", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+
+    // The compact list never renders the raw artifact id as visible text.
+    const list = await screen.findByTestId("hld-knowledge-pack-list");
+    expect(list.textContent ?? "").not.toContain(HLD_KNOWLEDGE_PACK_ARTIFACT_ID);
+
+    const inspects = await screen.findAllByTestId("hld-knowledge-pack-inspect");
+    await act(async () => {
+      fireEvent.click(inspects[0]);
+    });
+
+    const content = await screen.findByTestId("hld-knowledge-pack-drawer-content");
+    const audit = content.querySelector(
+      "[data-testid='hld-knowledge-pack-drawer-audit']"
+    );
+    expect(audit?.textContent ?? "").toContain(HLD_KNOWLEDGE_PACK_ARTIFACT_ID);
+
+    const primary = content.cloneNode(true) as HTMLElement;
+    primary
+      .querySelector("[data-testid='hld-knowledge-pack-drawer-audit']")
+      ?.remove();
+    expect(primary.textContent ?? "").not.toContain(HLD_KNOWLEDGE_PACK_ARTIFACT_ID);
+  });
+});
+
 describe("ProjectRfpEvidencePage static guards", () => {
   const SRC_PATH = join(process.cwd(), "src/app/projects/[id]/rfp/page.tsx");
   const TEST_PATH = join(process.cwd(), "tests/ui/project-rfp-page.test.tsx");
@@ -3769,6 +4064,7 @@ describe("ProjectRfpEvidencePage static guards", () => {
     expect(source).toContain("/rfp/compliance-matrix/generate");
     expect(source).toContain("/rfp/hld-readiness-snapshot");
     expect(source).toContain("/rfp/hld-intake");
+    expect(source).toContain("/rfp/hld-knowledge-packs");
     expect(source).toContain("evidencePackageArtifactId");
     expect(source).toContain("requirementsBaselineArtifactId");
     expect(source).not.toContain("evidenceIds");

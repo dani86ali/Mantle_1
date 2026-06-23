@@ -167,6 +167,37 @@ export type CreateRfpHldIntakeDraftResult =
       payloadSummary: RfpHldIntakePayloadSummary;
     };
 
+/**
+ * A known request-derived validation failure. The HLD intake route maps this (and
+ * only this) to HTTP 400; unexpected errors (e.g. a store failure) bubble to a
+ * controlled 500. Use {@link isRfpHldIntakeValidationError} to detect it without a
+ * cross-module instanceof hazard.
+ */
+export class RfpHldIntakeValidationError extends Error {
+  readonly isRfpHldIntakeValidationError = true as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "RfpHldIntakeValidationError";
+  }
+}
+
+/** Predicate for the request-derived validation error (instanceof-safe). */
+export function isRfpHldIntakeValidationError(
+  error: unknown
+): error is RfpHldIntakeValidationError {
+  return (
+    error instanceof RfpHldIntakeValidationError ||
+    (typeof error === "object" &&
+      error !== null &&
+      (error as { isRfpHldIntakeValidationError?: unknown })
+        .isRfpHldIntakeValidationError === true)
+  );
+}
+
+function fail(message: string): never {
+  throw new RfpHldIntakeValidationError(message);
+}
+
 /** Trim a value to a string, or "" when it is not a string. */
 function asTrimmed(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -179,27 +210,27 @@ function asTrimmed(value: unknown): string {
  */
 function normalizeAnswers(rawAnswers: unknown): RfpHldIntakeAnswer[] {
   if (!Array.isArray(rawAnswers)) {
-    throw new Error("HLD intake answers must be an array.");
+    fail("HLD intake answers must be an array.");
   }
   const byFieldId = new Map<string, Record<string, unknown>>();
   for (const raw of rawAnswers) {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-      throw new Error("Each HLD intake answer must be an object.");
+      fail("Each HLD intake answer must be an object.");
     }
     const record = raw as Record<string, unknown>;
     const fieldId = record.fieldId;
     if (typeof fieldId !== "string" || !FIELD_IDS.has(fieldId)) {
-      throw new Error(`Unknown HLD intake field id: ${String(fieldId)}.`);
+      fail(`Unknown HLD intake field id: ${String(fieldId)}.`);
     }
     if (byFieldId.has(fieldId)) {
-      throw new Error(`Duplicate HLD intake answer for field id: ${fieldId}.`);
+      fail(`Duplicate HLD intake answer for field id: ${fieldId}.`);
     }
     byFieldId.set(fieldId, record);
   }
   return RFP_HLD_INTAKE_FIELDS.map((field) => {
     const record = byFieldId.get(field.fieldId);
     if (record === undefined) {
-      throw new Error(`Missing HLD intake answer for field id: ${field.fieldId}.`);
+      fail(`Missing HLD intake answer for field id: ${field.fieldId}.`);
     }
     return normalizeAnswer(field, record);
   });
@@ -212,7 +243,7 @@ function normalizeAnswer(
 ): RfpHldIntakeAnswer {
   const status = record.status;
   if (status !== "answered" && status !== "unknown" && status !== "not_applicable") {
-    throw new Error(`Invalid HLD intake answer status for field id: ${field.fieldId}.`);
+    fail(`Invalid HLD intake answer status for field id: ${field.fieldId}.`);
   }
   // Canonical label from the local catalog; the caller-supplied label is ignored.
   const answer: RfpHldIntakeAnswer = {
@@ -223,7 +254,7 @@ function normalizeAnswer(
   if (status === "answered") {
     const value = asTrimmed(record.value);
     if (value === "") {
-      throw new Error(`Answered HLD intake field requires a value: ${field.fieldId}.`);
+      fail(`Answered HLD intake field requires a value: ${field.fieldId}.`);
     }
     answer.value = value;
   }
@@ -297,8 +328,8 @@ export async function createRfpHldIntakeDraft(
 ): Promise<CreateRfpHldIntakeDraftResult> {
   const projectId = asTrimmed(input.projectId);
   const createdBy = asTrimmed(input.createdBy);
-  if (projectId === "") throw new Error("HLD intake requires a projectId.");
-  if (createdBy === "") throw new Error("HLD intake requires a createdBy.");
+  if (projectId === "") fail("HLD intake requires a projectId.");
+  if (createdBy === "") fail("HLD intake requires a createdBy.");
 
   // Validate the catalog answer set before touching any store.
   const answers = normalizeAnswers(input.answers);

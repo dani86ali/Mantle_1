@@ -2,40 +2,33 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// Mock auth and both HLD intake services (read-only list + create draft) so the
-// route's auth gate, body validation, tenant/user/param authority,
-// body-ignoring on GET, and result mapping are tested independent of the DB.
-const { mockRequireAuth, mockLoadList, mockCreateDraft } = vi.hoisted(() => ({
+// Mock auth and both HLD knowledge-pack services (read-only list + create draft)
+// so the route's auth gate, body validation, tenant/user/param authority,
+// body-ignoring on GET, caller-authority stripping, and result mapping are tested
+// independent of the DB. The create module also exposes the validation-error
+// predicate the route uses to split 400 from 500.
+const { mockRequireAuth, mockLoadList, mockCreate } = vi.hoisted(() => ({
   mockRequireAuth: vi.fn(),
   mockLoadList: vi.fn(),
-  mockCreateDraft: vi.fn(),
+  mockCreate: vi.fn(),
 }));
 
 vi.mock("@/lib/middleware/auth", () => ({ requireAuth: mockRequireAuth }));
-vi.mock("@/lib/projects/project-rfp-hld-intake-inspection", () => ({
-  loadRfpHldIntakeList: mockLoadList,
-}));
-// The route imports isRfpHldIntakeValidationError from this module to classify
-// request-derived validation failures; the mock reproduces the real instanceof-safe
-// marker check so the route's 400-vs-500 split can be exercised without the DB.
-vi.mock("@/lib/projects/project-rfp-hld-intake", () => ({
-  createRfpHldIntakeDraft: mockCreateDraft,
-  isRfpHldIntakeValidationError: (error: unknown) =>
+vi.mock(
+  "@/lib/projects/project-rfp-hld-design-knowledge-pack-inspection",
+  () => ({ loadRfpHldDesignKnowledgePackList: mockLoadList })
+);
+vi.mock("@/lib/projects/project-rfp-hld-design-knowledge-pack", () => ({
+  createRfpHldDesignKnowledgePack: mockCreate,
+  isRfpHldDesignKnowledgePackValidationError: (error: unknown) =>
     typeof error === "object" &&
     error !== null &&
-    (error as { isRfpHldIntakeValidationError?: unknown })
-      .isRfpHldIntakeValidationError === true,
+    (error as { isRfpHldDesignKnowledgePackValidationError?: unknown })
+      .isRfpHldDesignKnowledgePackValidationError === true,
 }));
 
-// A stand-in for a known semantic intake validation failure raised by the service.
-function validationError(message: string): Error {
-  return Object.assign(new Error(message), {
-    isRfpHldIntakeValidationError: true as const,
-  });
-}
-
-import { GET, POST } from "@/app/api/projects/[id]/rfp/hld-intake/route";
-import * as routeModule from "@/app/api/projects/[id]/rfp/hld-intake/route";
+import { GET, POST } from "@/app/api/projects/[id]/rfp/hld-knowledge-packs/route";
+import * as routeModule from "@/app/api/projects/[id]/rfp/hld-knowledge-packs/route";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -69,10 +62,10 @@ const WRONG_MODE_PROJECT = {
 };
 
 const ARTIFACT_SUMMARY = {
-  id: "art-hld-intake-1",
+  id: "art-pack-1",
   projectId: PROJECT,
   stageId: "hld_design_delta_review",
-  type: "hld_intake",
+  type: "design_knowledge_pack",
   status: "needs_review",
   version: 1,
   sourceFileIds: [],
@@ -82,22 +75,21 @@ const ARTIFACT_SUMMARY = {
 };
 
 const PAYLOAD_SUMMARY = {
-  payloadKind: "rfp_hld_intake",
+  payloadKind: "rfp_hld_design_knowledge_pack",
+  source: "manual_operator_entry",
   createdBy: SESSION.userId,
   createdAt: "2026-06-20T12:00:00.000Z",
-  answerCount: 9,
-  statusCounts: { answered: 7, unknown: 1, not_applicable: 1 },
-  fieldIds: [
-    "existing_network_context",
-    "target_topology_intent",
-    "site_room_context",
-    "resiliency_expectations",
-    "wan_lan_boundaries",
-    "rack_power_assumptions",
-    "implementation_constraints",
-    "exclusions",
-    "diagram_notes",
-  ],
+  domain: "campus_switching",
+  title: "Campus switching guidance",
+  entryCount: 2,
+  sectionCounts: {
+    designPrinciples: 1,
+    topologyGuidance: 1,
+    constraints: 0,
+    assumptions: 0,
+    exclusions: 0,
+    validationNotes: 0,
+  },
 };
 
 const LIST_ITEM = { ...ARTIFACT_SUMMARY, payloadSummary: PAYLOAD_SUMMARY };
@@ -115,24 +107,21 @@ const CREATE_OK = {
   payloadSummary: PAYLOAD_SUMMARY,
 };
 
-// A well-formed answer set; the route forwards it verbatim to the service,
-// which owns answer semantics.
-const VALID_ANSWERS = [
-  { fieldId: "existing_network_context", status: "answered", value: "x" },
-  { fieldId: "target_topology_intent", status: "answered", value: "x" },
-  { fieldId: "site_room_context", status: "answered", value: "x" },
-  { fieldId: "resiliency_expectations", status: "answered", value: "x" },
-  { fieldId: "wan_lan_boundaries", status: "answered", value: "x" },
-  { fieldId: "rack_power_assumptions", status: "answered", value: "x" },
-  { fieldId: "implementation_constraints", status: "answered", value: "x" },
-  { fieldId: "exclusions", status: "not_applicable" },
-  { fieldId: "diagram_notes", status: "unknown" },
-];
+const VALID_BODY = {
+  domain: "campus_switching",
+  title: "Campus switching guidance",
+  designPrinciples: ["redundant core"],
+  topologyGuidance: ["two-tier"],
+  constraints: [],
+  assumptions: [],
+  exclusions: [],
+  validationNotes: [],
+};
 
 function createBody(
   overrides: Record<string, unknown> = {}
 ): Record<string, unknown> {
-  return { answers: VALID_ANSWERS, ...overrides };
+  return { ...VALID_BODY, ...overrides };
 }
 
 function req(
@@ -150,13 +139,19 @@ function req(
   } as unknown as NextRequest;
 }
 
+function validationError(message: string): Error {
+  return Object.assign(new Error(message), {
+    isRfpHldDesignKnowledgePackValidationError: true as const,
+  });
+}
+
 beforeEach(() => {
   mockRequireAuth.mockReset().mockReturnValue(SESSION);
   mockLoadList.mockReset().mockResolvedValue(LIST_OK);
-  mockCreateDraft.mockReset().mockResolvedValue(CREATE_OK);
+  mockCreate.mockReset().mockResolvedValue(CREATE_OK);
 });
 
-describe("GET /api/projects/[id]/rfp/hld-intake - auth", () => {
+describe("GET /api/projects/[id]/rfp/hld-knowledge-packs - auth", () => {
   it("returns the requireAuth response and never calls the service or reads the body when unauthenticated", async () => {
     const unauth = NextResponse.json(
       { error: "Authentication required" },
@@ -175,7 +170,7 @@ describe("GET /api/projects/[id]/rfp/hld-intake - auth", () => {
   });
 });
 
-describe("GET /api/projects/[id]/rfp/hld-intake - authority", () => {
+describe("GET /api/projects/[id]/rfp/hld-knowledge-packs - authority", () => {
   it("passes only session tenant and the route project id; a decoy body is never read", async () => {
     const request = req({
       tenantId: "attacker-tenant",
@@ -196,7 +191,7 @@ describe("GET /api/projects/[id]/rfp/hld-intake - authority", () => {
   });
 });
 
-describe("GET /api/projects/[id]/rfp/hld-intake - result mapping", () => {
+describe("GET /api/projects/[id]/rfp/hld-knowledge-packs - result mapping", () => {
   it("maps not_found to 404 project_not_found", async () => {
     mockLoadList.mockResolvedValue({ status: "not_found" });
 
@@ -241,13 +236,12 @@ describe("GET /api/projects/[id]/rfp/hld-intake - result mapping", () => {
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.code).toBe("rfp_hld_intake_inspection_failed");
-    expect(body.error).toBe("Unable to inspect HLD intake.");
+    expect(body.code).toBe("rfp_hld_knowledge_pack_inspection_failed");
     expect(JSON.stringify(body)).not.toContain(secret);
   });
 });
 
-describe("POST /api/projects/[id]/rfp/hld-intake - auth", () => {
+describe("POST /api/projects/[id]/rfp/hld-knowledge-packs - auth", () => {
   it("returns the requireAuth response and skips body parsing and the service when unauthenticated", async () => {
     const unauth = NextResponse.json(
       { error: "Authentication required" },
@@ -260,72 +254,74 @@ describe("POST /api/projects/[id]/rfp/hld-intake - auth", () => {
 
     expect(res).toBe(unauth);
     expect(res.status).toBe(401);
-    expect(mockCreateDraft).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
     expect(request.json).not.toHaveBeenCalled();
   });
 });
 
-describe("POST /api/projects/[id]/rfp/hld-intake - body validation", () => {
-  it("returns 400 invalid_rfp_hld_intake_request for invalid JSON without calling the service", async () => {
+describe("POST /api/projects/[id]/rfp/hld-knowledge-packs - body validation", () => {
+  it("returns 400 invalid_rfp_hld_knowledge_pack_request for invalid JSON without calling the service", async () => {
     const res = await POST(req(undefined, { invalidJson: true }), PARAMS);
 
     expect(res.status).toBe(400);
-    expect((await res.json()).code).toBe("invalid_rfp_hld_intake_request");
-    expect(mockCreateDraft).not.toHaveBeenCalled();
+    expect((await res.json()).code).toBe("invalid_rfp_hld_knowledge_pack_request");
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it("returns 400 for invalid bodies (including a bare answers array) without calling the service", async () => {
-    const badBodies: unknown[] = [
-      null,
-      "string-body",
-      42,
-      true,
-      // A bare array body is invalid: the body must be an object { answers }.
-      VALID_ANSWERS,
-      [],
-      {},
-      { answers: "not-an-array" },
-      { answers: null },
-      { notAnswers: VALID_ANSWERS },
-    ];
+  it("returns 400 for non-object bodies without calling the service", async () => {
+    const badBodies: unknown[] = [null, "string-body", 42, true, [], [VALID_BODY]];
     for (const body of badBodies) {
-      mockCreateDraft.mockClear();
+      mockCreate.mockClear();
       const res = await POST(req(body), PARAMS);
       expect(res.status).toBe(400);
-      expect((await res.json()).code).toBe("invalid_rfp_hld_intake_request");
-      expect(mockCreateDraft).not.toHaveBeenCalled();
+      expect((await res.json()).code).toBe(
+        "invalid_rfp_hld_knowledge_pack_request"
+      );
+      expect(mockCreate).not.toHaveBeenCalled();
     }
   });
 });
 
-describe("POST /api/projects/[id]/rfp/hld-intake - authority", () => {
-  it("passes only session tenant/user, the route project id, and answers; decoy authority fields never reach the service", async () => {
+describe("POST /api/projects/[id]/rfp/hld-knowledge-packs - authority", () => {
+  it("passes only session tenant/user, the route project id, and whitelisted content; decoy authority fields never reach the service", async () => {
     const body = createBody({
       tenantId: "attacker-tenant",
       projectId: "attacker-project",
       createdBy: "attacker-user",
       createdAt: "2000-01-01T00:00:00.000Z",
       status: "approved",
-      id: "attacker-artifact",
+      stageId: "boq_pricing_review",
+      type: "priced_boq",
+      payloadKind: "evil",
+      source: "raw_document",
       payload: { hack: true },
+      id: "attacker-artifact",
       price: 999,
       sku: "ATTACKER-SKU",
     });
 
     await POST(req(body), PARAMS);
 
-    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
-    const arg = mockCreateDraft.mock.calls[0][0] as Record<string, unknown>;
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const arg = mockCreate.mock.calls[0][0] as Record<string, unknown>;
     expect(Object.keys(arg).sort()).toEqual([
-      "answers",
+      "assumptions",
+      "constraints",
       "createdBy",
+      "designPrinciples",
+      "domain",
+      "exclusions",
       "projectId",
       "tenantId",
+      "title",
+      "topologyGuidance",
+      "validationNotes",
     ]);
     expect(arg.tenantId).toBe(SESSION.tenantId);
     expect(arg.projectId).toBe(PROJECT);
     expect(arg.createdBy).toBe(SESSION.userId);
-    expect(arg.answers).toEqual(VALID_ANSWERS);
+    expect(arg.domain).toBe(VALID_BODY.domain);
+    expect(arg.title).toBe(VALID_BODY.title);
 
     expect(arg.tenantId).not.toBe("attacker-tenant");
     expect(arg.projectId).not.toBe("attacker-project");
@@ -333,19 +329,33 @@ describe("POST /api/projects/[id]/rfp/hld-intake - authority", () => {
     for (const leaked of [
       "createdAt",
       "status",
-      "id",
+      "stageId",
+      "type",
+      "payloadKind",
+      "source",
       "payload",
+      "id",
       "price",
       "sku",
     ]) {
       expect(leaked in arg).toBe(false);
     }
   });
+
+  it("coerces a non-string domain/title to an empty string rather than forwarding junk", async () => {
+    const body = createBody({ domain: { evil: true }, title: 42 });
+
+    await POST(req(body), PARAMS);
+
+    const arg = mockCreate.mock.calls[0][0] as Record<string, unknown>;
+    expect(arg.domain).toBe("");
+    expect(arg.title).toBe("");
+  });
 });
 
-describe("POST /api/projects/[id]/rfp/hld-intake - result mapping", () => {
+describe("POST /api/projects/[id]/rfp/hld-knowledge-packs - result mapping", () => {
   it("maps not_found to 404 project_not_found", async () => {
-    mockCreateDraft.mockResolvedValue({ status: "not_found" });
+    mockCreate.mockResolvedValue({ status: "not_found" });
 
     const res = await POST(req(), PARAMS);
 
@@ -354,7 +364,7 @@ describe("POST /api/projects/[id]/rfp/hld-intake - result mapping", () => {
   });
 
   it("maps wrong_mode to 409 wrong_project_mode with the project summary", async () => {
-    mockCreateDraft.mockResolvedValue({
+    mockCreate.mockResolvedValue({
       status: "wrong_mode",
       project: WRONG_MODE_PROJECT,
     });
@@ -379,33 +389,33 @@ describe("POST /api/projects/[id]/rfp/hld-intake - result mapping", () => {
     expect("status" in body).toBe(false);
   });
 
-  it("maps a known semantic intake validation error to 400 invalid_rfp_hld_intake_request without leaking the message", async () => {
-    const secret = "Answered HLD intake field requires a value: exclusions.";
-    mockCreateDraft.mockRejectedValue(validationError(secret));
+  it("maps a known validation error to 400 invalid_rfp_hld_knowledge_pack_request without leaking the message", async () => {
+    const secret = "Unknown design domain: (blank).";
+    mockCreate.mockRejectedValue(validationError(secret));
 
     const res = await POST(req(), PARAMS);
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe("invalid_rfp_hld_intake_request");
+    expect(body.code).toBe("invalid_rfp_hld_knowledge_pack_request");
     expect(JSON.stringify(body)).not.toContain(secret);
   });
 
   it("maps an unexpected service error to a controlled 500 without exposing the thrown error", async () => {
     const secret = "boom-internal-stack-detail";
-    mockCreateDraft.mockRejectedValue(new Error(secret));
+    mockCreate.mockRejectedValue(new Error(secret));
 
     const res = await POST(req(), PARAMS);
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.code).toBe("rfp_hld_intake_failed");
-    expect(body.error).toBe("Unable to create RFP HLD intake draft.");
+    expect(body.code).toBe("rfp_hld_knowledge_pack_failed");
+    expect(body.error).toBe("Unable to create RFP HLD knowledge pack.");
     expect(JSON.stringify(body)).not.toContain(secret);
   });
 });
 
-describe("/api/projects/[id]/rfp/hld-intake - route surface", () => {
+describe("/api/projects/[id]/rfp/hld-knowledge-packs - route surface", () => {
   it("exports GET and POST only", () => {
     expect(typeof routeModule.GET).toBe("function");
     expect(typeof routeModule.POST).toBe("function");
@@ -418,21 +428,21 @@ describe("/api/projects/[id]/rfp/hld-intake - route surface", () => {
 describe("route module purity (static source check)", () => {
   const SRC_PATH = join(
     process.cwd(),
-    "src/app/api/projects/[id]/rfp/hld-intake/route.ts"
+    "src/app/api/projects/[id]/rfp/hld-knowledge-packs/route.ts"
   );
   const TEST_PATH = join(
     process.cwd(),
-    "tests/api/project-rfp-hld-intake-route.test.ts"
+    "tests/api/project-rfp-hld-knowledge-pack-route.test.ts"
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports only Next.js server primitives, requireAuth, and the HLD intake services", () => {
+  it("imports only Next.js server primitives, requireAuth, and the HLD knowledge-pack services", () => {
     const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
     expect(froms).toEqual([
       "next/server",
       "@/lib/middleware/auth",
-      "@/lib/projects/project-rfp-hld-intake-inspection",
-      "@/lib/projects/project-rfp-hld-intake",
+      "@/lib/projects/project-rfp-hld-design-knowledge-pack-inspection",
+      "@/lib/projects/project-rfp-hld-design-knowledge-pack",
     ]);
   });
 

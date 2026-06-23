@@ -588,6 +588,149 @@ function hldIntakeDraftComplete(draft: HldIntakeDraft): boolean {
   });
 }
 
+/** Canonical design knowledge-pack list sections, in persisted order. */
+const HLD_KNOWLEDGE_PACK_SECTIONS = [
+  { id: "designPrinciples", label: "Design principles" },
+  { id: "topologyGuidance", label: "Topology guidance" },
+  { id: "constraints", label: "Constraints" },
+  { id: "assumptions", label: "Assumptions" },
+  { id: "exclusions", label: "Exclusions" },
+  { id: "validationNotes", label: "Validation notes" },
+] as const;
+
+type HldKnowledgePackSectionId = (typeof HLD_KNOWLEDGE_PACK_SECTIONS)[number]["id"];
+
+/** Per-section entry tally surfaced by the inspection read model. */
+type HldKnowledgePackSectionCounts = Record<HldKnowledgePackSectionId, number>;
+
+/** Lean knowledge-pack payload summary (provenance and counts only). */
+interface HldKnowledgePackPayloadSummary {
+  payloadKind?: string;
+  source?: string;
+  createdBy?: string;
+  createdAt?: string;
+  domain?: string;
+  title?: string;
+  entryCount?: number;
+  sectionCounts?: HldKnowledgePackSectionCounts;
+}
+
+/** One design_knowledge_pack artifact in the list response. */
+interface HldKnowledgePackListItem {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  payloadSummary?: HldKnowledgePackPayloadSummary;
+}
+
+/** Lean list response of GET /api/projects/[id]/rfp/hld-knowledge-packs. */
+interface HldKnowledgePackListResponse {
+  artifactCount: number;
+  artifacts: HldKnowledgePackListItem[];
+}
+
+/** Sanitized pack detail payload returned alongside the artifact summary. */
+interface HldKnowledgePackDetailPayload {
+  payloadKind?: string;
+  source?: string;
+  createdBy?: string;
+  createdAt?: string;
+  domain?: string;
+  title?: string;
+  designPrinciples?: string[];
+  topologyGuidance?: string[];
+  constraints?: string[];
+  assumptions?: string[];
+  exclusions?: string[];
+  validationNotes?: string[];
+  entryCount?: number;
+}
+
+/** Detail artifact summary for a knowledge pack. */
+interface HldKnowledgePackDetailArtifact {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  sourceArtifactIds?: string[];
+}
+
+/** Detail response of GET .../artifacts/[id]/hld-knowledge-pack. */
+interface HldKnowledgePackDetailResponse {
+  artifact?: HldKnowledgePackDetailArtifact;
+  pack?: HldKnowledgePackDetailPayload;
+}
+
+/** Loaded knowledge-pack detail: the artifact summary plus sanitized pack. */
+interface HldKnowledgePackDetail {
+  artifact: HldKnowledgePackDetailArtifact;
+  pack: HldKnowledgePackDetailPayload;
+}
+
+/** One in-progress knowledge-pack create draft for a selected design domain. */
+interface HldKnowledgePackCreateDraft {
+  domain: string;
+  title: string;
+  designPrinciples: string;
+  topologyGuidance: string;
+  constraints: string;
+  assumptions: string;
+  exclusions: string;
+  validationNotes: string;
+}
+
+/** Seed an empty knowledge-pack draft for the given (already-claimed) domain. */
+function emptyKnowledgePackDraft(domain = ""): HldKnowledgePackCreateDraft {
+  return {
+    domain,
+    title: "",
+    designPrinciples: "",
+    topologyGuidance: "",
+    constraints: "",
+    assumptions: "",
+    exclusions: "",
+    validationNotes: "",
+  };
+}
+
+/** Split a textarea into trimmed, nonblank, newline-separated entries. */
+function splitKnowledgePackEntries(value: string): string[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+}
+
+/**
+ * Build the POST body from a draft, sending ONLY the allowed content fields with
+ * trimmed newline-split list entries. No tenant/project/createdBy/status/stage/
+ * type/payloadKind/source/payload/artifact/pricing/SKU/catalog/config field is
+ * ever included.
+ */
+function buildHldKnowledgePackCreateBody(
+  draft: HldKnowledgePackCreateDraft
+): Record<string, unknown> {
+  return {
+    domain: draft.domain.trim(),
+    title: draft.title.trim(),
+    designPrinciples: splitKnowledgePackEntries(draft.designPrinciples),
+    topologyGuidance: splitKnowledgePackEntries(draft.topologyGuidance),
+    constraints: splitKnowledgePackEntries(draft.constraints),
+    assumptions: splitKnowledgePackEntries(draft.assumptions),
+    exclusions: splitKnowledgePackEntries(draft.exclusions),
+    validationNotes: splitKnowledgePackEntries(draft.validationNotes),
+  };
+}
+
+/** True when a draft has a nonblank title and at least one nonblank list entry. */
+function hldKnowledgePackDraftComplete(
+  draft: HldKnowledgePackCreateDraft
+): boolean {
+  if (draft.title.trim() === "") return false;
+  return HLD_KNOWLEDGE_PACK_SECTIONS.some(
+    (section) => splitKnowledgePackEntries(draft[section.id]).length > 0
+  );
+}
+
 /**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
@@ -610,7 +753,8 @@ type DrawerKind =
   | "requirements"
   | "compliance"
   | "hld-readiness"
-  | "hld-intake";
+  | "hld-intake"
+  | "hld-knowledge-pack";
 
 interface DrawerState {
   kind: DrawerKind;
@@ -692,6 +836,16 @@ const HLD_INTAKE_CREATE_ERROR = "Unable to create HLD intake draft.";
 const HLD_INTAKE_APPROVE_SUCCESS = "HLD intake approved.";
 const HLD_INTAKE_REJECT_SUCCESS = "HLD intake changes requested.";
 const HLD_INTAKE_REVIEW_ERROR = "Unable to review HLD intake.";
+
+/** Exact UI copy required for the HLD knowledge-pack list/detail/create/review states. */
+const HLD_KNOWLEDGE_PACK_LIST_ERROR = "Unable to load HLD knowledge packs.";
+const HLD_KNOWLEDGE_PACK_DETAIL_ERROR = "Unable to load HLD knowledge pack detail.";
+const HLD_KNOWLEDGE_PACK_CREATE_SUCCESS =
+  "HLD knowledge pack draft created for engineer review.";
+const HLD_KNOWLEDGE_PACK_CREATE_ERROR = "Unable to create HLD knowledge pack draft.";
+const HLD_KNOWLEDGE_PACK_APPROVE_SUCCESS = "HLD knowledge pack approved.";
+const HLD_KNOWLEDGE_PACK_REJECT_SUCCESS = "HLD knowledge pack changes requested.";
+const HLD_KNOWLEDGE_PACK_REVIEW_ERROR = "Unable to review HLD knowledge pack.";
 
 /** Exact UI copy required for the no-BoQ service-only exception request states. */
 const NO_BOQ_EXCEPTION_SUCCESS =
@@ -2716,6 +2870,26 @@ export default function ProjectRfpEvidencePage() {
   const [hldIntakeReviewError, setHldIntakeReviewError] = useState<string | null>(null);
   const [hldIntakeReviewSuccess, setHldIntakeReviewSuccess] = useState<string | null>(null);
 
+  // HLD design knowledge pack list/detail plus the compact create form and review.
+  const [hldKnowledgePackList, setHldKnowledgePackList] = useState<HldKnowledgePackListResponse | null>(null);
+  const [hldKnowledgePackListLoading, setHldKnowledgePackListLoading] = useState(true);
+  const [hldKnowledgePackListError, setHldKnowledgePackListError] = useState<string | null>(null);
+
+  const [hldKnowledgePackDetail, setHldKnowledgePackDetail] = useState<HldKnowledgePackDetail | null>(null);
+  const [hldKnowledgePackDetailLoading, setHldKnowledgePackDetailLoading] = useState(false);
+  const [hldKnowledgePackDetailError, setHldKnowledgePackDetailError] = useState<string | null>(null);
+
+  // The compact create form is hidden until an operator selects a missing domain.
+  const [hldKnowledgePackDraft, setHldKnowledgePackDraft] = useState<HldKnowledgePackCreateDraft | null>(null);
+  const [hldKnowledgePackCreatePending, setHldKnowledgePackCreatePending] = useState(false);
+  const [hldKnowledgePackCreateError, setHldKnowledgePackCreateError] = useState<string | null>(null);
+  const [hldKnowledgePackCreateSuccess, setHldKnowledgePackCreateSuccess] = useState<string | null>(null);
+
+  const [hldKnowledgePackReviewNote, setHldKnowledgePackReviewNote] = useState("");
+  const [hldKnowledgePackReviewPending, setHldKnowledgePackReviewPending] = useState(false);
+  const [hldKnowledgePackReviewError, setHldKnowledgePackReviewError] = useState<string | null>(null);
+  const [hldKnowledgePackReviewSuccess, setHldKnowledgePackReviewSuccess] = useState<string | null>(null);
+
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -3028,6 +3202,63 @@ export default function ProjectRfpEvidencePage() {
         setHldIntakeDetailError(HLD_INTAKE_DETAIL_ERROR);
       } finally {
         setHldIntakeDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  const loadHldKnowledgePackList = useCallback(async (): Promise<void> => {
+    setHldKnowledgePackListLoading(true);
+    setHldKnowledgePackListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-knowledge-packs`);
+      const body = (await res.json().catch(() => null)) as HldKnowledgePackListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
+        setHldKnowledgePackList(null);
+        setHldKnowledgePackListError(HLD_KNOWLEDGE_PACK_LIST_ERROR);
+        return;
+      }
+      setHldKnowledgePackList(body);
+    } catch {
+      setHldKnowledgePackList(null);
+      setHldKnowledgePackListError(HLD_KNOWLEDGE_PACK_LIST_ERROR);
+    } finally {
+      setHldKnowledgePackListLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldKnowledgePackList();
+  }, [loadHldKnowledgePackList]);
+
+  // A pack's sanitized content is fetched only here, on an explicit Inspect click.
+  const loadHldKnowledgePackDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setHldKnowledgePackDetail(null);
+      setHldKnowledgePackDetailError(null);
+      setHldKnowledgePackReviewNote("");
+      setHldKnowledgePackReviewError(null);
+      setHldKnowledgePackReviewSuccess(null);
+      setHldKnowledgePackDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-knowledge-pack`
+        );
+        const body = (await res.json().catch(() => null)) as HldKnowledgePackDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.pack === undefined
+        ) {
+          setHldKnowledgePackDetailError(HLD_KNOWLEDGE_PACK_DETAIL_ERROR);
+          return;
+        }
+        setHldKnowledgePackDetail({ artifact: body.artifact, pack: body.pack });
+      } catch {
+        setHldKnowledgePackDetailError(HLD_KNOWLEDGE_PACK_DETAIL_ERROR);
+      } finally {
+        setHldKnowledgePackDetailLoading(false);
       }
     },
     [id]
@@ -3761,6 +3992,96 @@ export default function ProjectRfpEvidencePage() {
     ]
   );
 
+  const submitHldKnowledgePackCreate = useCallback(async (): Promise<void> => {
+    if (hldKnowledgePackDraft === null || hldKnowledgePackCreatePending) return;
+    if (!hldKnowledgePackDraftComplete(hldKnowledgePackDraft)) return;
+    setHldKnowledgePackCreatePending(true);
+    setHldKnowledgePackCreateError(null);
+    setHldKnowledgePackCreateSuccess(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-knowledge-packs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildHldKnowledgePackCreateBody(hldKnowledgePackDraft)),
+      });
+      if (!res.ok) {
+        setHldKnowledgePackCreateError(HLD_KNOWLEDGE_PACK_CREATE_ERROR);
+        return;
+      }
+      setHldKnowledgePackDraft(null);
+      setHldKnowledgePackCreateSuccess(HLD_KNOWLEDGE_PACK_CREATE_SUCCESS);
+      // Reload the pack list now; readiness only truly unblocks on approval, but a
+      // fresh readiness read keeps the domain summary in step with the new draft.
+      void loadHldKnowledgePackList();
+      void loadHldReadinessList();
+    } catch {
+      setHldKnowledgePackCreateError(HLD_KNOWLEDGE_PACK_CREATE_ERROR);
+    } finally {
+      setHldKnowledgePackCreatePending(false);
+    }
+  }, [
+    hldKnowledgePackCreatePending,
+    hldKnowledgePackDraft,
+    id,
+    loadHldKnowledgePackList,
+    loadHldReadinessList,
+  ]);
+
+  const submitHldKnowledgePackReview = useCallback(
+    async (decision: "approved" | "rejected"): Promise<void> => {
+      if (hldKnowledgePackDetail === null || hldKnowledgePackReviewPending) return;
+      setHldKnowledgePackReviewPending(true);
+      setHldKnowledgePackReviewError(null);
+      setHldKnowledgePackReviewSuccess(null);
+      try {
+        const note = hldKnowledgePackReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${hldKnowledgePackDetail.artifact.id}/hld-knowledge-pack/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(note === "" ? { decision } : { decision, note }),
+          }
+        );
+        if (!res.ok) {
+          setHldKnowledgePackReviewError(HLD_KNOWLEDGE_PACK_REVIEW_ERROR);
+          return;
+        }
+        setHldKnowledgePackDetail((prev) =>
+          prev === null
+            ? prev
+            : {
+                artifact: {
+                  ...prev.artifact,
+                  status: decision === "approved" ? "approved" : "rejected",
+                },
+                pack: prev.pack,
+              }
+        );
+        setHldKnowledgePackReviewNote("");
+        setHldKnowledgePackReviewSuccess(
+          decision === "approved"
+            ? HLD_KNOWLEDGE_PACK_APPROVE_SUCCESS
+            : HLD_KNOWLEDGE_PACK_REJECT_SUCCESS
+        );
+        void loadHldKnowledgePackList();
+        void loadHldReadinessList();
+      } catch {
+        setHldKnowledgePackReviewError(HLD_KNOWLEDGE_PACK_REVIEW_ERROR);
+      } finally {
+        setHldKnowledgePackReviewPending(false);
+      }
+    },
+    [
+      hldKnowledgePackDetail,
+      hldKnowledgePackReviewNote,
+      hldKnowledgePackReviewPending,
+      id,
+      loadHldKnowledgePackList,
+      loadHldReadinessList,
+    ]
+  );
+
   const workflow = useMemo(
     () =>
       buildRfpOperatorWorkflow({
@@ -4243,6 +4564,11 @@ export default function ProjectRfpEvidencePage() {
     void loadHldIntakeDetail(artifactId);
   }
 
+  function openHldKnowledgePackDrawer(artifactId: string): void {
+    setDrawer({ kind: "hld-knowledge-pack", activeId: artifactId });
+    void loadHldKnowledgePackDetail(artifactId);
+  }
+
   function drawerIds(): string[] {
     if (drawer === null) return [];
     if (drawer.kind === "evidence") return data?.evidence.map((item) => item.id) ?? [];
@@ -4261,6 +4587,9 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "hld-intake") {
       return hldIntakeList?.artifacts.map((item) => item.id) ?? [];
     }
+    if (drawer.kind === "hld-knowledge-pack") {
+      return hldKnowledgePackList?.artifacts.map((item) => item.id) ?? [];
+    }
     return complianceList?.artifacts.map((item) => item.id) ?? [];
   }
 
@@ -4271,6 +4600,7 @@ export default function ProjectRfpEvidencePage() {
     else if (kind === "requirements") openBaselineDrawer(activeId);
     else if (kind === "hld-readiness") openHldReadinessDrawer(activeId);
     else if (kind === "hld-intake") openHldIntakeDrawer(activeId);
+    else if (kind === "hld-knowledge-pack") openHldKnowledgePackDrawer(activeId);
     else openComplianceDrawer(activeId);
   }
 
@@ -5357,6 +5687,104 @@ export default function ProjectRfpEvidencePage() {
     );
   }
 
+  function renderHldKnowledgePackDrawerContent(): ReactNode {
+    if (hldKnowledgePackDetail === null) return null;
+    const { artifact, pack } = hldKnowledgePackDetail;
+    const reviewable = isReviewableStatus(artifact.status);
+    const sections = HLD_KNOWLEDGE_PACK_SECTIONS.map((section) => ({
+      label: section.label,
+      entries: pack[section.id] ?? [],
+    })).filter((section) => section.entries.length > 0);
+    return (
+      <div data-testid="hld-knowledge-pack-drawer-content" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={artifact.status} />
+            <span className="text-xs text-text-secondary">Version {artifact.version}</span>
+          </div>
+          <p className="mt-2 text-sm font-medium text-text-primary">
+            {pack.title !== undefined && pack.title !== "" ? pack.title : "(untitled)"}
+          </p>
+          {pack.domain !== undefined && pack.domain !== "" && (
+            <p className="text-xs text-text-secondary">
+              Domain: {humanizeToken(pack.domain)}
+            </p>
+          )}
+          {pack.entryCount !== undefined && (
+            <p className="text-xs text-text-tertiary">Entries: {pack.entryCount}</p>
+          )}
+        </div>
+        {sections.map((section, sectionIndex) => (
+          <div
+            key={sectionIndex}
+            data-testid="hld-knowledge-pack-drawer-section"
+            className={SUBTLE_CARD}
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+              {section.label} ({section.entries.length})
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {section.entries.map((entry, entryIndex) => (
+                <li key={entryIndex} className="text-xs text-text-primary">{entry}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        {reviewable && (
+          <div data-testid="hld-knowledge-pack-review" className={SUBTLE_CARD}>
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Review note (optional)
+              <textarea
+                data-testid="hld-knowledge-pack-review-note"
+                value={hldKnowledgePackReviewNote}
+                disabled={hldKnowledgePackReviewPending}
+                onChange={(e) => setHldKnowledgePackReviewNote(e.target.value)}
+                rows={2}
+                className={FIELD}
+              />
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid="hld-knowledge-pack-approve"
+                disabled={hldKnowledgePackReviewPending}
+                onClick={() => void submitHldKnowledgePackReview("approved")}
+                className={ACTION_BTN}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="hld-knowledge-pack-reject"
+                disabled={hldKnowledgePackReviewPending}
+                onClick={() => void submitHldKnowledgePackReview("rejected")}
+                className={PLAIN_BTN}
+              >
+                Request changes
+              </button>
+            </div>
+            {hldKnowledgePackReviewError && (
+              <p data-testid="hld-knowledge-pack-review-error" className={`mt-2 ${ERROR_BOX}`}>
+                {hldKnowledgePackReviewError}
+              </p>
+            )}
+            {hldKnowledgePackReviewSuccess && (
+              <p data-testid="hld-knowledge-pack-review-success" className="mt-2 text-xs text-emerald-300">
+                {hldKnowledgePackReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        <TechnicalDetails testId="hld-knowledge-pack-drawer-audit" label="Technical details (artifact ID)">
+          <p>Artifact: {artifact.id}</p>
+          {(artifact.sourceArtifactIds ?? []).map((srcId, srcIndex) => (
+            <p key={srcIndex}>Source {srcIndex + 1}: {srcId}</p>
+          ))}
+        </TechnicalDetails>
+      </div>
+    );
+  }
+
   function renderDrawerContent(): ReactNode {
     if (drawer === null) return null;
     if (drawer.kind === "evidence") return renderEvidenceDrawerContent();
@@ -5365,6 +5793,7 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "requirements") return renderBaselineDrawerContent();
     if (drawer.kind === "hld-readiness") return renderHldReadinessDrawerContent();
     if (drawer.kind === "hld-intake") return renderHldIntakeDrawerContent();
+    if (drawer.kind === "hld-knowledge-pack") return renderHldKnowledgePackDrawerContent();
     return renderComplianceDrawerContent();
   }
 
@@ -5381,7 +5810,9 @@ export default function ProjectRfpEvidencePage() {
               ? "HLD readiness snapshot"
               : drawer?.kind === "hld-intake"
                 ? "HLD intake answers"
-                : "Compliance matrix";
+                : drawer?.kind === "hld-knowledge-pack"
+                  ? "HLD design knowledge pack"
+                  : "Compliance matrix";
   const drawerLoading =
     drawer?.kind === "evidence"
       ? detailLoading
@@ -5395,7 +5826,9 @@ export default function ProjectRfpEvidencePage() {
               ? hldReadinessDetailLoading
               : drawer?.kind === "hld-intake"
                 ? hldIntakeDetailLoading
-                : complianceDetailLoading;
+                : drawer?.kind === "hld-knowledge-pack"
+                  ? hldKnowledgePackDetailLoading
+                  : complianceDetailLoading;
   const drawerError =
     drawer?.kind === "evidence"
       ? detailError
@@ -5409,7 +5842,9 @@ export default function ProjectRfpEvidencePage() {
               ? hldReadinessDetailError
               : drawer?.kind === "hld-intake"
                 ? hldIntakeDetailError
-                : complianceDetailError;
+                : drawer?.kind === "hld-knowledge-pack"
+                  ? hldKnowledgePackDetailError
+                  : complianceDetailError;
 
   return (
     <main className="min-h-screen bg-bg-primary px-4 py-6 sm:px-6 lg:px-8">
@@ -6549,6 +6984,284 @@ export default function ProjectRfpEvidencePage() {
                 </div>
               </div>
             </details>
+          </div>
+
+          <div
+            data-testid="hld-knowledge-pack-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                HLD Design Knowledge Packs
+              </h3>
+              <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                Capture human-authored design guidance per domain so the required
+                knowledge packs are covered. This records reviewable guidance only;
+                it does not generate any HLD output. Approval is what unblocks
+                readiness.
+              </p>
+            </div>
+            {hldKnowledgePackListError && (
+              <div data-testid="hld-knowledge-pack-error" className={`mt-3 ${ERROR_BOX}`}>
+                {hldKnowledgePackListError}
+              </div>
+            )}
+            {hldKnowledgePackListLoading && (
+              <p className="mt-3 text-sm text-text-tertiary">
+                Loading HLD knowledge packs...
+              </p>
+            )}
+            {hldReadinessList !== null &&
+              (() => {
+                const domainReadiness = hldReadinessList.readiness.domainReadiness;
+                const claimedDomains = domainReadiness?.claimedDomains ?? [];
+                const coveredDomains =
+                  domainReadiness?.coveredDomains ??
+                  hldReadinessList.readiness.coveredDomains;
+                const requiredDomains =
+                  domainReadiness?.requiredKnowledgePackDomains ?? [];
+                const missingDomains =
+                  domainReadiness?.missingKnowledgePackDomains ??
+                  hldReadinessList.readiness.missingKnowledgePackDomains ??
+                  [];
+                return (
+                  <div
+                    data-testid="hld-knowledge-pack-domains"
+                    className={`mt-3 ${SUBTLE_CARD}`}
+                  >
+                    <p className="text-xs text-text-secondary">
+                      Claimed domains:{" "}
+                      {claimedDomains.length > 0
+                        ? claimedDomains.map(humanizeToken).join(", ")
+                        : "none"}
+                    </p>
+                    <p className="mt-1 text-xs text-text-secondary">
+                      Covered knowledge-pack domains:{" "}
+                      {coveredDomains.length > 0
+                        ? coveredDomains.map(humanizeToken).join(", ")
+                        : "none"}
+                    </p>
+                    <p className="mt-1 text-xs text-text-secondary">
+                      Required knowledge-pack domains:{" "}
+                      {requiredDomains.length > 0
+                        ? requiredDomains.map(humanizeToken).join(", ")
+                        : "none"}
+                    </p>
+                    {missingDomains.length > 0 ? (
+                      <ul className="mt-2 space-y-1">
+                        {missingDomains.map((domain) => (
+                          <li
+                            key={domain}
+                            data-testid="hld-knowledge-pack-missing-domain"
+                            className="flex flex-wrap items-center justify-between gap-2"
+                          >
+                            <span className="text-xs text-amber-200">
+                              Missing pack: {humanizeToken(domain)}
+                            </span>
+                            <button
+                              type="button"
+                              data-testid={`hld-knowledge-pack-create-domain-${domain}`}
+                              onClick={() => {
+                                setHldKnowledgePackDraft(
+                                  emptyKnowledgePackDraft(domain)
+                                );
+                                setHldKnowledgePackCreateError(null);
+                                setHldKnowledgePackCreateSuccess(null);
+                              }}
+                              className={ACTION_BTN}
+                            >
+                              Create manual pack draft
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p
+                        data-testid="hld-knowledge-pack-no-missing"
+                        className="mt-2 text-xs text-emerald-300"
+                      >
+                        All required knowledge-pack domains are covered.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+            {hldKnowledgePackList !== null &&
+              hldKnowledgePackList.artifacts.length > 0 && (
+                <div className="mt-3 overflow-x-auto">
+                  <table
+                    data-testid="hld-knowledge-pack-list"
+                    className="w-full border-collapse text-xs"
+                  >
+                    <thead>
+                      <tr className="text-left text-text-tertiary">
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Domain
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Title
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Status
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Version
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Entries
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hldKnowledgePackList.artifacts
+                        .slice()
+                        .sort((a, b) => b.version - a.version)
+                        .map((item) => {
+                          const summary = item.payloadSummary;
+                          return (
+                            <tr
+                              key={item.id}
+                              data-testid="hld-knowledge-pack-row"
+                              className="align-top"
+                            >
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-primary">
+                                {summary?.domain !== undefined &&
+                                summary.domain !== ""
+                                  ? humanizeToken(summary.domain)
+                                  : "-"}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-primary">
+                                {summary?.title !== undefined &&
+                                summary.title !== ""
+                                  ? summary.title
+                                  : "(untitled)"}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1">
+                                <StatusBadge status={item.status} />
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                v{item.version}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.entryCount ?? 0}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1">
+                                <button
+                                  type="button"
+                                  data-testid="hld-knowledge-pack-inspect"
+                                  onClick={() =>
+                                    openHldKnowledgePackDrawer(item.id)
+                                  }
+                                  className={PLAIN_BTN}
+                                >
+                                  Inspect
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            {hldKnowledgePackList !== null &&
+              hldKnowledgePackList.artifacts.length === 0 && (
+                <p
+                  data-testid="hld-knowledge-pack-empty"
+                  className="mt-3 text-xs text-text-tertiary"
+                >
+                  No design knowledge packs yet.
+                </p>
+              )}
+            {hldKnowledgePackCreateSuccess && (
+              <p
+                data-testid="hld-knowledge-pack-create-success"
+                className="mt-3 text-xs text-emerald-300"
+              >
+                {hldKnowledgePackCreateSuccess}
+              </p>
+            )}
+            {hldKnowledgePackDraft !== null && (
+              <div
+                data-testid="hld-knowledge-pack-form"
+                className={`mt-3 ${SUBTLE_CARD}`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                    New knowledge pack:{" "}
+                    {humanizeToken(hldKnowledgePackDraft.domain)}
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="hld-knowledge-pack-cancel"
+                    onClick={() => setHldKnowledgePackDraft(null)}
+                    className={PLAIN_BTN}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <label className="mt-2 flex flex-col text-xs text-text-tertiary">
+                  Title
+                  <input
+                    type="text"
+                    data-testid="hld-knowledge-pack-title"
+                    value={hldKnowledgePackDraft.title}
+                    disabled={hldKnowledgePackCreatePending}
+                    onChange={(e) =>
+                      setHldKnowledgePackDraft((prev) =>
+                        prev === null ? prev : { ...prev, title: e.target.value }
+                      )
+                    }
+                    className={`${FIELD} w-full`}
+                  />
+                </label>
+                {HLD_KNOWLEDGE_PACK_SECTIONS.map((section) => (
+                  <label
+                    key={section.id}
+                    className="mt-2 flex flex-col text-xs text-text-tertiary"
+                  >
+                    {section.label} (one per line)
+                    <textarea
+                      data-testid={`hld-knowledge-pack-section-${section.id}`}
+                      value={hldKnowledgePackDraft[section.id]}
+                      disabled={hldKnowledgePackCreatePending}
+                      onChange={(e) =>
+                        setHldKnowledgePackDraft((prev) =>
+                          prev === null
+                            ? prev
+                            : { ...prev, [section.id]: e.target.value }
+                        )
+                      }
+                      rows={2}
+                      className={`${FIELD} w-full`}
+                    />
+                  </label>
+                ))}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="hld-knowledge-pack-create"
+                    disabled={
+                      hldKnowledgePackCreatePending ||
+                      !hldKnowledgePackDraftComplete(hldKnowledgePackDraft)
+                    }
+                    onClick={() => void submitHldKnowledgePackCreate()}
+                    className={ACTION_BTN}
+                  >
+                    Create pack draft
+                  </button>
+                  {hldKnowledgePackCreateError && (
+                    <span
+                      data-testid="hld-knowledge-pack-create-error"
+                      className="text-xs text-destructive"
+                    >
+                      {hldKnowledgePackCreateError}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </section>
       </div>
