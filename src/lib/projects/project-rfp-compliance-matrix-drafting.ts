@@ -11,7 +11,11 @@
  * executor: it imports no AI, LLM, provider, agent, coordinator, engine, adapter,
  * parser, pricing, SKU, catalog, configuration-decision, validation, export, route, or
  * UI module, drafts nothing itself, and persists NOTHING - no artifact, approval,
- * file, evidence row, or stage is created or updated here. Drafted rows carry no
+ * file, evidence row, or stage is created or updated here. To authorize the
+ * configuration gate it ALSO reads the project's files and all of its artifacts through
+ * the Project stores (never raw bytes or a storage path) and delegates the rule to the
+ * pure RFP BoQ readiness helper; it still makes no AI/pricing/configuration decision.
+ * Drafted rows carry no
  * runtime authority: a compliance_matrix artifact must still be created by a later
  * explicit service and human-approved before any downstream stage relies on it.
  *
@@ -26,8 +30,13 @@
  * REVIEWED payload - never the configuration_expansion_draft marker - with a valid
  * acceptedLines array). The explicit no-BoQ/service-only exception is the SAME required
  * gate artifact: a reviewed payload (payloadKind rfp_no_boq_service_only_exception) with
- * acceptedLines: []. Each failing gate returns a lean discriminated status and never
- * invokes the executor.
+ * acceptedLines: []. The supplied configuration artifact must ALSO be the one the current
+ * RFP BoQ/configuration readiness gate authorizes: the approved normal
+ * configuration_expansion when the project has BoQ files, or the approved no-BoQ
+ * service-only exception when it has none. An unsatisfied gate, or a satisfied gate whose
+ * authorized id differs from the supplied id, returns a lean configuration_gate status
+ * (copied gate status/message only, no payload). Each failing gate returns a lean
+ * discriminated status and never invokes the executor.
  *
  * The executor receives only fresh whitelisted copies: a lean project summary (never a
  * tenantId), lean artifact summaries (never a payload), the approved baseline
@@ -59,7 +68,15 @@
  * only. Inputs and loaded artifacts are never mutated; store failures bubble unhidden.
  */
 import { getProjectById } from "@/lib/db/project-store";
-import { getProjectArtifactById } from "@/lib/db/project-artifact-store";
+import {
+  getProjectArtifactById,
+  listProjectArtifacts,
+} from "@/lib/db/project-artifact-store";
+import { listProjectFiles } from "@/lib/db/project-file-store";
+import {
+  getRfpBoqReadinessReport,
+  type RfpConfigurationGateStatus,
+} from "@/lib/projects/project-rfp-boq-readiness";
 import type { Project, ProjectArtifact } from "@/types/project";
 import type {
   RfpComplianceMatrixCategory,
@@ -330,6 +347,19 @@ export type DraftRfpComplianceMatrixRowsResult =
   | {
       status: "invalid_configuration_expansion_payload";
       artifact: RfpComplianceMatrixDraftingArtifactSummary;
+    }
+  | {
+      /** The RFP BoQ/configuration readiness gate is not satisfied for this project. */
+      status: "configuration_gate_unsatisfied";
+      gateStatus: RfpConfigurationGateStatus;
+      gateMessage: string;
+    }
+  | {
+      /** The gate is satisfied but a different configuration artifact id is authorized. */
+      status: "configuration_gate_mismatch";
+      gateStatus: RfpConfigurationGateStatus;
+      gateMessage: string;
+      authorizedConfigurationExpansionArtifactId: string;
     }
   | { status: "drafting_failed"; error: "compliance_matrix_drafting_failed" }
   | { status: "invalid_draft_output"; errors: string[] }
@@ -947,7 +977,11 @@ function sanitizeExecutorOutput(
  * configuration_expansion artifact exists, is configuration_expansion at
  * configuration_expansion_review, is approved, and carries a REVIEWED payload (never the
  * draft marker) with a valid acceptedLines array ([] for the no-BoQ/service-only
- * exception). Each failing gate returns a lean
+ * exception); and - reading the project's files and all artifacts through the Project
+ * stores for the pure RFP BoQ readiness helper - the supplied id is the configuration the
+ * current readiness gate authorizes (configuration_gate_unsatisfied when the gate is not
+ * satisfied, configuration_gate_mismatch when a different id is authorized). Each failing
+ * gate returns a lean
  * summary and never calls the executor. The executor receives whitelisted copies only;
  * a throw maps to drafting_failed with a fixed error code (the thrown detail is never
  * exposed); invalid output returns invalid_draft_output listing every violation. On
@@ -1109,6 +1143,47 @@ export async function draftRfpComplianceMatrixRows(
     };
   }
   const acceptedLineRecords = configurationPayload.acceptedLines;
+
+  // RFP BoQ/configuration readiness gate: the supplied configuration artifact must be the
+  // one the current gate authorizes. An approved normal configuration_expansion authorizes
+  // only when the project has BoQ files; an approved no-BoQ/service-only exception
+  // authorizes only when it has none. Reading the project's files and all artifacts through
+  // the Project stores (never raw bytes or a storage path) lets the pure readiness helper
+  // decide; no AI/pricing/configuration decision is made here. Blocks before the executor.
+  const [projectFiles, projectArtifacts] = await Promise.all([
+    listProjectFiles(tenantId, projectId),
+    listProjectArtifacts(tenantId, projectId),
+  ]);
+  const { configurationGate } = getRfpBoqReadinessReport({
+    projectId,
+    files: projectFiles,
+    artifacts: projectArtifacts,
+  });
+  if (!configurationGate.satisfied) {
+    return {
+      status: "configuration_gate_unsatisfied",
+      gateStatus: configurationGate.status,
+      gateMessage: configurationGate.message,
+    };
+  }
+  // A satisfied gate carries exactly one authorized id: the approved normal expansion (BoQ
+  // present) or the approved no-BoQ exception (no BoQ). The "" fallback is unreachable when
+  // satisfied and only keeps the field a plain string.
+  const authorizedConfigurationExpansionArtifactId =
+    configurationGate.approvedConfigurationExpansionArtifactId ??
+    configurationGate.noBoqExceptionArtifactId ??
+    "";
+  if (
+    authorizedConfigurationExpansionArtifactId !==
+    configurationExpansionArtifactId
+  ) {
+    return {
+      status: "configuration_gate_mismatch",
+      gateStatus: configurationGate.status,
+      gateMessage: configurationGate.message,
+      authorizedConfigurationExpansionArtifactId,
+    };
+  }
 
   // All gates passed: assemble the read-only drafting context.
   const parsedRequirements = (

@@ -4,10 +4,12 @@
  * POST - generate ONE needs_review compliance_matrix artifact by drafting
  * candidate rows from an approved requirements_baseline, approved final
  * evidence_package, and a required approved configuration_expansion (or the
- * approved no-BoQ/service-only exception artifact). The route is
+ * approved no-BoQ/service-only exception artifact) that the current RFP
+ * BoQ/configuration readiness gate authorizes. The route is
  * transport only: auth, minimal body parsing, configured-executor availability,
- * and HTTP mapping. It does not read stores, evidence bodies, raw files, pricing,
- * SKU/config authority, catalog, approvals, exports, or provider SDKs.
+ * and HTTP mapping (configuration-gate blocks map to 409). It does not read stores,
+ * evidence bodies, raw files, pricing, SKU/config authority, catalog, approvals,
+ * exports, or provider SDKs.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/middleware/auth";
@@ -214,6 +216,32 @@ function draftingBlockResponse(
         code: "rfp_compliance_matrix_invalid_configuration_expansion_payload",
         error: "The cited configuration expansion artifact payload is invalid.",
         artifact: drafting.artifact,
+      },
+      { status: 409 }
+    );
+  }
+  if (drafting.status === "configuration_gate_unsatisfied") {
+    return NextResponse.json(
+      {
+        code: "rfp_compliance_matrix_configuration_gate_unsatisfied",
+        error:
+          "The RFP BoQ configuration gate is not satisfied. Approve a configuration expansion (or a no-BoQ service-only exception) for this project before generating the compliance matrix.",
+        gateStatus: drafting.gateStatus,
+        gateMessage: drafting.gateMessage,
+      },
+      { status: 409 }
+    );
+  }
+  if (drafting.status === "configuration_gate_mismatch") {
+    return NextResponse.json(
+      {
+        code: "rfp_compliance_matrix_configuration_gate_mismatch",
+        error:
+          "The supplied configuration expansion artifact is not the one authorized by the current RFP BoQ configuration gate.",
+        gateStatus: drafting.gateStatus,
+        gateMessage: drafting.gateMessage,
+        authorizedConfigurationExpansionArtifactId:
+          drafting.authorizedConfigurationExpansionArtifactId,
       },
       { status: 409 }
     );

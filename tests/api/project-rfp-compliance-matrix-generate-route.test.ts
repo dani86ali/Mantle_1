@@ -377,6 +377,44 @@ describe("POST .../rfp/compliance-matrix/generate - blocked mapping", () => {
     ],
     [
       draftingBlocked({
+        status: "configuration_gate_unsatisfied",
+        gateStatus: "requires_configuration_expansion",
+        gateMessage:
+          "An approved configuration expansion is required for this RFP BoQ package.",
+      }),
+      409,
+      {
+        code: "rfp_compliance_matrix_configuration_gate_unsatisfied",
+        error:
+          "The RFP BoQ configuration gate is not satisfied. Approve a configuration expansion (or a no-BoQ service-only exception) for this project before generating the compliance matrix.",
+        gateStatus: "requires_configuration_expansion",
+        gateMessage:
+          "An approved configuration expansion is required for this RFP BoQ package.",
+      },
+    ],
+    [
+      draftingBlocked({
+        status: "configuration_gate_mismatch",
+        gateStatus: "configuration_expansion_approved",
+        gateMessage:
+          "Configuration expansion is approved for this RFP BoQ package.",
+        authorizedConfigurationExpansionArtifactId:
+          "art-config-expansion-authorized",
+      }),
+      409,
+      {
+        code: "rfp_compliance_matrix_configuration_gate_mismatch",
+        error:
+          "The supplied configuration expansion artifact is not the one authorized by the current RFP BoQ configuration gate.",
+        gateStatus: "configuration_expansion_approved",
+        gateMessage:
+          "Configuration expansion is approved for this RFP BoQ package.",
+        authorizedConfigurationExpansionArtifactId:
+          "art-config-expansion-authorized",
+      },
+    ],
+    [
+      draftingBlocked({
         status: "drafting_failed",
         error: "compliance_matrix_drafting_failed",
       }),
