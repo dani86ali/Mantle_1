@@ -37,6 +37,7 @@ const RFP_BOQ_WORKSPACE_URL = `/api/projects/${PROJECT_ID}/rfp/boq`;
 const INPUT_PACKAGE_URL = `/api/projects/${PROJECT_ID}/rfp/input-package`;
 const INPUT_PACKAGE_ARTIFACT_ID = "art-ip-1";
 const CONFIG_EXPANSION_ARTIFACT_ID = "art-config-1";
+const NO_BOQ_EXCEPTION_ARTIFACT_ID = "art-noboq-1";
 
 const TEXT_BODY_CANARY = "TEXT-BODY-CANARY";
 const TABLE_CELL_CANARY = "TABLE-CELL-CANARY";
@@ -863,6 +864,52 @@ function rfpBoqWorkspaceResponse(): Record<string, unknown> {
         quickBomReadiness: {
           projectId: PROJECT_ID,
           nextStepId: "normalized_boq",
+          isCustomerDeliverableReady: false,
+          steps: [],
+        },
+      },
+    },
+  };
+}
+
+// A BoQ workspace whose readiness carries an explicit configuration gate (the
+// no-BoQ/configuration-expansion gate under test) and no configuration spine
+// artifact, so the gate alone drives compliance readiness.
+function workspaceWithConfigurationGate(
+  gate: Record<string, unknown>,
+  options: { nextStepId?: string | null } = {}
+): Record<string, unknown> {
+  return {
+    workspace: {
+      project: projectContext(),
+      stages: [],
+      boqFiles: [],
+      uploadedFiles: [],
+      artifacts: [artifact(INPUT_PACKAGE_ARTIFACT_ID, "input_package", "approved", 1, [])],
+      spineArtifacts: {
+        normalized_boq: null,
+        sku_resolution: null,
+        configuration_expansion: null,
+        priced_boq: null,
+        export_package: null,
+      },
+      approvals: [],
+      readiness: {
+        projectId: PROJECT_ID,
+        status: "blocked",
+        boqFileCount: 0,
+        boqFiles: [],
+        canNormalizeBoq: false,
+        canCreateSkuResolution: false,
+        canCreateConfigurationExpansion: false,
+        canCreatePricedBoq: false,
+        canCreateExportPackage: false,
+        isCustomerDeliverableReady: false,
+        messages: [],
+        configurationGate: gate,
+        quickBomReadiness: {
+          projectId: PROJECT_ID,
+          nextStepId: options.nextStepId ?? null,
           isCustomerDeliverableReady: false,
           steps: [],
         },
@@ -2891,6 +2938,136 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     });
     expect(await screen.findByTestId("review-drawer")).toHaveTextContent(
       "Compliance matrix"
+    );
+  });
+
+  it("blocks compliance generation when the BoQ/configuration gate is unsatisfied even with an approved baseline and evidence", async () => {
+    const unsatisfiedGate = {
+      required: true,
+      satisfied: false,
+      waived: false,
+      status: "requires_configuration_expansion",
+      message: "Complete the BoQ configuration review before compliance.",
+    };
+    const calls = stubFetch((url) => {
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse("approved"));
+      if (url === EVIDENCE_PACKAGE_LIST_URL) {
+        return jsonResponse(evidencePackageApprovedOnlyResponse());
+      }
+      if (url === COMPLIANCE_MATRIX_LIST_URL) {
+        return jsonResponse({ project: projectContext(), artifactCount: 0, artifacts: [] });
+      }
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) {
+        return jsonResponse(
+          workspaceWithConfigurationGate(unsatisfiedGate, {
+            nextStepId: "configuration_expansion",
+          })
+        );
+      }
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByText("RFP operator workflow");
+    // The next action routes the operator to clear the BoQ/configuration gate.
+    await waitFor(() => {
+      expect(screen.getByTestId("next-action")).toHaveTextContent(
+        "Complete BoQ/configuration review"
+      );
+    });
+
+    const generate = await screen.findByTestId("generate-compliance");
+    expect(generate).toHaveTextContent("Generate compliance matrix");
+    expect(generate).toBeDisabled();
+
+    // A click on the disabled control must not POST to compliance generate.
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    expect(
+      calls.some(
+        (call) =>
+          call.url === COMPLIANCE_MATRIX_GENERATE_URL &&
+          call.init?.method === "POST"
+      )
+    ).toBe(false);
+
+    // Both operator lines explain the block in operator language.
+    expect(screen.getByTestId("compliance-config-readiness")).toHaveTextContent(
+      "Complete the BoQ configuration review before compliance."
+    );
+    const gateStatus = screen.getByTestId("rfp-config-gate-status");
+    expect(gateStatus).toHaveTextContent(
+      "Complete the BoQ configuration review before compliance."
+    );
+    expect(gateStatus).toHaveTextContent("configuration_expansion");
+  });
+
+  it("enables compliance generation under an approved no-BoQ service-only exception and sends its artifact id as the configuration expansion id", async () => {
+    const NO_BOQ_REASON = "Service-only engagement; no hardware BoQ.";
+    const waivedGate = {
+      required: true,
+      satisfied: true,
+      waived: true,
+      status: "no_boq_exception_approved",
+      message: "Service-only (no-BoQ) exception approved.",
+      noBoqExceptionArtifactId: NO_BOQ_EXCEPTION_ARTIFACT_ID,
+      noBoqExceptionReason: NO_BOQ_REASON,
+    };
+    const calls = stubFetch((url) => {
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse("approved"));
+      if (url === EVIDENCE_PACKAGE_LIST_URL) {
+        return jsonResponse(evidencePackageApprovedOnlyResponse());
+      }
+      if (url === COMPLIANCE_MATRIX_LIST_URL) {
+        return jsonResponse({ project: projectContext(), artifactCount: 0, artifacts: [] });
+      }
+      if (url === COMPLIANCE_MATRIX_GENERATE_URL) {
+        return jsonResponse({ artifact: complianceMatrixListItem(), draftSummary: {} }, 201);
+      }
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) {
+        return jsonResponse(workspaceWithConfigurationGate(waivedGate));
+      }
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    expect(generate).toHaveTextContent("Generate compliance matrix");
+    expect(generate).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+
+    // The POST sends the approved exception id as the configuration expansion id.
+    await waitFor(() => {
+      const post = calls.find(
+        (call) =>
+          call.url === COMPLIANCE_MATRIX_GENERATE_URL &&
+          call.init?.method === "POST"
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post?.init?.body))).toEqual({
+        requirementsBaselineArtifactId: BASELINE_ARTIFACT_ID,
+        evidencePackageArtifactId: EVIDENCE_PACKAGE_APPROVED_ID,
+        configurationExpansionArtifactId: NO_BOQ_EXCEPTION_ARTIFACT_ID,
+      });
+    });
+
+    // The gate line reads as an approved/waived service-only exception with reason.
+    const gateStatus = screen.getByTestId("rfp-config-gate-status");
+    expect(gateStatus).toHaveTextContent("service-only");
+    expect(gateStatus).toHaveTextContent("waived");
+    expect(gateStatus).toHaveTextContent(NO_BOQ_REASON);
+
+    // The raw exception artifact id never surfaces in the visible page text.
+    expect(document.body.textContent ?? "").not.toContain(
+      NO_BOQ_EXCEPTION_ARTIFACT_ID
     );
   });
 });

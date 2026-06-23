@@ -538,6 +538,36 @@ const BOQ_SPINE_LABELS: Record<BoqSpineKey, string> = {
   export_package: "Export package",
 };
 
+type RfpBoqConfigurationGate =
+  ProjectRfpBoqWorkspace["readiness"]["configurationGate"];
+
+/**
+ * Operator-language one-liner for the BoQ/configuration gate. An approved normal
+ * configuration expansion reads as approved; an approved no-BoQ service-only
+ * exception reads as waived (with its human reason when present); an unsatisfied
+ * normal gate shows the gate message plus the next Quick BoM step when one is
+ * known. Never the raw status literal or a primary artifact id.
+ */
+function configurationGateStatusLine(
+  gate: RfpBoqConfigurationGate,
+  nextStepId: string | null
+): string {
+  if (gate.satisfied) {
+    if (gate.waived) {
+      const reason =
+        gate.noBoqExceptionReason !== undefined &&
+        gate.noBoqExceptionReason.trim() !== ""
+          ? ` Reason: ${gate.noBoqExceptionReason}`
+          : "";
+      return `Configuration is waived by an approved service-only (no-BoQ) exception.${reason}`;
+    }
+    return "Configuration expansion is approved.";
+  }
+  const nextStep =
+    nextStepId !== null ? ` Next Quick BoM step: ${nextStepId}.` : "";
+  return `${gate.message}${nextStep}`;
+}
+
 /** Build the list URL; blank filters are omitted so unfiltered = bare URL. */
 function evidenceListUrl(projectId: string, filters: EvidenceFilters): string {
   const params = new URLSearchParams();
@@ -3279,6 +3309,15 @@ export default function ProjectRfpEvidencePage() {
     workflow.generationInputs.requirementsBaseline.evidencePackageArtifactId ??
     null;
   const complianceInputs = workflow.generationInputs.complianceMatrix;
+  const workflowConfigGate = workflow.configurationGate;
+  // One operator-language line for the compliance step: ready from the approved
+  // baseline/evidence/configuration, else the gate message (the BoQ/configuration
+  // block reason) when the gate is unsatisfied, else the standing next action.
+  const complianceConfigReadiness = complianceInputs.ready
+    ? "Compliance is ready from the approved requirements baseline, approved evidence, and the cleared BoQ/configuration gate."
+    : workflowConfigGate !== undefined && !workflowConfigGate.satisfied
+      ? workflowConfigGate.message
+      : workflow.nextAction.reason;
 
   const refreshRfpLists = useCallback((): void => {
     void loadBoqWorkspace();
@@ -5155,14 +5194,18 @@ export default function ProjectRfpEvidencePage() {
           state={
             workflow.complianceMatrix.latestApproved !== undefined
               ? "complete"
-              : workflow.requirementsBaseline.latestApproved === undefined
-                ? "blocked"
-                : workflow.complianceMatrix.current !== undefined
-                  ? "current"
+              : workflow.complianceMatrix.current !== undefined
+                ? "current"
+                : workflow.requirementsBaseline.latestApproved === undefined ||
+                    !complianceInputs.ready
+                  ? "blocked"
                   : "ready"
           }
-          active={workflow.nextAction.stage === "compliance"}
-          summary="Generate from the approved requirements baseline and evidence package without manual artifact selection."
+          active={
+            workflow.nextAction.stage === "compliance" ||
+            workflow.nextAction.stage === "configuration"
+          }
+          summary="Generate from the approved requirements baseline, approved evidence package, and a cleared BoQ/configuration gate, without manual artifact selection."
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className={MUTED_TEXT}>
@@ -5202,6 +5245,12 @@ export default function ProjectRfpEvidencePage() {
                   : "Generate compliance matrix"}
             </button>
           </div>
+          <p
+            data-testid="compliance-config-readiness"
+            className={`mt-2 ${MUTED_TEXT}`}
+          >
+            {complianceConfigReadiness}
+          </p>
           {complianceGenerateError && (
             <div className={`mt-3 ${ERROR_BOX}`}>{complianceGenerateError}</div>
           )}
@@ -5266,18 +5315,31 @@ export default function ProjectRfpEvidencePage() {
             </p>
           )}
           {boqWorkspace !== null && (
-            <div data-testid="rfp-boq-readiness" className="mt-3 grid gap-2 md:grid-cols-3">
-              <p data-testid="rfp-boq-status" className={MUTED_TEXT}>
-                Status: <span className="text-text-primary">{boqWorkspace.readiness.status}</span>
-              </p>
-              <p data-testid="rfp-boq-file-count" className={MUTED_TEXT}>
-                BoQ files: {boqWorkspace.readiness.boqFileCount}
-              </p>
-              <p data-testid="rfp-boq-next-step" className={MUTED_TEXT}>
-                Next Quick BoM step:{" "}
-                {boqWorkspace.readiness.quickBomReadiness.nextStepId ?? "none"}
-              </p>
-            </div>
+            <>
+              <div data-testid="rfp-boq-readiness" className="mt-3 grid gap-2 md:grid-cols-3">
+                <p data-testid="rfp-boq-status" className={MUTED_TEXT}>
+                  Status: <span className="text-text-primary">{boqWorkspace.readiness.status}</span>
+                </p>
+                <p data-testid="rfp-boq-file-count" className={MUTED_TEXT}>
+                  BoQ files: {boqWorkspace.readiness.boqFileCount}
+                </p>
+                <p data-testid="rfp-boq-next-step" className={MUTED_TEXT}>
+                  Next Quick BoM step:{" "}
+                  {boqWorkspace.readiness.quickBomReadiness.nextStepId ?? "none"}
+                </p>
+              </div>
+              {boqWorkspace.readiness.configurationGate && (
+                <p
+                  data-testid="rfp-config-gate-status"
+                  className={`mt-3 ${MUTED_TEXT}`}
+                >
+                  {configurationGateStatusLine(
+                    boqWorkspace.readiness.configurationGate,
+                    boqWorkspace.readiness.quickBomReadiness.nextStepId ?? null
+                  )}
+                </p>
+              )}
+            </>
           )}
         </section>
       </div>
