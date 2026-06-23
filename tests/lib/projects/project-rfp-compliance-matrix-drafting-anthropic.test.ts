@@ -130,7 +130,15 @@ const EXECUTOR_INPUT: RfpComplianceMatrixDraftingExecutorInput = {
   ],
 };
 
-/** The same input with no approved configuration_expansion supplied. */
+/**
+ * The same input with the configuration fields absent. This is NOT a
+ * production-ready generation path: Stage 5A made the approved configuration
+ * gate non-optional, so the service never invokes the executor without a
+ * gate-authorized configuration artifact (approved configuration_expansion
+ * for BoQ projects, or an approved no-BoQ/service-only exception). This
+ * fixture exists only to prove the executor's serializer defensively drops
+ * absent optional fields; it does not imply generation may omit the gate.
+ */
 const EXECUTOR_INPUT_NO_CONFIG: RfpComplianceMatrixDraftingExecutorInput = {
   project: EXECUTOR_INPUT.project,
   requirementsBaseline: EXECUTOR_INPUT.requirementsBaseline,
@@ -273,10 +281,15 @@ describe("createAnthropicRfpComplianceMatrixDraftingExecutor - request shape", (
       .replace(/\s+/g, " ")
       .toLowerCase();
 
-    // (1) Drafts only from the approved baseline, evidence, and optional config.
+    // (1) Drafts only from the approved baseline, evidence, and the approved
+    // configuration gate artifact/lines the service supplies. Stage 5A made
+    // the configuration gate non-optional, so the stale "optional
+    // configuration_expansion" wording must be gone.
     expect(system).toContain("only from the approved requirements_baseline");
     expect(system).toContain("approved evidence_package");
-    expect(system).toContain("configuration_expansion");
+    expect(system).toContain("approved configuration gate artifact");
+    expect(system).not.toContain("optional approved configuration_expansion");
+    expect(system).not.toContain("optional configuration_expansion");
     expect(system).toContain("never invent facts");
     expect(system).toContain("exactly one row per approved baseline requirement");
     expect(system).toContain(
@@ -366,7 +379,10 @@ describe("createAnthropicRfpComplianceMatrixDraftingExecutor - request shape", (
     });
   });
 
-  it("omits the optional configuration fields when no configuration_expansion was supplied", async () => {
+  // Defensive serializer fallback ONLY - generation requires the configuration
+  // gate (see EXECUTOR_INPUT_NO_CONFIG); this proves absent optional fields are
+  // dropped, not that the gate may be skipped.
+  it("serializer fallback: drops the optional configuration fields when the service omits them", async () => {
     const { create, client } = makeClient(
       textResponse(JSON.stringify(RAW_MODEL_OUTPUT))
     );

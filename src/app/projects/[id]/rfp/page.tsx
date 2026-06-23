@@ -473,6 +473,19 @@ const PACKAGE_REVIEW_ERROR = "Unable to review final evidence package.";
 /** Exact UI copy required for the RFP BoQ readiness failure state. */
 const BOQ_WORKSPACE_ERROR = "Unable to load RFP BoQ readiness.";
 
+/** Exact UI copy required for the no-BoQ service-only exception request states. */
+const NO_BOQ_EXCEPTION_SUCCESS =
+  "Service-only (no-BoQ) exception requested for engineer review.";
+const NO_BOQ_EXCEPTION_ERROR = "Unable to request service-only exception.";
+
+/** Exact UI copy required for the no-BoQ service-only exception review states. */
+const NO_BOQ_EXCEPTION_APPROVE_SUCCESS =
+  "Service-only (no-BoQ) exception approved.";
+const NO_BOQ_EXCEPTION_REJECT_SUCCESS =
+  "Service-only (no-BoQ) exception rejected.";
+const NO_BOQ_EXCEPTION_REVIEW_ERROR =
+  "Unable to review service-only exception.";
+
 const UPLOAD_ERROR = "Unable to upload RFP file.";
 const INPUT_PACKAGE_ERROR = "Unable to create input package.";
 const INPUT_PACKAGE_REVIEW_ERROR = "Unable to review input package.";
@@ -537,6 +550,51 @@ const BOQ_SPINE_LABELS: Record<BoqSpineKey, string> = {
   priced_boq: "Priced BoQ",
   export_package: "Export package",
 };
+
+type RfpBoqConfigurationGate =
+  ProjectRfpBoqWorkspace["readiness"]["configurationGate"];
+
+/**
+ * Human-readable label for a Quick BoM next-step id. A known BoQ spine key maps
+ * to its operator label; an unrecognized id degrades to its underscored token
+ * spelled as spaced words, never the raw underscored id.
+ */
+function nextStepLabel(nextStepId: string): string {
+  if ((BOQ_SPINE_KEYS as readonly string[]).includes(nextStepId)) {
+    return BOQ_SPINE_LABELS[nextStepId as BoqSpineKey];
+  }
+  return nextStepId.replaceAll("_", " ");
+}
+
+/**
+ * Operator-language one-liner for the BoQ/configuration gate. An approved normal
+ * configuration expansion reads as approved; an approved no-BoQ service-only
+ * exception reads as waived (with its human reason when present); an unsatisfied
+ * normal gate shows the gate message plus the next Quick BoM step (as a human
+ * label) when one is known. Never the raw status literal, a raw underscored step
+ * id, or a primary artifact id.
+ */
+function configurationGateStatusLine(
+  gate: RfpBoqConfigurationGate,
+  nextStepId: string | null
+): string {
+  if (gate.satisfied) {
+    if (gate.waived) {
+      const reason =
+        gate.noBoqExceptionReason !== undefined &&
+        gate.noBoqExceptionReason.trim() !== ""
+          ? ` Reason: ${gate.noBoqExceptionReason}`
+          : "";
+      return `Configuration is waived by an approved service-only (no-BoQ) exception.${reason}`;
+    }
+    return "Configuration expansion is approved.";
+  }
+  const nextStep =
+    nextStepId !== null
+      ? ` Next Quick BoM step: ${nextStepLabel(nextStepId)}.`
+      : "";
+  return `${gate.message}${nextStep}`;
+}
 
 /** Build the list URL; blank filters are omitted so unfiltered = bare URL. */
 function evidenceListUrl(projectId: string, filters: EvidenceFilters): string {
@@ -2394,6 +2452,18 @@ export default function ProjectRfpEvidencePage() {
   const [boqWorkspaceLoading, setBoqWorkspaceLoading] = useState(true);
   const [boqWorkspaceError, setBoqWorkspaceError] = useState<string | null>(null);
 
+  // No-BoQ service-only exception request (gate requires_boq_upload_or_exception).
+  const [noBoqExceptionReason, setNoBoqExceptionReason] = useState("");
+  const [noBoqExceptionPending, setNoBoqExceptionPending] = useState(false);
+  const [noBoqExceptionError, setNoBoqExceptionError] = useState<string | null>(null);
+  const [noBoqExceptionSuccess, setNoBoqExceptionSuccess] = useState<string | null>(null);
+
+  // No-BoQ service-only exception review (gate no_boq_exception_pending_review).
+  const [noBoqExceptionNote, setNoBoqExceptionNote] = useState("");
+  const [noBoqExceptionReviewPending, setNoBoqExceptionReviewPending] = useState(false);
+  const [noBoqExceptionReviewError, setNoBoqExceptionReviewError] = useState<string | null>(null);
+  const [noBoqExceptionReviewSuccess, setNoBoqExceptionReviewSuccess] = useState<string | null>(null);
+
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -3257,6 +3327,7 @@ export default function ProjectRfpEvidencePage() {
           boqWorkspace,
           "configuration_expansion"
         ),
+        configurationGate: boqWorkspace?.readiness.configurationGate,
         evidence:
           data === null
             ? undefined
@@ -3278,6 +3349,15 @@ export default function ProjectRfpEvidencePage() {
     workflow.generationInputs.requirementsBaseline.evidencePackageArtifactId ??
     null;
   const complianceInputs = workflow.generationInputs.complianceMatrix;
+  const workflowConfigGate = workflow.configurationGate;
+  // One operator-language line for the compliance step: ready from the approved
+  // baseline/evidence/configuration, else the gate message (the BoQ/configuration
+  // block reason) when the gate is unsatisfied, else the standing next action.
+  const complianceConfigReadiness = complianceInputs.ready
+    ? "Compliance is ready from the approved requirements baseline, approved evidence, and the cleared BoQ/configuration gate."
+    : workflowConfigGate !== undefined && !workflowConfigGate.satisfied
+      ? workflowConfigGate.message
+      : workflow.nextAction.reason;
 
   const refreshRfpLists = useCallback((): void => {
     void loadBoqWorkspace();
@@ -3450,6 +3530,75 @@ export default function ProjectRfpEvidencePage() {
     ]
   );
 
+  // Record a no-BoQ service-only exception request (needs_review only). This
+  // never approves the exception; it surfaces it for an engineer to review.
+  const submitNoBoqException = useCallback(async (): Promise<void> => {
+    const reason = noBoqExceptionReason.trim();
+    if (reason === "" || noBoqExceptionPending) return;
+    setNoBoqExceptionPending(true);
+    setNoBoqExceptionError(null);
+    setNoBoqExceptionSuccess(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/boq/no-boq-exception`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) {
+        setNoBoqExceptionError(NO_BOQ_EXCEPTION_ERROR);
+        return;
+      }
+      setNoBoqExceptionReason("");
+      setNoBoqExceptionSuccess(NO_BOQ_EXCEPTION_SUCCESS);
+      refreshRfpLists();
+    } catch {
+      setNoBoqExceptionError(NO_BOQ_EXCEPTION_ERROR);
+    } finally {
+      setNoBoqExceptionPending(false);
+    }
+  }, [id, noBoqExceptionPending, noBoqExceptionReason, refreshRfpLists]);
+
+  // Record an explicit engineer approve/reject on the pending no-BoQ exception.
+  // The exception artifact id rides only in the POST body, never in visible text.
+  const submitNoBoqExceptionReview = useCallback(
+    async (decision: "approved" | "rejected"): Promise<void> => {
+      const artifactId =
+        boqWorkspace?.readiness.configurationGate.noBoqExceptionArtifactId;
+      if (artifactId === undefined || noBoqExceptionReviewPending) return;
+      setNoBoqExceptionReviewPending(true);
+      setNoBoqExceptionReviewError(null);
+      setNoBoqExceptionReviewSuccess(null);
+      try {
+        const note = noBoqExceptionNote.trim();
+        const res = await fetch(`/api/projects/${id}/rfp/boq/approvals`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            note === ""
+              ? { artifactId, decision }
+              : { artifactId, decision, note }
+          ),
+        });
+        if (!res.ok) {
+          setNoBoqExceptionReviewError(NO_BOQ_EXCEPTION_REVIEW_ERROR);
+          return;
+        }
+        setNoBoqExceptionNote("");
+        setNoBoqExceptionReviewSuccess(
+          decision === "approved"
+            ? NO_BOQ_EXCEPTION_APPROVE_SUCCESS
+            : NO_BOQ_EXCEPTION_REJECT_SUCCESS
+        );
+        refreshRfpLists();
+      } catch {
+        setNoBoqExceptionReviewError(NO_BOQ_EXCEPTION_REVIEW_ERROR);
+      } finally {
+        setNoBoqExceptionReviewPending(false);
+      }
+    },
+    [boqWorkspace, id, noBoqExceptionNote, noBoqExceptionReviewPending, refreshRfpLists]
+  );
+
   const submitPrepareEvidenceReview = useCallback(async (): Promise<void> => {
     if (prepareEvidencePending) return;
     const inputPackageArtifactId = latestApprovedInputPackageId;
@@ -3554,20 +3703,29 @@ export default function ProjectRfpEvidencePage() {
 
   const submitGenerateCompliance = useCallback(async (): Promise<void> => {
     if (complianceGeneratePending || !complianceInputs.ready) return;
+    const {
+      requirementsBaselineArtifactId,
+      evidencePackageArtifactId,
+      configurationExpansionArtifactId,
+    } = complianceInputs;
+    // The configuration gate is required: only POST once the requirements
+    // baseline, evidence package, and approved configuration expansion ids are
+    // all resolved, and always send all three.
+    if (
+      requirementsBaselineArtifactId === undefined ||
+      evidencePackageArtifactId === undefined ||
+      configurationExpansionArtifactId === undefined
+    ) {
+      return;
+    }
     setComplianceGeneratePending(true);
     setComplianceGenerateError(null);
     setComplianceGenerateSuccess(null);
     try {
       const body = {
-        requirementsBaselineArtifactId:
-          complianceInputs.requirementsBaselineArtifactId,
-        evidencePackageArtifactId: complianceInputs.evidencePackageArtifactId,
-        ...(complianceInputs.configurationExpansionArtifactId !== undefined
-          ? {
-              configurationExpansionArtifactId:
-                complianceInputs.configurationExpansionArtifactId,
-            }
-          : {}),
+        requirementsBaselineArtifactId,
+        evidencePackageArtifactId,
+        configurationExpansionArtifactId,
       };
       const res = await fetch(`/api/projects/${id}/rfp/compliance-matrix/generate`, {
         method: "POST",
@@ -5145,14 +5303,18 @@ export default function ProjectRfpEvidencePage() {
           state={
             workflow.complianceMatrix.latestApproved !== undefined
               ? "complete"
-              : workflow.requirementsBaseline.latestApproved === undefined
-                ? "blocked"
-                : workflow.complianceMatrix.current !== undefined
-                  ? "current"
+              : workflow.complianceMatrix.current !== undefined
+                ? "current"
+                : workflow.requirementsBaseline.latestApproved === undefined ||
+                    !complianceInputs.ready
+                  ? "blocked"
                   : "ready"
           }
-          active={workflow.nextAction.stage === "compliance"}
-          summary="Generate from the approved requirements baseline and evidence package without manual artifact selection."
+          active={
+            workflow.nextAction.stage === "compliance" ||
+            workflow.nextAction.stage === "configuration"
+          }
+          summary="Generate from the approved requirements baseline, approved evidence package, and a cleared BoQ/configuration gate, without manual artifact selection."
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className={MUTED_TEXT}>
@@ -5192,6 +5354,12 @@ export default function ProjectRfpEvidencePage() {
                   : "Generate compliance matrix"}
             </button>
           </div>
+          <p
+            data-testid="compliance-config-readiness"
+            className={`mt-2 ${MUTED_TEXT}`}
+          >
+            {complianceConfigReadiness}
+          </p>
           {complianceGenerateError && (
             <div className={`mt-3 ${ERROR_BOX}`}>{complianceGenerateError}</div>
           )}
@@ -5256,18 +5424,155 @@ export default function ProjectRfpEvidencePage() {
             </p>
           )}
           {boqWorkspace !== null && (
-            <div data-testid="rfp-boq-readiness" className="mt-3 grid gap-2 md:grid-cols-3">
-              <p data-testid="rfp-boq-status" className={MUTED_TEXT}>
-                Status: <span className="text-text-primary">{boqWorkspace.readiness.status}</span>
-              </p>
-              <p data-testid="rfp-boq-file-count" className={MUTED_TEXT}>
-                BoQ files: {boqWorkspace.readiness.boqFileCount}
-              </p>
-              <p data-testid="rfp-boq-next-step" className={MUTED_TEXT}>
-                Next Quick BoM step:{" "}
-                {boqWorkspace.readiness.quickBomReadiness.nextStepId ?? "none"}
-              </p>
-            </div>
+            <>
+              <div data-testid="rfp-boq-readiness" className="mt-3 grid gap-2 md:grid-cols-3">
+                <p data-testid="rfp-boq-status" className={MUTED_TEXT}>
+                  Status: <span className="text-text-primary">{boqWorkspace.readiness.status}</span>
+                </p>
+                <p data-testid="rfp-boq-file-count" className={MUTED_TEXT}>
+                  BoQ files: {boqWorkspace.readiness.boqFileCount}
+                </p>
+                <p data-testid="rfp-boq-next-step" className={MUTED_TEXT}>
+                  Next Quick BoM step:{" "}
+                  {boqWorkspace.readiness.quickBomReadiness.nextStepId ?? "none"}
+                </p>
+              </div>
+              {boqWorkspace.readiness.configurationGate && (
+                <div className="mt-3 space-y-2">
+                  <p data-testid="rfp-config-gate-status" className={MUTED_TEXT}>
+                    {configurationGateStatusLine(
+                      boqWorkspace.readiness.configurationGate,
+                      boqWorkspace.readiness.quickBomReadiness.nextStepId ?? null
+                    )}
+                  </p>
+                  {boqWorkspace.readiness.configurationGate.status ===
+                    "requires_boq_upload_or_exception" && (
+                    <div
+                      data-testid="rfp-no-boq-exception-form"
+                      className={SUBTLE_CARD}
+                    >
+                      <p className={MUTED_TEXT}>
+                        No BoQ for this RFP? Request a service-only (no-BoQ)
+                        exception for an engineer to review.
+                      </p>
+                      <textarea
+                        data-testid="rfp-no-boq-exception-reason"
+                        value={noBoqExceptionReason}
+                        onChange={(e) => setNoBoqExceptionReason(e.target.value)}
+                        rows={2}
+                        placeholder="Why is this RFP service-only with no BoQ?"
+                        className={`${FIELD} mt-2 w-full`}
+                      />
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          data-testid="rfp-no-boq-exception-submit"
+                          onClick={() => void submitNoBoqException()}
+                          disabled={
+                            noBoqExceptionReason.trim() === "" ||
+                            noBoqExceptionPending
+                          }
+                          className={ACTION_BTN}
+                        >
+                          Request service-only exception
+                        </button>
+                      </div>
+                      {noBoqExceptionError && (
+                        <p
+                          data-testid="rfp-no-boq-exception-error"
+                          className={`mt-2 ${ERROR_BOX}`}
+                        >
+                          {noBoqExceptionError}
+                        </p>
+                      )}
+                      {noBoqExceptionSuccess && (
+                        <p
+                          data-testid="rfp-no-boq-exception-success"
+                          className="mt-2 text-xs text-emerald-300"
+                        >
+                          {noBoqExceptionSuccess}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {boqWorkspace.readiness.configurationGate.status ===
+                    "no_boq_exception_pending_review" && (
+                    <div
+                      data-testid="rfp-no-boq-exception-review"
+                      className={SUBTLE_CARD}
+                    >
+                      <p className={MUTED_TEXT}>
+                        A service-only (no-BoQ) exception is pending engineer
+                        review.
+                      </p>
+                      {boqWorkspace.readiness.configurationGate
+                        .noBoqExceptionReason !== undefined &&
+                        boqWorkspace.readiness.configurationGate.noBoqExceptionReason.trim() !==
+                          "" && (
+                          <p
+                            data-testid="rfp-no-boq-exception-review-reason"
+                            className="mt-1 text-xs text-text-primary"
+                          >
+                            Reason:{" "}
+                            {
+                              boqWorkspace.readiness.configurationGate
+                                .noBoqExceptionReason
+                            }
+                          </p>
+                        )}
+                      <textarea
+                        data-testid="rfp-no-boq-exception-note"
+                        value={noBoqExceptionNote}
+                        onChange={(e) => setNoBoqExceptionNote(e.target.value)}
+                        rows={2}
+                        placeholder="Optional decision note"
+                        className={`${FIELD} mt-2 w-full`}
+                      />
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          data-testid="rfp-no-boq-exception-approve"
+                          onClick={() =>
+                            void submitNoBoqExceptionReview("approved")
+                          }
+                          disabled={noBoqExceptionReviewPending}
+                          className={ACTION_BTN}
+                        >
+                          Approve exception
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="rfp-no-boq-exception-reject"
+                          onClick={() =>
+                            void submitNoBoqExceptionReview("rejected")
+                          }
+                          disabled={noBoqExceptionReviewPending}
+                          className={PLAIN_BTN}
+                        >
+                          Reject exception
+                        </button>
+                      </div>
+                      {noBoqExceptionReviewError && (
+                        <p
+                          data-testid="rfp-no-boq-exception-review-error"
+                          className={`mt-2 ${ERROR_BOX}`}
+                        >
+                          {noBoqExceptionReviewError}
+                        </p>
+                      )}
+                      {noBoqExceptionReviewSuccess && (
+                        <p
+                          data-testid="rfp-no-boq-exception-review-success"
+                          className="mt-2 text-xs text-emerald-300"
+                        >
+                          {noBoqExceptionReviewSuccess}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </section>
       </div>

@@ -54,7 +54,8 @@ export type GenerateRfpComplianceMatrixDraftResult =
       status: "ok";
       requirementsBaselineArtifactId: string;
       evidencePackageArtifactId: string;
-      configurationExpansionArtifactId?: string;
+      /** The required approved configuration-gate artifact id (always present on ok). */
+      configurationExpansionArtifactId: string;
       rowCount: number;
       requirementCount: number;
       evidenceCount: number;
@@ -109,14 +110,21 @@ function copyPayloadSummary(
 export async function generateRfpComplianceMatrixDraft(
   input: GenerateRfpComplianceMatrixDraftInput
 ): Promise<GenerateRfpComplianceMatrixDraftResult> {
+  if (
+    typeof input.configurationExpansionArtifactId !== "string" ||
+    input.configurationExpansionArtifactId.trim() === ""
+  ) {
+    throw new Error("configurationExpansionArtifactId is required.");
+  }
+  const configurationExpansionArtifactId =
+    input.configurationExpansionArtifactId.trim();
+
   const drafting = await draftRfpComplianceMatrixRows({
     tenantId: input.tenantId,
     projectId: input.projectId,
     requirementsBaselineArtifactId: input.requirementsBaselineArtifactId,
     evidencePackageArtifactId: input.evidencePackageArtifactId,
-    ...(input.configurationExpansionArtifactId !== undefined
-      ? { configurationExpansionArtifactId: input.configurationExpansionArtifactId }
-      : {}),
+    configurationExpansionArtifactId,
     requestedBy: input.requestedBy,
     executor: input.executor,
   });
@@ -131,12 +139,8 @@ export async function generateRfpComplianceMatrixDraft(
     sourceRequirementsBaselineArtifactId:
       drafting.requirementsBaselineArtifactId,
     sourceEvidencePackageArtifactId: drafting.evidencePackageArtifactId,
-    ...(drafting.configurationExpansionArtifactId !== undefined
-      ? {
-          sourceConfigurationExpansionArtifactId:
-            drafting.configurationExpansionArtifactId,
-        }
-      : {}),
+    sourceConfigurationExpansionArtifactId:
+      drafting.configurationExpansionArtifactId,
     rows: drafting.rows,
   });
   if (creation.status !== "ok") {
@@ -151,9 +155,8 @@ export async function generateRfpComplianceMatrixDraft(
     status: "ok",
     requirementsBaselineArtifactId: drafting.requirementsBaselineArtifactId,
     evidencePackageArtifactId: drafting.evidencePackageArtifactId,
-    ...(drafting.configurationExpansionArtifactId !== undefined
-      ? { configurationExpansionArtifactId: drafting.configurationExpansionArtifactId }
-      : {}),
+    configurationExpansionArtifactId:
+      drafting.configurationExpansionArtifactId,
     rowCount: drafting.rowCount,
     requirementCount: drafting.requirementCount,
     evidenceCount: drafting.evidenceCount,

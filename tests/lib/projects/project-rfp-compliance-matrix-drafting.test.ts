@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import type { Project, ProjectArtifact } from "@/types/project";
+import type { Project, ProjectArtifact, ProjectFile } from "@/types/project";
 
 // Mock ONLY the two store boundaries (project read, artifact read); the drafting
 // contract's validation, gating, executor bundling, and output sanitization stay
@@ -9,16 +9,28 @@ import type { Project, ProjectArtifact } from "@/types/project";
 // AI module is touched anywhere in this suite. createProjectArtifactVersion exists on
 // the artifact-store mock only so the afterEach can PROVE the drafting contract never
 // persists through it.
-const { mockGetProject, mockGetArtifact, mockCreateArtifact } = vi.hoisted(() => ({
+const {
+  mockGetProject,
+  mockGetArtifact,
+  mockCreateArtifact,
+  mockListArtifacts,
+  mockListFiles,
+} = vi.hoisted(() => ({
   mockGetProject: vi.fn(),
   mockGetArtifact: vi.fn(),
   mockCreateArtifact: vi.fn(),
+  mockListArtifacts: vi.fn(),
+  mockListFiles: vi.fn(),
 }));
 
 vi.mock("@/lib/db/project-store", () => ({ getProjectById: mockGetProject }));
 vi.mock("@/lib/db/project-artifact-store", () => ({
   getProjectArtifactById: mockGetArtifact,
   createProjectArtifactVersion: mockCreateArtifact,
+  listProjectArtifacts: mockListArtifacts,
+}));
+vi.mock("@/lib/db/project-file-store", () => ({
+  listProjectFiles: mockListFiles,
 }));
 
 import {
@@ -28,6 +40,9 @@ import {
   type RfpComplianceMatrixDraftingExecutor,
   type RfpComplianceMatrixDraftingExecutorInput,
 } from "@/lib/projects/project-rfp-compliance-matrix-drafting";
+// The REAL pure readiness helper drives the gate expectations below, proving the drafting
+// contract copies the gate's own status/message rather than inventing its own.
+import { getRfpBoqReadinessReport } from "@/lib/projects/project-rfp-boq-readiness";
 
 // The two evidence-reference kinds, declared locally exactly like the contract
 // declares them - the requirements-baseline value module must stay unimported.
@@ -462,6 +477,45 @@ function makeConfigArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectAr
   };
 }
 
+/**
+ * A reviewed no-BoQ/service-only exception config artifact: the exception marker with no
+ * accepted lines. It is the SAME required gate artifact, distinguished only by payloadKind.
+ */
+function makeExceptionConfigArtifact(
+  overrides: Partial<ProjectArtifact> = {}
+): ProjectArtifact {
+  return makeConfigArtifact({
+    payload: makeConfigPayload({
+      payloadKind: "rfp_no_boq_service_only_exception",
+      acceptedLines: [],
+      rejectedLines: [],
+      lineCount: 0,
+      summary: {
+        customerLineCount: 0,
+        acceptedExpansionLineCount: 0,
+        rejectedExpansionLineCount: 0,
+        totalAcceptedLineCount: 0,
+        reviewedExpansionLineCount: 0,
+      },
+    }),
+    ...overrides,
+  });
+}
+
+/** A BoQ ProjectFile the readiness gate counts as making the project a BoQ project. */
+function makeBoqFile(overrides: Partial<ProjectFile> = {}): ProjectFile {
+  return {
+    id: FILE_BOQ,
+    projectId: PROJECT,
+    fileRole: "boq",
+    fileName: "boq.xlsx",
+    storagePath: "s3://secret-store/boq.xlsx",
+    uploadedAt: TS1,
+    retainUntil: TS2,
+    ...overrides,
+  };
+}
+
 /** A well-behaved executor: one row per default baseline requirement. */
 function makeValidExecutor() {
   return vi.fn(async () => ({
@@ -489,6 +543,8 @@ function summaryOf(artifact: ProjectArtifact) {
   };
 }
 
+// The configuration_expansion artifact is a REQUIRED gate after Stage 5A, so the default
+// drafting input supplies it.
 function draft(
   overrides: Partial<DraftRfpComplianceMatrixRowsInput> = {}
 ): Promise<DraftRfpComplianceMatrixRowsResult> {
@@ -497,22 +553,27 @@ function draft(
     projectId: PROJECT,
     requirementsBaselineArtifactId: BASELINE_ARTIFACT,
     evidencePackageArtifactId: EVIDENCE_PACKAGE,
+    configurationExpansionArtifactId: CONFIG_ARTIFACT,
     requestedBy: REQUESTED_BY,
     executor: makeValidExecutor(),
     ...overrides,
   });
 }
 
+// Alias kept for tests that emphasise the config path; identical to draft() now that the
+// config gate is required.
 function draftConfig(
   overrides: Partial<DraftRfpComplianceMatrixRowsInput> = {}
 ): Promise<DraftRfpComplianceMatrixRowsResult> {
-  return draft({ configurationExpansionArtifactId: CONFIG_ARTIFACT, ...overrides });
+  return draft(overrides);
 }
 
 function expectNoStoreCalls(): void {
   expect(mockGetProject).not.toHaveBeenCalled();
   expect(mockGetArtifact).not.toHaveBeenCalled();
   expect(mockCreateArtifact).not.toHaveBeenCalled();
+  expect(mockListArtifacts).not.toHaveBeenCalled();
+  expect(mockListFiles).not.toHaveBeenCalled();
 }
 
 let baselineArtifact: ProjectArtifact;
@@ -537,6 +598,10 @@ beforeEach(() => {
         artifactById.get(artifactId) ?? null
     );
   mockCreateArtifact.mockReset();
+  // Default readiness inputs: the project HAS a BoQ file and the supplied normal
+  // configuration_expansion is the latest approved one, so the gate authorizes CONFIG_ARTIFACT.
+  mockListFiles.mockReset().mockResolvedValue([makeBoqFile()]);
+  mockListArtifacts.mockReset().mockResolvedValue([configArtifact]);
 });
 
 afterEach(() => {
@@ -590,11 +655,16 @@ describe("validation before store calls", () => {
     expectNoStoreCalls();
   });
 
-  it("throws on a blank configurationExpansionArtifactId when supplied", async () => {
-    for (const blank of ["", "   "]) {
+  it("throws on a missing, blank, or non-string configurationExpansionArtifactId before stores", async () => {
+    const invalidValues: unknown[] = [undefined, "", "   ", 42, null, {}];
+    for (const value of invalidValues) {
       const executor = makeValidExecutor();
       await expect(
-        draft({ configurationExpansionArtifactId: blank, executor })
+        draft({
+          configurationExpansionArtifactId:
+            value as unknown as string,
+          executor,
+        })
       ).rejects.toThrow("configurationExpansionArtifactId is required.");
       expect(executor).not.toHaveBeenCalled();
     }
@@ -932,16 +1002,188 @@ describe("configuration_expansion gates (only when supplied)", () => {
     }
   });
 
-  it("does not load or gate a config artifact when none is supplied", async () => {
-    artifactById.delete(CONFIG_ARTIFACT);
+  it("throws before any store read when no configurationExpansionArtifactId is supplied", async () => {
+    const executor = makeValidExecutor();
 
-    const result = await draft();
+    await expect(
+      draftRfpComplianceMatrixRows({
+        tenantId: TENANT,
+        projectId: PROJECT,
+        requirementsBaselineArtifactId: BASELINE_ARTIFACT,
+        evidencePackageArtifactId: EVIDENCE_PACKAGE,
+        requestedBy: REQUESTED_BY,
+        executor,
+      })
+    ).rejects.toThrow("configurationExpansionArtifactId is required.");
+    expect(executor).not.toHaveBeenCalled();
+    expectNoStoreCalls();
+  });
+});
+
+describe("no-BoQ / service-only exception (same required config gate)", () => {
+  // No BoQ files uploaded: the approved no-BoQ exception is the gate-authorized config,
+  // so an exception passes the readiness gate ONLY in this no-BoQ scenario.
+  beforeEach(() => {
+    const exception = makeExceptionConfigArtifact();
+    artifactById.set(CONFIG_ARTIFACT, exception);
+    mockListFiles.mockResolvedValue([]);
+    mockListArtifacts.mockResolvedValue([exception]);
+  });
+
+  it("accepts the exception artifact and hands the executor an empty configurationLines set", async () => {
+    let captured: RfpComplianceMatrixDraftingExecutorInput | undefined;
+    const executor = vi.fn(async (input: RfpComplianceMatrixDraftingExecutorInput) => {
+      captured = input;
+      return makeValidExecutor()();
+    });
+
+    const result = await draftConfig({ executor });
 
     expect(result.status).toBe("ok");
-    expect(mockGetArtifact.mock.calls).toEqual([
-      [TENANT, PROJECT, BASELINE_ARTIFACT],
-      [TENANT, PROJECT, EVIDENCE_PACKAGE],
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.configurationExpansionArtifactId).toBe(CONFIG_ARTIFACT);
+    expect(result.sourceArtifactIds).toEqual([
+      BASELINE_ARTIFACT,
+      EVIDENCE_PACKAGE,
+      CONFIG_ARTIFACT,
     ]);
+    expect(captured?.configurationExpansion).toEqual(
+      summaryOf(makeExceptionConfigArtifact())
+    );
+    expect(captured?.configurationLines).toEqual([]);
+  });
+
+  it("rejects any cited configuration line because the exception has no lines", async () => {
+    const executor = vi.fn(async () => ({
+      rows: [
+        { requirementId: REQ_1, response: "a", configurationLineIds: [CFG_LINE_1] },
+        { requirementId: REQ_2, response: "b" },
+        { requirementId: REQ_3, response: "c" },
+      ],
+    }));
+
+    expect(await draftConfig({ executor })).toEqual({
+      status: "invalid_draft_output",
+      errors: [
+        `rows[0] cites unknown configuration line ID: ${CFG_LINE_1}.`,
+        `Missing compliance row for requirement ID: ${REQ_1}.`,
+      ],
+    });
+  });
+});
+
+describe("RFP BoQ configuration gate authorization", () => {
+  const AUTHORIZED_CONFIG = "art-config-expansion-authorized";
+
+  it("blocks an approved no-BoQ exception when the project HAS BoQ files, copying the gate status/message and never calling the executor", async () => {
+    const exception = makeExceptionConfigArtifact();
+    artifactById.set(CONFIG_ARTIFACT, exception);
+    const files = [makeBoqFile()];
+    const artifacts = [exception];
+    mockListFiles.mockResolvedValue(files);
+    mockListArtifacts.mockResolvedValue(artifacts);
+    const expectedGate = getRfpBoqReadinessReport({
+      projectId: PROJECT,
+      files,
+      artifacts,
+    }).configurationGate;
+    const executor = makeValidExecutor();
+
+    const result = await draftConfig({ executor });
+
+    expect(expectedGate.satisfied).toBe(false);
+    expect(result).toEqual({
+      status: "configuration_gate_unsatisfied",
+      gateStatus: expectedGate.status,
+      gateMessage: expectedGate.message,
+    });
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("blocks an approved normal configuration_expansion when the project has NO BoQ files (only an exception authorizes)", async () => {
+    // configArtifact is a valid approved normal expansion; with no BoQ and no exception
+    // the gate is unsatisfied, so a normal expansion cannot authorize generation.
+    const files: ProjectFile[] = [];
+    const artifacts = [configArtifact];
+    mockListFiles.mockResolvedValue(files);
+    mockListArtifacts.mockResolvedValue(artifacts);
+    const expectedGate = getRfpBoqReadinessReport({
+      projectId: PROJECT,
+      files,
+      artifacts,
+    }).configurationGate;
+    const executor = makeValidExecutor();
+
+    const result = await draftConfig({ executor });
+
+    expect(expectedGate.satisfied).toBe(false);
+    expect(result).toEqual({
+      status: "configuration_gate_unsatisfied",
+      gateStatus: expectedGate.status,
+      gateMessage: expectedGate.message,
+    });
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("blocks when the supplied id is a valid expansion but a newer one is gate-authorized", async () => {
+    const authorized = makeConfigArtifact({ id: AUTHORIZED_CONFIG, version: 9 });
+    mockListFiles.mockResolvedValue([makeBoqFile()]);
+    mockListArtifacts.mockResolvedValue([configArtifact, authorized]);
+    const executor = makeValidExecutor();
+
+    const result = await draftConfig({ executor });
+
+    expect(result.status).toBe("configuration_gate_mismatch");
+    if (result.status !== "configuration_gate_mismatch") throw new Error("unreachable");
+    expect(result.authorizedConfigurationExpansionArtifactId).toBe(AUTHORIZED_CONFIG);
+    expect(result.gateStatus).toBe("configuration_expansion_approved");
+    expect(typeof result.gateMessage).toBe("string");
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("blocks an exception id when a normal expansion is the gate-authorized artifact for a BoQ project", async () => {
+    const exception = makeExceptionConfigArtifact();
+    const authorized = makeConfigArtifact({ id: AUTHORIZED_CONFIG, version: 9 });
+    artifactById.set(CONFIG_ARTIFACT, exception);
+    mockListFiles.mockResolvedValue([makeBoqFile()]);
+    mockListArtifacts.mockResolvedValue([authorized, exception]);
+    const executor = makeValidExecutor();
+
+    const result = await draftConfig({ executor });
+
+    expect(result.status).toBe("configuration_gate_mismatch");
+    if (result.status !== "configuration_gate_mismatch") throw new Error("unreachable");
+    expect(result.authorizedConfigurationExpansionArtifactId).toBe(AUTHORIZED_CONFIG);
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("proceeds when the supplied id matches the gate-authorized normal expansion for a BoQ project", async () => {
+    // Default beforeEach already wires a BoQ file and CONFIG_ARTIFACT as the latest approved
+    // normal expansion; assert the gate-authorized happy path passes the normal lines through.
+    let captured: RfpComplianceMatrixDraftingExecutorInput | undefined;
+    const executor = vi.fn(async (input: RfpComplianceMatrixDraftingExecutorInput) => {
+      captured = input;
+      return makeValidExecutor()();
+    });
+
+    const result = await draftConfig({ executor });
+
+    expect(result.status).toBe("ok");
+    expect(captured?.configurationExpansion).toEqual(summaryOf(configArtifact));
+    expect(captured?.configurationLines).toEqual([EXEC_CFG_1, EXEC_CFG_2]);
+  });
+
+  it("computes the readiness gate only AFTER the per-artifact configuration gate passes", async () => {
+    // A not-approved configuration artifact returns before any files/artifacts are listed.
+    artifactById.set(CONFIG_ARTIFACT, makeConfigArtifact({ status: "needs_review" }));
+    const executor = makeValidExecutor();
+
+    const result = await draftConfig({ executor });
+
+    expect(result.status).toBe("configuration_expansion_not_approved");
+    expect(mockListFiles).not.toHaveBeenCalled();
+    expect(mockListArtifacts).not.toHaveBeenCalled();
+    expect(executor).not.toHaveBeenCalled();
   });
 });
 
@@ -969,20 +1211,6 @@ describe("executor input", () => {
       sourceFileIds: [FILE_RFP, FILE_BOQ],
       sourceArtifactIds: [BASELINE_ARTIFACT, EVIDENCE_PACKAGE, CONFIG_ARTIFACT],
     });
-  });
-
-  it("omits the config bundle entirely when no config artifact is supplied", async () => {
-    let captured: RfpComplianceMatrixDraftingExecutorInput | undefined;
-    const executor = vi.fn(async (input: RfpComplianceMatrixDraftingExecutorInput) => {
-      captured = input;
-      return makeValidExecutor()();
-    });
-
-    await draft({ executor });
-
-    expect(captured).not.toHaveProperty("configurationExpansion");
-    expect(captured).not.toHaveProperty("configurationLines");
-    expect(captured?.sourceArtifactIds).toEqual([BASELINE_ARTIFACT, EVIDENCE_PACKAGE]);
   });
 
   it("leaks no tenantId, storage path, document metrics, raw payload, pricing, or config-authority field", async () => {
@@ -1156,7 +1384,7 @@ describe("executor failure and untrusted output", () => {
         "rows[2] references an unknown requirement ID: ghost.",
         "rows[3].response is required.",
         "rows[4] cites unknown evidence ID: ghost-ev.",
-        "rows[5] cites configuration lines but no configuration_expansion artifact was supplied.",
+        "rows[5] cites unknown configuration line ID: cfg-x.",
         `Missing compliance row for requirement ID: ${REQ_1}.`,
         `Missing compliance row for requirement ID: ${REQ_2}.`,
         `Missing compliance row for requirement ID: ${REQ_3}.`,
@@ -1200,23 +1428,6 @@ describe("executor failure and untrusted output", () => {
     });
   });
 
-  it("rejects configuration citations when no config artifact was supplied", async () => {
-    const executor = vi.fn(async () => ({
-      rows: [
-        { requirementId: REQ_1, response: "a", configurationLineIds: [CFG_LINE_1] },
-        { requirementId: REQ_2, response: "b" },
-        { requirementId: REQ_3, response: "c" },
-      ],
-    }));
-
-    expect(await draft({ executor })).toEqual({
-      status: "invalid_draft_output",
-      errors: [
-        "rows[0] cites configuration lines but no configuration_expansion artifact was supplied.",
-        `Missing compliance row for requirement ID: ${REQ_1}.`,
-      ],
-    });
-  });
 });
 
 describe("success", () => {
@@ -1300,12 +1511,13 @@ describe("success", () => {
       project: PROJECT_SUMMARY,
       requirementsBaselineArtifactId: BASELINE_ARTIFACT,
       evidencePackageArtifactId: EVIDENCE_PACKAGE,
+      configurationExpansionArtifactId: CONFIG_ARTIFACT,
       rows: EXPECTED_ROWS,
       rowCount: 3,
       requirementCount: 3,
       evidenceCount: 3,
       sourceFileIds: [FILE_RFP, FILE_BOQ],
-      sourceArtifactIds: [BASELINE_ARTIFACT, EVIDENCE_PACKAGE],
+      sourceArtifactIds: [BASELINE_ARTIFACT, EVIDENCE_PACKAGE, CONFIG_ARTIFACT],
     });
     expect(result.status === "ok" && result.rows.every((r) => r.complianceStatus === "needs_review")).toBe(true);
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
@@ -1514,11 +1726,13 @@ describe("module purity (static source check)", () => {
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports exactly the two read stores and the two type-only contracts", () => {
+  it("imports exactly the project stores, the RFP BoQ readiness helper, and the two type-only contracts", () => {
     const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
     expect(froms).toEqual([
       "@/lib/db/project-store",
       "@/lib/db/project-artifact-store",
+      "@/lib/db/project-file-store",
+      "@/lib/projects/project-rfp-boq-readiness",
       "@/types/project",
       "@/lib/projects/project-rfp-compliance-matrix",
     ]);
@@ -1559,7 +1773,8 @@ describe("module purity (static source check)", () => {
       'from "fs"',
       'from "path"',
       'from "@/lib/db/project-evidence-store"',
-      'from "@/lib/db/project-file-store"',
+      // project-file-store is now ALLOWED (listProjectFiles feeds the readiness gate);
+      // the evidence store stays forbidden - evidence authority is the approved package only.
       'from "@/lib/db/project-approval-store"',
       'from "@/lib/db/index"',
       'from "@/lib/db/schema"',
@@ -1568,7 +1783,8 @@ describe("module purity (static source check)", () => {
       'from "@/lib/projects/project-rfp-extraction',
       'from "@/lib/projects/project-rfp-evidence',
       'from "@/lib/projects/project-rfp-config-expansion',
-      'from "@/lib/projects/project-rfp-boq',
+      // project-rfp-boq-readiness is now ALLOWED (the pure readiness gate helper); the
+      // exact-import test above pins it, so no other project-rfp-boq* module can sneak in.
       'from "@/lib/projects/config-expansion',
       'from "@/lib/projects/project-boq',
       'from "@/lib/projects/project-quick-bom',

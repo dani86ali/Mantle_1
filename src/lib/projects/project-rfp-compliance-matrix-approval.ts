@@ -6,14 +6,28 @@
  * artifact version named by the caller. It gates on rfp mode, compliance_matrix
  * type/stage, and reviewable status. An "approved" decision additionally inspects
  * the exact payload so an AI-drafted or partially reviewed matrix cannot be
- * approved as final; rejection stays recordable against any reviewable matrix even
- * with an incomplete payload. It creates no artifacts, mutates no rows, leaks no
- * payload body/tenant, and does no AI, pricing, SKU, catalog, or config work.
+ * approved as final, and then (Stage 5A) re-checks the live RFP BoQ/configuration
+ * gate: the matrix must name a nonblank source configuration, that gate must be
+ * satisfied now, and the gate-authorized configuration artifact must be the exact
+ * one the matrix was drafted from - so a stale or pre-gate matrix cannot be
+ * blessed. Rejection stays recordable against any reviewable matrix even with an
+ * incomplete payload or an unsatisfied gate. To recompute the gate it reads only
+ * Project files and artifacts and delegates to the pure readiness helper; it opens
+ * no raw document, parser, evidence, pricing, SKU, catalog, or AI path. It creates
+ * no artifacts, mutates no rows, and leaks no payload body, file path, or tenant.
  */
 import { getProjectById } from "@/lib/db/project-store";
-import { getProjectArtifactById } from "@/lib/db/project-artifact-store";
+import {
+  getProjectArtifactById,
+  listProjectArtifacts,
+} from "@/lib/db/project-artifact-store";
+import { listProjectFiles } from "@/lib/db/project-file-store";
 import { createProjectApproval } from "@/lib/db/project-approval-store";
 import { isArtifactReviewable } from "@/lib/projects/approvals";
+import {
+  getRfpBoqReadinessReport,
+  type RfpConfigurationGateStatus,
+} from "@/lib/projects/project-rfp-boq-readiness";
 import {
   RFP_COMPLIANCE_MATRIX_PAYLOAD_KIND,
   RFP_COMPLIANCE_STATUSES,
@@ -63,15 +77,27 @@ export interface RfpComplianceMatrixReviewArtifactSummary {
   updatedAt: string;
 }
 
-/** Deterministic refusal of an "approved" decision after payload inspection;
- * rowIds carry only row identifiers, never payload bodies, evidence, or tenant. */
+/** Deterministic refusal of an "approved" decision after payload inspection and
+ * the Stage 5A source-configuration gate. rowIds carry only row identifiers; the
+ * configuration blocks carry copied gate status/message or the authorized artifact
+ * id only - never payload bodies, evidence, file paths, or tenant. */
 export type ComplianceMatrixApprovalBlock =
   | { status: "invalid_compliance_matrix_payload" }
   | { status: "no_active_rows" }
   | { status: "rows_need_review"; rowIds: string[] }
   | { status: "rows_not_reviewed"; rowIds: string[] }
   | { status: "not_applicable_reason_required"; rowIds: string[] }
-  | { status: "removed_reason_required"; rowIds: string[] };
+  | { status: "removed_reason_required"; rowIds: string[] }
+  | { status: "missing_source_configuration" }
+  | {
+      status: "configuration_gate_unsatisfied";
+      gateStatus: RfpConfigurationGateStatus;
+      gateMessage: string;
+    }
+  | {
+      status: "configuration_gate_mismatch";
+      authorizedConfigurationExpansionArtifactId: string;
+    };
 
 export type ReviewRfpComplianceMatrixArtifactResult =
   | { status: "not_found" }
@@ -162,6 +188,57 @@ function evaluateComplianceMatrixApproval(payload: unknown): ApprovalReadiness {
   return { status: "ready" };
 }
 
+/**
+ * Stage 5A: decide whether an already payload-ready "approved" decision may
+ * proceed against the CURRENT RFP BoQ/configuration gate. The matrix must name a
+ * nonblank source configuration; that gate must be satisfied now; and the
+ * gate-authorized configuration artifact (an approved normal configuration_expansion
+ * when a BoQ is present, or an approved no-BoQ service-only exception when none is)
+ * must be the exact id the matrix was drafted from. Reads only Project files and
+ * artifacts to recompute the pure readiness gate - it opens no raw document,
+ * parser, evidence, pricing, SKU, catalog, or AI path - and returns the copied
+ * gate status/message or the authorized id only, never a payload body or file path.
+ */
+async function evaluateSourceConfigurationGate(
+  tenantId: string,
+  projectId: string,
+  payload: Record<string, unknown>
+): Promise<ApprovalReadiness> {
+  const rawSourceId = payload.sourceConfigurationExpansionArtifactId;
+  if (!isNonBlank(rawSourceId)) return { status: "missing_source_configuration" };
+  const sourceConfigurationArtifactId = (rawSourceId as string).trim();
+
+  const [files, artifacts] = await Promise.all([
+    listProjectFiles(tenantId, projectId),
+    listProjectArtifacts(tenantId, projectId),
+  ]);
+  const gate = getRfpBoqReadinessReport({
+    projectId,
+    files,
+    artifacts,
+  }).configurationGate;
+  if (!gate.satisfied) {
+    return {
+      status: "configuration_gate_unsatisfied",
+      gateStatus: gate.status,
+      gateMessage: gate.message,
+    };
+  }
+  const authorizedConfigurationExpansionArtifactId =
+    gate.approvedConfigurationExpansionArtifactId ??
+    gate.noBoqExceptionArtifactId ??
+    "";
+  if (
+    authorizedConfigurationExpansionArtifactId !== sourceConfigurationArtifactId
+  ) {
+    return {
+      status: "configuration_gate_mismatch",
+      authorizedConfigurationExpansionArtifactId,
+    };
+  }
+  return { status: "ready" };
+}
+
 export async function reviewRfpComplianceMatrixArtifact(
   input: ReviewRfpComplianceMatrixArtifactInput
 ): Promise<ReviewRfpComplianceMatrixArtifactResult> {
@@ -196,6 +273,14 @@ export async function reviewRfpComplianceMatrixArtifact(
   if (decision === "approved") {
     const readiness = evaluateComplianceMatrixApproval(artifact.payload);
     if (readiness.status !== "ready") return readiness;
+    // Stage 5A: a payload-ready matrix must still match the live configuration
+    // gate - its source config must exist and be the currently authorized one.
+    const configReadiness = await evaluateSourceConfigurationGate(
+      tenantId,
+      projectId,
+      artifact.payload
+    );
+    if (configReadiness.status !== "ready") return configReadiness;
   }
 
   const artifactSummary = toArtifactSummary(artifact);

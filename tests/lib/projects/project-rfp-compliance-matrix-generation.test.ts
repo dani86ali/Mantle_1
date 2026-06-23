@@ -197,6 +197,24 @@ describe("generateRfpComplianceMatrixDraft", () => {
     expect(PAYLOAD_SUMMARY.statusCounts.needs_review).toBe(1);
   });
 
+  it("requires configurationExpansionArtifactId before any drafting or creation", async () => {
+    for (const bad of [undefined, "", "   ", 123, null, {}]) {
+      await expect(run({ configurationExpansionArtifactId: bad })).rejects.toThrow(
+        "configurationExpansionArtifactId is required."
+      );
+    }
+    expect(mockDraftRows).not.toHaveBeenCalled();
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+  });
+
+  it("trims configurationExpansionArtifactId before forwarding it to drafting", async () => {
+    await run({ configurationExpansionArtifactId: `  ${CONFIG}  ` });
+
+    expect(mockDraftRows.mock.calls[0][0].configurationExpansionArtifactId).toBe(
+      CONFIG
+    );
+  });
+
   it("bubbles service errors", async () => {
     mockDraftRows.mockRejectedValueOnce(new Error("draft failed"));
     await expect(run()).rejects.toThrow("draft failed");

@@ -47,6 +47,43 @@ export type RfpBoqReadinessStatus =
   | "quick_bom_in_progress"
   | "customer_deliverable_ready";
 
+/**
+ * Stable payload kind marking the explicit, human-approved "no BoQ /
+ * service-only" RFP exception. An approved configuration_expansion carrying
+ * this kind (on the configuration_expansion_review stage) is the ONLY thing
+ * that clears the configuration gate when no BoQ file was uploaded.
+ */
+const RFP_NO_BOQ_EXCEPTION_PAYLOAD_KIND = "rfp_no_boq_service_only_exception";
+
+/** Payload kind of an unreviewed configuration_expansion draft marker. */
+const CONFIGURATION_EXPANSION_DRAFT_PAYLOAD_KIND = "configuration_expansion_draft";
+
+/** Coarse state of the read-only BoQ/configuration gate. */
+export type RfpConfigurationGateStatus =
+  | "requires_boq_upload_or_exception"
+  | "no_boq_exception_pending_review"
+  | "no_boq_exception_approved"
+  | "requires_boq_normalization"
+  | "requires_sku_resolution"
+  | "requires_configuration_expansion"
+  | "configuration_expansion_approved";
+
+/**
+ * Read-only summary of whether configuration authority is cleared for this RFP
+ * package - either by an approved normal configuration_expansion (BoQ present)
+ * or by an approved no-BoQ service-only exception (no BoQ). Pure report shape.
+ */
+export interface RfpConfigurationGate {
+  required: boolean;
+  satisfied: boolean;
+  waived: boolean;
+  status: RfpConfigurationGateStatus;
+  message: string;
+  approvedConfigurationExpansionArtifactId?: string;
+  noBoqExceptionArtifactId?: string;
+  noBoqExceptionReason?: string;
+}
+
 /** Read-only input: a project id plus its files and artifacts to inspect. */
 export interface GetRfpBoqReadinessReportInput {
   projectId: string;
@@ -68,6 +105,7 @@ export interface RfpBoqReadinessReport {
   canCreatePricedBoq: boolean;
   canCreateExportPackage: boolean;
   isCustomerDeliverableReady: boolean;
+  configurationGate: RfpConfigurationGate;
   status: RfpBoqReadinessStatus;
   messages: string[];
 }
@@ -83,6 +121,127 @@ function latestNormalizedBoq(
     if (!latest || artifact.version > latest.version) latest = artifact;
   }
   return latest;
+}
+
+/** Read a string payload field, or undefined when absent/non-string. */
+function payloadString(
+  payload: Record<string, unknown>,
+  key: string
+): string | undefined {
+  const value = payload[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+/** True for an explicit no-BoQ / service-only exception configuration_expansion. */
+function isNoBoqExceptionArtifact(artifact: ProjectArtifact): boolean {
+  return (
+    artifact.type === "configuration_expansion" &&
+    artifact.stageId === "configuration_expansion_review" &&
+    payloadString(artifact.payload, "payloadKind") === RFP_NO_BOQ_EXCEPTION_PAYLOAD_KIND
+  );
+}
+
+/** True for a normal configuration_expansion: neither a draft marker nor an exception. */
+function isNormalConfigurationExpansion(artifact: ProjectArtifact): boolean {
+  if (artifact.type !== "configuration_expansion") return false;
+  const kind = payloadString(artifact.payload, "payloadKind");
+  return (
+    kind !== CONFIGURATION_EXPANSION_DRAFT_PAYLOAD_KIND &&
+    kind !== RFP_NO_BOQ_EXCEPTION_PAYLOAD_KIND
+  );
+}
+
+/** Highest-version artifact for `projectId` matching `predicate`; undefined if none. */
+function latestMatching(
+  artifacts: readonly ProjectArtifact[],
+  projectId: string,
+  predicate: (artifact: ProjectArtifact) => boolean
+): ProjectArtifact | undefined {
+  let latest: ProjectArtifact | undefined;
+  for (const artifact of artifacts) {
+    if (artifact.projectId !== projectId || !predicate(artifact)) continue;
+    if (!latest || artifact.version > latest.version) latest = artifact;
+  }
+  return latest;
+}
+
+/**
+ * Build the read-only configuration gate. BoQ present => only an approved normal
+ * configuration_expansion satisfies it (no-BoQ exceptions are ignored). No BoQ
+ * => only an approved no-BoQ exception satisfies it (and waives the gate).
+ */
+function buildConfigurationGate(
+  artifacts: readonly ProjectArtifact[],
+  projectId: string,
+  hasBoqFiles: boolean,
+  quickBomReadiness: QuickBomReadinessReport,
+  normalizedPresentNonStale: boolean
+): RfpConfigurationGate {
+  if (hasBoqFiles) {
+    const approved = latestMatching(
+      artifacts,
+      projectId,
+      (a) => isNormalConfigurationExpansion(a) && a.status === "approved"
+    );
+    if (approved) {
+      return {
+        required: true,
+        satisfied: true,
+        waived: false,
+        status: "configuration_expansion_approved",
+        message: "Configuration expansion is approved for this RFP BoQ package.",
+        approvedConfigurationExpansionArtifactId: approved.id,
+      };
+    }
+    const skuApproved =
+      quickBomReadiness.steps.find((s) => s.stepId === "sku_resolution")?.isApproved === true;
+    let status: RfpConfigurationGateStatus;
+    let message: string;
+    if (!normalizedPresentNonStale) {
+      status = "requires_boq_normalization";
+      message = "BoQ must be normalized before configuration expansion can be approved.";
+    } else if (!skuApproved) {
+      status = "requires_sku_resolution";
+      message = "SKU resolution must be approved before configuration expansion can be approved.";
+    } else {
+      status = "requires_configuration_expansion";
+      message = "An approved configuration expansion is required for this RFP BoQ package.";
+    }
+    return { required: true, satisfied: false, waived: false, status, message };
+  }
+
+  const exception = latestMatching(artifacts, projectId, isNoBoqExceptionArtifact);
+  const reason = exception ? payloadString(exception.payload, "reason") : undefined;
+  const reasonField = reason !== undefined ? { noBoqExceptionReason: reason } : {};
+  if (exception?.status === "approved") {
+    return {
+      required: false,
+      satisfied: true,
+      waived: true,
+      status: "no_boq_exception_approved",
+      message: "An approved no-BoQ service-only exception waives the configuration gate.",
+      noBoqExceptionArtifactId: exception.id,
+      ...reasonField,
+    };
+  }
+  if (exception && (exception.status === "generated" || exception.status === "needs_review")) {
+    return {
+      required: false,
+      satisfied: false,
+      waived: false,
+      status: "no_boq_exception_pending_review",
+      message: "A no-BoQ service-only exception is pending review.",
+      noBoqExceptionArtifactId: exception.id,
+      ...reasonField,
+    };
+  }
+  return {
+    required: false,
+    satisfied: false,
+    waived: false,
+    status: "requires_boq_upload_or_exception",
+    message: "Upload a BoQ file or record an approved no-BoQ service-only exception.",
+  };
 }
 
 /** Map a BoQ ProjectFile to its lean, serializable summary (no storagePath). */
@@ -137,6 +296,14 @@ export function getRfpBoqReadinessReport(
   const isCustomerDeliverableReady =
     hasBoqFiles && quickBomReadiness.isCustomerDeliverableReady;
 
+  const configurationGate = buildConfigurationGate(
+    artifacts,
+    projectId,
+    hasBoqFiles,
+    quickBomReadiness,
+    normalizedPresentNonStale
+  );
+
   let status: RfpBoqReadinessStatus;
   let headline: string;
   if (!hasBoqFiles) {
@@ -170,6 +337,7 @@ export function getRfpBoqReadinessReport(
     canCreatePricedBoq,
     canCreateExportPackage,
     isCustomerDeliverableReady,
+    configurationGate,
     status,
     messages,
   };

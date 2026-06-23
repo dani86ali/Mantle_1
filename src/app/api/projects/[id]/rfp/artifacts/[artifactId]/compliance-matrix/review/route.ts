@@ -176,6 +176,40 @@ export async function POST(
         { status: 409 }
       );
     }
+    if (result.status === "missing_source_configuration") {
+      return NextResponse.json(
+        {
+          code: "compliance_matrix_source_configuration_missing",
+          error:
+            "Compliance matrix has no source configuration and cannot be approved under the configuration gate.",
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "configuration_gate_unsatisfied") {
+      return NextResponse.json(
+        {
+          code: "compliance_matrix_configuration_gate_unsatisfied",
+          error:
+            "The RFP configuration gate is not satisfied for this compliance matrix.",
+          gateStatus: result.gateStatus,
+          gateMessage: result.gateMessage,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "configuration_gate_mismatch") {
+      return NextResponse.json(
+        {
+          code: "compliance_matrix_configuration_gate_mismatch",
+          error:
+            "This compliance matrix was drafted from a configuration that is no longer the gate-authorized one.",
+          authorizedConfigurationExpansionArtifactId:
+            result.authorizedConfigurationExpansionArtifactId,
+        },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json(
       {

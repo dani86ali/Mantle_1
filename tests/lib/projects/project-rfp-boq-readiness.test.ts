@@ -101,6 +101,10 @@ describe("no BoQ files", () => {
     // Even though the Quick BoM chain is fully approved, no BoQ file => not ready.
     expect(r.quickBomReadiness.isCustomerDeliverableReady).toBe(true);
     expect(r.messages).toHaveLength(1);
+    // Stray approved Quick BoM config_expansion is NOT a no-BoQ exception => gate unsatisfied.
+    expect(r.configurationGate.satisfied).toBe(false);
+    expect(r.configurationGate.waived).toBe(false);
+    expect(r.configurationGate.status).toBe("requires_boq_upload_or_exception");
   });
 
   it("never leaks storagePath into the output", () => {
@@ -199,6 +203,113 @@ describe("defensive copies and immutability", () => {
     r.normalizationCandidateFileIds.push("mutated");
     const again = report([BOQ], []);
     expect(again.normalizationCandidateFileIds).toHaveLength(before);
+  });
+});
+
+const NO_BOQ_EXCEPTION_KIND = "rfp_no_boq_service_only_exception";
+
+function exception(
+  version: number,
+  status: ProjectArtifactStatus,
+  reason?: string
+): ProjectArtifact {
+  return art("configuration_expansion", version, status, {
+    id: `noboq-exc-v${version}`,
+    payload: {
+      payloadKind: NO_BOQ_EXCEPTION_KIND,
+      ...(reason !== undefined ? { reason } : {}),
+    },
+  });
+}
+
+describe("configuration gate", () => {
+  it("no BoQ + no exception => not satisfied, requires_boq_upload_or_exception", () => {
+    const r = report([file("rfp-1", "rfp")], []);
+    const g = r.configurationGate;
+    expect(g.required).toBe(false);
+    expect(g.satisfied).toBe(false);
+    expect(g.waived).toBe(false);
+    expect(g.status).toBe("requires_boq_upload_or_exception");
+    expect(g.noBoqExceptionArtifactId).toBeUndefined();
+  });
+
+  it("no BoQ + pending exception => pending_review, reason visible, not satisfied", () => {
+    const r = report(
+      [file("rfp-1", "rfp")],
+      [exception(1, "needs_review", "Services-only RFP; no hardware BoQ.")]
+    );
+    const g = r.configurationGate;
+    expect(g.satisfied).toBe(false);
+    expect(g.waived).toBe(false);
+    expect(g.status).toBe("no_boq_exception_pending_review");
+    expect(g.noBoqExceptionArtifactId).toBe("noboq-exc-v1");
+    expect(g.noBoqExceptionReason).toBe("Services-only RFP; no hardware BoQ.");
+  });
+
+  it("no BoQ + approved exception => satisfied, waived, id and reason visible", () => {
+    const r = report(
+      [file("rfp-1", "rfp")],
+      [exception(1, "approved", "Services-only RFP; no hardware BoQ.")]
+    );
+    const g = r.configurationGate;
+    expect(g.satisfied).toBe(true);
+    expect(g.waived).toBe(true);
+    expect(g.status).toBe("no_boq_exception_approved");
+    expect(g.noBoqExceptionArtifactId).toBe("noboq-exc-v1");
+    expect(g.noBoqExceptionReason).toBe("Services-only RFP; no hardware BoQ.");
+  });
+
+  it("BoQ + approved exception but no normal config => not satisfied; exception ignored", () => {
+    const r = report(
+      [BOQ],
+      [
+        art("normalized_boq", 1, "generated"),
+        art("sku_resolution", 1, "approved"),
+        exception(2, "approved", "ignored when a BoQ exists"),
+      ]
+    );
+    const g = r.configurationGate;
+    expect(g.required).toBe(true);
+    expect(g.satisfied).toBe(false);
+    expect(g.waived).toBe(false);
+    expect(g.status).toBe("requires_configuration_expansion");
+    expect(g.noBoqExceptionArtifactId).toBeUndefined();
+    expect(g.approvedConfigurationExpansionArtifactId).toBeUndefined();
+  });
+
+  it("BoQ + approved normal configuration_expansion => satisfied, not waived", () => {
+    const r = report(
+      [BOQ],
+      [
+        art("normalized_boq", 1, "generated"),
+        art("sku_resolution", 1, "approved"),
+        art("configuration_expansion", 1, "approved"),
+      ]
+    );
+    const g = r.configurationGate;
+    expect(g.required).toBe(true);
+    expect(g.satisfied).toBe(true);
+    expect(g.waived).toBe(false);
+    expect(g.status).toBe("configuration_expansion_approved");
+    expect(g.approvedConfigurationExpansionArtifactId).toBe("configuration_expansion-v1");
+  });
+
+  it("BoQ + only a draft-marker config_expansion => requires_configuration_expansion", () => {
+    const r = report(
+      [BOQ],
+      [
+        art("normalized_boq", 1, "generated"),
+        art("sku_resolution", 1, "approved"),
+        art("configuration_expansion", 1, "approved", {
+          id: "draft-config",
+          payload: { payloadKind: "configuration_expansion_draft" },
+        }),
+      ]
+    );
+    const g = r.configurationGate;
+    expect(g.satisfied).toBe(false);
+    expect(g.status).toBe("requires_configuration_expansion");
+    expect(g.approvedConfigurationExpansionArtifactId).toBeUndefined();
   });
 });
 
