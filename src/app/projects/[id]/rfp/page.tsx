@@ -385,6 +385,88 @@ interface RfpBoqWorkspaceResponse {
   workspace?: ProjectRfpBoqWorkspace;
 }
 
+/** One hld_readiness_snapshot artifact in the list response. */
+interface HldReadinessListItem {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  payloadSummary?: {
+    payloadKind?: string;
+    coveredDomainCount?: number;
+    missingInputCount?: number;
+  };
+}
+
+/** One assumption entry in an HLD readiness payload. */
+interface HldAssumption {
+  fieldId: string;
+  label: string;
+  status: string;
+  note?: string;
+}
+
+/** Per-domain readiness breakdown. */
+interface HldDomainReadiness {
+  claimedDomains: string[];
+  coveredDomains: string[];
+  excludedDomains: string[];
+  requiredKnowledgePackDomains: string[];
+  missingKnowledgePackDomains: string[];
+}
+
+/** Readiness object returned by GET /api/projects/[id]/rfp/hld-readiness-snapshot. */
+interface HldReadiness {
+  status: "ready" | "blocked";
+  canCreateReadinessSnapshot: boolean;
+  coveredDomains: string[];
+  excludedDomains?: string[];
+  missingKnowledgePackDomains?: string[];
+  domainReadiness?: HldDomainReadiness;
+  assumptions?: HldAssumption[];
+  missingInputs?: string[];
+  validationMessages?: string[];
+  sourceArtifactIds?: string[];
+}
+
+/** Lean list response of GET /api/projects/[id]/rfp/hld-readiness-snapshot. */
+interface HldReadinessListResponse {
+  project?: { id: string; name?: string };
+  artifactCount: number;
+  artifacts: HldReadinessListItem[];
+  readiness: HldReadiness;
+}
+
+/** Detail response of GET /api/projects/[id]/rfp/artifacts/[id]/hld-readiness-snapshot. */
+interface HldReadinessSnapshotDetailResponse {
+  project?: { id: string; name?: string };
+  artifact?: {
+    id: string;
+    status: ProjectArtifactStatus;
+    version: number;
+    sourceArtifactIds?: string[];
+  };
+  snapshot?: {
+    payloadKind?: string;
+    readinessStatus?: "ready" | "blocked";
+    coveredDomains?: string[];
+    missingInputs?: string[];
+    validationMessages?: string[];
+    assumptions?: HldAssumption[];
+    sourceArtifactIds?: string[];
+  };
+}
+
+/** Loaded HLD readiness snapshot detail. */
+interface HldReadinessSnapshotDetail {
+  artifact: {
+    id: string;
+    status: ProjectArtifactStatus;
+    version: number;
+    sourceArtifactIds?: string[];
+  };
+  snapshot: NonNullable<HldReadinessSnapshotDetailResponse["snapshot"]>;
+}
+
 /**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
@@ -405,7 +487,8 @@ type DrawerKind =
   | "delta"
   | "evidence-package"
   | "requirements"
-  | "compliance";
+  | "compliance"
+  | "hld-readiness";
 
 interface DrawerState {
   kind: DrawerKind;
@@ -472,6 +555,12 @@ const PACKAGE_REVIEW_ERROR = "Unable to review final evidence package.";
 
 /** Exact UI copy required for the RFP BoQ readiness failure state. */
 const BOQ_WORKSPACE_ERROR = "Unable to load RFP BoQ readiness.";
+
+/** Exact UI copy required for the HLD readiness snapshot list failure state. */
+const HLD_READINESS_LIST_ERROR = "Unable to load HLD readiness snapshots.";
+
+/** Exact UI copy required for the HLD readiness snapshot detail failure state. */
+const HLD_READINESS_DETAIL_ERROR = "Unable to load HLD readiness snapshot detail.";
 
 /** Exact UI copy required for the no-BoQ service-only exception request states. */
 const NO_BOQ_EXCEPTION_SUCCESS =
@@ -625,6 +714,10 @@ function displayId(value: string): string {
 
 function statusLabel(status: ProjectArtifactStatus): string {
   return status.replaceAll("_", " ");
+}
+
+function humanizeToken(token: string): string {
+  return token.replaceAll("_", " ");
 }
 
 function statusBadgeClass(status: ProjectArtifactStatus): string {
@@ -2464,6 +2557,15 @@ export default function ProjectRfpEvidencePage() {
   const [noBoqExceptionReviewError, setNoBoqExceptionReviewError] = useState<string | null>(null);
   const [noBoqExceptionReviewSuccess, setNoBoqExceptionReviewSuccess] = useState<string | null>(null);
 
+  // HLD readiness snapshot list and detail state (read-only, no generation).
+  const [hldReadinessList, setHldReadinessList] = useState<HldReadinessListResponse | null>(null);
+  const [hldReadinessListLoading, setHldReadinessListLoading] = useState(true);
+  const [hldReadinessListError, setHldReadinessListError] = useState<string | null>(null);
+
+  const [hldReadinessDetail, setHldReadinessDetail] = useState<HldReadinessSnapshotDetail | null>(null);
+  const [hldReadinessDetailLoading, setHldReadinessDetailLoading] = useState(false);
+  const [hldReadinessDetailError, setHldReadinessDetailError] = useState<string | null>(null);
+
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -2669,6 +2771,60 @@ export default function ProjectRfpEvidencePage() {
   useEffect(() => {
     void loadBoqWorkspace();
   }, [loadBoqWorkspace]);
+
+  const loadHldReadinessList = useCallback(async (): Promise<void> => {
+    setHldReadinessListLoading(true);
+    setHldReadinessListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-readiness-snapshot`);
+      const body = (await res.json().catch(() => null)) as HldReadinessListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts) || body.readiness === undefined) {
+        setHldReadinessList(null);
+        setHldReadinessListError(HLD_READINESS_LIST_ERROR);
+        return;
+      }
+      setHldReadinessList(body);
+    } catch {
+      setHldReadinessList(null);
+      setHldReadinessListError(HLD_READINESS_LIST_ERROR);
+    } finally {
+      setHldReadinessListLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldReadinessList();
+  }, [loadHldReadinessList]);
+
+  // HLD readiness snapshot detail is fetched only on an explicit Inspect click.
+  const loadHldReadinessDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setHldReadinessDetail(null);
+      setHldReadinessDetailError(null);
+      setHldReadinessDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-readiness-snapshot`
+        );
+        const body = (await res.json().catch(() => null)) as HldReadinessSnapshotDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.snapshot === undefined
+        ) {
+          setHldReadinessDetailError(HLD_READINESS_DETAIL_ERROR);
+          return;
+        }
+        setHldReadinessDetail({ artifact: body.artifact, snapshot: body.snapshot });
+      } catch {
+        setHldReadinessDetailError(HLD_READINESS_DETAIL_ERROR);
+      } finally {
+        setHldReadinessDetailLoading(false);
+      }
+    },
+    [id]
+  );
 
   // Final evidence content is fetched only here, on an explicit Inspect click.
   const loadPackageDetail = useCallback(
@@ -3366,11 +3522,13 @@ export default function ProjectRfpEvidencePage() {
     void loadPackageList();
     void loadBaselineList();
     void loadComplianceList();
+    void loadHldReadinessList();
   }, [
     loadBaselineList,
     loadBoqWorkspace,
     loadComplianceList,
     loadDeltaList,
+    loadHldReadinessList,
     loadList,
     loadPackageList,
   ]);
@@ -3778,6 +3936,11 @@ export default function ProjectRfpEvidencePage() {
     void loadComplianceDetail(artifactId);
   }
 
+  function openHldReadinessDrawer(artifactId: string): void {
+    setDrawer({ kind: "hld-readiness", activeId: artifactId });
+    void loadHldReadinessDetail(artifactId);
+  }
+
   function drawerIds(): string[] {
     if (drawer === null) return [];
     if (drawer.kind === "evidence") return data?.evidence.map((item) => item.id) ?? [];
@@ -3790,6 +3953,9 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "requirements") {
       return baselineList?.artifacts.map((item) => item.id) ?? [];
     }
+    if (drawer.kind === "hld-readiness") {
+      return hldReadinessList?.artifacts.map((item) => item.id) ?? [];
+    }
     return complianceList?.artifacts.map((item) => item.id) ?? [];
   }
 
@@ -3798,6 +3964,7 @@ export default function ProjectRfpEvidencePage() {
     else if (kind === "delta") openDeltaDrawer(activeId);
     else if (kind === "evidence-package") openPackageDrawer(activeId);
     else if (kind === "requirements") openBaselineDrawer(activeId);
+    else if (kind === "hld-readiness") openHldReadinessDrawer(activeId);
     else openComplianceDrawer(activeId);
   }
 
@@ -4696,12 +4863,101 @@ export default function ProjectRfpEvidencePage() {
     );
   }
 
+  function renderHldReadinessDrawerContent(): ReactNode {
+    if (hldReadinessDetail === null) return null;
+    const { artifact, snapshot } = hldReadinessDetail;
+    const coveredDomains = snapshot.coveredDomains ?? [];
+    const missingInputs = snapshot.missingInputs ?? [];
+    const validationMessages = snapshot.validationMessages ?? [];
+    const assumptions = snapshot.assumptions ?? [];
+    const sourceArtifactIds = artifact.sourceArtifactIds ?? snapshot.sourceArtifactIds ?? [];
+    return (
+      <div data-testid="hld-readiness-drawer-content" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={artifact.status} />
+            <span className="text-xs text-text-secondary">Version {artifact.version}</span>
+            {snapshot.readinessStatus !== undefined && (
+              <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${snapshot.readinessStatus === "ready" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-200"}`}>
+                {snapshot.readinessStatus === "ready" ? "HLD ready" : "HLD blocked"}
+              </span>
+            )}
+          </div>
+          {sourceArtifactIds.length > 0 && (
+            <p className="mt-2 text-xs text-text-secondary">
+              Source authority records: {sourceArtifactIds.length}
+            </p>
+          )}
+        </div>
+        {coveredDomains.length > 0 && (
+          <div data-testid="hld-readiness-drawer-covered-domains" className={SUBTLE_CARD}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+              Covered domains ({coveredDomains.length})
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {coveredDomains.map((domain, domainIndex) => (
+                <li key={domainIndex} className="text-xs text-text-primary">{humanizeToken(domain)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {validationMessages.length > 0 && (
+          <div data-testid="hld-readiness-drawer-validation" className={SUBTLE_CARD}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+              Validation messages ({validationMessages.length})
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {validationMessages.map((msg, msgIndex) => (
+                <li key={msgIndex} className="text-xs text-text-primary">{msg}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {missingInputs.length > 0 && (
+          <div data-testid="hld-readiness-drawer-missing" className={SUBTLE_CARD}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+              Missing inputs ({missingInputs.length})
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {missingInputs.map((input, inputIndex) => (
+                <li key={inputIndex} className="text-xs text-text-primary">{humanizeToken(input)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {assumptions.length > 0 && (
+          <div data-testid="hld-readiness-drawer-assumptions" className={SUBTLE_CARD}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+              Assumptions ({assumptions.length})
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {assumptions.map((assumption, assumptionIndex) => (
+                <li key={assumptionIndex} className="text-xs text-text-secondary">
+                  {assumption.label || humanizeToken(assumption.fieldId)}
+                  {assumption.note !== undefined ? ` - ${assumption.note}` : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {sourceArtifactIds.length > 0 && (
+          <TechnicalDetails testId="hld-readiness-drawer-source-ids" label="Technical details (source artifact IDs)">
+            {sourceArtifactIds.map((srcId, srcIndex) => (
+              <p key={srcIndex}>Source {srcIndex + 1}: {srcId}</p>
+            ))}
+          </TechnicalDetails>
+        )}
+      </div>
+    );
+  }
+
   function renderDrawerContent(): ReactNode {
     if (drawer === null) return null;
     if (drawer.kind === "evidence") return renderEvidenceDrawerContent();
     if (drawer.kind === "delta") return renderDeltaDrawerContent();
     if (drawer.kind === "evidence-package") return renderPackageDrawerContent();
     if (drawer.kind === "requirements") return renderBaselineDrawerContent();
+    if (drawer.kind === "hld-readiness") return renderHldReadinessDrawerContent();
     return renderComplianceDrawerContent();
   }
 
@@ -4714,7 +4970,9 @@ export default function ProjectRfpEvidencePage() {
           ? "Compiled evidence package"
           : drawer?.kind === "requirements"
             ? "Requirements baseline"
-            : "Compliance matrix";
+            : drawer?.kind === "hld-readiness"
+              ? "HLD readiness snapshot"
+              : "Compliance matrix";
   const drawerLoading =
     drawer?.kind === "evidence"
       ? detailLoading
@@ -4724,7 +4982,9 @@ export default function ProjectRfpEvidencePage() {
           ? packageDetailLoading
           : drawer?.kind === "requirements"
             ? baselineDetailLoading
-            : complianceDetailLoading;
+            : drawer?.kind === "hld-readiness"
+              ? hldReadinessDetailLoading
+              : complianceDetailLoading;
   const drawerError =
     drawer?.kind === "evidence"
       ? detailError
@@ -4734,7 +4994,9 @@ export default function ProjectRfpEvidencePage() {
           ? packageDetailError
           : drawer?.kind === "requirements"
             ? baselineDetailError
-            : complianceDetailError;
+            : drawer?.kind === "hld-readiness"
+              ? hldReadinessDetailError
+              : complianceDetailError;
 
   return (
     <main className="min-h-screen bg-bg-primary px-4 py-6 sm:px-6 lg:px-8">
@@ -5573,6 +5835,144 @@ export default function ProjectRfpEvidencePage() {
                 </div>
               )}
             </>
+          )}
+        </section>
+
+        <section data-testid="hld-readiness-section" className={CARD}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-text-primary">
+                HLD Readiness
+              </h2>
+              <p className="mt-1 text-sm text-text-secondary">
+                Read-only operator surface for High-Level Design readiness. HLD generation is not yet available in Stage 6.
+              </p>
+            </div>
+            <button
+              type="button"
+              data-testid="hld-generation-disabled"
+              disabled
+              className={PLAIN_BTN}
+              title="HLD generation is not available in this stage."
+            >
+              HLD generation (future stage)
+            </button>
+          </div>
+          {hldReadinessListError && (
+            <div data-testid="hld-readiness-error" className={`mt-3 ${ERROR_BOX}`}>
+              {hldReadinessListError}
+            </div>
+          )}
+          {hldReadinessListLoading && (
+            <p className="mt-3 text-sm text-text-tertiary">Loading HLD readiness...</p>
+          )}
+          {hldReadinessList !== null && (
+            <div className="mt-3 space-y-3">
+              <div className="grid gap-2 md:grid-cols-2">
+                <div>
+                  <p
+                    data-testid="hld-readiness-status"
+                    className={MUTED_TEXT}
+                  >
+                    Readiness:{" "}
+                    <span className={`font-medium ${hldReadinessList.readiness.status === "ready" ? "text-emerald-300" : "text-amber-200"}`}>
+                      {hldReadinessList.readiness.status === "ready" ? "Ready for HLD" : "Blocked"}
+                    </span>
+                  </p>
+                  <p
+                    data-testid="hld-readiness-next-action"
+                    className={`mt-1 ${MUTED_TEXT}`}
+                  >
+                    {hldReadinessList.readiness.status === "ready"
+                      ? "All required inputs are present. HLD generation will be available in a future stage."
+                      : "Resolve the missing inputs below before HLD can start."}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-text-tertiary">
+                    Covered domains: {hldReadinessList.readiness.coveredDomains.length}
+                    {(hldReadinessList.readiness.missingKnowledgePackDomains ?? []).length > 0
+                      ? `, missing knowledge pack: ${(hldReadinessList.readiness.missingKnowledgePackDomains ?? []).join(", ")}`
+                      : ""}
+                    {(hldReadinessList.readiness.excludedDomains ?? []).length > 0
+                      ? `, excluded: ${(hldReadinessList.readiness.excludedDomains ?? []).join(", ")}`
+                      : ""}
+                  </p>
+                </div>
+              </div>
+              {(hldReadinessList.readiness.missingInputs ?? []).length > 0 && (
+                <div
+                  data-testid="hld-readiness-missing-inputs"
+                  className={SUBTLE_CARD}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                    Missing inputs ({(hldReadinessList.readiness.missingInputs ?? []).length})
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {(hldReadinessList.readiness.missingInputs ?? []).map(
+                      (input, inputIndex) => (
+                        <li key={inputIndex} className="text-xs text-text-primary">
+                          {humanizeToken(input)}
+                        </li>
+                      )
+                    )}
+                  </ul>
+                </div>
+              )}
+              {hldReadinessList.readiness.coveredDomains.length > 0 && (
+                <div className={SUBTLE_CARD}>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                    Covered domains
+                  </p>
+                  <p className="mt-1 text-xs text-text-secondary">
+                    {hldReadinessList.readiness.coveredDomains.map(humanizeToken).join(", ")}
+                  </p>
+                </div>
+              )}
+              <div className="grid gap-2 md:grid-cols-2">
+                {(() => {
+                  const current = hldReadinessList.artifacts
+                    .filter((a) => a.status !== "approved")
+                    .sort((a, b) => b.version - a.version)[0];
+                  const approved = hldReadinessList.artifacts
+                    .filter((a) => a.status === "approved")
+                    .sort((a, b) => b.version - a.version)[0];
+                  const renderHldCard = (
+                    label: string,
+                    item: HldReadinessListItem | undefined,
+                    testId: string
+                  ) => (
+                    <div className={SUBTLE_CARD}>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                        {label}
+                      </p>
+                      {item === undefined ? (
+                        <p className="mt-1 text-xs text-text-tertiary">None</p>
+                      ) : (
+                        <div className="mt-1 flex items-center gap-2">
+                          <StatusBadge status={item.status} />
+                          <span className="text-xs text-text-secondary">v{item.version}</span>
+                          <button
+                            type="button"
+                            data-testid={testId}
+                            onClick={() => openHldReadinessDrawer(item.id)}
+                            className={PLAIN_BTN}
+                          >
+                            Inspect
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                  return (
+                    <>
+                      {renderHldCard("Current HLD readiness snapshot", current, "hld-readiness-snapshot-inspect-current")}
+                      {renderHldCard("Approved HLD readiness snapshot", approved, "hld-readiness-snapshot-inspect-approved")}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
           )}
         </section>
       </div>
