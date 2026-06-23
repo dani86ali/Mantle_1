@@ -8,6 +8,7 @@ import {
   materializeProjectArtifactVersion,
   type ExistingProjectArtifactVersion,
 } from "@/lib/projects/artifacts";
+import * as artifactsModule from "@/lib/projects/artifacts";
 
 const PROJECT = "proj-1";
 const OTHER_PROJECT = "proj-2";
@@ -50,6 +51,19 @@ describe("getArtifactTypesForStage", () => {
       "configuration_expansion",
     ]);
   });
+
+  it("returns the Stage 6 HLD readiness spine for hld_design_delta_review", () => {
+    // The legacy delta plus the Stage 6 HLD intake/readiness/model/diagram/
+    // document contracts all flow through the existing HLD stage metadata.
+    expect(getArtifactTypesForStage("hld_design_delta_review")).toEqual([
+      "hld_design_delta",
+      "hld_intake",
+      "hld_readiness_snapshot",
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
+    ]);
+  });
 });
 
 describe("isArtifactTypeAllowedForStage", () => {
@@ -68,6 +82,21 @@ describe("isArtifactTypeAllowedForStage", () => {
     ).toBe(true);
   });
 
+  it("allows every Stage 6 HLD artifact under hld_design_delta_review", () => {
+    for (const type of [
+      "hld_design_delta",
+      "hld_intake",
+      "hld_readiness_snapshot",
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
+    ] as const) {
+      expect(isArtifactTypeAllowedForStage("hld_design_delta_review", type)).toBe(
+        true
+      );
+    }
+  });
+
   it("rejects invalid stage/type pairs", () => {
     expect(
       isArtifactTypeAllowedForStage("intake_package_review", "priced_boq")
@@ -81,6 +110,16 @@ describe("isArtifactTypeAllowedForStage", () => {
     ).toBe(false);
     expect(
       isArtifactTypeAllowedForStage("boq_format_validation", "extraction_delta")
+    ).toBe(false);
+    // The Stage 6 HLD artifacts belong only to the HLD stage, nowhere else.
+    expect(
+      isArtifactTypeAllowedForStage("boq_pricing_review", "hld_readiness_snapshot")
+    ).toBe(false);
+    expect(
+      isArtifactTypeAllowedForStage("intake_package_review", "hld_document")
+    ).toBe(false);
+    expect(
+      isArtifactTypeAllowedForStage("proposal_review", "hld_design_model")
     ).toBe(false);
   });
 });
@@ -185,12 +224,46 @@ describe("materializeProjectArtifactVersion", () => {
     });
   });
 
+  it("materializes a Stage 6 hld_readiness_snapshot at hld_design_delta_review", () => {
+    // Contract-level: a versioned row keyed to approved upstream artifacts. This
+    // does not create snapshot content - payload stays whatever the caller
+    // passes (here empty) and nothing is generated.
+    const row = materializeProjectArtifactVersion({
+      projectId: PROJECT,
+      tenantId: TENANT,
+      stageId: "hld_design_delta_review",
+      type: "hld_readiness_snapshot",
+      status: "needs_review",
+      sourceArtifactIds: [
+        "art-requirements-baseline-1",
+        "art-compliance-matrix-1",
+        "art-configuration-expansion-1",
+        "art-hld-intake-1",
+      ],
+    });
+    expect(row).toMatchObject({
+      stageId: "hld_design_delta_review",
+      type: "hld_readiness_snapshot",
+      status: "needs_review",
+      version: 1,
+      payload: {},
+    });
+  });
+
   it("rejects disallowed stage/type combinations", () => {
     expect(() =>
       materializeProjectArtifactVersion({
         ...base,
         stageId: "intake_package_review",
         type: "priced_boq",
+      })
+    ).toThrow(/not allowed for stage/);
+    // A Stage 6 HLD artifact cannot be materialized outside the HLD stage.
+    expect(() =>
+      materializeProjectArtifactVersion({
+        ...base,
+        stageId: "boq_pricing_review",
+        type: "hld_document",
       })
     ).toThrow(/not allowed for stage/);
   });
@@ -258,6 +331,49 @@ describe("isArtifactVersionFrozen", () => {
       "not_applicable",
     ] as const) {
       expect(isArtifactVersionFrozen({ status })).toBe(false);
+    }
+  });
+});
+
+describe("Stage 6 is contract-only: no HLD generation behavior", () => {
+  it("exposes only the pure contract/versioning helpers", () => {
+    // Runtime export surface is pinned: this slice adds artifact TYPES, not any
+    // HLD model/diagram/document builder. (Checks export names, not source text,
+    // so it does not false-match on doc comments.)
+    expect(Object.keys(artifactsModule).sort()).toEqual(
+      [
+        "getArtifactTypesForStage",
+        "getLatestArtifactVersion",
+        "getNextArtifactVersion",
+        "isArtifactTypeAllowedForStage",
+        "isArtifactVersionFrozen",
+        "materializeProjectArtifactVersion",
+      ].sort()
+    );
+    for (const name of Object.keys(artifactsModule)) {
+      expect(name).not.toMatch(
+        /generate|build|render|draw|diagram|document|model/i
+      );
+    }
+  });
+
+  it("materializing a future HLD artifact produces an empty contract row, not content", () => {
+    for (const type of [
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
+    ] as const) {
+      const row = materializeProjectArtifactVersion({
+        projectId: PROJECT,
+        tenantId: TENANT,
+        stageId: "hld_design_delta_review",
+        type,
+      });
+      // No generated payload, no file produced - just a versioned contract row.
+      expect(row.payload).toEqual({});
+      expect("filePath" in row).toBe(false);
+      expect(row.version).toBe(1);
+      expect(row.type).toBe(type);
     }
   });
 });

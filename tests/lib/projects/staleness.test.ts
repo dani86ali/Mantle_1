@@ -7,7 +7,31 @@ import {
   planStaleArtifactUpdates,
   type ProjectArtifactForStaleness,
 } from "@/lib/projects/staleness";
-import type { ProjectArtifactStatus } from "@/types/project";
+import type {
+  ProjectArtifactStatus,
+  ProjectArtifactType,
+} from "@/types/project";
+
+/** Canonical artifact type set, for graph completeness/determinism checks. */
+const ALL_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
+  "input_package",
+  "extraction_delta",
+  "evidence_package",
+  "normalized_boq",
+  "sku_resolution",
+  "configuration_expansion",
+  "priced_boq",
+  "requirements_baseline",
+  "compliance_matrix",
+  "hld_design_delta",
+  "hld_intake",
+  "hld_readiness_snapshot",
+  "hld_design_model",
+  "hld_diagram",
+  "hld_document",
+  "technical_proposal",
+  "export_package",
+];
 
 const PROJECT = "proj-1";
 const OTHER_PROJECT = "proj-2";
@@ -41,8 +65,10 @@ describe("getDirectDownstreamArtifactTypes", () => {
     expect(getDirectDownstreamArtifactTypes("sku_resolution")).toEqual([
       "configuration_expansion",
     ]);
+    // Configured BoQ feeds pricing and, for Stage 6, the HLD readiness snapshot.
     expect(getDirectDownstreamArtifactTypes("configuration_expansion")).toEqual([
       "priced_boq",
+      "hld_readiness_snapshot",
     ]);
     expect(getDirectDownstreamArtifactTypes("technical_proposal")).toEqual([
       "export_package",
@@ -56,15 +82,43 @@ describe("getDirectDownstreamArtifactTypes", () => {
     expect(getDirectDownstreamArtifactTypes("evidence_package")).toEqual([
       "requirements_baseline",
     ]);
-    // requirements_baseline still leads to the compliance matrix.
+    // requirements_baseline leads to the compliance matrix and, for Stage 6,
+    // the HLD readiness snapshot.
     expect(getDirectDownstreamArtifactTypes("requirements_baseline")).toEqual([
       "compliance_matrix",
+      "hld_readiness_snapshot",
     ]);
   });
 
-  it("export_package has no downstream artifact types", () => {
+  it("wires the Stage 6 HLD readiness spine immediate children", () => {
+    // requirements/compliance/config feed the snapshot (added above); intake is
+    // a separate input root that also feeds it.
+    expect(getDirectDownstreamArtifactTypes("compliance_matrix")).toEqual([
+      "hld_design_delta",
+      "technical_proposal",
+      "hld_readiness_snapshot",
+    ]);
+    expect(getDirectDownstreamArtifactTypes("hld_intake")).toEqual([
+      "hld_readiness_snapshot",
+    ]);
+    expect(getDirectDownstreamArtifactTypes("hld_readiness_snapshot")).toEqual([
+      "hld_design_model",
+    ]);
+    expect(getDirectDownstreamArtifactTypes("hld_design_model")).toEqual([
+      "hld_diagram",
+      "hld_document",
+    ]);
+    // An approved HLD document can feed the technical proposal.
+    expect(getDirectDownstreamArtifactTypes("hld_document")).toEqual([
+      "technical_proposal",
+    ]);
+  });
+
+  it("export_package and hld_diagram have no downstream artifact types", () => {
     expect(getDirectDownstreamArtifactTypes("export_package")).toEqual([]);
     expect(getTransitiveDownstreamArtifactTypes("export_package")).toEqual([]);
+    expect(getDirectDownstreamArtifactTypes("hld_diagram")).toEqual([]);
+    expect(getTransitiveDownstreamArtifactTypes("hld_diagram")).toEqual([]);
   });
 });
 
@@ -72,15 +126,19 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
   it("returns unique downstream types in deterministic BFS order", () => {
     // Locked to breadth-first discovery order, not canonical-union order.
     // normalized_boq -> {sku_resolution, hld_design_delta}; sku_resolution ->
-    // configuration_expansion -> priced_boq, so configuration_expansion is
-    // discovered before priced_boq.
+    // configuration_expansion -> {priced_boq, hld_readiness_snapshot}, and the
+    // HLD readiness spine (model/diagram/document) trails the BoQ chain.
     expect(getTransitiveDownstreamArtifactTypes("normalized_boq")).toEqual([
       "sku_resolution",
       "hld_design_delta",
       "configuration_expansion",
       "technical_proposal",
       "priced_boq",
+      "hld_readiness_snapshot",
       "export_package",
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
     ]);
   });
 
@@ -88,8 +146,12 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
     expect(getTransitiveDownstreamArtifactTypes("sku_resolution")).toEqual([
       "configuration_expansion",
       "priced_boq",
+      "hld_readiness_snapshot",
       "technical_proposal",
       "export_package",
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
     ]);
   });
 
@@ -99,6 +161,11 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
     expect(downstream).toContain("evidence_package");
     expect(downstream).toContain("requirements_baseline");
     expect(downstream).toContain("compliance_matrix");
+    // The configured BoQ pulls the HLD readiness spine in too.
+    expect(downstream).toContain("hld_readiness_snapshot");
+    expect(downstream).toContain("hld_document");
+    // hld_intake is a separate input root, never downstream of input_package.
+    expect(downstream).not.toContain("hld_intake");
     // The full deterministic BFS discovery order from input_package.
     expect(downstream).toEqual([
       "normalized_boq",
@@ -110,24 +177,68 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "technical_proposal",
       "requirements_baseline",
       "priced_boq",
+      "hld_readiness_snapshot",
       "export_package",
       "compliance_matrix",
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
     ]);
   });
 
-  it("extraction_delta and evidence_package flow downstream into requirements and compliance", () => {
+  it("extraction_delta and evidence_package flow downstream into requirements, compliance, and the HLD spine", () => {
     expect(getTransitiveDownstreamArtifactTypes("extraction_delta")).toEqual([
       "evidence_package",
       "requirements_baseline",
       "compliance_matrix",
+      "hld_readiness_snapshot",
       "hld_design_delta",
       "technical_proposal",
+      "hld_design_model",
       "export_package",
+      "hld_diagram",
+      "hld_document",
     ]);
     expect(getTransitiveDownstreamArtifactTypes("evidence_package")).toEqual([
       "requirements_baseline",
       "compliance_matrix",
+      "hld_readiness_snapshot",
       "hld_design_delta",
+      "technical_proposal",
+      "hld_design_model",
+      "export_package",
+      "hld_diagram",
+      "hld_document",
+    ]);
+  });
+
+  it("walks the Stage 6 HLD readiness spine deterministically", () => {
+    // intake feeds the snapshot, which feeds model -> {diagram, document},
+    // and the document feeds the proposal -> export.
+    expect(getTransitiveDownstreamArtifactTypes("hld_intake")).toEqual([
+      "hld_readiness_snapshot",
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(
+      getTransitiveDownstreamArtifactTypes("hld_readiness_snapshot")
+    ).toEqual([
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(getTransitiveDownstreamArtifactTypes("hld_design_model")).toEqual([
+      "hld_diagram",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(getTransitiveDownstreamArtifactTypes("hld_document")).toEqual([
       "technical_proposal",
       "export_package",
     ]);
@@ -137,6 +248,21 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
     expect(getTransitiveDownstreamArtifactTypes("technical_proposal")).toEqual([
       "export_package",
     ]);
+  });
+
+  it("is type-complete and deterministic for every artifact type", () => {
+    for (const type of ALL_ARTIFACT_TYPES) {
+      const first = getTransitiveDownstreamArtifactTypes(type);
+      const second = getTransitiveDownstreamArtifactTypes(type);
+      // Deterministic: identical across calls.
+      expect(second).toEqual(first);
+      // No duplicates, no self-reference, only valid artifact types.
+      expect(new Set(first).size).toBe(first.length);
+      expect(first).not.toContain(type);
+      for (const downstream of first) {
+        expect(ALL_ARTIFACT_TYPES).toContain(downstream);
+      }
+    }
   });
 });
 
@@ -170,6 +296,32 @@ describe("isArtifactTypeDownstreamOf", () => {
     ).toBe(true);
   });
 
+  it("is true across the Stage 6 HLD readiness spine", () => {
+    // Every approved design input is upstream of the readiness snapshot.
+    for (const upstream of [
+      "requirements_baseline",
+      "compliance_matrix",
+      "configuration_expansion",
+      "hld_intake",
+    ] as const) {
+      expect(
+        isArtifactTypeDownstreamOf(upstream, "hld_readiness_snapshot")
+      ).toBe(true);
+    }
+    expect(
+      isArtifactTypeDownstreamOf("hld_readiness_snapshot", "hld_design_model")
+    ).toBe(true);
+    expect(
+      isArtifactTypeDownstreamOf("hld_design_model", "hld_document")
+    ).toBe(true);
+    expect(
+      isArtifactTypeDownstreamOf("hld_document", "technical_proposal")
+    ).toBe(true);
+    expect(isArtifactTypeDownstreamOf("hld_intake", "export_package")).toBe(
+      true
+    );
+  });
+
   it("is false for non-downstream types (including self and upstream)", () => {
     expect(isArtifactTypeDownstreamOf("priced_boq", "normalized_boq")).toBe(
       false
@@ -183,6 +335,22 @@ describe("isArtifactTypeDownstreamOf", () => {
     expect(isArtifactTypeDownstreamOf("export_package", "priced_boq")).toBe(
       false
     );
+    // The legacy delta and the Stage 6 model are separate lanes; neither is
+    // downstream of the other, and the readiness snapshot is not downstream of
+    // pricing.
+    expect(
+      isArtifactTypeDownstreamOf("hld_design_model", "hld_design_delta")
+    ).toBe(false);
+    expect(
+      isArtifactTypeDownstreamOf("hld_readiness_snapshot", "hld_design_delta")
+    ).toBe(false);
+    expect(
+      isArtifactTypeDownstreamOf("priced_boq", "hld_readiness_snapshot")
+    ).toBe(false);
+    // hld_intake is an input root: nothing upstream feeds it.
+    expect(
+      isArtifactTypeDownstreamOf("requirements_baseline", "hld_intake")
+    ).toBe(false);
   });
 });
 
@@ -465,6 +633,122 @@ describe("planStaleArtifactUpdates", () => {
       ],
     });
     expect(plan.map((u) => u.type)).toEqual(["export_package"]);
+  });
+
+  it("a change to configuration_expansion now also marks the HLD readiness chain stale", () => {
+    const changed = artifact({
+      id: "cfg-1",
+      type: "configuration_expansion",
+      version: 1,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "pbq", type: "priced_boq", version: 1 }),
+        artifact({ id: "hrs", type: "hld_readiness_snapshot", version: 1 }),
+        artifact({ id: "hdm", type: "hld_design_model", version: 1 }),
+        artifact({ id: "hdg", type: "hld_diagram", version: 1 }),
+        artifact({ id: "hdoc", type: "hld_document", version: 1 }),
+        artifact({ id: "tp", type: "technical_proposal", version: 1 }),
+        artifact({ id: "exp", type: "export_package", version: 1 }),
+        // sku_resolution is upstream of configuration_expansion; never planned.
+        artifact({ id: "sku", type: "sku_resolution", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "priced_boq",
+      "hld_readiness_snapshot",
+      "technical_proposal",
+      "export_package",
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
+    ]);
+    expect(plan.every((u) => u.nextStatus === "stale")).toBe(true);
+  });
+
+  it("a change to hld_intake marks the whole HLD readiness chain stale", () => {
+    const changed = artifact({ id: "hint-1", type: "hld_intake", version: 1 });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hrs", type: "hld_readiness_snapshot", version: 1 }),
+        artifact({ id: "hdm", type: "hld_design_model", version: 1 }),
+        artifact({ id: "hdg", type: "hld_diagram", version: 1 }),
+        artifact({ id: "hdoc", type: "hld_document", version: 1 }),
+        artifact({ id: "tp", type: "technical_proposal", version: 1 }),
+        artifact({ id: "exp", type: "export_package", version: 1 }),
+        // requirements_baseline is a sibling input, not downstream of intake.
+        artifact({ id: "req", type: "requirements_baseline", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "hld_readiness_snapshot",
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(plan.map((u) => u.type)).not.toContain("requirements_baseline");
+  });
+
+  it("a change to hld_readiness_snapshot marks the HLD model/diagram/document and proposal chain stale", () => {
+    const changed = artifact({
+      id: "hrs-1",
+      type: "hld_readiness_snapshot",
+      version: 1,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hdm", type: "hld_design_model", version: 1 }),
+        artifact({ id: "hdg", type: "hld_diagram", version: 1 }),
+        artifact({ id: "hdoc", type: "hld_document", version: 1 }),
+        artifact({ id: "tp", type: "technical_proposal", version: 1 }),
+        artifact({ id: "exp", type: "export_package", version: 1 }),
+        // Upstream inputs must not be planned.
+        artifact({ id: "cfg", type: "configuration_expansion", version: 1 }),
+        artifact({ id: "hint", type: "hld_intake", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+  });
+
+  it("a change to hld_design_model marks diagram/document downstream but not the snapshot", () => {
+    const changed = artifact({
+      id: "hdm-1",
+      type: "hld_design_model",
+      version: 1,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hdg", type: "hld_diagram", version: 1 }),
+        artifact({ id: "hdoc", type: "hld_document", version: 1 }),
+        artifact({ id: "tp", type: "technical_proposal", version: 1 }),
+        artifact({ id: "exp", type: "export_package", version: 1 }),
+        // hld_readiness_snapshot is upstream of the model; never planned.
+        artifact({ id: "hrs", type: "hld_readiness_snapshot", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "hld_diagram",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(plan.map((u) => u.type)).not.toContain("hld_readiness_snapshot");
   });
 
   it("a change with no downstream artifacts returns an empty plan", () => {

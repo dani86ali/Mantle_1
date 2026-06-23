@@ -24,12 +24,20 @@ import type {
  * DIRECTLY downstream of it (edges point upstream -> downstream). Readonly so
  * the graph cannot be mutated through it.
  *
- * Two chains share input_package as their root:
+ * Chains rooted at input_package:
  * - Quick BoM: input_package -> normalized_boq -> sku_resolution ->
  *   configuration_expansion -> priced_boq -> export_package.
  * - RFP evidence: input_package -> extraction_delta -> evidence_package ->
  *   requirements_baseline -> compliance_matrix -> ... Requirements depend on
  *   the human-approved evidence_package, never directly on raw extraction.
+ *
+ * Stage 6 HLD readiness spine: the approved design inputs
+ * (requirements_baseline, compliance_matrix, configuration_expansion) plus the
+ * approved engineer design intake (hld_intake, a separate input root) feed
+ * hld_readiness_snapshot, which feeds the future hld_design_model, which feeds
+ * the future hld_diagram and hld_document; an approved hld_document can feed
+ * technical_proposal. The model/diagram/document nodes are future contracts -
+ * only their staleness edges are declared here, no generation behavior.
  */
 const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   Record<ProjectArtifactType, readonly ProjectArtifactType[]>
@@ -39,11 +47,20 @@ const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   evidence_package: ["requirements_baseline"],
   normalized_boq: ["sku_resolution", "hld_design_delta"],
   sku_resolution: ["configuration_expansion"],
-  configuration_expansion: ["priced_boq"],
-  requirements_baseline: ["compliance_matrix"],
-  compliance_matrix: ["hld_design_delta", "technical_proposal"],
+  configuration_expansion: ["priced_boq", "hld_readiness_snapshot"],
+  requirements_baseline: ["compliance_matrix", "hld_readiness_snapshot"],
+  compliance_matrix: [
+    "hld_design_delta",
+    "technical_proposal",
+    "hld_readiness_snapshot",
+  ],
   hld_design_delta: ["technical_proposal"],
   priced_boq: ["technical_proposal", "export_package"],
+  hld_intake: ["hld_readiness_snapshot"],
+  hld_readiness_snapshot: ["hld_design_model"],
+  hld_design_model: ["hld_diagram", "hld_document"],
+  hld_diagram: [],
+  hld_document: ["technical_proposal"],
   technical_proposal: ["export_package"],
   export_package: [],
 };
