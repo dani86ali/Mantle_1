@@ -540,6 +540,81 @@ function complianceMatrixMixedDetailResponse(): Record<string, unknown> {
   };
 }
 
+// A high-row-count compliance matrix (120 rows) for smoke-testing that the
+// compact Stage 5 operator surface stays usable at scale: one compact table (not
+// a 120 row-card wall), working status filters / search / group-by, human source
+// labels, and raw ids confined to the selected detail/audit. Active rows cycle
+// through a spread of categories and every compliance status; every third row
+// cites a human source; rows 40/80/120 are removed with a removed reason.
+function complianceMatrixHighRowCountDetailResponse(): Record<string, unknown> {
+  const categories = [
+    "technical",
+    "legal/regulatory",
+    "safety",
+    "commercial",
+    "local-content",
+    "training",
+    "schedule",
+  ];
+  const statuses = [
+    "needs_review",
+    "compliant",
+    "partially_compliant",
+    "non_compliant",
+    "not_applicable",
+  ];
+  const textRef = (evidenceId: string) => ({
+    evidenceId,
+    sourceFileId: "file-rfp-1",
+    inputPackageArtifactId: INPUT_PACKAGE_ARTIFACT_ID,
+    evidenceKind: "rfp_document_text_chunk",
+    chunkIndex: 0,
+    chunkCount: 4,
+    charCount: 1810,
+  });
+  const removedIndexes = new Set([40, 80, 120]);
+  const rows = Array.from({ length: 120 }, (_, i) => {
+    const n = i + 1;
+    const padded = String(n).padStart(3, "0");
+    const cited = n % 3 === 0;
+    const base: Record<string, unknown> = {
+      id: `CM-${padded}`,
+      requirementId: `RFP-REQ-${padded}`,
+      requirementText: `Supplier shall satisfy operator requirement marker ${n}.`,
+      category: categories[i % categories.length],
+      priority: n % 3 === 0 ? "high" : n % 3 === 1 ? "medium" : "low",
+      sectionReference: `SEC-${n}`,
+      evidenceReferences: cited ? [textRef("ev-text-1")] : [],
+    };
+    if (removedIndexes.has(n)) {
+      return {
+        ...base,
+        complianceStatus: "not_applicable",
+        response: "Removed from scope by the engineer.",
+        rowReviewStatus: "removed",
+        removedReason: `Removed duplicate row ${n}.`,
+        evidenceReferences: [],
+      };
+    }
+    return {
+      ...base,
+      complianceStatus: statuses[i % statuses.length],
+      response: `Operator response for requirement ${n}.`,
+    };
+  });
+  return {
+    project: projectContext(),
+    artifact: artifact(COMPLIANCE_MATRIX_ARTIFACT_ID, "compliance_matrix", "needs_review", 1),
+    matrix: {
+      payloadKind: "rfp_compliance_matrix",
+      sourceRequirementsBaselineArtifactId: BASELINE_ARTIFACT_ID,
+      sourceEvidencePackageArtifactId: EVIDENCE_PACKAGE_APPROVED_ID,
+      sourceConfigurationExpansionArtifactId: CONFIG_EXPANSION_ARTIFACT_ID,
+      rows,
+    },
+  };
+}
+
 function deltaListItem(status = "needs_review"): Record<string, unknown> {
   return {
     ...artifact(EXTRACTION_DELTA_ARTIFACT_ID, "extraction_delta", status, 1),
@@ -1562,6 +1637,90 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(headings).toContain("Evidence reference");
     expect(headings).toContain("No cited source");
     expect(headings).not.toContain("SEC-1.1");
+  });
+
+  it("keeps a 120-row compliance matrix usable through the compact operator surface", async () => {
+    stubFetch(stage5ComplianceFetch(complianceMatrixHighRowCountDetailResponse()));
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("review-drawer");
+    await screen.findByTestId("cm-operator-panel");
+
+    // The full compact operator surface renders for a large matrix.
+    expect(screen.getByTestId("cm-next-action")).toBeInTheDocument();
+    expect(screen.getByTestId("cm-progress-counts")).toBeInTheDocument();
+    expect(screen.getByTestId("cm-status-filter")).toBeInTheDocument();
+    expect(screen.getByTestId("cm-search")).toBeInTheDocument();
+    expect(screen.getByTestId("cm-group-by")).toBeInTheDocument();
+    expect(screen.getByTestId("cm-selected-row-panel")).toBeInTheDocument();
+
+    // One compact table - not a wall of 120 row cards/lists.
+    expect(screen.getAllByTestId("cm-operator-table")).toHaveLength(1);
+
+    // Progress counts cover the whole matrix and call out the removed rows.
+    const counts = screen.getByTestId("cm-progress-counts");
+    expect(counts).toHaveTextContent("Total 120");
+    expect(counts).toHaveTextContent("Removed 3");
+
+    // The default active view shows many rows but never the removed ones.
+    const activeRows = screen.getAllByTestId("cm-operator-row");
+    expect(activeRows.length).toBeGreaterThan(50);
+    expect(activeRows).toHaveLength(117);
+    const activeText = activeRows.map((row) => row.textContent ?? "").join(" ");
+    expect(activeText).not.toContain("Removed duplicate row");
+    // Compact rows never leak raw CM ids or raw evidence ids as primary text.
+    expect(activeText).not.toContain("CM-117");
+    expect(activeText).not.toContain("RFP-REQ-117");
+    expect(activeText).not.toContain("ev-text-1");
+    expect(activeText).not.toContain("file-rfp-1");
+    expect(activeText).not.toContain(INPUT_PACKAGE_ARTIFACT_ID);
+
+    // Grouping by source surfaces human source group text, not machine ids.
+    fireEvent.change(screen.getByTestId("cm-group-by"), {
+      target: { value: "source" },
+    });
+    const groupText = screen
+      .getAllByTestId("cm-operator-group")
+      .map((group) => group.textContent ?? "")
+      .join(" ");
+    expect(groupText).toContain("Evidence reference");
+    expect(groupText).toContain("No cited source");
+    expect(groupText).not.toContain("ev-text-1");
+
+    // A removed row stays hidden under the default active filter and appears
+    // only after selecting the Removed filter.
+    const search = screen.getByTestId("cm-search");
+    fireEvent.change(search, { target: { value: "marker 40" } });
+    expect(screen.queryAllByTestId("cm-operator-row")).toHaveLength(0);
+    fireEvent.change(screen.getByTestId("cm-status-filter"), {
+      target: { value: "removed" },
+    });
+    const removedRows = screen.getAllByTestId("cm-operator-row");
+    expect(removedRows).toHaveLength(1);
+    expect(removedRows[0]).toHaveTextContent("SEC-40");
+
+    // Searching a unique high-index requirement narrows to one active operator
+    // row; selecting it shows the row detail with raw ids only in the audit.
+    fireEvent.change(screen.getByTestId("cm-status-filter"), {
+      target: { value: "active" },
+    });
+    fireEvent.change(search, { target: { value: "marker 117" } });
+    const matched = screen.getAllByTestId("cm-operator-row");
+    expect(matched).toHaveLength(1);
+    expect(matched[0]).toHaveTextContent("marker 117");
+
+    fireEvent.click(matched[0]);
+    const detailRow = within(
+      screen.getByTestId("cm-selected-row-panel")
+    ).getByTestId("cm-detail-row");
+    expect(detailRow).toHaveTextContent("marker 117");
+    const audit = within(detailRow).getByTestId("cm-detail-audit");
+    expect(audit).toHaveTextContent("CM-117");
+    expect(audit).toHaveTextContent("RFP-REQ-117");
   });
 
   it("posts a row edit carrying response, complianceStatus, and notes to the rows/review route and reloads list and detail for the returned new matrix version", async () => {
