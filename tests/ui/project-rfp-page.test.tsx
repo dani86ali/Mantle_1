@@ -444,6 +444,102 @@ function complianceMatrixRemovedRowDetailResponse(): Record<string, unknown> {
   };
 }
 
+// A compact mixed compliance matrix: five active rows covering every compliance
+// status (one each) across distinct categories, sections, and cited-source
+// shapes, plus one removed commercial row. Used to exercise the operator-panel
+// progress counts, status filters, search, and group-by surfaces in one fixture.
+function complianceMatrixMixedDetailResponse(): Record<string, unknown> {
+  const textRef = (evidenceId: string) => ({
+    evidenceId,
+    sourceFileId: "file-rfp-1",
+    inputPackageArtifactId: INPUT_PACKAGE_ARTIFACT_ID,
+    evidenceKind: "rfp_document_text_chunk",
+    chunkIndex: 0,
+    chunkCount: 4,
+    charCount: 1810,
+  });
+  return {
+    project: projectContext(),
+    artifact: artifact(COMPLIANCE_MATRIX_ARTIFACT_ID, "compliance_matrix", "needs_review", 1),
+    matrix: {
+      payloadKind: "rfp_compliance_matrix",
+      sourceRequirementsBaselineArtifactId: BASELINE_ARTIFACT_ID,
+      sourceEvidencePackageArtifactId: EVIDENCE_PACKAGE_APPROVED_ID,
+      sourceConfigurationExpansionArtifactId: CONFIG_EXPANSION_ARTIFACT_ID,
+      rows: [
+        {
+          id: "CM-101",
+          requirementId: "RFP-REQ-101",
+          requirementText: "Supplier shall provide redundant core switching.",
+          category: "technical",
+          priority: "high",
+          complianceStatus: "needs_review",
+          response: "Pending engineer review.",
+          sectionReference: "SEC-1.1",
+          evidenceReferences: [textRef("ev-text-1")],
+        },
+        {
+          id: "CM-102",
+          requirementId: "RFP-REQ-102",
+          requirementText: "Supplier shall comply with data residency rules.",
+          category: "legal/regulatory",
+          priority: "high",
+          complianceStatus: "compliant",
+          response: "Fully compliant.",
+          sectionReference: "SEC-2.1",
+          evidenceReferences: [],
+        },
+        {
+          id: "CM-103",
+          requirementId: "RFP-REQ-103",
+          requirementText: "Supplier shall provide fire suppression in the hall.",
+          category: "safety",
+          priority: "medium",
+          complianceStatus: "partially_compliant",
+          response: "Partial coverage today.",
+          sectionReference: "SEC-3.1",
+          evidenceReferences: [textRef("ev-text-2")],
+        },
+        {
+          id: "CM-104",
+          requirementId: "RFP-REQ-104",
+          requirementText: "Supplier shall offer a fixed five-year price.",
+          category: "commercial",
+          priority: "medium",
+          complianceStatus: "non_compliant",
+          response: "Cannot fix beyond three years.",
+          sectionReference: "SEC-4.1",
+          evidenceReferences: [],
+        },
+        {
+          id: "CM-105",
+          requirementId: "RFP-REQ-105",
+          requirementText: "Supplier shall meet the local content quota.",
+          category: "local-content",
+          priority: "low",
+          complianceStatus: "not_applicable",
+          response: "Outside the contracted scope.",
+          sectionReference: "SEC-5.1",
+          evidenceReferences: [textRef("ev-text-3")],
+        },
+        {
+          id: "CM-106",
+          requirementId: "RFP-REQ-106",
+          requirementText: "Supplier shall provide an on-site spare depot.",
+          category: "commercial",
+          priority: "low",
+          complianceStatus: "removed",
+          response: "Removed from scope by the engineer.",
+          sectionReference: "SEC-6.1",
+          rowReviewStatus: "removed",
+          removedReason: "Duplicate requirement.",
+          evidenceReferences: [],
+        },
+      ],
+    },
+  };
+}
+
 function deltaListItem(status = "needs_review"): Record<string, unknown> {
   return {
     ...artifact(EXTRACTION_DELTA_ARTIFACT_ID, "extraction_delta", status, 1),
@@ -1374,6 +1470,100 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(audit).toHaveTextContent("REMOVED-HISTORY-NOTE-CANARY");
   });
 
+  async function mountMixedOperatorPanel(): Promise<void> {
+    stubFetch(stage5ComplianceFetch(complianceMatrixMixedDetailResponse()));
+    render(<ProjectRfpEvidencePage />);
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("cm-operator-panel");
+  }
+
+  it("summarizes the mixed matrix progress counts across every compliance status and removed rows", async () => {
+    await mountMixedOperatorPanel();
+
+    const counts = screen.getByTestId("cm-progress-counts");
+    expect(counts).toHaveTextContent("Total 6");
+    expect(counts).toHaveTextContent("Active 5");
+    expect(counts).toHaveTextContent("Needs review 1");
+    expect(counts).toHaveTextContent("Compliant 1");
+    expect(counts).toHaveTextContent("Partial 1");
+    expect(counts).toHaveTextContent("Non-compliant 1");
+    expect(counts).toHaveTextContent("Not applicable 1");
+    expect(counts).toHaveTextContent("Removed 1");
+  });
+
+  it("narrows the compact operator rows to each status filter for the mixed matrix", async () => {
+    await mountMixedOperatorPanel();
+
+    const filter = screen.getByTestId("cm-status-filter");
+    const rowCountFor = (value: string): number => {
+      fireEvent.change(filter, { target: { value } });
+      return screen.queryAllByTestId("cm-operator-row").length;
+    };
+
+    expect(rowCountFor("needs_review")).toBe(1);
+    expect(rowCountFor("compliant")).toBe(1);
+    expect(rowCountFor("partially_compliant")).toBe(1);
+    expect(rowCountFor("non_compliant")).toBe(1);
+    expect(rowCountFor("na")).toBe(1);
+    expect(rowCountFor("removed")).toBe(1);
+  });
+
+  it("narrows the mixed matrix rows by requirement text and by category or source text", async () => {
+    await mountMixedOperatorPanel();
+
+    const search = screen.getByTestId("cm-search");
+    const rowsAfter = (value: string): HTMLElement[] => {
+      fireEvent.change(search, { target: { value } });
+      return screen.queryAllByTestId("cm-operator-row");
+    };
+
+    // Requirement text narrows to its single row.
+    let rows = rowsAfter("redundant core switching");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("redundant core switching");
+
+    // Category text narrows to the matching active row.
+    rows = rowsAfter("local-content");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("local content quota");
+
+    // Source text narrows to the active rows with no cited source.
+    rows = rowsAfter("No cited source");
+    expect(rows).toHaveLength(2);
+  });
+
+  it("changes the visible operator group headings when grouping the mixed matrix by category, section, and source", async () => {
+    await mountMixedOperatorPanel();
+
+    const groupBy = screen.getByTestId("cm-group-by");
+    const headingText = (): string =>
+      screen
+        .getAllByTestId("cm-operator-group")
+        .map((group) => group.textContent ?? "")
+        .join(" ");
+
+    // Default category grouping.
+    let headings = headingText();
+    expect(headings).toContain("technical");
+    expect(headings).toContain("legal/regulatory");
+    expect(headings).toContain("local-content");
+
+    fireEvent.change(groupBy, { target: { value: "section" } });
+    headings = headingText();
+    expect(headings).toContain("SEC-1.1");
+    expect(headings).toContain("SEC-5.1");
+    expect(headings).not.toContain("technical");
+
+    fireEvent.change(groupBy, { target: { value: "source" } });
+    headings = headingText();
+    expect(headings).toContain("Evidence reference");
+    expect(headings).toContain("No cited source");
+    expect(headings).not.toContain("SEC-1.1");
+  });
+
   it("posts a row edit carrying response, complianceStatus, and notes to the rows/review route and reloads list and detail for the returned new matrix version", async () => {
     const V2_ID = "art-cm-2";
     const V2_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${V2_ID}/compliance-matrix`;
@@ -1728,6 +1918,12 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
       fireEvent.click(generate);
     });
     await screen.findByTestId("cm-decided-rows");
+
+    // The removed row only surfaces under the removed filter, so switch to it
+    // before driving the restore lifecycle control.
+    fireEvent.change(screen.getByTestId("cm-status-filter"), {
+      target: { value: "removed" },
+    });
 
     fireEvent.change(screen.getByTestId("cm-row-lifecycle-action-CM-020"), {
       target: { value: "restore" },

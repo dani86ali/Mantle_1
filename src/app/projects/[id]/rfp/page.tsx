@@ -4183,9 +4183,8 @@ export default function ProjectRfpEvidencePage() {
       else existing.rows.push(row);
     }
     const selectedRow =
-      allRows.find((row) => row.id === selectedComplianceRowId) ??
+      filteredRows.find((row) => row.id === selectedComplianceRowId) ??
       filteredRows[0] ??
-      allRows[0] ??
       null;
     const counts = {
       total: allRows.length,
