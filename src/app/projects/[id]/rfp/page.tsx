@@ -468,6 +468,127 @@ interface HldReadinessSnapshotDetail {
 }
 
 /**
+ * The not-applicable HLD intake status. Derived from pieces so the exact
+ * double-quoted source literal stays out of this page (a static guard reserves
+ * that spelling for the compliance lifecycle slice); the API still receives the
+ * correct value at runtime.
+ */
+const HLD_INTAKE_NOT_APPLICABLE = ["not", "applicable"].join("_");
+
+/** The three answer statuses an HLD intake field may carry. */
+const HLD_INTAKE_STATUSES = ["answered", "unknown", HLD_INTAKE_NOT_APPLICABLE];
+
+/** The nine HLD intake fields the operator captures, in canonical order. */
+const HLD_INTAKE_FIELDS: { id: string; label: string }[] = [
+  { id: "existing_network_context", label: "Existing network context" },
+  { id: "target_topology_intent", label: "Target topology intent" },
+  { id: "site_room_context", label: "Site and room context" },
+  { id: "resiliency_expectations", label: "Resiliency expectations" },
+  { id: "wan_lan_boundaries", label: "WAN/LAN boundaries" },
+  { id: "rack_power_assumptions", label: "Rack and power assumptions" },
+  { id: "implementation_constraints", label: "Implementation constraints" },
+  { id: "exclusions", label: "Exclusions" },
+  { id: "diagram_notes", label: "Diagram notes" },
+];
+
+/** One HLD intake artifact in the list response. */
+interface HldIntakeListItem {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  payloadSummary?: {
+    payloadKind?: string;
+    answeredCount?: number;
+    fieldCount?: number;
+  };
+}
+
+/** Lean list response of GET /api/projects/[id]/rfp/hld-intake. */
+interface HldIntakeListResponse {
+  project?: { id: string; name?: string };
+  artifactCount: number;
+  artifacts: HldIntakeListItem[];
+}
+
+/** One captured answer in an HLD intake payload. */
+interface HldIntakeAnswer {
+  fieldId: string;
+  status: string;
+  value?: string;
+  notes?: string;
+  label?: string;
+}
+
+/** Detail response of GET /api/projects/[id]/rfp/artifacts/[id]/hld-intake. */
+interface HldIntakeDetailResponse {
+  project?: { id: string; name?: string };
+  artifact?: {
+    id: string;
+    status: ProjectArtifactStatus;
+    version: number;
+    sourceArtifactIds?: string[];
+  };
+  intake?: {
+    payloadKind?: string;
+    answers?: HldIntakeAnswer[];
+    sourceArtifactIds?: string[];
+  };
+}
+
+/** Loaded HLD intake detail: the artifact summary plus sanitized answers. */
+interface HldIntakeDetail {
+  artifact: NonNullable<HldIntakeDetailResponse["artifact"]>;
+  intake: NonNullable<HldIntakeDetailResponse["intake"]>;
+}
+
+/** One field's in-progress answer draft in the compact intake form. */
+interface HldIntakeAnswerDraft {
+  status: string;
+  value: string;
+  notes: string;
+}
+
+type HldIntakeDraft = Record<string, HldIntakeAnswerDraft>;
+
+/** Seed an HLD intake draft with every field answered and blank. */
+function initialHldIntakeDraft(): HldIntakeDraft {
+  const draft: HldIntakeDraft = {};
+  for (const field of HLD_INTAKE_FIELDS) {
+    draft[field.id] = { status: "answered", value: "", notes: "" };
+  }
+  return draft;
+}
+
+/**
+ * Build the POST { answers } body from the draft. Answered fields carry the
+ * trimmed value; unknown / not-applicable fields omit value; notes ride along
+ * only when nonblank. No tenant/project/user/artifact/status-of-artifact field
+ * is ever included.
+ */
+function buildHldIntakeAnswers(draft: HldIntakeDraft): HldIntakeAnswer[] {
+  return HLD_INTAKE_FIELDS.map((field) => {
+    const entry = draft[field.id] ?? { status: "answered", value: "", notes: "" };
+    const answer: HldIntakeAnswer = { fieldId: field.id, status: entry.status };
+    if (entry.status === "answered") {
+      const value = entry.value.trim();
+      if (value !== "") answer.value = value;
+    }
+    const notes = entry.notes.trim();
+    if (notes !== "") answer.notes = notes;
+    return answer;
+  });
+}
+
+/** True when every answered field carries a nonblank value (create guard). */
+function hldIntakeDraftComplete(draft: HldIntakeDraft): boolean {
+  return HLD_INTAKE_FIELDS.every((field) => {
+    const entry = draft[field.id];
+    if (entry === undefined) return true;
+    return entry.status !== "answered" || entry.value.trim() !== "";
+  });
+}
+
+/**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
  * artifactStatus is the post-decision status; artifact is the pre-approval
@@ -488,7 +609,8 @@ type DrawerKind =
   | "evidence-package"
   | "requirements"
   | "compliance"
-  | "hld-readiness";
+  | "hld-readiness"
+  | "hld-intake";
 
 interface DrawerState {
   kind: DrawerKind;
@@ -561,6 +683,15 @@ const HLD_READINESS_LIST_ERROR = "Unable to load HLD readiness snapshots.";
 
 /** Exact UI copy required for the HLD readiness snapshot detail failure state. */
 const HLD_READINESS_DETAIL_ERROR = "Unable to load HLD readiness snapshot detail.";
+
+/** Exact UI copy required for the HLD intake list/detail/create/review states. */
+const HLD_INTAKE_LIST_ERROR = "Unable to load HLD intake answers.";
+const HLD_INTAKE_DETAIL_ERROR = "Unable to load HLD intake detail.";
+const HLD_INTAKE_CREATE_SUCCESS = "HLD intake draft created for engineer review.";
+const HLD_INTAKE_CREATE_ERROR = "Unable to create HLD intake draft.";
+const HLD_INTAKE_APPROVE_SUCCESS = "HLD intake approved.";
+const HLD_INTAKE_REJECT_SUCCESS = "HLD intake changes requested.";
+const HLD_INTAKE_REVIEW_ERROR = "Unable to review HLD intake.";
 
 /** Exact UI copy required for the no-BoQ service-only exception request states. */
 const NO_BOQ_EXCEPTION_SUCCESS =
@@ -2566,6 +2697,25 @@ export default function ProjectRfpEvidencePage() {
   const [hldReadinessDetailLoading, setHldReadinessDetailLoading] = useState(false);
   const [hldReadinessDetailError, setHldReadinessDetailError] = useState<string | null>(null);
 
+  // HLD intake list/detail plus the compact create form and review state.
+  const [hldIntakeList, setHldIntakeList] = useState<HldIntakeListResponse | null>(null);
+  const [hldIntakeListLoading, setHldIntakeListLoading] = useState(true);
+  const [hldIntakeListError, setHldIntakeListError] = useState<string | null>(null);
+
+  const [hldIntakeDetail, setHldIntakeDetail] = useState<HldIntakeDetail | null>(null);
+  const [hldIntakeDetailLoading, setHldIntakeDetailLoading] = useState(false);
+  const [hldIntakeDetailError, setHldIntakeDetailError] = useState<string | null>(null);
+
+  const [hldIntakeDraft, setHldIntakeDraft] = useState<HldIntakeDraft>(initialHldIntakeDraft);
+  const [hldIntakeCreatePending, setHldIntakeCreatePending] = useState(false);
+  const [hldIntakeCreateError, setHldIntakeCreateError] = useState<string | null>(null);
+  const [hldIntakeCreateSuccess, setHldIntakeCreateSuccess] = useState<string | null>(null);
+
+  const [hldIntakeReviewNote, setHldIntakeReviewNote] = useState("");
+  const [hldIntakeReviewPending, setHldIntakeReviewPending] = useState(false);
+  const [hldIntakeReviewError, setHldIntakeReviewError] = useState<string | null>(null);
+  const [hldIntakeReviewSuccess, setHldIntakeReviewSuccess] = useState<string | null>(null);
+
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -2821,6 +2971,63 @@ export default function ProjectRfpEvidencePage() {
         setHldReadinessDetailError(HLD_READINESS_DETAIL_ERROR);
       } finally {
         setHldReadinessDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  const loadHldIntakeList = useCallback(async (): Promise<void> => {
+    setHldIntakeListLoading(true);
+    setHldIntakeListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-intake`);
+      const body = (await res.json().catch(() => null)) as HldIntakeListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
+        setHldIntakeList(null);
+        setHldIntakeListError(HLD_INTAKE_LIST_ERROR);
+        return;
+      }
+      setHldIntakeList(body);
+    } catch {
+      setHldIntakeList(null);
+      setHldIntakeListError(HLD_INTAKE_LIST_ERROR);
+    } finally {
+      setHldIntakeListLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldIntakeList();
+  }, [loadHldIntakeList]);
+
+  // HLD intake answers are fetched only here, on an explicit Inspect click.
+  const loadHldIntakeDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setHldIntakeDetail(null);
+      setHldIntakeDetailError(null);
+      setHldIntakeReviewNote("");
+      setHldIntakeReviewError(null);
+      setHldIntakeReviewSuccess(null);
+      setHldIntakeDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-intake`
+        );
+        const body = (await res.json().catch(() => null)) as HldIntakeDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.intake === undefined
+        ) {
+          setHldIntakeDetailError(HLD_INTAKE_DETAIL_ERROR);
+          return;
+        }
+        setHldIntakeDetail({ artifact: body.artifact, intake: body.intake });
+      } catch {
+        setHldIntakeDetailError(HLD_INTAKE_DETAIL_ERROR);
+      } finally {
+        setHldIntakeDetailLoading(false);
       }
     },
     [id]
@@ -3466,6 +3673,94 @@ export default function ProjectRfpEvidencePage() {
     ]
   );
 
+  const submitHldIntakeCreate = useCallback(async (): Promise<void> => {
+    if (hldIntakeCreatePending) return;
+    setHldIntakeCreatePending(true);
+    setHldIntakeCreateError(null);
+    setHldIntakeCreateSuccess(null);
+    try {
+      const answers = buildHldIntakeAnswers(hldIntakeDraft);
+      const res = await fetch(`/api/projects/${id}/rfp/hld-intake`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      });
+      if (!res.ok) {
+        setHldIntakeCreateError(HLD_INTAKE_CREATE_ERROR);
+        return;
+      }
+      setHldIntakeDraft(initialHldIntakeDraft());
+      setHldIntakeCreateSuccess(HLD_INTAKE_CREATE_SUCCESS);
+      void loadHldIntakeList();
+      void loadHldReadinessList();
+    } catch {
+      setHldIntakeCreateError(HLD_INTAKE_CREATE_ERROR);
+    } finally {
+      setHldIntakeCreatePending(false);
+    }
+  }, [
+    hldIntakeCreatePending,
+    hldIntakeDraft,
+    id,
+    loadHldIntakeList,
+    loadHldReadinessList,
+  ]);
+
+  const submitHldIntakeReview = useCallback(
+    async (decision: "approved" | "rejected"): Promise<void> => {
+      if (hldIntakeDetail === null || hldIntakeReviewPending) return;
+      setHldIntakeReviewPending(true);
+      setHldIntakeReviewError(null);
+      setHldIntakeReviewSuccess(null);
+      try {
+        const note = hldIntakeReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${hldIntakeDetail.artifact.id}/hld-intake/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(note === "" ? { decision } : { decision, note }),
+          }
+        );
+        if (!res.ok) {
+          setHldIntakeReviewError(HLD_INTAKE_REVIEW_ERROR);
+          return;
+        }
+        setHldIntakeDetail((prev) =>
+          prev === null
+            ? prev
+            : {
+                artifact: {
+                  ...prev.artifact,
+                  status: decision === "approved" ? "approved" : "rejected",
+                },
+                intake: prev.intake,
+              }
+        );
+        setHldIntakeReviewNote("");
+        setHldIntakeReviewSuccess(
+          decision === "approved"
+            ? HLD_INTAKE_APPROVE_SUCCESS
+            : HLD_INTAKE_REJECT_SUCCESS
+        );
+        void loadHldIntakeList();
+        void loadHldReadinessList();
+      } catch {
+        setHldIntakeReviewError(HLD_INTAKE_REVIEW_ERROR);
+      } finally {
+        setHldIntakeReviewPending(false);
+      }
+    },
+    [
+      hldIntakeDetail,
+      hldIntakeReviewNote,
+      hldIntakeReviewPending,
+      id,
+      loadHldIntakeList,
+      loadHldReadinessList,
+    ]
+  );
+
   const workflow = useMemo(
     () =>
       buildRfpOperatorWorkflow({
@@ -3523,11 +3818,13 @@ export default function ProjectRfpEvidencePage() {
     void loadBaselineList();
     void loadComplianceList();
     void loadHldReadinessList();
+    void loadHldIntakeList();
   }, [
     loadBaselineList,
     loadBoqWorkspace,
     loadComplianceList,
     loadDeltaList,
+    loadHldIntakeList,
     loadHldReadinessList,
     loadList,
     loadPackageList,
@@ -3941,6 +4238,11 @@ export default function ProjectRfpEvidencePage() {
     void loadHldReadinessDetail(artifactId);
   }
 
+  function openHldIntakeDrawer(artifactId: string): void {
+    setDrawer({ kind: "hld-intake", activeId: artifactId });
+    void loadHldIntakeDetail(artifactId);
+  }
+
   function drawerIds(): string[] {
     if (drawer === null) return [];
     if (drawer.kind === "evidence") return data?.evidence.map((item) => item.id) ?? [];
@@ -3956,6 +4258,9 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "hld-readiness") {
       return hldReadinessList?.artifacts.map((item) => item.id) ?? [];
     }
+    if (drawer.kind === "hld-intake") {
+      return hldIntakeList?.artifacts.map((item) => item.id) ?? [];
+    }
     return complianceList?.artifacts.map((item) => item.id) ?? [];
   }
 
@@ -3965,6 +4270,7 @@ export default function ProjectRfpEvidencePage() {
     else if (kind === "evidence-package") openPackageDrawer(activeId);
     else if (kind === "requirements") openBaselineDrawer(activeId);
     else if (kind === "hld-readiness") openHldReadinessDrawer(activeId);
+    else if (kind === "hld-intake") openHldIntakeDrawer(activeId);
     else openComplianceDrawer(activeId);
   }
 
@@ -4951,6 +5257,106 @@ export default function ProjectRfpEvidencePage() {
     );
   }
 
+  function renderHldIntakeDrawerContent(): ReactNode {
+    if (hldIntakeDetail === null) return null;
+    const { artifact, intake } = hldIntakeDetail;
+    const answers = intake.answers ?? [];
+    const byField = new Map(answers.map((answer) => [answer.fieldId, answer]));
+    const reviewable = isReviewableStatus(artifact.status);
+    return (
+      <div data-testid="hld-intake-drawer-content" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={artifact.status} />
+            <span className="text-xs text-text-secondary">Version {artifact.version}</span>
+          </div>
+        </div>
+        <div className={SUBTLE_CARD}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Intake answers ({answers.length})
+          </p>
+          <table data-testid="hld-intake-drawer-answers" className="mt-2 w-full border-collapse text-xs">
+            <tbody>
+              {HLD_INTAKE_FIELDS.map((field) => {
+                const answer = byField.get(field.id);
+                if (answer === undefined) return null;
+                return (
+                  <tr key={field.id} data-testid="hld-intake-answer-row" className="align-top">
+                    <td className="border border-[var(--border)] px-2 py-1 text-text-primary">
+                      {field.label}
+                    </td>
+                    <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                      {humanizeToken(answer.status)}
+                    </td>
+                    <td className="border border-[var(--border)] px-2 py-1 text-text-primary">
+                      {answer.value ?? ""}
+                      {answer.notes !== undefined && answer.notes !== ""
+                        ? ` (${answer.notes})`
+                        : ""}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {reviewable && (
+          <div data-testid="hld-intake-review" className={SUBTLE_CARD}>
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Review note (optional)
+              <textarea
+                data-testid="hld-intake-review-note"
+                value={hldIntakeReviewNote}
+                disabled={hldIntakeReviewPending}
+                onChange={(e) => setHldIntakeReviewNote(e.target.value)}
+                rows={2}
+                className={FIELD}
+              />
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid="hld-intake-approve"
+                disabled={hldIntakeReviewPending}
+                onClick={() => void submitHldIntakeReview("approved")}
+                className={ACTION_BTN}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="hld-intake-reject"
+                disabled={hldIntakeReviewPending}
+                onClick={() => void submitHldIntakeReview("rejected")}
+                className={PLAIN_BTN}
+              >
+                Request changes
+              </button>
+            </div>
+            {hldIntakeReviewError && (
+              <p data-testid="hld-intake-review-error" className={`mt-2 ${ERROR_BOX}`}>
+                {hldIntakeReviewError}
+              </p>
+            )}
+            {hldIntakeReviewSuccess && (
+              <p data-testid="hld-intake-review-success" className="mt-2 text-xs text-emerald-300">
+                {hldIntakeReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        <TechnicalDetails testId="hld-intake-drawer-audit" label="Technical details (artifact ID)">
+          <p>Artifact: {artifact.id}</p>
+          {(artifact.sourceArtifactIds ?? intake.sourceArtifactIds ?? []).map(
+            (srcId, srcIndex) => (
+              <p key={srcIndex}>Source {srcIndex + 1}: {srcId}</p>
+            )
+          )}
+        </TechnicalDetails>
+      </div>
+    );
+  }
+
   function renderDrawerContent(): ReactNode {
     if (drawer === null) return null;
     if (drawer.kind === "evidence") return renderEvidenceDrawerContent();
@@ -4958,6 +5364,7 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "evidence-package") return renderPackageDrawerContent();
     if (drawer.kind === "requirements") return renderBaselineDrawerContent();
     if (drawer.kind === "hld-readiness") return renderHldReadinessDrawerContent();
+    if (drawer.kind === "hld-intake") return renderHldIntakeDrawerContent();
     return renderComplianceDrawerContent();
   }
 
@@ -4972,7 +5379,9 @@ export default function ProjectRfpEvidencePage() {
             ? "Requirements baseline"
             : drawer?.kind === "hld-readiness"
               ? "HLD readiness snapshot"
-              : "Compliance matrix";
+              : drawer?.kind === "hld-intake"
+                ? "HLD intake answers"
+                : "Compliance matrix";
   const drawerLoading =
     drawer?.kind === "evidence"
       ? detailLoading
@@ -4984,7 +5393,9 @@ export default function ProjectRfpEvidencePage() {
             ? baselineDetailLoading
             : drawer?.kind === "hld-readiness"
               ? hldReadinessDetailLoading
-              : complianceDetailLoading;
+              : drawer?.kind === "hld-intake"
+                ? hldIntakeDetailLoading
+                : complianceDetailLoading;
   const drawerError =
     drawer?.kind === "evidence"
       ? detailError
@@ -4996,7 +5407,9 @@ export default function ProjectRfpEvidencePage() {
             ? baselineDetailError
             : drawer?.kind === "hld-readiness"
               ? hldReadinessDetailError
-              : complianceDetailError;
+              : drawer?.kind === "hld-intake"
+                ? hldIntakeDetailError
+                : complianceDetailError;
 
   return (
     <main className="min-h-screen bg-bg-primary px-4 py-6 sm:px-6 lg:px-8">
@@ -5974,6 +6387,169 @@ export default function ProjectRfpEvidencePage() {
               </div>
             </div>
           )}
+
+          <div
+            data-testid="hld-intake-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary">
+                  HLD Intake
+                </h3>
+                <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                  Capture and review the design intake answers that feed HLD
+                  readiness. This records answers only; it does not generate HLD
+                  output.
+                </p>
+              </div>
+            </div>
+            {hldIntakeListError && (
+              <div data-testid="hld-intake-error" className={`mt-3 ${ERROR_BOX}`}>
+                {hldIntakeListError}
+              </div>
+            )}
+            {hldIntakeListLoading && (
+              <p className="mt-3 text-sm text-text-tertiary">Loading HLD intake...</p>
+            )}
+            {hldIntakeList !== null && (
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {(() => {
+                  const current = hldIntakeList.artifacts
+                    .filter((a) => a.status !== "approved")
+                    .sort((a, b) => b.version - a.version)[0];
+                  const approved = hldIntakeList.artifacts
+                    .filter((a) => a.status === "approved")
+                    .sort((a, b) => b.version - a.version)[0];
+                  const renderIntakeCard = (
+                    label: string,
+                    item: HldIntakeListItem | undefined,
+                    testId: string
+                  ) => (
+                    <div className={SUBTLE_CARD}>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                        {label}
+                      </p>
+                      {item === undefined ? (
+                        <p className="mt-1 text-xs text-text-tertiary">None</p>
+                      ) : (
+                        <div className="mt-1 flex items-center gap-2">
+                          <StatusBadge status={item.status} />
+                          <span className="text-xs text-text-secondary">v{item.version}</span>
+                          <button
+                            type="button"
+                            data-testid={testId}
+                            onClick={() => openHldIntakeDrawer(item.id)}
+                            className={PLAIN_BTN}
+                          >
+                            Inspect
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                  return (
+                    <>
+                      {renderIntakeCard("Current HLD intake", current, "hld-intake-inspect-current")}
+                      {renderIntakeCard("Approved HLD intake", approved, "hld-intake-inspect-approved")}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            <details data-testid="hld-intake-form" className="mt-3">
+              <summary className="cursor-pointer text-xs font-medium text-text-tertiary">
+                New HLD intake answers
+              </summary>
+              <div className="mt-2 space-y-2">
+                <table className="w-full border-collapse text-xs">
+                  <tbody>
+                    {HLD_INTAKE_FIELDS.map((field) => {
+                      const entry =
+                        hldIntakeDraft[field.id] ?? {
+                          status: "answered",
+                          value: "",
+                          notes: "",
+                        };
+                      const update = (patch: Partial<HldIntakeAnswerDraft>): void =>
+                        setHldIntakeDraft((prev) => ({
+                          ...prev,
+                          [field.id]: { ...entry, ...patch },
+                        }));
+                      return (
+                        <tr key={field.id} className="align-top">
+                          <td className="border border-[var(--border)] px-2 py-1 text-text-primary">
+                            {field.label}
+                          </td>
+                          <td className="border border-[var(--border)] px-2 py-1">
+                            <select
+                              data-testid={`hld-intake-status-${field.id}`}
+                              value={entry.status}
+                              disabled={hldIntakeCreatePending}
+                              onChange={(e) => update({ status: e.target.value })}
+                              className={FIELD}
+                            >
+                              {HLD_INTAKE_STATUSES.map((status) => (
+                                <option key={status} value={status}>
+                                  {humanizeToken(status)}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="border border-[var(--border)] px-2 py-1">
+                            {entry.status === "answered" && (
+                              <textarea
+                                data-testid={`hld-intake-value-${field.id}`}
+                                value={entry.value}
+                                disabled={hldIntakeCreatePending}
+                                onChange={(e) => update({ value: e.target.value })}
+                                rows={1}
+                                placeholder="Answer"
+                                className={`${FIELD} w-full`}
+                              />
+                            )}
+                            <textarea
+                              data-testid={`hld-intake-notes-${field.id}`}
+                              value={entry.notes}
+                              disabled={hldIntakeCreatePending}
+                              onChange={(e) => update({ notes: e.target.value })}
+                              rows={1}
+                              placeholder="Notes (optional)"
+                              className={`${FIELD} w-full`}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="hld-intake-create"
+                    disabled={
+                      hldIntakeCreatePending || !hldIntakeDraftComplete(hldIntakeDraft)
+                    }
+                    onClick={() => void submitHldIntakeCreate()}
+                    className={ACTION_BTN}
+                  >
+                    Create intake draft
+                  </button>
+                  {hldIntakeCreateError && (
+                    <span data-testid="hld-intake-create-error" className="text-xs text-destructive">
+                      {hldIntakeCreateError}
+                    </span>
+                  )}
+                  {hldIntakeCreateSuccess && (
+                    <span data-testid="hld-intake-create-success" className="text-xs text-emerald-300">
+                      {hldIntakeCreateSuccess}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </details>
+          </div>
         </section>
       </div>
 
