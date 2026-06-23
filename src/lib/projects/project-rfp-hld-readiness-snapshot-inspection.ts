@@ -9,8 +9,10 @@
  * file paths, storage paths, or raw source bodies.
  */
 import { getProjectById } from "@/lib/db/project-store";
+import { listProjectFiles } from "@/lib/db/project-file-store";
 import {
   getProjectArtifactById,
+  listProjectArtifacts,
   listProjectArtifactsByType,
 } from "@/lib/db/project-artifact-store";
 import type { Project, ProjectArtifact } from "@/types/project";
@@ -19,6 +21,10 @@ import {
   RFP_HLD_DESIGN_DOMAIN_DEFINITIONS,
   type RfpHldDesignDomain,
 } from "@/lib/projects/project-rfp-hld-domain-readiness";
+import {
+  getRfpHldReadinessReport,
+  type RfpHldReadinessReport,
+} from "@/lib/projects/project-rfp-hld-readiness";
 
 const SNAPSHOT_TYPE: ProjectArtifact["type"] = "hld_readiness_snapshot";
 const SNAPSHOT_STAGE: ProjectArtifact["stageId"] = "hld_design_delta_review";
@@ -86,6 +92,7 @@ export type LoadRfpHldReadinessSnapshotListResult =
       project: RfpHldReadinessSnapshotInspectionProjectSummary;
       artifacts: RfpHldReadinessSnapshotInspectionListItem[];
       artifactCount: number;
+      readiness: RfpHldReadinessReport;
     };
 
 // ---- detail types ----------------------------------------------------------
@@ -337,19 +344,31 @@ export async function loadRfpHldReadinessSnapshotList(
     return { status: "wrong_mode", project: toProjectSummary(project) };
   }
 
-  const rows = await listProjectArtifactsByType(tenantId, projectId, SNAPSHOT_TYPE);
-  const artifacts = rows
+  const [snapshotRows, allArtifacts, files] = await Promise.all([
+    listProjectArtifactsByType(tenantId, projectId, SNAPSHOT_TYPE),
+    listProjectArtifacts(tenantId, projectId),
+    listProjectFiles(tenantId, projectId),
+  ]);
+
+  const artifacts = snapshotRows
     .filter((row) => row.type === SNAPSHOT_TYPE && row.stageId === SNAPSHOT_STAGE)
     .map((row) => ({
       ...toArtifactSummary(row),
       payloadSummary: toPayloadSummary(row.payload),
     }));
 
+  const readiness = getRfpHldReadinessReport({
+    projectId,
+    files,
+    artifacts: allArtifacts,
+  });
+
   return {
     status: "ok",
     project: toProjectSummary(project),
     artifacts,
     artifactCount: artifacts.length,
+    readiness,
   };
 }
 

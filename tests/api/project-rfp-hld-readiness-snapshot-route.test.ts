@@ -127,6 +127,7 @@ const LIST_OK = {
   project: RFP_PROJECT,
   artifacts: [LIST_ITEM],
   artifactCount: 1,
+  readiness: READINESS,
 };
 
 const CREATE_OK = {
@@ -214,7 +215,7 @@ describe("GET /api/projects/[id]/rfp/hld-readiness-snapshot - result mapping", (
     expect(body.project).toEqual(WRONG_MODE_PROJECT);
   });
 
-  it("maps ok to 200 with { project, artifactCount, artifacts } and no status discriminator", async () => {
+  it("maps ok to 200 with { project, artifactCount, artifacts, readiness } and no status discriminator", async () => {
     const res = await GET(req(), PARAMS);
 
     expect(res.status).toBe(200);
@@ -223,8 +224,20 @@ describe("GET /api/projects/[id]/rfp/hld-readiness-snapshot - result mapping", (
       project: RFP_PROJECT,
       artifactCount: 1,
       artifacts: [LIST_ITEM],
+      readiness: READINESS,
     });
     expect("status" in body).toBe(false);
+  });
+
+  it("GET returns current readiness report and never reads request.json or formData", async () => {
+    const request = req();
+    const res = await GET(request, PARAMS);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.readiness).toEqual(READINESS);
+    expect(request.json).not.toHaveBeenCalled();
+    expect(request.formData).not.toHaveBeenCalled();
   });
 
   it("maps an unexpected service error to a controlled 500 without exposing the thrown error", async () => {

@@ -8,19 +8,35 @@ import type {
   ProjectStageId,
 } from "@/types/project";
 
-const { mockGetProjectById, mockGetArtifactById, mockListArtifactsByType } =
-  vi.hoisted(() => ({
-    mockGetProjectById: vi.fn(),
-    mockGetArtifactById: vi.fn(),
-    mockListArtifactsByType: vi.fn(),
-  }));
+const {
+  mockGetProjectById,
+  mockGetArtifactById,
+  mockListArtifactsByType,
+  mockListArtifacts,
+  mockListProjectFiles,
+} = vi.hoisted(() => ({
+  mockGetProjectById: vi.fn(),
+  mockGetArtifactById: vi.fn(),
+  mockListArtifactsByType: vi.fn(),
+  mockListArtifacts: vi.fn(),
+  mockListProjectFiles: vi.fn(),
+}));
 
 vi.mock("@/lib/db/project-store", () => ({
   getProjectById: mockGetProjectById,
 }));
+vi.mock("@/lib/db/project-file-store", () => ({
+  listProjectFiles: mockListProjectFiles,
+}));
 vi.mock("@/lib/db/project-artifact-store", () => ({
   getProjectArtifactById: mockGetArtifactById,
+  listProjectArtifacts: mockListArtifacts,
   listProjectArtifactsByType: mockListArtifactsByType,
+}));
+
+const mockGetRfpHldReadinessReport = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/projects/project-rfp-hld-readiness", () => ({
+  getRfpHldReadinessReport: mockGetRfpHldReadinessReport,
 }));
 
 import {
@@ -38,6 +54,46 @@ const TS2 = new Date("2026-06-11T09:00:00.000Z");
 // Sentinels that must never appear in list output.
 const STORAGE_SENTINEL = "/secret/storage/path";
 const EXTRA_KEY_SENTINEL = "EXTRA-PAYLOAD-KEY-SENTINEL";
+
+const READINESS_REPORT = {
+  projectId: PROJECT,
+  status: "ready",
+  canCreateReadinessSnapshot: true,
+  sourceArtifactIds: ["art-ev-1"],
+  coveredDomains: ["campus_switching"],
+  excludedDomains: [],
+  missingKnowledgePackDomains: [],
+  domainReadiness: {
+    claimedDomains: ["campus_switching"],
+    coveredDomains: ["campus_switching"],
+    excludedDomains: [],
+    requiredKnowledgePackDomains: ["campus_switching"],
+    missingKnowledgePackDomains: [],
+  },
+  assumptions: [],
+  missingInputs: [],
+  validationMessages: [],
+};
+
+const BLOCKED_READINESS_REPORT = {
+  projectId: PROJECT,
+  status: "blocked",
+  canCreateReadinessSnapshot: false,
+  sourceArtifactIds: [],
+  coveredDomains: [],
+  excludedDomains: [],
+  missingKnowledgePackDomains: [],
+  domainReadiness: {
+    claimedDomains: [],
+    coveredDomains: [],
+    excludedDomains: [],
+    requiredKnowledgePackDomains: [],
+    missingKnowledgePackDomains: [],
+  },
+  assumptions: [],
+  missingInputs: ["hld_intake"],
+  validationMessages: ["HLD intake artifact not approved."],
+};
 
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
@@ -130,6 +186,9 @@ beforeEach(() => {
   mockGetProjectById.mockReset().mockResolvedValue(makeProject());
   mockGetArtifactById.mockReset().mockResolvedValue(makeArtifact());
   mockListArtifactsByType.mockReset().mockResolvedValue([makeArtifact()]);
+  mockListArtifacts.mockReset().mockResolvedValue([makeArtifact()]);
+  mockListProjectFiles.mockReset().mockResolvedValue([]);
+  mockGetRfpHldReadinessReport.mockReset().mockReturnValue(READINESS_REPORT);
 });
 
 // ---- list gates ------------------------------------------------------------
@@ -152,6 +211,8 @@ describe("loadRfpHldReadinessSnapshotList - gates", () => {
 
     expect(result).toEqual({ status: "not_found" });
     expect(mockListArtifactsByType).not.toHaveBeenCalled();
+    expect(mockListArtifacts).not.toHaveBeenCalled();
+    expect(mockListProjectFiles).not.toHaveBeenCalled();
   });
 
   it("returns wrong_mode lean summary (no tenantId) and never lists for non-rfp project", async () => {
@@ -167,6 +228,8 @@ describe("loadRfpHldReadinessSnapshotList - gates", () => {
     expect("tenantId" in result.project).toBe(false);
     expect(JSON.stringify(result)).not.toContain(TENANT);
     expect(mockListArtifactsByType).not.toHaveBeenCalled();
+    expect(mockListArtifacts).not.toHaveBeenCalled();
+    expect(mockListProjectFiles).not.toHaveBeenCalled();
   });
 });
 
@@ -251,6 +314,48 @@ describe("loadRfpHldReadinessSnapshotList - typed list + counts-only summary", (
     expect(json).not.toContain(EXTRA_KEY_SENTINEL);
     expect(json).not.toContain(TENANT);
     expect(json).not.toContain(STORAGE_SENTINEL);
+  });
+
+  it("returns readiness report when list succeeds", async () => {
+    const result = await loadRfpHldReadinessSnapshotList({
+      tenantId: TENANT,
+      projectId: PROJECT,
+    });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.readiness).toEqual(READINESS_REPORT);
+    expect(mockGetRfpHldReadinessReport).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces blocked readiness read-only without writing any artifact or approval", async () => {
+    mockGetRfpHldReadinessReport.mockReturnValue(BLOCKED_READINESS_REPORT);
+
+    const result = await loadRfpHldReadinessSnapshotList({
+      tenantId: TENANT,
+      projectId: PROJECT,
+    });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.readiness.status).toBe("blocked");
+    expect(result.readiness.canCreateReadinessSnapshot).toBe(false);
+    expect(result.readiness.missingInputs).toContain("hld_intake");
+  });
+
+  it("does not expose raw file paths or storage paths in returned readiness or list payloads", async () => {
+    const result = await loadRfpHldReadinessSnapshotList({
+      tenantId: TENANT,
+      projectId: PROJECT,
+    });
+
+    const json = JSON.stringify(result);
+    expect(json).not.toContain(STORAGE_SENTINEL);
+    // readiness is the pure report object; it contains no storagePath fields
+    if (result.status !== "ok") throw new Error("unreachable");
+    const readinessJson = JSON.stringify(result.readiness);
+    expect(readinessJson).not.toContain("storagePath");
+    expect(readinessJson).not.toContain("filePath");
   });
 });
 
@@ -537,14 +642,16 @@ describe("module purity (static source check)", () => {
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports exactly project-store, artifact-store, canonical types, snapshot payload kind, and HLD domain definitions/types", () => {
+  it("imports exactly project-store, file-store, artifact-store, canonical types, snapshot payload kind, HLD domain definitions/types, and pure readiness report", () => {
     const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
     expect(froms).toEqual([
       "@/lib/db/project-store",
+      "@/lib/db/project-file-store",
       "@/lib/db/project-artifact-store",
       "@/types/project",
       "@/lib/projects/project-rfp-hld-readiness-snapshot",
       "@/lib/projects/project-rfp-hld-domain-readiness",
+      "@/lib/projects/project-rfp-hld-readiness",
     ]);
   });
 
@@ -557,7 +664,6 @@ describe("module purity (static source check)", () => {
   it("performs no mutations and imports no forbidden stores, providers, routes, or components", () => {
     expect(/\b(?:create|update|delete)[A-Z]\w*/.test(source)).toBe(false);
     for (const forbidden of [
-      'from "@/lib/db/project-file-store"',
       'from "@/lib/db/project-evidence-store"',
       'from "@/lib/projects/pricing"',
       'from "@/lib/projects/priced-boq',

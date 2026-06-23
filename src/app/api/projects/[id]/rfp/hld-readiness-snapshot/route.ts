@@ -62,6 +62,7 @@ export async function GET(
         project: result.project,
         artifactCount: result.artifactCount,
         artifacts: result.artifacts,
+        readiness: result.readiness,
       },
       { status: 200 }
     );
