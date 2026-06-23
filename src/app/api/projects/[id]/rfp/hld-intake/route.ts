@@ -14,9 +14,11 @@
  * request body supplies ONLY { answers }; any caller-supplied tenantId/
  * projectId/createdBy/createdAt/status/artifact-id/authority/pricing/SKU/config
  * field is ignored. A missing/malformed body (not a JSON object carrying an
- * answers array) yields 400 invalid_rfp_hld_intake_request; the service
- * validates answer semantics. Result maps to HTTP: not_found -> 404, wrong_mode
- * -> 409, ok -> 201 with { artifact, payloadSummary }.
+ * answers array) yields 400 invalid_rfp_hld_intake_request; a known semantic
+ * answer validation failure raised by the service is also mapped to 400
+ * invalid_rfp_hld_intake_request (never a 500). Result maps to HTTP: not_found ->
+ * 404, wrong_mode -> 409, ok -> 201 with { artifact, payloadSummary }; an
+ * unexpected service error maps to a controlled 500.
  *
  * This route is a transport adapter only: it never touches the DB or any store,
  * reads no raw RFP files or storage paths, parses no documents, prices nothing,
@@ -28,6 +30,7 @@ import { requireAuth } from "@/lib/middleware/auth";
 import { loadRfpHldIntakeList } from "@/lib/projects/project-rfp-hld-intake-inspection";
 import {
   createRfpHldIntakeDraft,
+  isRfpHldIntakeValidationError,
   type RfpHldIntakeAnswerInput,
 } from "@/lib/projects/project-rfp-hld-intake";
 
@@ -153,7 +156,11 @@ export async function POST(
       { artifact: result.artifact, payloadSummary: result.payloadSummary },
       { status: 201 }
     );
-  } catch {
+  } catch (error) {
+    // Known request-derived validation failures (malformed answer semantics the
+    // service rejects before any store call) map to 400; everything else is a
+    // controlled 500 that never exposes the thrown error.
+    if (isRfpHldIntakeValidationError(error)) return invalidRequest();
     return NextResponse.json(
       {
         code: "rfp_hld_intake_failed",
