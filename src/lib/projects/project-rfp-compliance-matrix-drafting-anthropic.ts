@@ -11,7 +11,8 @@
  * carrying only the whitelisted executor input plus a fixed system
  * instruction that restricts the model to drafting candidate
  * compliance-matrix rows from the approved requirements_baseline, evidence
- * package, and optional configuration_expansion supplied in the user JSON.
+ * package, and the approved configuration gate artifact and lines supplied
+ * in the user JSON.
  * The instruction forbids approval, any final compliance decision, pricing,
  * SKU, catalog, configuration, legal/commercial/local-content/safety/
  * insurance determinations, HLD/LLD/TP/proposal authority, export, and
@@ -56,8 +57,8 @@ const INVALID_JSON_MESSAGE =
 const SYSTEM_PROMPT = [
   "You draft candidate RFP compliance-matrix rows for later human review",
   "inside BOMATIC. Work ONLY from the approved requirements_baseline, the",
-  "approved evidence_package, and the optional approved",
-  "configuration_expansion supplied as JSON in the user message; never",
+  "approved evidence_package, and the approved configuration gate artifact",
+  "and configuration lines supplied as JSON in the user message; never",
   "invent facts, requirements, evidence, configuration lines, or identifiers",
   "that input does not support. Draft exactly one row per approved baseline",
   "requirement, and copy every requirementId, evidenceId, and",
