@@ -489,6 +489,8 @@ function summaryOf(artifact: ProjectArtifact) {
   };
 }
 
+// The configuration_expansion artifact is a REQUIRED gate after Stage 5A, so the default
+// drafting input supplies it.
 function draft(
   overrides: Partial<DraftRfpComplianceMatrixRowsInput> = {}
 ): Promise<DraftRfpComplianceMatrixRowsResult> {
@@ -497,16 +499,19 @@ function draft(
     projectId: PROJECT,
     requirementsBaselineArtifactId: BASELINE_ARTIFACT,
     evidencePackageArtifactId: EVIDENCE_PACKAGE,
+    configurationExpansionArtifactId: CONFIG_ARTIFACT,
     requestedBy: REQUESTED_BY,
     executor: makeValidExecutor(),
     ...overrides,
   });
 }
 
+// Alias kept for tests that emphasise the config path; identical to draft() now that the
+// config gate is required.
 function draftConfig(
   overrides: Partial<DraftRfpComplianceMatrixRowsInput> = {}
 ): Promise<DraftRfpComplianceMatrixRowsResult> {
-  return draft({ configurationExpansionArtifactId: CONFIG_ARTIFACT, ...overrides });
+  return draft(overrides);
 }
 
 function expectNoStoreCalls(): void {
@@ -590,11 +595,16 @@ describe("validation before store calls", () => {
     expectNoStoreCalls();
   });
 
-  it("throws on a blank configurationExpansionArtifactId when supplied", async () => {
-    for (const blank of ["", "   "]) {
+  it("throws on a missing, blank, or non-string configurationExpansionArtifactId before stores", async () => {
+    const invalidValues: unknown[] = [undefined, "", "   ", 42, null, {}];
+    for (const value of invalidValues) {
       const executor = makeValidExecutor();
       await expect(
-        draft({ configurationExpansionArtifactId: blank, executor })
+        draft({
+          configurationExpansionArtifactId:
+            value as unknown as string,
+          executor,
+        })
       ).rejects.toThrow("configurationExpansionArtifactId is required.");
       expect(executor).not.toHaveBeenCalled();
     }
@@ -932,16 +942,85 @@ describe("configuration_expansion gates (only when supplied)", () => {
     }
   });
 
-  it("does not load or gate a config artifact when none is supplied", async () => {
-    artifactById.delete(CONFIG_ARTIFACT);
+  it("throws before any store read when no configurationExpansionArtifactId is supplied", async () => {
+    const executor = makeValidExecutor();
 
-    const result = await draft();
+    await expect(
+      draftRfpComplianceMatrixRows({
+        tenantId: TENANT,
+        projectId: PROJECT,
+        requirementsBaselineArtifactId: BASELINE_ARTIFACT,
+        evidencePackageArtifactId: EVIDENCE_PACKAGE,
+        requestedBy: REQUESTED_BY,
+        executor,
+      })
+    ).rejects.toThrow("configurationExpansionArtifactId is required.");
+    expect(executor).not.toHaveBeenCalled();
+    expectNoStoreCalls();
+  });
+});
+
+describe("no-BoQ / service-only exception (same required config gate)", () => {
+  /** A reviewed exception payload: the exception marker with no accepted lines. */
+  function makeExceptionConfigArtifact(): ProjectArtifact {
+    return makeConfigArtifact({
+      payload: makeConfigPayload({
+        payloadKind: "rfp_no_boq_service_only_exception",
+        acceptedLines: [],
+        rejectedLines: [],
+        lineCount: 0,
+        summary: {
+          customerLineCount: 0,
+          acceptedExpansionLineCount: 0,
+          rejectedExpansionLineCount: 0,
+          totalAcceptedLineCount: 0,
+          reviewedExpansionLineCount: 0,
+        },
+      }),
+    });
+  }
+
+  it("accepts the exception artifact and hands the executor an empty configurationLines set", async () => {
+    artifactById.set(CONFIG_ARTIFACT, makeExceptionConfigArtifact());
+    let captured: RfpComplianceMatrixDraftingExecutorInput | undefined;
+    const executor = vi.fn(async (input: RfpComplianceMatrixDraftingExecutorInput) => {
+      captured = input;
+      return makeValidExecutor()();
+    });
+
+    const result = await draftConfig({ executor });
 
     expect(result.status).toBe("ok");
-    expect(mockGetArtifact.mock.calls).toEqual([
-      [TENANT, PROJECT, BASELINE_ARTIFACT],
-      [TENANT, PROJECT, EVIDENCE_PACKAGE],
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.configurationExpansionArtifactId).toBe(CONFIG_ARTIFACT);
+    expect(result.sourceArtifactIds).toEqual([
+      BASELINE_ARTIFACT,
+      EVIDENCE_PACKAGE,
+      CONFIG_ARTIFACT,
     ]);
+    expect(captured?.configurationExpansion).toEqual(
+      summaryOf(makeExceptionConfigArtifact())
+    );
+    expect(captured?.configurationLines).toEqual([]);
+  });
+
+  it("rejects any cited configuration line because the exception has no lines", async () => {
+    artifactById.set(CONFIG_ARTIFACT, makeExceptionConfigArtifact());
+    const executor = vi.fn(async () => ({
+      rows: [
+        { requirementId: REQ_1, response: "a", configurationLineIds: [CFG_LINE_1] },
+        { requirementId: REQ_2, response: "b" },
+        { requirementId: REQ_3, response: "c" },
+      ],
+    }));
+
+    expect(await draftConfig({ executor })).toEqual({
+      status: "invalid_draft_output",
+      errors: [
+        `rows[0] cites unknown configuration line ID: ${CFG_LINE_1}.`,
+        `Missing compliance row for requirement ID: ${REQ_1}.`,
+      ],
+    });
   });
 });
 
@@ -969,20 +1048,6 @@ describe("executor input", () => {
       sourceFileIds: [FILE_RFP, FILE_BOQ],
       sourceArtifactIds: [BASELINE_ARTIFACT, EVIDENCE_PACKAGE, CONFIG_ARTIFACT],
     });
-  });
-
-  it("omits the config bundle entirely when no config artifact is supplied", async () => {
-    let captured: RfpComplianceMatrixDraftingExecutorInput | undefined;
-    const executor = vi.fn(async (input: RfpComplianceMatrixDraftingExecutorInput) => {
-      captured = input;
-      return makeValidExecutor()();
-    });
-
-    await draft({ executor });
-
-    expect(captured).not.toHaveProperty("configurationExpansion");
-    expect(captured).not.toHaveProperty("configurationLines");
-    expect(captured?.sourceArtifactIds).toEqual([BASELINE_ARTIFACT, EVIDENCE_PACKAGE]);
   });
 
   it("leaks no tenantId, storage path, document metrics, raw payload, pricing, or config-authority field", async () => {
@@ -1156,7 +1221,7 @@ describe("executor failure and untrusted output", () => {
         "rows[2] references an unknown requirement ID: ghost.",
         "rows[3].response is required.",
         "rows[4] cites unknown evidence ID: ghost-ev.",
-        "rows[5] cites configuration lines but no configuration_expansion artifact was supplied.",
+        "rows[5] cites unknown configuration line ID: cfg-x.",
         `Missing compliance row for requirement ID: ${REQ_1}.`,
         `Missing compliance row for requirement ID: ${REQ_2}.`,
         `Missing compliance row for requirement ID: ${REQ_3}.`,
@@ -1200,23 +1265,6 @@ describe("executor failure and untrusted output", () => {
     });
   });
 
-  it("rejects configuration citations when no config artifact was supplied", async () => {
-    const executor = vi.fn(async () => ({
-      rows: [
-        { requirementId: REQ_1, response: "a", configurationLineIds: [CFG_LINE_1] },
-        { requirementId: REQ_2, response: "b" },
-        { requirementId: REQ_3, response: "c" },
-      ],
-    }));
-
-    expect(await draft({ executor })).toEqual({
-      status: "invalid_draft_output",
-      errors: [
-        "rows[0] cites configuration lines but no configuration_expansion artifact was supplied.",
-        `Missing compliance row for requirement ID: ${REQ_1}.`,
-      ],
-    });
-  });
 });
 
 describe("success", () => {
@@ -1300,12 +1348,13 @@ describe("success", () => {
       project: PROJECT_SUMMARY,
       requirementsBaselineArtifactId: BASELINE_ARTIFACT,
       evidencePackageArtifactId: EVIDENCE_PACKAGE,
+      configurationExpansionArtifactId: CONFIG_ARTIFACT,
       rows: EXPECTED_ROWS,
       rowCount: 3,
       requirementCount: 3,
       evidenceCount: 3,
       sourceFileIds: [FILE_RFP, FILE_BOQ],
-      sourceArtifactIds: [BASELINE_ARTIFACT, EVIDENCE_PACKAGE],
+      sourceArtifactIds: [BASELINE_ARTIFACT, EVIDENCE_PACKAGE, CONFIG_ARTIFACT],
     });
     expect(result.status === "ok" && result.rows.every((r) => r.complianceStatus === "needs_review")).toBe(true);
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);

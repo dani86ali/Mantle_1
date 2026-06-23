@@ -21,10 +21,12 @@
  * a nonempty requirements array), one approved evidence_package (type evidence_package
  * at stage intake_package_review, status approved, payloadKind rfp_evidence_package, a
  * valid evidence array - the ONLY approved evidence authority; no evidence store is
- * read), and OPTIONALLY one approved configuration_expansion (type
+ * read), and one REQUIRED approved configuration_expansion (type
  * configuration_expansion at stage configuration_expansion_review, status approved, a
  * REVIEWED payload - never the configuration_expansion_draft marker - with a valid
- * acceptedLines array). Each failing gate returns a lean discriminated status and never
+ * acceptedLines array). The explicit no-BoQ/service-only exception is the SAME required
+ * gate artifact: a reviewed payload (payloadKind rfp_no_boq_service_only_exception) with
+ * acceptedLines: []. Each failing gate returns a lean discriminated status and never
  * invokes the executor.
  *
  * The executor receives only fresh whitelisted copies: a lean project summary (never a
@@ -32,7 +34,7 @@
  * requirements (id/text/title/notes/category/priority plus locator-only evidence
  * references), the approved evidence-package entries as context (text body or a copied
  * rows matrix, never a storage path, a tenant id, a file path, a document-metrics
- * block, or an arbitrary payload key), the optional accepted configuration lines
+ * block, or an arbitrary payload key), the accepted configuration lines
  * (lineId/origin/sku/description plus
  * line/source identifiers ONLY - never a price, margin, discount, currency, catalog
  * lookup, SKU replacement, sourceRuleId, evidence, or rule field), the trimmed
@@ -45,8 +47,9 @@
  * nonblank after trim; optional evidenceIds map (trimmed, deduplicated) to locator-only
  * evidence_package references and absent/empty falls back to the requirement's baseline
  * references; optional configurationLineIds map (trimmed, deduplicated) to whitelisted
- * configuration references and are rejected when no config artifact was supplied; every
- * unknown id is rejected. Drafted rows carry deterministic ids (RFP-COMP-001,
+ * configuration references; every unknown id is rejected (a no-BoQ/service-only
+ * exception artifact has no lines, so any cited line is unknown). Drafted rows carry
+ * deterministic ids (RFP-COMP-001,
  * RFP-COMP-002, ... in baseline order), copy requirementText/category/priority from the
  * baseline snapshot, set every complianceStatus to needs_review (never executor
  * supplied), and drop every executor-supplied authority/raw field by whitelist copy. An
@@ -234,13 +237,21 @@ export interface RfpComplianceMatrixDraftingExecutorInput {
   project: RfpComplianceMatrixDraftingProjectSummary;
   requirementsBaseline: RfpComplianceMatrixDraftingArtifactSummary;
   evidencePackage: RfpComplianceMatrixDraftingArtifactSummary;
-  /** Present only when a configuration_expansion artifact was supplied. */
+  /**
+   * The approved configuration_expansion summary. draftRfpComplianceMatrixRows always
+   * supplies this after Stage 5A; the property stays optional only so existing
+   * adapter/test fixtures remain assignment-compatible.
+   */
   configurationExpansion?: RfpComplianceMatrixDraftingArtifactSummary;
   /** The approved baseline requirements, in baseline order. */
   requirements: RfpComplianceMatrixDraftingRequirement[];
   /** The approved evidence-package entries as drafting context, in payload order. */
   evidence: RfpComplianceMatrixDraftingEvidence[];
-  /** Present only when a configuration_expansion artifact was supplied. */
+  /**
+   * The approved accepted configuration lines ([] for a no-BoQ/service-only exception).
+   * draftRfpComplianceMatrixRows always supplies this after Stage 5A; the property stays
+   * optional only so existing adapter/test fixtures remain assignment-compatible.
+   */
   configurationLines?: RfpComplianceMatrixDraftingConfigurationLine[];
   requestedBy: string;
   /** Unique source-file ids behind the approved upstream artifacts, in first-seen order. */
@@ -266,7 +277,12 @@ export interface DraftRfpComplianceMatrixRowsInput {
   requirementsBaselineArtifactId: string;
   /** The exact APPROVED evidence_package artifact rows may cite evidence from. */
   evidencePackageArtifactId: string;
-  /** Optional exact APPROVED configuration_expansion artifact rows may cite lines from. */
+  /**
+   * The REQUIRED APPROVED configuration_expansion artifact (or no-BoQ/service-only
+   * exception) rows may cite lines from. The property stays optional only so existing
+   * adapter/test fixtures remain assignment-compatible; runtime validation rejects a
+   * missing/blank/non-string value before any store read.
+   */
   configurationExpansionArtifactId?: string;
   requestedBy: string;
   executor: RfpComplianceMatrixDraftingExecutor;
@@ -322,8 +338,8 @@ export type DraftRfpComplianceMatrixRowsResult =
       project: RfpComplianceMatrixDraftingProjectSummary;
       requirementsBaselineArtifactId: string;
       evidencePackageArtifactId: string;
-      /** Present only when a configuration_expansion artifact was supplied. */
-      configurationExpansionArtifactId?: string;
+      /** The required approved configuration-gate artifact id (always present on ok). */
+      configurationExpansionArtifactId: string;
       rows: RfpComplianceMatrixRow[];
       rowCount: number;
       /** Count of approved baseline requirements (one row each). */
@@ -759,7 +775,6 @@ interface SanitizeContext {
   requirementIds: ReadonlySet<string>;
   packageEntryById: ReadonlyMap<string, Record<string, unknown>>;
   packageEvidenceIds: ReadonlySet<string>;
-  hasConfig: boolean;
   configurationExpansionArtifactId: string;
   configLineById: ReadonlyMap<string, Record<string, unknown>>;
   configLineIds: ReadonlySet<string>;
@@ -790,7 +805,8 @@ interface SanitizedExecutorOutput {
  * optional nonblank-after-trim rationale/notes, optional evidenceIds that resolve to
  * approved evidence_package ids (absent/empty falls back to the requirement's baseline
  * references), and optional configurationLineIds that resolve to approved accepted-line
- * ids (rejected when no config artifact was supplied). On success rows carry
+ * ids (a no-BoQ/service-only exception has no lines, so any cited line is unknown). On
+ * success rows carry
  * deterministic RFP-COMP ids in baseline order, the baseline requirement snapshot
  * (text/category/priority), a needs_review complianceStatus, and fresh locator-only
  * references. Every other executor-supplied field is dropped by whitelist copy.
@@ -844,19 +860,11 @@ function sanitizeExecutorOutput(
     }
 
     const configurationLineIds = cleanIdList(rawRow.configurationLineIds);
-    if (configurationLineIds.length > 0) {
-      if (!context.hasConfig) {
+    for (const id of configurationLineIds) {
+      if (!context.configLineIds.has(id)) {
         errors.push(
-          `rows[${index}] cites configuration lines but no configuration_expansion artifact was supplied.`
+          `rows[${index}] cites unknown configuration line ID: ${id}.`
         );
-      } else {
-        for (const id of configurationLineIds) {
-          if (!context.configLineIds.has(id)) {
-            errors.push(
-              `rows[${index}] cites unknown configuration line ID: ${id}.`
-            );
-          }
-        }
       }
     }
 
@@ -906,7 +914,7 @@ function sanitizeExecutorOutput(
       ...(cleaned.rationale !== undefined ? { rationale: cleaned.rationale } : {}),
       ...(cleaned.notes !== undefined ? { notes: cleaned.notes } : {}),
       evidenceReferences,
-      ...(context.hasConfig && cleaned.configurationLineIds.length > 0
+      ...(cleaned.configurationLineIds.length > 0
         ? {
             configurationReferences: cleaned.configurationLineIds.map((id) =>
               toConfigurationReference(
@@ -925,19 +933,21 @@ function sanitizeExecutorOutput(
 
 /**
  * Draft reviewable compliance-matrix rows from one approved requirements_baseline, one
- * approved evidence_package, and OPTIONALLY one approved configuration_expansion, using
- * the INJECTED executor. Throws deterministic programmer errors before any store call:
- * nonblank projectId, requirementsBaselineArtifactId, evidencePackageArtifactId, and
- * requestedBy; a nonblank configurationExpansionArtifactId when one is supplied; and a
- * function executor (artifact ids and requestedBy are trimmed for use). Gates in order,
- * tenant scoped: project exists and is rfp mode; the baseline artifact exists, is
- * requirements_baseline at requirements_baseline_review, is approved, and carries a
- * valid rfp_requirements_baseline payload with a nonempty requirements array; the
+ * approved evidence_package, and one REQUIRED approved configuration_expansion (or the
+ * no-BoQ/service-only exception artifact), using the INJECTED executor. Throws
+ * deterministic programmer errors before any store call: nonblank projectId,
+ * requirementsBaselineArtifactId, evidencePackageArtifactId, requestedBy, and
+ * configurationExpansionArtifactId; and a function executor (artifact ids and
+ * requestedBy are trimmed for use). Gates in order, tenant scoped: project exists and is
+ * rfp mode; the baseline artifact exists, is requirements_baseline at
+ * requirements_baseline_review, is approved, and carries a valid
+ * rfp_requirements_baseline payload with a nonempty requirements array; the
  * evidence_package artifact exists, is evidence_package at intake_package_review, is
- * approved, and carries a valid rfp_evidence_package payload; and, when supplied, the
+ * approved, and carries a valid rfp_evidence_package payload; and the
  * configuration_expansion artifact exists, is configuration_expansion at
  * configuration_expansion_review, is approved, and carries a REVIEWED payload (never the
- * draft marker) with a valid acceptedLines array. Each failing gate returns a lean
+ * draft marker) with a valid acceptedLines array ([] for the no-BoQ/service-only
+ * exception). Each failing gate returns a lean
  * summary and never calls the executor. The executor receives whitelisted copies only;
  * a throw maps to drafting_failed with a fixed error code (the thrown detail is never
  * exposed); invalid output returns invalid_draft_output listing every violation. On
@@ -968,11 +978,9 @@ export async function draftRfpComplianceMatrixRows(
   ) {
     throw new Error("requestedBy is required.");
   }
-  const hasConfigInput = input.configurationExpansionArtifactId !== undefined;
   if (
-    hasConfigInput &&
-    (typeof input.configurationExpansionArtifactId !== "string" ||
-      input.configurationExpansionArtifactId.trim() === "")
+    typeof input.configurationExpansionArtifactId !== "string" ||
+    input.configurationExpansionArtifactId.trim() === ""
   ) {
     throw new Error("configurationExpansionArtifactId is required.");
   }
@@ -984,9 +992,8 @@ export async function draftRfpComplianceMatrixRows(
   const requirementsBaselineArtifactId =
     input.requirementsBaselineArtifactId.trim();
   const evidencePackageArtifactId = input.evidencePackageArtifactId.trim();
-  const configurationExpansionArtifactId = hasConfigInput
-    ? (input.configurationExpansionArtifactId as string).trim()
-    : undefined;
+  const configurationExpansionArtifactId =
+    input.configurationExpansionArtifactId.trim();
   const { tenantId, projectId } = input;
 
   const project = await getProjectById(tenantId, projectId);
@@ -1065,46 +1072,43 @@ export async function draftRfpComplianceMatrixRows(
     };
   }
 
-  // Optional approved configuration_expansion gate (reviewed payload, never a draft).
-  let configuration: ProjectArtifact | null = null;
-  let acceptedLineRecords: Record<string, unknown>[] = [];
-  if (configurationExpansionArtifactId !== undefined) {
-    configuration = await getProjectArtifactById(
-      tenantId,
-      projectId,
-      configurationExpansionArtifactId
-    );
-    if (configuration === null) {
-      return { status: "configuration_expansion_not_found" };
-    }
-    if (
-      configuration.type !== CONFIGURATION_EXPANSION_ARTIFACT_TYPE ||
-      configuration.stageId !== CONFIGURATION_EXPANSION_STAGE_ID
-    ) {
-      return {
-        status: "artifact_not_configuration_expansion",
-        artifact: toArtifactSummary(configuration),
-      };
-    }
-    if (configuration.status !== "approved") {
-      return {
-        status: "configuration_expansion_not_approved",
-        artifact: toArtifactSummary(configuration),
-      };
-    }
-    const configurationPayload = toRecord(configuration.payload);
-    if (
-      configurationPayload.payloadKind ===
-        CONFIGURATION_EXPANSION_DRAFT_PAYLOAD_KIND ||
-      !isValidAcceptedLineList(configurationPayload.acceptedLines)
-    ) {
-      return {
-        status: "invalid_configuration_expansion_payload",
-        artifact: toArtifactSummary(configuration),
-      };
-    }
-    acceptedLineRecords = configurationPayload.acceptedLines;
+  // Required approved configuration_expansion gate (reviewed payload, never a draft; the
+  // no-BoQ/service-only exception is the same gate with acceptedLines: []).
+  const configuration = await getProjectArtifactById(
+    tenantId,
+    projectId,
+    configurationExpansionArtifactId
+  );
+  if (configuration === null) {
+    return { status: "configuration_expansion_not_found" };
   }
+  if (
+    configuration.type !== CONFIGURATION_EXPANSION_ARTIFACT_TYPE ||
+    configuration.stageId !== CONFIGURATION_EXPANSION_STAGE_ID
+  ) {
+    return {
+      status: "artifact_not_configuration_expansion",
+      artifact: toArtifactSummary(configuration),
+    };
+  }
+  if (configuration.status !== "approved") {
+    return {
+      status: "configuration_expansion_not_approved",
+      artifact: toArtifactSummary(configuration),
+    };
+  }
+  const configurationPayload = toRecord(configuration.payload);
+  if (
+    configurationPayload.payloadKind ===
+      CONFIGURATION_EXPANSION_DRAFT_PAYLOAD_KIND ||
+    !isValidAcceptedLineList(configurationPayload.acceptedLines)
+  ) {
+    return {
+      status: "invalid_configuration_expansion_payload",
+      artifact: toArtifactSummary(configuration),
+    };
+  }
+  const acceptedLineRecords = configurationPayload.acceptedLines;
 
   // All gates passed: assemble the read-only drafting context.
   const parsedRequirements = (
@@ -1144,14 +1148,12 @@ export async function draftRfpComplianceMatrixRows(
   const sourceFileIds = uniqueNonblankInOrder([
     ...baseline.sourceFileIds,
     ...evidencePackage.sourceFileIds,
-    ...(configuration !== null ? configuration.sourceFileIds : []),
+    ...configuration.sourceFileIds,
   ]);
   const sourceArtifactIds = [
     requirementsBaselineArtifactId,
     evidencePackageArtifactId,
-    ...(configurationExpansionArtifactId !== undefined
-      ? [configurationExpansionArtifactId]
-      : []),
+    configurationExpansionArtifactId,
   ];
 
   // The executor gets its own copies; mutating them never reaches the loaded artifacts,
@@ -1162,14 +1164,10 @@ export async function draftRfpComplianceMatrixRows(
       project: toProjectSummary(project),
       requirementsBaseline: toArtifactSummary(baseline),
       evidencePackage: toArtifactSummary(evidencePackage),
-      ...(configuration !== null
-        ? { configurationExpansion: toArtifactSummary(configuration) }
-        : {}),
+      configurationExpansion: toArtifactSummary(configuration),
       requirements: parsedRequirements.map(toExecutorRequirement),
       evidence: packageEntries.map(toExecutorEvidence),
-      ...(configuration !== null
-        ? { configurationLines: acceptedLineRecords.map(toExecutorConfigurationLine) }
-        : {}),
+      configurationLines: acceptedLineRecords.map(toExecutorConfigurationLine),
       requestedBy,
       sourceFileIds: sourceFileIds.slice(),
       sourceArtifactIds: sourceArtifactIds.slice(),
@@ -1187,8 +1185,7 @@ export async function draftRfpComplianceMatrixRows(
     requirementIds,
     packageEntryById,
     packageEvidenceIds,
-    hasConfig: configuration !== null,
-    configurationExpansionArtifactId: configurationExpansionArtifactId ?? "",
+    configurationExpansionArtifactId,
     configLineById,
     configLineIds,
   });
@@ -1201,9 +1198,7 @@ export async function draftRfpComplianceMatrixRows(
     project: toProjectSummary(project),
     requirementsBaselineArtifactId,
     evidencePackageArtifactId,
-    ...(configurationExpansionArtifactId !== undefined
-      ? { configurationExpansionArtifactId }
-      : {}),
+    configurationExpansionArtifactId,
     rows: sanitized.rows,
     rowCount: sanitized.rows.length,
     requirementCount: parsedRequirements.length,
