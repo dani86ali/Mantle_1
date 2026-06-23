@@ -852,6 +852,14 @@ function rfpBoqWorkspaceResponse(): Record<string, unknown> {
         canCreateExportPackage: false,
         isCustomerDeliverableReady: false,
         messages: ["Upload a BoQ file before pricing."],
+        configurationGate: {
+          required: true,
+          satisfied: true,
+          waived: false,
+          status: "configuration_expansion_approved",
+          message: "Configuration expansion approved.",
+          approvedConfigurationExpansionArtifactId: CONFIG_EXPANSION_ARTIFACT_ID,
+        },
         quickBomReadiness: {
           projectId: PROJECT_ID,
           nextStepId: "normalized_boq",
@@ -2171,7 +2179,7 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     });
   });
 
-  it("auto-generates compliance from latest approved requirements, evidence, and optional configuration artifacts", async () => {
+  it("auto-generates compliance from latest approved requirements, evidence, and required approved configuration", async () => {
     const calls = stubFetch((url) => {
       if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse("approved"));
       if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageApprovedOnlyResponse());

@@ -3257,6 +3257,7 @@ export default function ProjectRfpEvidencePage() {
           boqWorkspace,
           "configuration_expansion"
         ),
+        configurationGate: boqWorkspace?.readiness.configurationGate,
         evidence:
           data === null
             ? undefined
@@ -3554,20 +3555,29 @@ export default function ProjectRfpEvidencePage() {
 
   const submitGenerateCompliance = useCallback(async (): Promise<void> => {
     if (complianceGeneratePending || !complianceInputs.ready) return;
+    const {
+      requirementsBaselineArtifactId,
+      evidencePackageArtifactId,
+      configurationExpansionArtifactId,
+    } = complianceInputs;
+    // The configuration gate is required: only POST once the requirements
+    // baseline, evidence package, and approved configuration expansion ids are
+    // all resolved, and always send all three.
+    if (
+      requirementsBaselineArtifactId === undefined ||
+      evidencePackageArtifactId === undefined ||
+      configurationExpansionArtifactId === undefined
+    ) {
+      return;
+    }
     setComplianceGeneratePending(true);
     setComplianceGenerateError(null);
     setComplianceGenerateSuccess(null);
     try {
       const body = {
-        requirementsBaselineArtifactId:
-          complianceInputs.requirementsBaselineArtifactId,
-        evidencePackageArtifactId: complianceInputs.evidencePackageArtifactId,
-        ...(complianceInputs.configurationExpansionArtifactId !== undefined
-          ? {
-              configurationExpansionArtifactId:
-                complianceInputs.configurationExpansionArtifactId,
-            }
-          : {}),
+        requirementsBaselineArtifactId,
+        evidencePackageArtifactId,
+        configurationExpansionArtifactId,
       };
       const res = await fetch(`/api/projects/${id}/rfp/compliance-matrix/generate`, {
         method: "POST",
