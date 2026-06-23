@@ -1,9 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import {
-  getRfpHldReadinessReport,
-} from "@/lib/projects/project-rfp-hld-readiness";
+import { getRfpHldReadinessReport } from "@/lib/projects/project-rfp-hld-readiness";
 import type {
   ProjectArtifact,
   ProjectArtifactStatus,
@@ -14,7 +12,6 @@ import type {
 } from "@/types/project";
 
 const PROJECT = "proj-rfp-1";
-const OTHER_PROJECT = "proj-other";
 const TS = new Date("2026-06-12T00:00:00.000Z");
 
 const STAGE_BY_TYPE: Partial<Record<ProjectArtifactType, ProjectStageId>> = {
@@ -24,8 +21,8 @@ const STAGE_BY_TYPE: Partial<Record<ProjectArtifactType, ProjectStageId>> = {
   normalized_boq: "boq_format_validation",
   sku_resolution: "sku_resolution",
   configuration_expansion: "configuration_expansion_review",
-  priced_boq: "boq_pricing_review",
-  export_package: "export_approval",
+  hld_intake: "hld_design_delta_review",
+  design_knowledge_pack: "hld_design_delta_review",
 };
 
 function artifact(
@@ -41,7 +38,7 @@ function artifact(
     type,
     status,
     version,
-    payload: { secret: "payload-not-read" },
+    payload: { secret: "payload-not-leaked" },
     sourceFileIds: [],
     sourceArtifactIds: [],
     createdAt: TS,
@@ -67,152 +64,282 @@ function file(
   };
 }
 
+// An approved no-BoQ / service-only exception that satisfies the configuration gate
+// without any BoQ file or hardware packs.
+function noBoqException(version: number, status: ProjectArtifactStatus = "approved") {
+  return artifact("configuration_expansion", version, status, {
+    payload: { payloadKind: "rfp_no_boq_service_only_exception", reason: "Services only" },
+  });
+}
+
+// An approved hld_intake whose unknown/NA answers become sanitized assumptions.
+function hldIntake(version: number, status: ProjectArtifactStatus = "approved") {
+  return artifact("hld_intake", version, status, {
+    payload: {
+      payloadKind: "rfp_hld_intake",
+      answers: [
+        { fieldId: "existing_network_context", label: "Existing network context", status: "answered", value: "brownfield" },
+        { fieldId: "resiliency_expectations", label: "Resiliency expectations", status: "unknown", notes: "  awaiting customer  " },
+        { fieldId: "rack_power_assumptions", label: "Rack and power assumptions", status: "not_applicable" },
+      ],
+    },
+  });
+}
+
 function report(files: ProjectFile[], artifacts: ProjectArtifact[]) {
   return getRfpHldReadinessReport({ projectId: PROJECT, files, artifacts });
 }
 
-const REQUIRED_APPROVED = [
+// A fully ready service-only set: the three core approvals, the no-BoQ exception,
+// and the approved hld_intake. No technical domains claimed -> no packs required.
+const READY_SERVICE_ONLY = [
   artifact("evidence_package", 1, "approved"),
   artifact("requirements_baseline", 1, "approved"),
   artifact("compliance_matrix", 1, "approved"),
+  noBoqException(1),
+  hldIntake(1),
 ];
 
-describe("RFP HLD readiness gates", () => {
-  it("blocks first on the missing approved evidence package", () => {
+describe("getRfpHldReadinessReport - blocking chain", () => {
+  it("blocks with empty inputs and lists every missing input", () => {
     const r = report([], []);
     expect(r.status).toBe("blocked");
-    expect(r.canCreateHldDesignDelta).toBe(false);
-    expect(r.blockingStepId).toBe("evidence_package");
-    expect(r.prerequisites.find((p) => p.stepId === "evidence_package")).toMatchObject({
-      required: true,
-      isApproved: false,
-      isSatisfied: false,
-    });
+    expect(r.canCreateReadinessSnapshot).toBe(false);
+    expect(r.sourceArtifactIds).toEqual([]);
+    expect(r.missingInputs).toContain("evidence_package");
+    expect(r.missingInputs).toContain("requirements_baseline");
+    expect(r.missingInputs).toContain("compliance_matrix");
+    expect(r.missingInputs).toContain("configuration");
+    expect(r.missingInputs).toContain("hld_intake");
   });
 
-  it("then blocks on requirements baseline, then compliance matrix", () => {
-    let r = report([], [artifact("evidence_package", 1, "approved")]);
-    expect(r.blockingStepId).toBe("requirements_baseline");
+  it("blocks when evidence_package latest is not approved", () => {
+    const r = report([], [
+      artifact("evidence_package", 1, "needs_review"),
+      artifact("requirements_baseline", 1, "approved"),
+      artifact("compliance_matrix", 1, "approved"),
+      noBoqException(1),
+      hldIntake(1),
+    ]);
+    expect(r.status).toBe("blocked");
+    expect(r.missingInputs).toEqual(["evidence_package"]);
+  });
 
-    r = report([], [
+  it("blocks when requirements_baseline latest is not approved", () => {
+    const r = report([], [
+      artifact("evidence_package", 1, "approved"),
+      artifact("requirements_baseline", 1, "needs_review"),
+      artifact("compliance_matrix", 1, "approved"),
+      noBoqException(1),
+      hldIntake(1),
+    ]);
+    expect(r.missingInputs).toEqual(["requirements_baseline"]);
+  });
+
+  it("blocks when the configuration gate is unsatisfied and surfaces its message", () => {
+    // A BoQ file with no approved configuration_expansion leaves the gate unsatisfied.
+    const r = report([file("boq", "boq")], [
       artifact("evidence_package", 1, "approved"),
       artifact("requirements_baseline", 1, "approved"),
+      artifact("compliance_matrix", 1, "approved"),
+      hldIntake(1),
     ]);
-    expect(r.blockingStepId).toBe("compliance_matrix");
+    expect(r.missingInputs).toContain("configuration");
+    expect(r.validationMessages.join(" ")).toMatch(/normaliz|configuration/i);
   });
 
-  it("allows HLD readiness without configuration expansion when there is no BoQ lane", () => {
-    const r = report([file("rfp-main", "rfp")], REQUIRED_APPROVED);
-
-    expect(r.status).toBe("ready");
-    expect(r.canCreateHldDesignDelta).toBe(true);
-    expect(r.requiresConfigurationExpansion).toBe(false);
-    expect(r.blockingStepId).toBeNull();
-    expect(
-      r.prerequisites.find((p) => p.stepId === "configuration_expansion")
-    ).toMatchObject({ required: false, isSatisfied: true });
-  });
-
-  it("requires approved configuration_expansion when the RFP package has a BoQ file", () => {
-    const r = report([file("boq", "boq")], REQUIRED_APPROVED);
-
-    expect(r.status).toBe("blocked");
-    expect(r.hasBoqLane).toBe(true);
-    expect(r.requiresConfigurationExpansion).toBe(true);
-    expect(r.blockingStepId).toBe("configuration_expansion");
-    expect(r.canCreateHldDesignDelta).toBe(false);
-  });
-
-  it("allows HLD readiness for a BoQ package only after configuration_expansion is approved", () => {
-    const r = report(
-      [file("boq", "boq")],
-      [...REQUIRED_APPROVED, artifact("configuration_expansion", 1, "approved")]
-    );
-
-    expect(r.status).toBe("ready");
-    expect(r.blockingStepId).toBeNull();
-    expect(r.canCreateHldDesignDelta).toBe(true);
-  });
-
-  it("treats any existing Quick BoM lane artifact as requiring configuration approval", () => {
+  it("blocks when hld_intake latest is not approved", () => {
     const r = report([], [
-      ...REQUIRED_APPROVED,
-      artifact("normalized_boq", 1, "generated"),
+      artifact("evidence_package", 1, "approved"),
+      artifact("requirements_baseline", 1, "approved"),
+      artifact("compliance_matrix", 1, "approved"),
+      noBoqException(1),
+      hldIntake(1, "needs_review"),
     ]);
+    expect(r.missingInputs).toEqual(["hld_intake"]);
+  });
+});
 
-    expect(r.requiresConfigurationExpansion).toBe(true);
-    expect(r.blockingStepId).toBe("configuration_expansion");
+describe("getRfpHldReadinessReport - latest-version staleness", () => {
+  it("blocks when the latest hld_intake is stale even if an older approved version exists", () => {
+    const r = report([], [
+      artifact("evidence_package", 1, "approved"),
+      artifact("requirements_baseline", 1, "approved"),
+      artifact("compliance_matrix", 1, "approved"),
+      noBoqException(1),
+      hldIntake(1),
+      hldIntake(2, "stale"),
+    ]);
+    expect(r.missingInputs).toEqual(["hld_intake"]);
   });
 
-  it("uses the latest version by artifact type and blocks stale latest artifacts", () => {
-    const r = report(
-      [file("boq", "boq")],
-      [
-        artifact("evidence_package", 1, "approved"),
-        artifact("requirements_baseline", 1, "approved"),
-        artifact("compliance_matrix", 1, "approved"),
-        artifact("configuration_expansion", 1, "approved"),
-        artifact("configuration_expansion", 2, "stale"),
-      ]
-    );
+  it("blocks when the latest compliance_matrix is stale even if an older approved version exists", () => {
+    const r = report([], [
+      artifact("evidence_package", 1, "approved"),
+      artifact("requirements_baseline", 1, "approved"),
+      artifact("compliance_matrix", 1, "approved"),
+      artifact("compliance_matrix", 2, "stale"),
+      noBoqException(1),
+      hldIntake(1),
+    ]);
+    expect(r.missingInputs).toEqual(["compliance_matrix"]);
+  });
 
-    expect(r.blockingStepId).toBe("configuration_expansion");
-    const config = r.prerequisites.find(
-      (p) => p.stepId === "configuration_expansion"
-    );
-    expect(config).toMatchObject({
-      latestArtifactId: "configuration_expansion-v2",
-      latestArtifactStatus: "stale",
-      isApproved: false,
+  it("blocks a BoQ project when the latest configuration_expansion is stale over an approved one", () => {
+    const r = report([file("boq", "boq")], [
+      artifact("evidence_package", 1, "approved"),
+      artifact("requirements_baseline", 1, "approved"),
+      artifact("compliance_matrix", 1, "approved"),
+      artifact("configuration_expansion", 1, "approved"),
+      artifact("configuration_expansion", 2, "stale"),
+      hldIntake(1),
+    ]);
+    expect(r.status).toBe("blocked");
+    expect(r.missingInputs).toEqual(["configuration"]);
+  });
+
+  it("blocks a no-BoQ project when a stale configuration_expansion supersedes the approved exception", () => {
+    const r = report([], [
+      artifact("evidence_package", 1, "approved"),
+      artifact("requirements_baseline", 1, "approved"),
+      artifact("compliance_matrix", 1, "approved"),
+      noBoqException(1),
+      artifact("configuration_expansion", 2, "stale"),
+      hldIntake(1),
+    ]);
+    expect(r.status).toBe("blocked");
+    expect(r.missingInputs).toEqual(["configuration"]);
+  });
+});
+
+describe("getRfpHldReadinessReport - knowledge pack domains", () => {
+  it("blocks on a claimed technical domain that lacks an approved design_knowledge_pack", () => {
+    const claimsWireless = artifact("requirements_baseline", 1, "approved", {
+      payload: { requirements: [{ id: "r1", text: "Deploy wireless access points across the building" }] },
     });
+    const r = report([], [
+      artifact("evidence_package", 1, "approved"),
+      claimsWireless,
+      artifact("compliance_matrix", 1, "approved"),
+      noBoqException(1),
+      hldIntake(1),
+    ]);
+    expect(r.status).toBe("blocked");
+    expect(r.missingInputs).toContain("design_knowledge_packs");
+    expect(r.missingKnowledgePackDomains).toContain("wireless");
   });
 
-  it("ignores files and artifacts from other projects", () => {
-    const r = report(
-      [file("boq-other", "boq", { projectId: OTHER_PROJECT })],
-      [
-        ...REQUIRED_APPROVED,
-        artifact("configuration_expansion", 1, "approved", {
-          projectId: OTHER_PROJECT,
-        }),
-      ]
-    );
-
-    expect(r.requiresConfigurationExpansion).toBe(false);
+  it("becomes ready once the claimed domain has an approved knowledge pack, including its id as a source", () => {
+    const claimsWireless = artifact("requirements_baseline", 1, "approved", {
+      payload: { requirements: [{ id: "r1", text: "Deploy wireless access points across the building" }] },
+    });
+    const pack = artifact("design_knowledge_pack", 1, "approved", {
+      id: "pack-wireless",
+      payload: { payloadKind: "rfp_hld_design_knowledge_pack", domain: "wireless", title: "Wireless design" },
+    });
+    const r = report([], [
+      artifact("evidence_package", 1, "approved"),
+      claimsWireless,
+      artifact("compliance_matrix", 1, "approved"),
+      noBoqException(1),
+      hldIntake(1),
+      pack,
+    ]);
     expect(r.status).toBe("ready");
+    expect(r.coveredDomains).toContain("wireless");
+    expect(r.sourceArtifactIds).toContain("pack-wireless");
+  });
+});
+
+describe("getRfpHldReadinessReport - ready report", () => {
+  it("a service-only exception satisfies configuration with no hardware packs required", () => {
+    const r = report([], READY_SERVICE_ONLY);
+
+    expect(r.status).toBe("ready");
+    expect(r.canCreateReadinessSnapshot).toBe(true);
+    expect(r.missingInputs).toEqual([]);
+    expect(r.missingKnowledgePackDomains).toEqual([]);
+  });
+
+  it("exposes the source authority ids", () => {
+    const r = report([], READY_SERVICE_ONLY);
+
+    expect(r.sourceEvidencePackageArtifactId).toBe("evidence_package-v1");
+    expect(r.sourceRequirementsBaselineArtifactId).toBe("requirements_baseline-v1");
+    expect(r.sourceComplianceMatrixArtifactId).toBe("compliance_matrix-v1");
+    expect(r.sourceConfigurationArtifactId).toBe("configuration_expansion-v1");
+    expect(r.sourceHldIntakeArtifactId).toBe("hld_intake-v1");
+    expect(r.sourceArtifactIds).toEqual([
+      "evidence_package-v1",
+      "requirements_baseline-v1",
+      "compliance_matrix-v1",
+      "configuration_expansion-v1",
+      "hld_intake-v1",
+    ]);
+  });
+
+  it("includes covered/excluded domains and sanitized assumptions from the hld_intake", () => {
+    const r = report([], READY_SERVICE_ONLY);
+
+    expect(r.coveredDomains).toContain("service_only");
+    expect(r.excludedDomains).toContain("wireless");
+    expect(r.excludedDomains).not.toContain("service_only");
+
+    expect(r.assumptions).toEqual([
+      {
+        fieldId: "resiliency_expectations",
+        label: "Resiliency expectations",
+        status: "unknown",
+        note: "awaiting customer",
+      },
+      {
+        fieldId: "rack_power_assumptions",
+        label: "Rack and power assumptions",
+        status: "not_applicable",
+      },
+    ]);
+  });
+
+  it("does not leak storagePath, raw payload bodies, or upstream payload secrets", () => {
+    const r = report([file("boq", "boq")], [
+      ...READY_SERVICE_ONLY.filter((a) => a.type !== "configuration_expansion"),
+      artifact("configuration_expansion", 1, "approved"),
+    ]);
+    const json = JSON.stringify(r);
+    expect(json).not.toContain("storagePath");
+    expect(json).not.toContain("s3://");
+    expect(json).not.toContain("payload-not-leaked");
+    expect(json).not.toContain("brownfield");
   });
 });
 
 describe("module purity (static source check)", () => {
-  const SRC_PATH = join(
-    process.cwd(),
-    "src/lib/projects/project-rfp-hld-readiness.ts"
-  );
-  const TEST_PATH = join(
-    process.cwd(),
-    "tests/lib/projects/project-rfp-hld-readiness.test.ts"
-  );
+  const SRC_PATH = join(process.cwd(), "src/lib/projects/project-rfp-hld-readiness.ts");
+  const TEST_PATH = join(process.cwd(), "tests/lib/projects/project-rfp-hld-readiness.test.ts");
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports only canonical project types", () => {
-    const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
-    expect(froms).toEqual(["@/types/project"]);
-    expect(source).toMatch(/import type \{[\s\S]*?\} from "@\/types\/project";/);
+  it("imports only canonical types, the BoQ readiness gate, and the domain readiness helper", () => {
+    const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]).sort();
+    expect(froms).toEqual(
+      [
+        "@/lib/projects/project-rfp-boq-readiness",
+        "@/lib/projects/project-rfp-hld-domain-readiness",
+        "@/types/project",
+      ].sort()
+    );
   });
 
-  it("does not implement HLD, read stores/files, price, export, configure, resolve SKUs, or call AI", () => {
+  it("does not read stores/files, price, export, resolve SKUs, lookup catalog, or call AI", () => {
     for (const forbidden of [
       'from "@/lib/db',
       'from "node:fs',
+      'from "node:path',
       "createProjectArtifactVersion",
       "createProjectApproval",
-      "payload.",
-      ".payload",
       ".storagePath",
       'from "@/lib/projects/pricing"',
       'from "@/lib/projects/sku-',
       'from "@/lib/projects/config-expansion',
-      'from "@/lib/projects/project-rfp-compliance-matrix-drafting"',
       'from "@/lib/adapters',
       'from "@/lib/agent',
       'from "@/lib/ai',
@@ -228,7 +355,9 @@ describe("module purity (static source check)", () => {
 
   it("keeps source and test ASCII-only", () => {
     const testSource = readFileSync(TEST_PATH, "utf8");
+    // eslint-disable-next-line no-control-regex
     expect(/[^\x00-\x7F]/.test(source)).toBe(false);
+    // eslint-disable-next-line no-control-regex
     expect(/[^\x00-\x7F]/.test(testSource)).toBe(false);
   });
 });
