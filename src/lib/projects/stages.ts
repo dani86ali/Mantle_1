@@ -106,6 +106,7 @@ export const PROJECT_STAGE_DEFINITIONS: readonly ProjectStageDefinition[] = [
       "hld_design_model",
       "hld_diagram",
       "hld_document",
+      "design_knowledge_pack",
     ],
   },
   {

@@ -24,6 +24,7 @@ const VALID_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_design_model",
   "hld_diagram",
   "hld_document",
+  "design_knowledge_pack",
   "technical_proposal",
   "export_package",
 ];
@@ -219,11 +220,29 @@ describe("artifact metadata", () => {
       "hld_design_model",
       "hld_diagram",
       "hld_document",
+      "design_knowledge_pack",
     ]);
     for (const type of STAGE_6_HLD_ARTIFACT_TYPES) {
       expect(hld?.artifactTypes).toContain(type);
       // each new literal is part of the valid artifact set
       expect(VALID_ARTIFACT_TYPES).toContain(type);
+    }
+  });
+
+  it("hld_design_delta_review includes design_knowledge_pack alongside HLD spine types", () => {
+    const hld = PROJECT_STAGE_DEFINITIONS.find(
+      (d) => d.stageId === "hld_design_delta_review"
+    );
+    expect(hld?.artifactTypes).toContain("design_knowledge_pack");
+    expect(VALID_ARTIFACT_TYPES).toContain("design_knowledge_pack");
+  });
+
+  it("design_knowledge_pack does not appear on unrelated stages", () => {
+    const unrelatedStages = PROJECT_STAGE_DEFINITIONS.filter(
+      (d) => d.stageId !== "hld_design_delta_review"
+    );
+    for (const def of unrelatedStages) {
+      expect(def.artifactTypes).not.toContain("design_knowledge_pack");
     }
   });
 

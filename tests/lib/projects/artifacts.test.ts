@@ -55,6 +55,7 @@ describe("getArtifactTypesForStage", () => {
   it("returns the Stage 6 HLD readiness spine for hld_design_delta_review", () => {
     // The legacy delta plus the Stage 6 HLD intake/readiness/model/diagram/
     // document contracts all flow through the existing HLD stage metadata.
+    // design_knowledge_pack is added in Stage 6.3.
     expect(getArtifactTypesForStage("hld_design_delta_review")).toEqual([
       "hld_design_delta",
       "hld_intake",
@@ -62,6 +63,7 @@ describe("getArtifactTypesForStage", () => {
       "hld_design_model",
       "hld_diagram",
       "hld_document",
+      "design_knowledge_pack",
     ]);
   });
 });
@@ -90,10 +92,32 @@ describe("isArtifactTypeAllowedForStage", () => {
       "hld_design_model",
       "hld_diagram",
       "hld_document",
+      "design_knowledge_pack",
     ] as const) {
       expect(isArtifactTypeAllowedForStage("hld_design_delta_review", type)).toBe(
         true
       );
+    }
+  });
+
+  it("design_knowledge_pack is allowed on hld_design_delta_review", () => {
+    expect(
+      isArtifactTypeAllowedForStage("hld_design_delta_review", "design_knowledge_pack")
+    ).toBe(true);
+  });
+
+  it("design_knowledge_pack is not allowed on unrelated stages", () => {
+    for (const stageId of [
+      "intake_package_review",
+      "boq_format_validation",
+      "sku_resolution",
+      "requirements_baseline_review",
+      "compliance_matrix_review",
+      "boq_pricing_review",
+      "proposal_review",
+      "export_approval",
+    ] as const) {
+      expect(isArtifactTypeAllowedForStage(stageId, "design_knowledge_pack")).toBe(false);
     }
   });
 
@@ -244,6 +268,23 @@ describe("materializeProjectArtifactVersion", () => {
     expect(row).toMatchObject({
       stageId: "hld_design_delta_review",
       type: "hld_readiness_snapshot",
+      status: "needs_review",
+      version: 1,
+      payload: {},
+    });
+  });
+
+  it("materializes design_knowledge_pack at hld_design_delta_review", () => {
+    const row = materializeProjectArtifactVersion({
+      projectId: PROJECT,
+      tenantId: TENANT,
+      stageId: "hld_design_delta_review",
+      type: "design_knowledge_pack",
+      status: "needs_review",
+    });
+    expect(row).toMatchObject({
+      stageId: "hld_design_delta_review",
+      type: "design_knowledge_pack",
       status: "needs_review",
       version: 1,
       payload: {},

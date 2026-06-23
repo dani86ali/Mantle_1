@@ -29,6 +29,7 @@ const ALL_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_design_model",
   "hld_diagram",
   "hld_document",
+  "design_knowledge_pack",
   "technical_proposal",
   "export_package",
 ];
@@ -111,6 +112,12 @@ describe("getDirectDownstreamArtifactTypes", () => {
     // An approved HLD document can feed the technical proposal.
     expect(getDirectDownstreamArtifactTypes("hld_document")).toEqual([
       "technical_proposal",
+    ]);
+  });
+
+  it("design_knowledge_pack directly feeds hld_readiness_snapshot (Stage 6.3)", () => {
+    expect(getDirectDownstreamArtifactTypes("design_knowledge_pack")).toEqual([
+      "hld_readiness_snapshot",
     ]);
   });
 
@@ -749,6 +756,70 @@ describe("planStaleArtifactUpdates", () => {
       "export_package",
     ]);
     expect(plan.map((u) => u.type)).not.toContain("hld_readiness_snapshot");
+  });
+
+  it("a changed latest design_knowledge_pack marks latest eligible hld_readiness_snapshot stale", () => {
+    const changed = artifact({ id: "dkp-1", type: "design_knowledge_pack", version: 1 });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hrs-1", type: "hld_readiness_snapshot", version: 1 }),
+        artifact({ id: "hdm-1", type: "hld_design_model", version: 1 }),
+        artifact({ id: "tp-1", type: "technical_proposal", version: 1 }),
+        artifact({ id: "exp-1", type: "export_package", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toContain("hld_readiness_snapshot");
+    expect(plan.find((u) => u.type === "hld_readiness_snapshot")?.artifactId).toBe("hrs-1");
+    expect(plan.every((u) => u.nextStatus === "stale")).toBe(true);
+    expect(plan.every((u) => u.changedArtifactType === "design_knowledge_pack")).toBe(true);
+  });
+
+  it("design_knowledge_pack does not mark unrelated artifact types stale", () => {
+    const changed = artifact({ id: "dkp-1", type: "design_knowledge_pack", version: 1 });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hrs-1", type: "hld_readiness_snapshot", version: 1 }),
+        // These artifact types are not downstream of design_knowledge_pack.
+        artifact({ id: "req-1", type: "requirements_baseline", version: 1 }),
+        artifact({ id: "cfg-1", type: "configuration_expansion", version: 1 }),
+        artifact({ id: "pbq-1", type: "priced_boq", version: 1 }),
+        artifact({ id: "inp-1", type: "input_package", version: 1 }),
+      ],
+    });
+    const plannedTypes = plan.map((u) => u.type);
+    expect(plannedTypes).not.toContain("requirements_baseline");
+    expect(plannedTypes).not.toContain("configuration_expansion");
+    expect(plannedTypes).not.toContain("priced_boq");
+    expect(plannedTypes).not.toContain("input_package");
+  });
+
+  it("design_knowledge_pack with no downstream artifacts in pool returns empty plan", () => {
+    const changed = artifact({ id: "dkp-1", type: "design_knowledge_pack", version: 1 });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [changed],
+    });
+    expect(plan).toEqual([]);
+  });
+
+  it("design_knowledge_pack does not mark a non-latest hld_readiness_snapshot stale", () => {
+    const changed = artifact({ id: "dkp-1", type: "design_knowledge_pack", version: 1 });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hrs-1", type: "hld_readiness_snapshot", version: 1 }),
+        artifact({ id: "hrs-2", type: "hld_readiness_snapshot", version: 2 }),
+      ],
+    });
+    const snapshotUpdates = plan.filter((u) => u.type === "hld_readiness_snapshot");
+    expect(snapshotUpdates).toHaveLength(1);
+    expect(snapshotUpdates[0].artifactId).toBe("hrs-2");
+    expect(snapshotUpdates[0].version).toBe(2);
   });
 
   it("a change with no downstream artifacts returns an empty plan", () => {

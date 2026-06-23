@@ -69,6 +69,12 @@ export type ProjectArtifactStatus =
  * staleness contracts stay type-complete. This slice defines the contracts
  * only and adds NO model/diagram/document generation behavior. The legacy
  * `hld_design_delta` artifact is unchanged.
+ *
+ * `design_knowledge_pack` is the approved domain knowledge artifact for HLD
+ * readiness (Stage 6.3): structured solution patterns, validated topology
+ * options, and design constraints curated per-project. Its payload schema and
+ * domain readiness helper are defined in a separate prompt. It feeds
+ * `hld_readiness_snapshot` via a direct staleness edge.
  */
 export type ProjectArtifactType =
   | "input_package"
@@ -86,6 +92,7 @@ export type ProjectArtifactType =
   | "hld_design_model"
   | "hld_diagram"
   | "hld_document"
+  | "design_knowledge_pack"
   | "technical_proposal"
   | "export_package";
 

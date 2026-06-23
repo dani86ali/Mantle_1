@@ -38,6 +38,10 @@ import type {
  * the future hld_diagram and hld_document; an approved hld_document can feed
  * technical_proposal. The model/diagram/document nodes are future contracts -
  * only their staleness edges are declared here, no generation behavior.
+ *
+ * Stage 6.3: design_knowledge_pack is an approved domain knowledge artifact
+ * (solution patterns, validated topologies, design constraints) that feeds
+ * hld_readiness_snapshot. Its payload schema is defined in a separate prompt.
  */
 const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   Record<ProjectArtifactType, readonly ProjectArtifactType[]>
@@ -57,6 +61,7 @@ const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   hld_design_delta: ["technical_proposal"],
   priced_boq: ["technical_proposal", "export_package"],
   hld_intake: ["hld_readiness_snapshot"],
+  design_knowledge_pack: ["hld_readiness_snapshot"],
   hld_readiness_snapshot: ["hld_design_model"],
   hld_design_model: ["hld_diagram", "hld_document"],
   hld_diagram: [],
