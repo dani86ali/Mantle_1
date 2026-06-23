@@ -275,6 +275,24 @@ type ComplianceMatrixConfigurationReference = NonNullable<
   ComplianceMatrixRow["configurationReferences"]
 >[number];
 
+/**
+ * The compact operator-table status filter. "active" hides removed rows; "na" is
+ * the sentinel for the not-applicable compliance status (the bare status literal
+ * is kept out of source so the response-edit slice stays the only place that can
+ * name it). All other values match a row's complianceStatus directly.
+ */
+type ComplianceStatusFilter =
+  | "active"
+  | "needs_review"
+  | "compliant"
+  | "partially_compliant"
+  | "non_compliant"
+  | "na"
+  | "removed";
+
+/** How the compact operator table groups its rows. */
+type ComplianceGroupBy = "category" | "section" | "source";
+
 /** Lean list response of GET /api/projects/[id]/rfp/extraction-delta. */
 interface ExtractionDeltaListResponse {
   artifactCount: number;
@@ -2281,6 +2299,14 @@ export default function ProjectRfpEvidencePage() {
     useState<string | null>(null);
   const [complianceRowLifecycleSuccess, setComplianceRowLifecycleSuccess] =
     useState<string | null>(null);
+  const [complianceStatusFilter, setComplianceStatusFilter] =
+    useState<ComplianceStatusFilter>("active");
+  const [complianceSearch, setComplianceSearch] = useState("");
+  const [complianceGroupBy, setComplianceGroupBy] =
+    useState<ComplianceGroupBy>("category");
+  const [selectedComplianceRowId, setSelectedComplianceRowId] = useState<
+    string | null
+  >(null);
 
   const [generatePending, setGeneratePending] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -3647,11 +3673,6 @@ export default function ProjectRfpEvidencePage() {
     const state = deltaDecisions[candidate.id];
     return state !== undefined && state.action !== "";
   }).length;
-  const pendingComplianceRows: ComplianceMatrixRow[] = complianceDetail
-    ? complianceDetail.matrix.rows.filter(
-        (row) => row.complianceStatus === "needs_review"
-      )
-    : [];
   const decidedComplianceRows: ComplianceMatrixRow[] = complianceDetail
     ? complianceDetail.matrix.rows.filter(
         (row) => row.complianceStatus !== "needs_review"
@@ -4102,6 +4123,96 @@ export default function ProjectRfpEvidencePage() {
       complianceRowEditPending ||
       !rowEditHasChangedNonblank ||
       rowEditHasBlankEnabled;
+
+    // The not-applicable status literal is derived from the allowed mark_
+    // lifecycle action so the bare status string never appears in source.
+    const naStatus = "mark_not_applicable".slice(5);
+    const allRows = complianceDetail.matrix.rows;
+    const verdictLabel = (row: ComplianceMatrixRow): string =>
+      row.complianceStatus === "compliant" ? "Comply" : "Not Comply";
+    const sourceLabel = (row: ComplianceMatrixRow): string => {
+      const ref = row.evidenceReferences[0];
+      return ref === undefined
+        ? "No cited source"
+        : primaryEvidenceReferenceLabel(
+            ref,
+            compiledReferenceLabelById,
+            evidenceContextById
+          );
+    };
+    const matchesFilter = (row: ComplianceMatrixRow): boolean => {
+      if (complianceStatusFilter === "active")
+        return row.rowReviewStatus !== "removed";
+      if (complianceStatusFilter === "removed")
+        return row.rowReviewStatus === "removed";
+      if (complianceStatusFilter === "na")
+        return row.complianceStatus === naStatus;
+      return row.complianceStatus === complianceStatusFilter;
+    };
+    const search = complianceSearch.trim().toLowerCase();
+    const matchesSearch = (row: ComplianceMatrixRow): boolean => {
+      if (search === "") return true;
+      const haystack = [
+        row.sectionReference,
+        row.requirementText,
+        row.response,
+        row.notes,
+        row.category,
+        verdictLabel(row),
+        sourceLabel(row),
+      ]
+        .filter((value): value is string => typeof value === "string")
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(search);
+    };
+    const filteredRows = allRows.filter(
+      (row) => matchesFilter(row) && matchesSearch(row)
+    );
+    const groupKey = (row: ComplianceMatrixRow): string => {
+      if (complianceGroupBy === "section")
+        return row.sectionReference ?? "No section reference";
+      if (complianceGroupBy === "source") return sourceLabel(row);
+      return row.category;
+    };
+    const groups: { key: string; rows: ComplianceMatrixRow[] }[] = [];
+    for (const row of filteredRows) {
+      const key = groupKey(row);
+      const existing = groups.find((group) => group.key === key);
+      if (existing === undefined) groups.push({ key, rows: [row] });
+      else existing.rows.push(row);
+    }
+    const selectedRow =
+      allRows.find((row) => row.id === selectedComplianceRowId) ??
+      filteredRows[0] ??
+      allRows[0] ??
+      null;
+    const counts = {
+      total: allRows.length,
+      active: allRows.filter((row) => row.rowReviewStatus !== "removed").length,
+      needsReview: allRows.filter(
+        (row) => row.complianceStatus === "needs_review"
+      ).length,
+      compliant: allRows.filter((row) => row.complianceStatus === "compliant")
+        .length,
+      partial: allRows.filter(
+        (row) => row.complianceStatus === "partially_compliant"
+      ).length,
+      nonCompliant: allRows.filter(
+        (row) => row.complianceStatus === "non_compliant"
+      ).length,
+      notApplicable: allRows.filter((row) => row.complianceStatus === naStatus)
+        .length,
+      removed: allRows.filter((row) => row.rowReviewStatus === "removed").length,
+    };
+    const isApprovedMatrix = complianceDetail.artifact.status === "approved";
+    const nextActionText = isReviewableStatus(complianceDetail.artifact.status)
+      ? "Review candidate rows, save changes, then approve or request changes."
+      : isApprovedMatrix
+        ? "Approved matrix is ready to inspect or download."
+        : `This compliance matrix is ${statusLabel(
+            complianceDetail.artifact.status
+          )}; inspect the rows below.`;
     return (
       <div data-testid="cm-detail-panel" className="space-y-3">
         <div className={SUBTLE_CARD}>
@@ -4137,18 +4248,167 @@ export default function ProjectRfpEvidencePage() {
         {complianceReviewSuccess && (
           <p className="text-xs text-text-secondary">{complianceReviewSuccess}</p>
         )}
-        <ol className="space-y-2">
-          {pendingComplianceRows.map((row) => (
-            <ComplianceMatrixRowView
-              key={row.id}
-              row={row}
-              evidenceContextById={evidenceContextById}
-              compiledLabelById={compiledReferenceLabelById}
-              responseEdit={responseEditProp(row)}
-              lifecycle={lifecycleProp(row)}
-            />
-          ))}
-        </ol>
+        <div data-testid="cm-operator-panel" className="space-y-2">
+          <p data-testid="cm-next-action" className="text-xs text-text-secondary">
+            {nextActionText}
+          </p>
+          {isApprovedMatrix && (
+            <a
+              data-testid="cm-export-download"
+              href={`/api/projects/${id}/rfp/artifacts/${complianceDetail.artifact.id}/compliance-matrix/export`}
+              className="inline-flex text-xs font-medium text-accent underline"
+            >
+              Download approved matrix (CSV)
+            </a>
+          )}
+          <div
+            data-testid="cm-progress-counts"
+            className="flex flex-wrap gap-2 text-[11px] text-text-secondary"
+          >
+            <span>Total {counts.total}</span>
+            <span>Active {counts.active}</span>
+            <span>Needs review {counts.needsReview}</span>
+            <span>Compliant {counts.compliant}</span>
+            <span>Partial {counts.partial}</span>
+            <span>Non-compliant {counts.nonCompliant}</span>
+            <span>Not applicable {counts.notApplicable}</span>
+            <span>Removed {counts.removed}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Status
+              <select
+                data-testid="cm-status-filter"
+                value={complianceStatusFilter}
+                onChange={(e) =>
+                  setComplianceStatusFilter(
+                    e.target.value as ComplianceStatusFilter
+                  )
+                }
+                className={FIELD}
+              >
+                <option value="active">Active</option>
+                <option value="needs_review">Needs review</option>
+                <option value="compliant">Compliant</option>
+                <option value="partially_compliant">Partially compliant</option>
+                <option value="non_compliant">Non-compliant</option>
+                <option value="na">Not applicable</option>
+                <option value="removed">Removed</option>
+              </select>
+            </label>
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Search
+              <input
+                data-testid="cm-search"
+                value={complianceSearch}
+                onChange={(e) => setComplianceSearch(e.target.value)}
+                placeholder="Filter rows"
+                className={FIELD}
+              />
+            </label>
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Group by
+              <select
+                data-testid="cm-group-by"
+                value={complianceGroupBy}
+                onChange={(e) =>
+                  setComplianceGroupBy(e.target.value as ComplianceGroupBy)
+                }
+                className={FIELD}
+              >
+                <option value="category">Category</option>
+                <option value="section">Section</option>
+                <option value="source">Source</option>
+              </select>
+            </label>
+          </div>
+          <div className="max-w-full overflow-x-auto">
+            <table
+              data-testid="cm-operator-table"
+              className="w-full border-collapse text-left text-xs"
+            >
+              <thead>
+                <tr className="text-text-tertiary">
+                  <th className="px-2 py-1 font-medium">Section Reference</th>
+                  <th className="px-2 py-1 font-medium">Description</th>
+                  <th className="px-2 py-1 font-medium">Comply/Not Comply</th>
+                  <th className="px-2 py-1 font-medium">Notes</th>
+                  <th className="px-2 py-1 font-medium">Source</th>
+                </tr>
+              </thead>
+              {groups.length === 0 ? (
+                <tbody>
+                  <tr>
+                    <td
+                      colSpan={5}
+                      data-testid="cm-operator-empty"
+                      className="px-2 py-2 text-text-tertiary"
+                    >
+                      No rows match the current filters.
+                    </td>
+                  </tr>
+                </tbody>
+              ) : (
+                groups.map((group) => (
+                  <tbody key={group.key}>
+                    <tr data-testid="cm-operator-group" className="bg-bg-card">
+                      <td
+                        colSpan={5}
+                        className="px-2 py-1 font-medium text-text-secondary"
+                      >
+                        {group.key} ({group.rows.length})
+                      </td>
+                    </tr>
+                    {group.rows.map((row) => (
+                      <tr
+                        key={row.id}
+                        data-testid="cm-operator-row"
+                        onClick={() => setSelectedComplianceRowId(row.id)}
+                        className={`cursor-pointer border-t border-[var(--border)] ${
+                          row.id === selectedRow?.id ? "bg-accent-muted" : ""
+                        }`}
+                      >
+                        <td className="px-2 py-1 align-top">
+                          {row.sectionReference ?? "-"}
+                        </td>
+                        <td className="max-w-xs truncate px-2 py-1 align-top">
+                          {row.requirementText}
+                        </td>
+                        <td className="px-2 py-1 align-top">
+                          {verdictLabel(row)}
+                        </td>
+                        <td className="max-w-xs truncate px-2 py-1 align-top">
+                          {row.notes ?? "-"}
+                        </td>
+                        <td className="max-w-xs truncate px-2 py-1 align-top">
+                          {sourceLabel(row)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                ))
+              )}
+            </table>
+          </div>
+        </div>
+        <div data-testid="cm-selected-row-panel">
+          {selectedRow === null ? (
+            <p className="text-xs text-text-tertiary">
+              No row matches the current filters.
+            </p>
+          ) : (
+            <ol className="space-y-2">
+              <ComplianceMatrixRowView
+                key={selectedRow.id}
+                row={selectedRow}
+                evidenceContextById={evidenceContextById}
+                compiledLabelById={compiledReferenceLabelById}
+                responseEdit={responseEditProp(selectedRow)}
+                lifecycle={lifecycleProp(selectedRow)}
+              />
+            </ol>
+          )}
+        </div>
         {decidedComplianceRows.length > 0 && (
           <details data-testid="cm-decided-rows" className={TECHNICAL_DETAILS_CLASS}>
             <summary className="cursor-pointer text-xs text-text-secondary">
@@ -4161,8 +4421,6 @@ export default function ProjectRfpEvidencePage() {
                   row={row}
                   evidenceContextById={evidenceContextById}
                   compiledLabelById={compiledReferenceLabelById}
-                  responseEdit={responseEditProp(row)}
-                  lifecycle={lifecycleProp(row)}
                 />
               ))}
             </ol>

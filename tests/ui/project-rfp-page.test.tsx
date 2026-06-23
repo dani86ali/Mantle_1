@@ -1300,6 +1300,80 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     expect(primaryText).not.toContain("REMOVED-HISTORY-NOTE-CANARY");
   });
 
+  it("renders the compact operator matrix surface with counts, controls, compact rows, and selected-row detail", async () => {
+    stubFetch(stage5ComplianceFetch(complianceMatrixStage5DetailResponse()));
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("review-drawer");
+    await screen.findByTestId("cm-operator-panel");
+
+    expect(screen.getByTestId("cm-progress-counts")).toBeInTheDocument();
+    expect(screen.getByTestId("cm-status-filter")).toBeInTheDocument();
+    expect(screen.getByTestId("cm-search")).toBeInTheDocument();
+    expect(screen.getByTestId("cm-group-by")).toBeInTheDocument();
+    expect(screen.getByTestId("cm-operator-table")).toBeInTheDocument();
+    expect(screen.getByTestId("cm-selected-row-panel")).toBeInTheDocument();
+
+    const rows = screen.getAllByTestId("cm-operator-row");
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    // The compact row primary text never leaks raw ids.
+    const rowText = rows.map((row) => row.textContent ?? "").join(" ");
+    expect(rowText).not.toContain("CM-010");
+    expect(rowText).not.toContain("RFP-REQ-010");
+    expect(rowText).not.toContain("ev-text-1");
+    expect(rowText).not.toContain("file-rfp-1");
+    expect(rowText).not.toContain(INPUT_PACKAGE_ARTIFACT_ID);
+
+    // The selected-row detail keeps those ids inside its collapsed audit.
+    const detailRow = within(
+      screen.getByTestId("cm-selected-row-panel")
+    ).getByTestId("cm-detail-row");
+    const audit = within(detailRow).getByTestId("cm-detail-audit");
+    expect(audit).toHaveTextContent("CM-010");
+    expect(audit).toHaveTextContent("RFP-REQ-010");
+    expect(audit).toHaveTextContent("ev-text-1");
+    expect(audit).toHaveTextContent("file-rfp-1");
+    expect(audit).toHaveTextContent(INPUT_PACKAGE_ARTIFACT_ID);
+  });
+
+  it("surfaces a removed row in the compact table only under the removed filter and keeps its audit history in the selected detail", async () => {
+    stubFetch(stage5ComplianceFetch(complianceMatrixRemovedRowDetailResponse()));
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    await act(async () => {
+      fireEvent.click(generate);
+    });
+    await screen.findByTestId("cm-operator-panel");
+
+    // The default active filter hides the removed row from the compact table.
+    expect(screen.queryAllByTestId("cm-operator-row")).toHaveLength(0);
+
+    fireEvent.change(screen.getByTestId("cm-status-filter"), {
+      target: { value: "removed" },
+    });
+
+    const rows = screen.getAllByTestId("cm-operator-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("SEC-REF-9.9");
+
+    fireEvent.click(rows[0]);
+
+    const detailRow = within(
+      screen.getByTestId("cm-selected-row-panel")
+    ).getByTestId("cm-detail-row");
+    const audit = within(detailRow).getByTestId("cm-detail-audit");
+    expect(audit).toHaveTextContent("Row review status: removed");
+    expect(audit).toHaveTextContent(
+      "Removed reason: REMOVED-REASON-CANARY duplicate row"
+    );
+    expect(audit).toHaveTextContent("REMOVED-HISTORY-NOTE-CANARY");
+  });
+
   it("posts a row edit carrying response, complianceStatus, and notes to the rows/review route and reloads list and detail for the returned new matrix version", async () => {
     const V2_ID = "art-cm-2";
     const V2_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${V2_ID}/compliance-matrix`;
@@ -1497,6 +1571,14 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
       screen.queryByTestId("cm-row-response-edit-enable-CM-010")
     ).toBeNull();
     expect(screen.queryByTestId("cm-row-response-edit-submit")).toBeNull();
+
+    // The approved matrix offers a CSV export link to the compliance-matrix
+    // export route for the loaded artifact.
+    const exportLink = screen.getByTestId("cm-export-download");
+    expect(exportLink).toHaveAttribute(
+      "href",
+      `/api/projects/${PROJECT_ID}/rfp/artifacts/${COMPLIANCE_MATRIX_ARTIFACT_ID}/compliance-matrix/export`
+    );
   });
 
   it("requires a reason to mark a row not applicable and posts only the lifecycle decision to the rows/review route", async () => {
@@ -2496,6 +2578,13 @@ describe("ProjectRfpEvidencePage static guards", () => {
 
   it("posts engineer row response edits to the compliance-matrix rows/review route", () => {
     expect(source).toContain("/compliance-matrix/rows/review");
+  });
+
+  it("exposes the compact compliance operator surface controls in source", () => {
+    expect(source).toContain("cm-operator-table");
+    expect(source).toContain("cm-status-filter");
+    expect(source).toContain("cm-search");
+    expect(source).toContain("cm-group-by");
   });
 
   it("exposes row lifecycle controls (mark not applicable, remove, restore) without ever sending bare not_applicable as an edit status", () => {
