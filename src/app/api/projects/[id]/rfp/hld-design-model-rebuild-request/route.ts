@@ -18,6 +18,15 @@
  * hld_design_model_rebuild_request_payload_invalid (with errors; nothing written),
  * ok -> 201 with { artifact }.
  *
+ * GET - list the executable-active `hld_design_model_rebuild_request` artifacts for
+ * the project so the UI can discover which request to execute. session.tenantId is
+ * the only tenant authority and the route param id is the only project authority;
+ * the request body is NEVER read or parsed (no JSON, no multipart). Result maps to
+ * HTTP: ok -> 200 with { artifactCount, artifacts } (lean summaries only - no
+ * payload body or tenant id), not_found -> 404 project_not_found, wrong_mode -> 409
+ * wrong_project_mode (with the project), unexpected throw -> controlled 500
+ * rfp_hld_design_model_rebuild_request_list_failed (no thrown detail).
+ *
  * This route is a transport adapter only: it never touches the DB or any store,
  * reads no raw RFP files or storage paths, parses no documents, prices nothing,
  * resolves no SKU or configuration, approves nothing, executes no rebuild, and
@@ -26,7 +35,10 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/middleware/auth";
-import { createRfpHldDesignModelRebuildRequest } from "@/lib/projects/project-rfp-hld-design-model-rebuild-request-service";
+import {
+  createRfpHldDesignModelRebuildRequest,
+  listRfpHldDesignModelRebuildRequests,
+} from "@/lib/projects/project-rfp-hld-design-model-rebuild-request-service";
 
 export async function POST(
   request: NextRequest,
@@ -146,6 +158,52 @@ export async function POST(
       {
         code: "rfp_hld_design_model_rebuild_request_failed",
         error: "Unable to create RFP HLD design model rebuild request.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
+  try {
+    // The body is never read: every input comes from the session or the URL.
+    const result = await listRfpHldDesignModelRebuildRequests({
+      tenantId: session.tenantId,
+      projectId: params.id,
+    });
+
+    if (result.status === "not_found") {
+      return NextResponse.json(
+        { code: "project_not_found", error: "Project not found." },
+        { status: 404 }
+      );
+    }
+    if (result.status === "wrong_mode") {
+      return NextResponse.json(
+        {
+          code: "wrong_project_mode",
+          error: "Project is not an RFP project.",
+          project: result.project,
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(
+      { artifactCount: result.artifactCount, artifacts: result.artifacts },
+      { status: 200 }
+    );
+  } catch {
+    return NextResponse.json(
+      {
+        code: "rfp_hld_design_model_rebuild_request_list_failed",
+        error: "Unable to list RFP HLD design model rebuild requests.",
       },
       { status: 500 }
     );

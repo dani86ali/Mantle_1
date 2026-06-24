@@ -4,18 +4,22 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Mock auth and the rebuild-request service so the route's auth gate, scoped body
 // parse, tenant/user/param authority, and result mapping are tested without a DB.
-const { mockRequireAuth, mockCreate } = vi.hoisted(() => ({
+const { mockRequireAuth, mockCreate, mockList } = vi.hoisted(() => ({
   mockRequireAuth: vi.fn(),
   mockCreate: vi.fn(),
+  mockList: vi.fn(),
 }));
 
 vi.mock("@/lib/middleware/auth", () => ({ requireAuth: mockRequireAuth }));
 vi.mock(
   "@/lib/projects/project-rfp-hld-design-model-rebuild-request-service",
-  () => ({ createRfpHldDesignModelRebuildRequest: mockCreate })
+  () => ({
+    createRfpHldDesignModelRebuildRequest: mockCreate,
+    listRfpHldDesignModelRebuildRequests: mockList,
+  })
 );
 
-import { POST } from "@/app/api/projects/[id]/rfp/hld-design-model-rebuild-request/route";
+import { POST, GET } from "@/app/api/projects/[id]/rfp/hld-design-model-rebuild-request/route";
 import * as routeModule from "@/app/api/projects/[id]/rfp/hld-design-model-rebuild-request/route";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -52,6 +56,17 @@ const ARTIFACT_SUMMARY = {
   updatedAt: "2026-06-24T12:00:00.000Z",
 };
 
+const LISTED_ARTIFACT = {
+  ...ARTIFACT_SUMMARY,
+  payloadSummary: {
+    payloadKind: "rfp_hld_design_model_rebuild_request",
+    sourceHldDesignModelArtifactId: MODEL_ID,
+    sourceReviewArtifactId: REVIEW_ID,
+    requestedAt: "2026-06-24T10:00:00.000Z",
+    status: "active",
+  },
+};
+
 const WRONG_MODE_PROJECT = {
   id: PROJECT,
   name: "Honeywell Quick BoM",
@@ -80,6 +95,9 @@ function reqBadJson(): NextRequest {
 beforeEach(() => {
   mockRequireAuth.mockReset().mockReturnValue(SESSION);
   mockCreate.mockReset().mockResolvedValue({ status: "ok", artifact: ARTIFACT_SUMMARY });
+  mockList
+    .mockReset()
+    .mockResolvedValue({ status: "ok", artifactCount: 1, artifacts: [LISTED_ARTIFACT] });
 });
 
 describe("POST hld-design-model-rebuild-request - auth", () => {
@@ -231,10 +249,76 @@ describe("POST hld-design-model-rebuild-request - result mapping", () => {
   });
 });
 
+describe("GET hld-design-model-rebuild-request - auth", () => {
+  it("returns the requireAuth response and never parses a body or calls the service", async () => {
+    const unauth = NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    mockRequireAuth.mockReturnValue(unauth);
+    const request = req();
+    const res = await GET(request, PARAMS);
+    expect(res).toBe(unauth);
+    expect(mockList).not.toHaveBeenCalled();
+    expect(request.json).not.toHaveBeenCalled();
+    expect(request.formData).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET hld-design-model-rebuild-request - authority", () => {
+  it("passes only session tenant and route project id, and reads no body", async () => {
+    const request = req();
+    const res = await GET(request, PARAMS);
+    expect(res.status).toBe(200);
+    expect(mockList).toHaveBeenCalledTimes(1);
+    const arg = mockList.mock.calls[0][0] as Record<string, unknown>;
+    expect(Object.keys(arg).sort()).toEqual(["projectId", "tenantId"]);
+    expect(arg.tenantId).toBe(SESSION.tenantId);
+    expect(arg.projectId).toBe(PROJECT);
+    expect(request.json).not.toHaveBeenCalled();
+    expect(request.formData).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET hld-design-model-rebuild-request - result mapping", () => {
+  it("maps ok to 200 with { artifactCount, artifacts } and no status or tenant id", async () => {
+    const res = await GET(req(), PARAMS);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ artifactCount: 1, artifacts: [LISTED_ARTIFACT] });
+    expect("status" in body).toBe(false);
+    expect(JSON.stringify(body)).not.toContain("tenantId");
+  });
+
+  it("maps not_found to 404 project_not_found", async () => {
+    mockList.mockResolvedValue({ status: "not_found" });
+    const res = await GET(req(), PARAMS);
+    expect(res.status).toBe(404);
+    expect((await res.json()).code).toBe("project_not_found");
+  });
+
+  it("maps wrong_mode to 409 wrong_project_mode with the project summary", async () => {
+    mockList.mockResolvedValue({ status: "wrong_mode", project: WRONG_MODE_PROJECT });
+    const res = await GET(req(), PARAMS);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("wrong_project_mode");
+    expect(body.project).toEqual(WRONG_MODE_PROJECT);
+  });
+
+  it("maps an unexpected service error to a controlled 500 with no thrown detail", async () => {
+    const secret = "boom-list-internal-stack-detail";
+    mockList.mockRejectedValue(new Error(secret));
+    const res = await GET(req(), PARAMS);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe("rfp_hld_design_model_rebuild_request_list_failed");
+    expect(JSON.stringify(body)).not.toContain(secret);
+  });
+});
+
 describe("hld-design-model-rebuild-request - route surface", () => {
-  it("exports POST only", () => {
+  it("exports GET and POST only", () => {
     expect(typeof routeModule.POST).toBe("function");
-    for (const method of ["GET", "PATCH", "PUT", "DELETE"]) {
+    expect(typeof routeModule.GET).toBe("function");
+    for (const method of ["PATCH", "PUT", "DELETE"]) {
       expect((routeModule as Record<string, unknown>)[method]).toBeUndefined();
     }
   });

@@ -22,7 +22,10 @@ import {
   listProjectArtifacts,
 } from "@/lib/db/project-artifact-store";
 import { validateRfpHldDesignModelReviewPayload } from "@/lib/projects/project-rfp-hld-design-model-review";
-import { createRfpHldDesignModelRebuildRequest } from "@/lib/projects/project-rfp-hld-design-model-rebuild-request-service";
+import {
+  createRfpHldDesignModelRebuildRequest,
+  listRfpHldDesignModelRebuildRequests,
+} from "@/lib/projects/project-rfp-hld-design-model-rebuild-request-service";
 import { RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND } from "@/lib/projects/project-rfp-hld-design-model-rebuild-request";
 
 const getProjectMock = vi.mocked(getProjectById);
@@ -258,6 +261,96 @@ describe("createRfpHldDesignModelRebuildRequest - gates", () => {
       createRfpHldDesignModelRebuildRequest(input({ reason: "  " }))
     ).rejects.toThrow();
     expect(getProjectMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("listRfpHldDesignModelRebuildRequests", () => {
+  const LIST_INPUT = { tenantId: TENANT, projectId: PROJECT };
+
+  it("returns not_found when the project is missing, without listing artifacts", async () => {
+    getProjectMock.mockResolvedValue(null);
+    const result = await listRfpHldDesignModelRebuildRequests(LIST_INPUT);
+    expect(result.status).toBe("not_found");
+    expect(listMock).not.toHaveBeenCalled();
+  });
+
+  it("returns wrong_mode with the project summary for a non-RFP project", async () => {
+    getProjectMock.mockResolvedValue(makeProject({ mode: "quick_bom" }));
+    const result = await listRfpHldDesignModelRebuildRequests(LIST_INPUT);
+    expect(result.status).toBe("wrong_mode");
+    if (result.status === "wrong_mode") {
+      expect(result.project.id).toBe(PROJECT);
+      expect(result.project.mode).toBe("quick_bom");
+    }
+    expect(listMock).not.toHaveBeenCalled();
+  });
+
+  it("returns only executable-active requests with a lean payload summary", async () => {
+    const generated: ProjectArtifact = {
+      ...makeActiveRequest(),
+      id: "req-generated",
+      status: "generated",
+    };
+    listMock.mockResolvedValue([makeActiveRequest(), generated]);
+    const result = await listRfpHldDesignModelRebuildRequests(LIST_INPUT);
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") {
+      expect(result.artifactCount).toBe(2);
+      expect(result.artifacts.map((a) => a.id)).toEqual(["req-existing", "req-generated"]);
+      expect(result.artifacts[0].payloadSummary).toEqual({
+        payloadKind: RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND,
+        sourceHldDesignModelArtifactId: MODEL_ID,
+        sourceReviewArtifactId: REVIEW_ID,
+        requestedAt: "2026-06-23T00:00:00.000Z",
+        status: "active",
+      });
+    }
+    // Discovery only: it never re-loads the source model/review per request.
+    expect(getArtifactMock).not.toHaveBeenCalled();
+  });
+
+  it("omits invalid, malformed, retired, wrong-type, wrong-stage, and non-executable requests", async () => {
+    const omitted: ProjectArtifact[] = [
+      { ...makeActiveRequest(), id: "wrong-type", type: "hld_design_model" },
+      { ...makeActiveRequest(), id: "not-a-request", type: "hld_design_model_review" },
+      { ...makeActiveRequest(), id: "wrong-stage", stageId: "boq_pricing_review" },
+      { ...makeActiveRequest(), id: "row-stale", status: "stale" },
+      { ...makeActiveRequest(), id: "row-rejected", status: "rejected" },
+      { ...makeActiveRequest(), id: "row-failed", status: "failed" },
+      { ...makeActiveRequest(), id: "row-approved", status: "approved" },
+      {
+        ...makeActiveRequest(),
+        id: "malformed",
+        payload: { payloadKind: RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND },
+      },
+    ];
+    listMock.mockResolvedValue([makeActiveRequest(), ...omitted]);
+    const result = await listRfpHldDesignModelRebuildRequests(LIST_INPUT);
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") {
+      expect(result.artifactCount).toBe(1);
+      expect(result.artifacts.map((a) => a.id)).toEqual(["req-existing"]);
+    }
+  });
+
+  it("returns an empty ok list when nothing is executable-active", async () => {
+    listMock.mockResolvedValue([{ ...makeActiveRequest(), status: "stale" }]);
+    const result = await listRfpHldDesignModelRebuildRequests(LIST_INPUT);
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") {
+      expect(result.artifactCount).toBe(0);
+      expect(result.artifacts).toEqual([]);
+    }
+  });
+
+  it("leaks no tenant id and no raw payload body (reason/instructions/requestedBy)", async () => {
+    listMock.mockResolvedValue([makeActiveRequest()]);
+    const result = await listRfpHldDesignModelRebuildRequests(LIST_INPUT);
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain(TENANT);
+    expect(serialized).not.toContain("eng-prev");
+    expect(serialized).not.toContain("Earlier review findings need a redraft.");
+    expect(serialized).not.toContain("Redraft from the same approved source artifacts only.");
   });
 });
 

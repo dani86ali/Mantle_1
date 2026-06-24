@@ -30,6 +30,7 @@ import {
   RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND,
   validateRfpHldDesignModelRebuildRequestPayload,
   type RfpHldDesignModelRebuildRequestPayload,
+  type RfpHldDesignModelRebuildRequestStatus,
 } from "@/lib/projects/project-rfp-hld-design-model-rebuild-request";
 import type {
   Project,
@@ -49,6 +50,16 @@ const RETIRED_REQUEST_STATUSES: ReadonlySet<ProjectArtifactStatus> = new Set<Pro
   "stale",
   "rejected",
   "failed",
+]);
+
+/**
+ * Request ROW statuses that are still open/consumable, so a request is
+ * executable-active and worth listing for discovery. Mirrors the execute
+ * service's claimable set; any retired or otherwise non-open row is omitted.
+ */
+const OPEN_REQUEST_ROW_STATUSES: ReadonlySet<ProjectArtifactStatus> = new Set<ProjectArtifactStatus>([
+  "generated",
+  "needs_review",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -77,6 +88,26 @@ export interface RfpHldDesignModelRebuildRequestArtifactSummary {
   updatedAt: string;
 }
 
+/**
+ * Lean provenance projection over an already-validated active rebuild-request
+ * payload. Carries ONLY the ids/timestamp/status the UI needs to match a request
+ * to its design model and advisory review - never the reason, instructions, or
+ * requestedBy body.
+ */
+export interface RfpHldDesignModelRebuildRequestPayloadSummary {
+  payloadKind: typeof RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND;
+  sourceHldDesignModelArtifactId: string;
+  sourceReviewArtifactId: string;
+  requestedAt: string;
+  status: RfpHldDesignModelRebuildRequestStatus;
+}
+
+/** A listed executable-active request: the artifact summary plus lean provenance. */
+export interface RfpHldDesignModelRebuildRequestListedArtifactSummary
+  extends RfpHldDesignModelRebuildRequestArtifactSummary {
+  payloadSummary: RfpHldDesignModelRebuildRequestPayloadSummary;
+}
+
 export interface CreateRfpHldDesignModelRebuildRequestInput {
   tenantId: string;
   projectId: string;
@@ -102,6 +133,20 @@ export type CreateRfpHldDesignModelRebuildRequestResult =
   | {
       status: "ok";
       artifact: RfpHldDesignModelRebuildRequestArtifactSummary;
+    };
+
+export interface ListRfpHldDesignModelRebuildRequestsInput {
+  tenantId: string;
+  projectId: string;
+}
+
+export type ListRfpHldDesignModelRebuildRequestsResult =
+  | { status: "not_found" }
+  | { status: "wrong_mode"; project: RfpHldDesignModelRebuildRequestProjectSummary }
+  | {
+      status: "ok";
+      artifactCount: number;
+      artifacts: RfpHldDesignModelRebuildRequestListedArtifactSummary[];
     };
 
 // ---------------------------------------------------------------------------
@@ -194,6 +239,40 @@ function findActiveRequest(
   return null;
 }
 
+/**
+ * True if `artifact` is an executable-ACTIVE rebuild request worth listing: the
+ * right type and HLD stage, an open/consumable row status, a payload that passes
+ * the bounded contract, and an `active` payload status. Discovery only - it does
+ * NOT re-load or re-gate the source model/review; the execute service performs
+ * those hard gates.
+ */
+function isExecutableActiveRequest(artifact: ProjectArtifact): boolean {
+  return (
+    artifact.type === REQUEST_TYPE &&
+    artifact.stageId === HLD_STAGE &&
+    OPEN_REQUEST_ROW_STATUSES.has(artifact.status) &&
+    validateRfpHldDesignModelRebuildRequestPayload(artifact.payload).valid &&
+    artifact.payload.status === "active"
+  );
+}
+
+/** Project an executable-active request to its listed summary (no payload body). */
+function toListedArtifactSummary(
+  artifact: ProjectArtifact
+): RfpHldDesignModelRebuildRequestListedArtifactSummary {
+  const payload = artifact.payload as unknown as RfpHldDesignModelRebuildRequestPayload;
+  return {
+    ...toArtifactSummary(artifact),
+    payloadSummary: {
+      payloadKind: RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND,
+      sourceHldDesignModelArtifactId: payload.sourceHldDesignModelArtifactId,
+      sourceReviewArtifactId: payload.sourceReviewArtifactId,
+      requestedAt: payload.requestedAt,
+      status: payload.status,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Public service
 // ---------------------------------------------------------------------------
@@ -278,4 +357,37 @@ export async function createRfpHldDesignModelRebuildRequest(
   });
 
   return { status: "ok", artifact: toArtifactSummary(artifact) };
+}
+
+/**
+ * List the executable-ACTIVE `hld_design_model_rebuild_request` artifacts for an
+ * RFP project, tenant-scoped, as lean summaries the UI can use to discover which
+ * request to execute. Returns not_found / wrong_mode like the create service, or
+ * ok with artifactCount and the filtered artifacts. Read-only discovery: it loads
+ * the project's artifacts once, filters to executable-active requests, and never
+ * re-loads a source model/review, prices, resolves SKUs, or makes any
+ * catalog/configuration/design decision. Never returns a raw payload body or the
+ * tenant id; the execute route/service still performs the hard execution gates.
+ */
+export async function listRfpHldDesignModelRebuildRequests(
+  input: ListRfpHldDesignModelRebuildRequestsInput
+): Promise<ListRfpHldDesignModelRebuildRequestsResult> {
+  const { tenantId, projectId } = input;
+
+  const project = await getProjectById(tenantId, projectId);
+  if (project === null) return { status: "not_found" };
+  if (project.mode !== "rfp") {
+    return { status: "wrong_mode", project: toProjectSummary(project) };
+  }
+
+  const artifacts = await listProjectArtifacts(tenantId, projectId);
+  const artifactSummaries = artifacts
+    .filter(isExecutableActiveRequest)
+    .map(toListedArtifactSummary);
+
+  return {
+    status: "ok",
+    artifactCount: artifactSummaries.length,
+    artifacts: artifactSummaries,
+  };
 }
