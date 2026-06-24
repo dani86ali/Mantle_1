@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/lib/db/project-store", () => ({
   getProjectById: vi.fn(),
@@ -225,11 +225,37 @@ function baseInput(
   };
 }
 
+// HLD provider env vars that the configured drafting factory reads. They are
+// saved and restored around every test so this service suite stays
+// deterministic even when the developer or CI shell has them set.
+const HLD_PROVIDER_ENV_KEYS = [
+  "ANTHROPIC_API_KEY",
+  "BOMATIC_RFP_HLD_DESIGN_MODEL_DRAFTING_MODEL",
+  "BOMATIC_RFP_HLD_DESIGN_MODEL_DRAFTING_MAX_TOKENS",
+] as const;
+
+const savedHldProviderEnv: Record<string, string | undefined> = {};
+
 beforeEach(() => {
   vi.clearAllMocks();
+  for (const key of HLD_PROVIDER_ENV_KEYS) {
+    savedHldProviderEnv[key] = process.env[key];
+    delete process.env[key];
+  }
   mockGetProjectById.mockResolvedValue(validProject());
   mockListArtifacts.mockResolvedValue([validBundleArtifact()]);
   mockCreateArtifact.mockResolvedValue(createdArtifactRow());
+});
+
+afterEach(() => {
+  for (const key of HLD_PROVIDER_ENV_KEYS) {
+    const original = savedHldProviderEnv[key];
+    if (original === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = original;
+    }
+  }
 });
 
 describe("createRfpHldDesignModelDraft - programmer input", () => {
