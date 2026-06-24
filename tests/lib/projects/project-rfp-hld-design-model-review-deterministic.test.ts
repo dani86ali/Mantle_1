@@ -43,7 +43,7 @@ const REVIEWED_AT = new Date("2026-06-24T10:00:00.000Z");
 // Minimal valid source-bundle payload. All authority refs are hardcoded.
 // ---------------------------------------------------------------------------
 
-const BUNDLE_SOURCE_IDS = ["evp-1", "req-1", "cmx-1", "cfg-1", "hint-1", "hrs-1"];
+const BUNDLE_SOURCE_IDS = ["evp-1", "req-1", "cmx-1", "cfg-1", "hint-1", "hrs-1", "dkp-1"];
 
 function makeBundlePayload(): Record<string, unknown> {
   return {
