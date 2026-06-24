@@ -199,6 +199,34 @@ async function evaluatePersistedModel(
     };
   }
 
+  // Fail closed unless the resolved bundle is itself an approved hld_source_bundle
+  // on the hld_design_delta_review stage. Defensive: a divergent type/stage/status
+  // means the model no longer ties to a valid source authority.
+  const bundleErrors: string[] = [];
+  if (sourceBundle.type !== "hld_source_bundle") {
+    bundleErrors.push(
+      `Source bundle type ${sourceBundle.type} is not hld_source_bundle.`
+    );
+  }
+  if (sourceBundle.stageId !== DESIGN_MODEL_STAGE) {
+    bundleErrors.push(
+      `Source bundle stage ${sourceBundle.stageId} is not ${DESIGN_MODEL_STAGE}.`
+    );
+  }
+  if (sourceBundle.status !== "approved") {
+    bundleErrors.push(
+      `Source bundle status ${sourceBundle.status} is not approved.`
+    );
+  }
+  if (bundleErrors.length > 0) {
+    return {
+      status: "stale_hld_design_model_payload",
+      artifact: toArtifactSummary(artifact),
+      staleCode: "source_compatibility_mismatch",
+      errors: bundleErrors,
+    };
+  }
+
   if (
     artifact.sourceArtifactIds.length !== 1 ||
     artifact.sourceArtifactIds[0] !== sourceBundle.id

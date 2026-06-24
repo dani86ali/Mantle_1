@@ -416,6 +416,32 @@ describe("reviewRfpHldDesignModelArtifact - approval currency gate", () => {
     expect(mockCreateApproval).not.toHaveBeenCalled();
   });
 
+  it("blocks an otherwise valid model when the current source bundle is wrong-stage", async () => {
+    setArtifactRows(
+      validModelArtifact(),
+      validBundleArtifact({ stageId: "compliance_matrix_review" })
+    );
+    const result = await review();
+    expect(result.status).toBe("stale_hld_design_model_payload");
+    if (result.status !== "stale_hld_design_model_payload") throw new Error("unreachable");
+    expect(result.staleCode).toBe("source_compatibility_mismatch");
+    expect((result.errors ?? []).some((e) => e.includes("stage"))).toBe(true);
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("blocks an otherwise valid model when the current source bundle is wrong-type or unapproved", async () => {
+    setArtifactRows(validModelArtifact(), validBundleArtifact({ type: "hld_intake" }));
+    const wrongType = await review();
+    expect(wrongType.status).toBe("stale_hld_design_model_payload");
+    if (wrongType.status !== "stale_hld_design_model_payload") throw new Error("unreachable");
+    expect(wrongType.staleCode).toBe("source_compatibility_mismatch");
+
+    setArtifactRows(validModelArtifact(), validBundleArtifact({ status: "needs_review" }));
+    const unapproved = await review();
+    expect(unapproved.status).toBe("stale_hld_design_model_payload");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
   it("records a REJECTION even when the persisted payload is malformed", async () => {
     setArtifactRows(validModelArtifact({ payload: { junk: true } }), validBundleArtifact());
     mockCreateApproval.mockResolvedValue(makeCreated("rejected"));
