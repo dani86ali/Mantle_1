@@ -870,6 +870,202 @@ interface HldSourceBundleDetail {
   sourceBundle: HldSourceBundleDetailPayload;
 }
 
+// ---- HLD design model (Stage 6D) read models ------------------------------
+
+/** Lean design-model payload summary (counts/provenance only, no body). */
+interface HldDesignModelPayloadSummary {
+  payloadKind?: string;
+  createdBy?: string;
+  createdAt?: string;
+  sourceHldSourceBundleArtifactId?: string;
+  sourceBundleVersion?: number;
+  sourceArtifactCount?: number;
+  coveredDomainCount?: number;
+  excludedDomainCount?: number;
+  sourceReferenceCount?: number;
+  designSectionCount?: number;
+  topologyNodeCount?: number;
+  topologyLinkCount?: number;
+  topologyZoneCount?: number;
+  diagramIntentCount?: number;
+  validationFindingCount?: number;
+}
+
+/** One hld_design_model artifact in the list response. */
+interface HldDesignModelListItem {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  payloadSummary?: HldDesignModelPayloadSummary;
+}
+
+/** Read-only approved source-bundle summary backing the readiness probe. */
+interface HldDesignModelSourceBundleSummary {
+  artifactId: string;
+  version: number;
+  status: string;
+  sourceArtifactIds: string[];
+  coveredDomains: string[];
+  excludedDomains: string[];
+}
+
+/** Read-only expected-source projection from the Stage 6C readiness helper. */
+interface HldDesignModelExpectedSource {
+  sourceHldSourceBundleArtifactId: string;
+  sourceBundleVersion: number;
+  sourceBundlePayloadKind: string;
+  sourceArtifactIds: string[];
+  coveredDomains: string[];
+  excludedDomains: string[];
+}
+
+/** Design-model readiness probe: ready (with provenance) or blocked. */
+type HldDesignModelReadiness =
+  | {
+      status: "ready";
+      sourceBundle: HldDesignModelSourceBundleSummary;
+      expectedSource: HldDesignModelExpectedSource;
+    }
+  | { status: "blocked"; blockedCode?: string; messages: string[] };
+
+/** Lean list response of GET /api/projects/[id]/rfp/hld-design-model. */
+interface HldDesignModelListResponse {
+  artifactCount: number;
+  artifacts: HldDesignModelListItem[];
+  designModelReadiness: HldDesignModelReadiness;
+}
+
+/** One structured source reference (locator/labels only, never a body). */
+interface HldDesignModelSourceReference {
+  id: string;
+  kind: string;
+  artifactId?: string;
+  domain?: string;
+  label?: string;
+}
+
+/** A pointer to an upstream statement/requirement/etc. by ref id only. */
+interface HldDesignModelRefId {
+  refId: string;
+}
+
+/** One design decision within a design section. */
+interface HldDesignModelDecision {
+  id: string;
+  label: string;
+  sourceRefIds: string[];
+}
+
+/** One structured design section for a covered domain. */
+interface HldDesignModelDesignSection {
+  id: string;
+  domain: string;
+  title: string;
+  sourceRefIds: string[];
+  decisions: HldDesignModelDecision[];
+}
+
+/** One topology node. */
+interface HldDesignModelTopologyNode {
+  id: string;
+  label: string;
+  nodeType: string;
+  domain?: string;
+  sourceRefIds: string[];
+}
+
+/** One topology link between two nodes. */
+interface HldDesignModelTopologyLink {
+  id: string;
+  label: string;
+  fromNodeId: string;
+  toNodeId: string;
+  linkType: string;
+  sourceRefIds: string[];
+}
+
+/** One topology zone grouping nodes. */
+interface HldDesignModelTopologyZone {
+  id: string;
+  label: string;
+  domain?: string;
+  nodeIds: string[];
+  sourceRefIds: string[];
+}
+
+/** One diagram intent record (intent only; never a rendered diagram). */
+interface HldDesignModelDiagramIntent {
+  id: string;
+  title: string;
+  intentType: string;
+  sourceRefIds: string[];
+}
+
+/** One structured validation finding. */
+interface HldDesignModelFinding {
+  id: string;
+  severity: string;
+  code: string;
+  message: string;
+  sourceRefIds: string[];
+}
+
+/** Optional engineer-review block carried on the design-model draft. */
+interface HldDesignModelEngineerReview {
+  status: string;
+  requiredActions: string[];
+}
+
+/** Sanitized rfp_hld_design_model contract returned in the detail response. */
+interface HldDesignModelDetailPayload {
+  payloadKind?: string;
+  createdBy?: string;
+  createdAt?: string;
+  sourceArtifactIds?: string[];
+  sourceHldSourceBundleArtifactId?: string;
+  sourceBundleVersion?: number;
+  sourceBundlePayloadKind?: string;
+  coveredDomains?: string[];
+  excludedDomains?: string[];
+  sourceReferences?: HldDesignModelSourceReference[];
+  assumptionRefs?: HldDesignModelRefId[];
+  constraintRefs?: HldDesignModelRefId[];
+  designSections?: HldDesignModelDesignSection[];
+  topology?: {
+    nodes?: HldDesignModelTopologyNode[];
+    links?: HldDesignModelTopologyLink[];
+    zones?: HldDesignModelTopologyZone[];
+  };
+  diagramIntents?: HldDesignModelDiagramIntent[];
+  traceability?: {
+    requirementRefs?: HldDesignModelRefId[];
+    complianceRefs?: HldDesignModelRefId[];
+    configurationRefs?: HldDesignModelRefId[];
+    sourceBundleRefs?: HldDesignModelRefId[];
+  };
+  validationFindings?: HldDesignModelFinding[];
+  engineerReview?: HldDesignModelEngineerReview;
+}
+
+/** Lean detail artifact summary for a design model. */
+interface HldDesignModelDetailArtifact {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+}
+
+/** Detail response of GET .../artifacts/[id]/hld-design-model. */
+interface HldDesignModelDetailResponse {
+  artifact?: HldDesignModelDetailArtifact;
+  designModel?: HldDesignModelDetailPayload;
+}
+
+/** Loaded design-model detail: the artifact summary plus sanitized model. */
+interface HldDesignModelDetail {
+  artifact: HldDesignModelDetailArtifact;
+  designModel: HldDesignModelDetailPayload;
+}
+
 /**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
@@ -894,7 +1090,8 @@ type DrawerKind =
   | "hld-readiness"
   | "hld-intake"
   | "hld-knowledge-pack"
-  | "hld-source-bundle";
+  | "hld-source-bundle"
+  | "hld-design-model";
 
 interface DrawerState {
   kind: DrawerKind;
@@ -996,6 +1193,16 @@ const HLD_SOURCE_BUNDLE_CREATE_ERROR = "Unable to compile HLD source bundle.";
 const HLD_SOURCE_BUNDLE_APPROVE_SUCCESS = "HLD source bundle approved.";
 const HLD_SOURCE_BUNDLE_REJECT_SUCCESS = "HLD source bundle changes requested.";
 const HLD_SOURCE_BUNDLE_REVIEW_ERROR = "Unable to review HLD source bundle.";
+
+/** Exact UI copy required for the HLD design-model list/detail/create/review states. */
+const HLD_DESIGN_MODEL_LIST_ERROR = "Unable to load HLD design models.";
+const HLD_DESIGN_MODEL_DETAIL_ERROR = "Unable to load HLD design model detail.";
+const HLD_DESIGN_MODEL_CREATE_SUCCESS =
+  "HLD design model draft created for engineer review.";
+const HLD_DESIGN_MODEL_CREATE_ERROR = "Unable to create HLD design model draft.";
+const HLD_DESIGN_MODEL_APPROVE_SUCCESS = "HLD design model approved.";
+const HLD_DESIGN_MODEL_REJECT_SUCCESS = "HLD design model changes requested.";
+const HLD_DESIGN_MODEL_REVIEW_ERROR = "Unable to review HLD design model.";
 
 /** Exact UI copy required for the no-BoQ service-only exception request states. */
 const NO_BOQ_EXCEPTION_SUCCESS =
@@ -3058,6 +3265,23 @@ export default function ProjectRfpEvidencePage() {
   const [hldSourceBundleReviewError, setHldSourceBundleReviewError] = useState<string | null>(null);
   const [hldSourceBundleReviewSuccess, setHldSourceBundleReviewSuccess] = useState<string | null>(null);
 
+  const [hldDesignModelList, setHldDesignModelList] = useState<HldDesignModelListResponse | null>(null);
+  const [hldDesignModelListLoading, setHldDesignModelListLoading] = useState(true);
+  const [hldDesignModelListError, setHldDesignModelListError] = useState<string | null>(null);
+
+  const [hldDesignModelDetail, setHldDesignModelDetail] = useState<HldDesignModelDetail | null>(null);
+  const [hldDesignModelDetailLoading, setHldDesignModelDetailLoading] = useState(false);
+  const [hldDesignModelDetailError, setHldDesignModelDetailError] = useState<string | null>(null);
+
+  const [hldDesignModelCreatePending, setHldDesignModelCreatePending] = useState(false);
+  const [hldDesignModelCreateError, setHldDesignModelCreateError] = useState<string | null>(null);
+  const [hldDesignModelCreateSuccess, setHldDesignModelCreateSuccess] = useState<string | null>(null);
+
+  const [hldDesignModelReviewNote, setHldDesignModelReviewNote] = useState("");
+  const [hldDesignModelReviewPending, setHldDesignModelReviewPending] = useState(false);
+  const [hldDesignModelReviewError, setHldDesignModelReviewError] = useState<string | null>(null);
+  const [hldDesignModelReviewSuccess, setHldDesignModelReviewSuccess] = useState<string | null>(null);
+
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -3492,6 +3716,71 @@ export default function ProjectRfpEvidencePage() {
         setHldSourceBundleDetailError(HLD_SOURCE_BUNDLE_DETAIL_ERROR);
       } finally {
         setHldSourceBundleDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  const loadHldDesignModelList = useCallback(async (): Promise<void> => {
+    setHldDesignModelListLoading(true);
+    setHldDesignModelListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-design-model`);
+      const body = (await res.json().catch(() => null)) as HldDesignModelListResponse | null;
+      if (
+        !res.ok ||
+        body === null ||
+        !Array.isArray(body.artifacts) ||
+        body.designModelReadiness === undefined
+      ) {
+        setHldDesignModelList(null);
+        setHldDesignModelListError(HLD_DESIGN_MODEL_LIST_ERROR);
+        return;
+      }
+      setHldDesignModelList(body);
+    } catch {
+      setHldDesignModelList(null);
+      setHldDesignModelListError(HLD_DESIGN_MODEL_LIST_ERROR);
+    } finally {
+      setHldDesignModelListLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldDesignModelList();
+  }, [loadHldDesignModelList]);
+
+  // A design model's sanitized content is fetched only here, on Inspect click.
+  const loadHldDesignModelDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setHldDesignModelDetail(null);
+      setHldDesignModelDetailError(null);
+      setHldDesignModelReviewNote("");
+      setHldDesignModelReviewError(null);
+      setHldDesignModelReviewSuccess(null);
+      setHldDesignModelDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-design-model`
+        );
+        const body = (await res.json().catch(() => null)) as HldDesignModelDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.designModel === undefined
+        ) {
+          setHldDesignModelDetailError(HLD_DESIGN_MODEL_DETAIL_ERROR);
+          return;
+        }
+        setHldDesignModelDetail({
+          artifact: body.artifact,
+          designModel: body.designModel,
+        });
+      } catch {
+        setHldDesignModelDetailError(HLD_DESIGN_MODEL_DETAIL_ERROR);
+      } finally {
+        setHldDesignModelDetailLoading(false);
       }
     },
     [id]
@@ -4393,6 +4682,81 @@ export default function ProjectRfpEvidencePage() {
     ]
   );
 
+  const submitHldDesignModelCreate = useCallback(async (): Promise<void> => {
+    if (hldDesignModelCreatePending) return;
+    setHldDesignModelCreatePending(true);
+    setHldDesignModelCreateError(null);
+    setHldDesignModelCreateSuccess(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-design-model`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        setHldDesignModelCreateError(HLD_DESIGN_MODEL_CREATE_ERROR);
+        return;
+      }
+      setHldDesignModelCreateSuccess(HLD_DESIGN_MODEL_CREATE_SUCCESS);
+      void loadHldDesignModelList();
+    } catch {
+      setHldDesignModelCreateError(HLD_DESIGN_MODEL_CREATE_ERROR);
+    } finally {
+      setHldDesignModelCreatePending(false);
+    }
+  }, [hldDesignModelCreatePending, id, loadHldDesignModelList]);
+
+  const submitHldDesignModelReview = useCallback(
+    async (decision: "approved" | "rejected"): Promise<void> => {
+      if (hldDesignModelDetail === null || hldDesignModelReviewPending) return;
+      setHldDesignModelReviewPending(true);
+      setHldDesignModelReviewError(null);
+      setHldDesignModelReviewSuccess(null);
+      try {
+        const note = hldDesignModelReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${hldDesignModelDetail.artifact.id}/hld-design-model/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(note === "" ? { decision } : { decision, note }),
+          }
+        );
+        if (!res.ok) {
+          setHldDesignModelReviewError(HLD_DESIGN_MODEL_REVIEW_ERROR);
+          return;
+        }
+        setHldDesignModelDetail((prev) =>
+          prev === null
+            ? prev
+            : {
+                artifact: {
+                  ...prev.artifact,
+                  status: decision === "approved" ? "approved" : "rejected",
+                },
+                designModel: prev.designModel,
+              }
+        );
+        setHldDesignModelReviewNote("");
+        setHldDesignModelReviewSuccess(
+          decision === "approved"
+            ? HLD_DESIGN_MODEL_APPROVE_SUCCESS
+            : HLD_DESIGN_MODEL_REJECT_SUCCESS
+        );
+        void loadHldDesignModelList();
+      } catch {
+        setHldDesignModelReviewError(HLD_DESIGN_MODEL_REVIEW_ERROR);
+      } finally {
+        setHldDesignModelReviewPending(false);
+      }
+    },
+    [
+      hldDesignModelDetail,
+      hldDesignModelReviewNote,
+      hldDesignModelReviewPending,
+      id,
+      loadHldDesignModelList,
+    ]
+  );
+
   const workflow = useMemo(
     () =>
       buildRfpOperatorWorkflow({
@@ -4885,6 +5249,11 @@ export default function ProjectRfpEvidencePage() {
     void loadHldSourceBundleDetail(artifactId);
   }
 
+  function openHldDesignModelDrawer(artifactId: string): void {
+    setDrawer({ kind: "hld-design-model", activeId: artifactId });
+    void loadHldDesignModelDetail(artifactId);
+  }
+
   function drawerIds(): string[] {
     if (drawer === null) return [];
     if (drawer.kind === "evidence") return data?.evidence.map((item) => item.id) ?? [];
@@ -4909,6 +5278,9 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "hld-source-bundle") {
       return hldSourceBundleList?.artifacts.map((item) => item.id) ?? [];
     }
+    if (drawer.kind === "hld-design-model") {
+      return hldDesignModelList?.artifacts.map((item) => item.id) ?? [];
+    }
     return complianceList?.artifacts.map((item) => item.id) ?? [];
   }
 
@@ -4921,6 +5293,7 @@ export default function ProjectRfpEvidencePage() {
     else if (kind === "hld-intake") openHldIntakeDrawer(activeId);
     else if (kind === "hld-knowledge-pack") openHldKnowledgePackDrawer(activeId);
     else if (kind === "hld-source-bundle") openHldSourceBundleDrawer(activeId);
+    else if (kind === "hld-design-model") openHldDesignModelDrawer(activeId);
     else openComplianceDrawer(activeId);
   }
 
@@ -6305,6 +6678,225 @@ export default function ProjectRfpEvidencePage() {
     );
   }
 
+  function renderHldDesignModelDrawerContent(): ReactNode {
+    if (hldDesignModelDetail === null) return null;
+    const { artifact, designModel } = hldDesignModelDetail;
+    const reviewable = isReviewableStatus(artifact.status);
+    const sourceArtifactIds = designModel.sourceArtifactIds ?? [];
+    const sourceReferences = designModel.sourceReferences ?? [];
+    const coveredDomains = designModel.coveredDomains ?? [];
+    const excludedDomains = designModel.excludedDomains ?? [];
+    const designSections = designModel.designSections ?? [];
+    const nodes = designModel.topology?.nodes ?? [];
+    const links = designModel.topology?.links ?? [];
+    const zones = designModel.topology?.zones ?? [];
+    const diagramIntents = designModel.diagramIntents ?? [];
+    const validationFindings = designModel.validationFindings ?? [];
+    const engineerReview = designModel.engineerReview;
+    const sourceBundleArtifactId = designModel.sourceHldSourceBundleArtifactId;
+
+    const domainSection = (
+      testId: string,
+      label: string,
+      domains: string[]
+    ): ReactNode => (
+      <div data-testid={testId} className={SUBTLE_CARD}>
+        <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+          {label} ({domains.length})
+        </p>
+        {domains.length > 0 ? (
+          <p className="mt-1 text-xs text-text-secondary">
+            {domains.map(humanizeToken).join(", ")}
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-text-tertiary">None</p>
+        )}
+      </div>
+    );
+
+    return (
+      <div data-testid="hld-design-model-drawer-content" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={artifact.status} />
+            <span className="text-xs text-text-secondary">Version {artifact.version}</span>
+          </div>
+          <div className="mt-2 grid gap-1 text-xs text-text-secondary sm:grid-cols-2">
+            <p>Source bundle version: {designModel.sourceBundleVersion ?? 0}</p>
+            <p>Source authorities: {sourceArtifactIds.length}</p>
+            <p>Source references: {sourceReferences.length}</p>
+            <p>Design sections: {designSections.length}</p>
+            <p>Topology nodes: {nodes.length}</p>
+            <p>Topology links: {links.length}</p>
+            <p>Topology zones: {zones.length}</p>
+            <p>Diagram intents: {diagramIntents.length}</p>
+          </div>
+        </div>
+        {domainSection("hld-design-model-drawer-covered", "Covered domains", coveredDomains)}
+        {domainSection("hld-design-model-drawer-excluded", "Excluded domains", excludedDomains)}
+        <div data-testid="hld-design-model-drawer-sections" className={SUBTLE_CARD}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Design sections ({designSections.length})
+          </p>
+          {designSections.length > 0 ? (
+            <ul className="mt-1 space-y-1.5">
+              {designSections.map((section, sectionIndex) => (
+                <li key={sectionIndex} className="text-xs text-text-primary">
+                  <span className="font-medium">{humanizeToken(section.domain)}</span>
+                  {" - "}
+                  {section.title}
+                  {section.decisions.length > 0 && (
+                    <ul className="mt-0.5 ml-3 list-disc space-y-0.5">
+                      {section.decisions.map((decision, decisionIndex) => (
+                        <li key={decisionIndex} className="text-xs text-text-secondary">
+                          {decision.label}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-text-tertiary">None</p>
+          )}
+        </div>
+        <div data-testid="hld-design-model-drawer-topology" className={SUBTLE_CARD}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Topology ({nodes.length} nodes, {links.length} links, {zones.length} zones)
+          </p>
+          <div className="mt-1 space-y-1 text-xs text-text-secondary">
+            {nodes.length > 0 && (
+              <p>Nodes: {nodes.map((n) => n.label).join(", ")}</p>
+            )}
+            {links.length > 0 && (
+              <p>Links: {links.map((l) => l.label).join(", ")}</p>
+            )}
+            {zones.length > 0 && (
+              <p>Zones: {zones.map((z) => z.label).join(", ")}</p>
+            )}
+            {nodes.length === 0 && links.length === 0 && zones.length === 0 && (
+              <p className="text-text-tertiary">None</p>
+            )}
+          </div>
+        </div>
+        <div data-testid="hld-design-model-drawer-diagram-intents" className={SUBTLE_CARD}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Diagram intents ({diagramIntents.length})
+          </p>
+          {diagramIntents.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {diagramIntents.map((intent, intentIndex) => (
+                <li key={intentIndex} className="text-xs text-text-secondary">
+                  {intent.title} ({humanizeToken(intent.intentType)})
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-text-tertiary">None</p>
+          )}
+        </div>
+        <div data-testid="hld-design-model-drawer-findings" className={SUBTLE_CARD}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Validation findings ({validationFindings.length})
+          </p>
+          {validationFindings.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {validationFindings.map((finding, findingIndex) => (
+                <li key={findingIndex} className="text-xs text-text-secondary">
+                  [{finding.severity}] {finding.message} ({finding.code})
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-text-tertiary">None</p>
+          )}
+        </div>
+        {engineerReview !== undefined &&
+          engineerReview.requiredActions.length > 0 && (
+            <div
+              data-testid="hld-design-model-drawer-review-actions"
+              className={SUBTLE_CARD}
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                Required engineer actions ({engineerReview.requiredActions.length})
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {engineerReview.requiredActions.map((action, actionIndex) => (
+                  <li key={actionIndex} className="text-xs text-amber-200">
+                    {action}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        {reviewable && (
+          <div data-testid="hld-design-model-review" className={SUBTLE_CARD}>
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Review note (optional)
+              <textarea
+                data-testid="hld-design-model-review-note"
+                value={hldDesignModelReviewNote}
+                disabled={hldDesignModelReviewPending}
+                onChange={(e) => setHldDesignModelReviewNote(e.target.value)}
+                rows={2}
+                className={FIELD}
+              />
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid="hld-design-model-approve"
+                disabled={hldDesignModelReviewPending}
+                onClick={() => void submitHldDesignModelReview("approved")}
+                className={ACTION_BTN}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="hld-design-model-reject"
+                disabled={hldDesignModelReviewPending}
+                onClick={() => void submitHldDesignModelReview("rejected")}
+                className={PLAIN_BTN}
+              >
+                Request changes
+              </button>
+            </div>
+            {hldDesignModelReviewError && (
+              <p data-testid="hld-design-model-review-error" className={`mt-2 ${ERROR_BOX}`}>
+                {hldDesignModelReviewError}
+              </p>
+            )}
+            {hldDesignModelReviewSuccess && (
+              <p data-testid="hld-design-model-review-success" className="mt-2 text-xs text-emerald-300">
+                {hldDesignModelReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        <TechnicalDetails
+          testId="hld-design-model-drawer-audit"
+          label="Technical details (artifact, source bundle, and source reference IDs)"
+        >
+          <p>Artifact: {artifact.id}</p>
+          {sourceBundleArtifactId !== undefined && sourceBundleArtifactId !== "" && (
+            <p>Source bundle: {sourceBundleArtifactId}</p>
+          )}
+          {sourceReferences.map((ref, refIndex) => (
+            <p key={refIndex}>
+              Reference {ref.id}
+              {ref.artifactId !== undefined ? `: ${ref.artifactId}` : ""}
+            </p>
+          ))}
+          {sourceArtifactIds.map((srcId, srcIndex) => (
+            <p key={srcIndex}>Source {srcIndex + 1}: {srcId}</p>
+          ))}
+        </TechnicalDetails>
+      </div>
+    );
+  }
+
   function renderDrawerContent(): ReactNode {
     if (drawer === null) return null;
     if (drawer.kind === "evidence") return renderEvidenceDrawerContent();
@@ -6315,6 +6907,7 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "hld-intake") return renderHldIntakeDrawerContent();
     if (drawer.kind === "hld-knowledge-pack") return renderHldKnowledgePackDrawerContent();
     if (drawer.kind === "hld-source-bundle") return renderHldSourceBundleDrawerContent();
+    if (drawer.kind === "hld-design-model") return renderHldDesignModelDrawerContent();
     return renderComplianceDrawerContent();
   }
 
@@ -6335,7 +6928,9 @@ export default function ProjectRfpEvidencePage() {
                   ? "HLD design knowledge pack"
                   : drawer?.kind === "hld-source-bundle"
                     ? "HLD source bundle"
-                    : "Compliance matrix";
+                    : drawer?.kind === "hld-design-model"
+                      ? "HLD design model"
+                      : "Compliance matrix";
   const drawerLoading =
     drawer?.kind === "evidence"
       ? detailLoading
@@ -6353,7 +6948,9 @@ export default function ProjectRfpEvidencePage() {
                   ? hldKnowledgePackDetailLoading
                   : drawer?.kind === "hld-source-bundle"
                     ? hldSourceBundleDetailLoading
-                    : complianceDetailLoading;
+                    : drawer?.kind === "hld-design-model"
+                      ? hldDesignModelDetailLoading
+                      : complianceDetailLoading;
   const drawerError =
     drawer?.kind === "evidence"
       ? detailError
@@ -6371,7 +6968,9 @@ export default function ProjectRfpEvidencePage() {
                   ? hldKnowledgePackDetailError
                   : drawer?.kind === "hld-source-bundle"
                     ? hldSourceBundleDetailError
-                    : complianceDetailError;
+                    : drawer?.kind === "hld-design-model"
+                      ? hldDesignModelDetailError
+                      : complianceDetailError;
 
   return (
     <main className="min-h-screen bg-bg-primary px-4 py-6 sm:px-6 lg:px-8">
@@ -7994,6 +8593,195 @@ export default function ProjectRfpEvidencePage() {
                   className="mt-3 text-xs text-text-tertiary"
                 >
                   No HLD source bundles yet.
+                </p>
+              )}
+          </div>
+
+          <div
+            data-testid="hld-design-model-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                HLD Design Model
+              </h3>
+              <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                Draft a structured HLD design-model from the approved HLD source
+                bundle for engineer review. This produces a reviewable design
+                model draft only; it is not a final HLD document, diagram, or
+                proposal.
+              </p>
+            </div>
+            {hldDesignModelListError && (
+              <div data-testid="hld-design-model-error" className={`mt-3 ${ERROR_BOX}`}>
+                {hldDesignModelListError}
+              </div>
+            )}
+            {hldDesignModelListLoading && (
+              <p className="mt-3 text-sm text-text-tertiary">
+                Loading HLD design models...
+              </p>
+            )}
+            {hldDesignModelList !== null &&
+              (() => {
+                const readiness = hldDesignModelList.designModelReadiness;
+                const ready = readiness.status === "ready";
+                return (
+                  <div
+                    data-testid="hld-design-model-readiness"
+                    className={`mt-3 ${SUBTLE_CARD}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className={MUTED_TEXT}>
+                        Design model:{" "}
+                        <span
+                          className={`font-medium ${ready ? "text-emerald-300" : "text-amber-200"}`}
+                        >
+                          {ready ? "Ready to draft" : "Blocked"}
+                        </span>
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="hld-design-model-create"
+                        disabled={!ready || hldDesignModelCreatePending}
+                        onClick={() => void submitHldDesignModelCreate()}
+                        className={ACTION_BTN}
+                      >
+                        Create model draft
+                      </button>
+                    </div>
+                    {readiness.status === "ready" && (
+                      <div
+                        data-testid="hld-design-model-ready-summary"
+                        className="mt-2 grid gap-1 text-xs text-text-secondary sm:grid-cols-2"
+                      >
+                        <p>Source bundle version: {readiness.sourceBundle.version}</p>
+                        <p>Source bundle status: {humanizeToken(readiness.sourceBundle.status)}</p>
+                        <p>Source authorities: {readiness.sourceBundle.sourceArtifactIds.length}</p>
+                        <p>Covered domains: {readiness.sourceBundle.coveredDomains.length}</p>
+                        <p>Excluded domains: {readiness.sourceBundle.excludedDomains.length}</p>
+                      </div>
+                    )}
+                    {readiness.status === "blocked" && (
+                      <div data-testid="hld-design-model-blocked" className="mt-2">
+                        {readiness.blockedCode !== undefined && (
+                          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                            Blocker code: {readiness.blockedCode}
+                          </p>
+                        )}
+                        <ul className="mt-1 space-y-0.5">
+                          {readiness.messages.map((message, messageIndex) => (
+                            <li key={messageIndex} className="text-xs text-amber-200">
+                              {message}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            {hldDesignModelCreateError && (
+              <p
+                data-testid="hld-design-model-create-error"
+                className="mt-3 text-xs text-destructive"
+              >
+                {hldDesignModelCreateError}
+              </p>
+            )}
+            {hldDesignModelCreateSuccess && (
+              <p
+                data-testid="hld-design-model-create-success"
+                className="mt-3 text-xs text-emerald-300"
+              >
+                {hldDesignModelCreateSuccess}
+              </p>
+            )}
+            {hldDesignModelList !== null &&
+              hldDesignModelList.artifacts.length > 0 && (
+                <div className="mt-3 overflow-x-auto">
+                  <table
+                    data-testid="hld-design-model-list"
+                    className="w-full border-collapse text-xs"
+                  >
+                    <thead>
+                      <tr className="text-left text-text-tertiary">
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Status
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Version
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Source bundle
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Domains
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Sections / topology
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Review
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hldDesignModelList.artifacts
+                        .slice()
+                        .sort((a, b) => b.version - a.version)
+                        .map((item) => {
+                          const summary = item.payloadSummary;
+                          const excluded = summary?.excludedDomainCount ?? 0;
+                          const nodeCount = summary?.topologyNodeCount ?? 0;
+                          const linkCount = summary?.topologyLinkCount ?? 0;
+                          return (
+                            <tr
+                              key={item.id}
+                              data-testid="hld-design-model-row"
+                              className="align-top"
+                            >
+                              <td className="border border-[var(--border)] px-2 py-1">
+                                <StatusBadge status={item.status} />
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                v{item.version}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                v{summary?.sourceBundleVersion ?? 0}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.coveredDomainCount ?? 0} covered
+                                {excluded > 0 ? `, ${excluded} excluded` : ""}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.designSectionCount ?? 0} sections,{" "}
+                                {nodeCount} nodes / {linkCount} links
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1">
+                                <button
+                                  type="button"
+                                  data-testid="hld-design-model-inspect"
+                                  onClick={() => openHldDesignModelDrawer(item.id)}
+                                  className={PLAIN_BTN}
+                                >
+                                  Inspect
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            {hldDesignModelList !== null &&
+              hldDesignModelList.artifacts.length === 0 && (
+                <p
+                  data-testid="hld-design-model-empty"
+                  className="mt-3 text-xs text-text-tertiary"
+                >
+                  No HLD design models yet.
                 </p>
               )}
           </div>

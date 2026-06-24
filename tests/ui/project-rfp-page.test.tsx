@@ -53,6 +53,11 @@ const HLD_SOURCE_BUNDLE_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-source-b
 const HLD_SOURCE_BUNDLE_ARTIFACT_ID = "art-hld-source-bundle-1";
 const HLD_SOURCE_BUNDLE_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_SOURCE_BUNDLE_ARTIFACT_ID}/hld-source-bundle`;
 const HLD_SOURCE_BUNDLE_REVIEW_URL = `${HLD_SOURCE_BUNDLE_DETAIL_URL}/review`;
+const HLD_DESIGN_MODEL_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-design-model`;
+const HLD_DESIGN_MODEL_ARTIFACT_ID = "art-hld-design-model-1";
+const HLD_DESIGN_MODEL_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DESIGN_MODEL_ARTIFACT_ID}/hld-design-model`;
+const HLD_DESIGN_MODEL_REVIEW_URL = `${HLD_DESIGN_MODEL_DETAIL_URL}/review`;
+const HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID = "art-hld-source-bundle-approved-1";
 const HLD_INTAKE_FIELD_IDS = [
   "existing_network_context",
   "target_topology_intent",
@@ -1385,6 +1390,216 @@ function sourceBundleDetailResponse(
   };
 }
 
+function designModelListItem(
+  id = HLD_DESIGN_MODEL_ARTIFACT_ID,
+  status = "needs_review",
+  version = 1
+): Record<string, unknown> {
+  return {
+    id,
+    projectId: PROJECT_ID,
+    stageId: "hld_design_delta_review",
+    type: "hld_design_model",
+    status,
+    version,
+    createdAt: "2026-06-22T09:00:00.000Z",
+    updatedAt: "2026-06-22T09:05:00.000Z",
+    payloadSummary: {
+      payloadKind: "rfp_hld_design_model",
+      createdBy: "user-1",
+      createdAt: "2026-06-22T09:00:00.000Z",
+      sourceHldSourceBundleArtifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+      sourceBundleVersion: 3,
+      sourceArtifactCount: 7,
+      coveredDomainCount: 1,
+      excludedDomainCount: 1,
+      sourceReferenceCount: 3,
+      designSectionCount: 1,
+      topologyNodeCount: 2,
+      topologyLinkCount: 1,
+      topologyZoneCount: 1,
+      diagramIntentCount: 1,
+      validationFindingCount: 1,
+    },
+  };
+}
+
+const DESIGN_MODEL_READY_READINESS = {
+  status: "ready",
+  sourceBundle: {
+    artifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+    version: 3,
+    status: "approved",
+    sourceArtifactIds: ["evp-1", "req-1", "cmx-1", "cfg-1", "intake-1", "hrs-1", "pack-1"],
+    coveredDomains: ["campus_switching"],
+    excludedDomains: ["service_only"],
+  },
+  expectedSource: {
+    sourceHldSourceBundleArtifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+    sourceBundleVersion: 3,
+    sourceBundlePayloadKind: "rfp_hld_source_bundle",
+    sourceArtifactIds: ["evp-1", "req-1", "cmx-1", "cfg-1", "intake-1", "hrs-1", "pack-1"],
+    coveredDomains: ["campus_switching"],
+    excludedDomains: ["service_only"],
+  },
+};
+
+const DESIGN_MODEL_BLOCKED_READINESS = {
+  status: "blocked",
+  blockedCode: "latest_source_bundle_not_approved",
+  messages: [
+    "DESIGN-MODEL-BLOCKER-CANARY An approved HLD source bundle is required.",
+  ],
+};
+
+function designModelListReady(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 1,
+    artifacts: [designModelListItem()],
+    designModelReadiness: DESIGN_MODEL_READY_READINESS,
+  };
+}
+
+function designModelListBlocked(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 0,
+    artifacts: [],
+    designModelReadiness: DESIGN_MODEL_BLOCKED_READINESS,
+  };
+}
+
+function designModelDetailResponse(
+  id = HLD_DESIGN_MODEL_ARTIFACT_ID,
+  status = "needs_review"
+): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: {
+      id,
+      projectId: PROJECT_ID,
+      stageId: "hld_design_delta_review",
+      type: "hld_design_model",
+      status,
+      version: 1,
+      createdAt: "2026-06-22T09:00:00.000Z",
+      updatedAt: "2026-06-22T09:05:00.000Z",
+    },
+    designModel: {
+      payloadKind: "rfp_hld_design_model",
+      createdBy: "user-1",
+      createdAt: "2026-06-22T09:00:00.000Z",
+      sourceArtifactIds: ["evp-1", "req-1", "cmx-1", "cfg-1", "intake-1", "hrs-1", "pack-1"],
+      sourceHldSourceBundleArtifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+      sourceBundleVersion: 3,
+      sourceBundlePayloadKind: "rfp_hld_source_bundle",
+      coveredDomains: ["campus_switching"],
+      excludedDomains: ["service_only"],
+      sourceReferences: [
+        {
+          id: "src-bundle-ref",
+          kind: "source_bundle",
+          artifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+          label: "Approved HLD source bundle",
+        },
+        {
+          id: "authority-ref",
+          kind: "requirements_baseline",
+          artifactId: "req-1",
+          label: "Requirements baseline",
+        },
+        {
+          id: "pack-ref",
+          kind: "design_knowledge_pack",
+          artifactId: "pack-1",
+          domain: "campus_switching",
+        },
+      ],
+      assumptionRefs: [{ refId: "asm-1" }],
+      constraintRefs: [{ refId: "con-1" }],
+      designSections: [
+        {
+          id: "ds-1",
+          domain: "campus_switching",
+          title: "DESIGN-SECTION-CANARY core distribution layer",
+          sourceRefIds: ["src-bundle-ref", "pack-ref"],
+          decisions: [
+            {
+              id: "dec-1",
+              label: "DESIGN-DECISION-CANARY dual-supervisor redundancy",
+              sourceRefIds: ["authority-ref"],
+            },
+          ],
+        },
+      ],
+      topology: {
+        nodes: [
+          {
+            id: "node-1",
+            label: "TOPOLOGY-NODE-CANARY core switch",
+            nodeType: "core_switch",
+            domain: "campus_switching",
+            sourceRefIds: ["src-bundle-ref"],
+          },
+          {
+            id: "node-2",
+            label: "access switch",
+            nodeType: "access_switch",
+            sourceRefIds: ["src-bundle-ref"],
+          },
+        ],
+        links: [
+          {
+            id: "link-1",
+            label: "TOPOLOGY-LINK-CANARY uplink",
+            fromNodeId: "node-1",
+            toNodeId: "node-2",
+            linkType: "ethernet",
+            sourceRefIds: ["src-bundle-ref"],
+          },
+        ],
+        zones: [
+          {
+            id: "zone-1",
+            label: "TOPOLOGY-ZONE-CANARY campus core",
+            domain: "campus_switching",
+            nodeIds: ["node-1", "node-2"],
+            sourceRefIds: ["src-bundle-ref"],
+          },
+        ],
+      },
+      diagramIntents: [
+        {
+          id: "di-1",
+          title: "DIAGRAM-INTENT-CANARY logical topology",
+          intentType: "logical_topology",
+          sourceRefIds: ["src-bundle-ref"],
+        },
+      ],
+      traceability: {
+        requirementRefs: [{ refId: "req-ref-1" }],
+        complianceRefs: [{ refId: "cmp-ref-1" }],
+        configurationRefs: [{ refId: "cfg-ref-1" }],
+        sourceBundleRefs: [{ refId: "src-bundle-ref" }],
+      },
+      validationFindings: [
+        {
+          id: "vf-1",
+          severity: "warning",
+          code: "DESIGN_MODEL_FINDING_CODE",
+          message: "VALIDATION-FINDING-CANARY excluded domain not modeled.",
+          sourceRefIds: ["src-bundle-ref"],
+        },
+      ],
+      engineerReview: {
+        status: "changes_requested",
+        requiredActions: ["REVIEW-ACTION-CANARY confirm core topology."],
+      },
+    },
+  };
+}
+
 function stubFetch(
   handler?: (url: string, init?: RequestInit) => Response | Promise<Response>
 ): FetchCall[] {
@@ -1448,6 +1663,21 @@ function stubFetch(
         return jsonResponse(sourceBundleDetailResponse());
       }
       if (url === HLD_SOURCE_BUNDLE_REVIEW_URL) {
+        return jsonResponse({ artifactStatus: "approved" });
+      }
+      if (url === HLD_DESIGN_MODEL_LIST_URL) {
+        if (init?.method === "POST") {
+          return jsonResponse(
+            { artifact: designModelListItem(), sourceBundle: {}, payloadSummary: {} },
+            201
+          );
+        }
+        return jsonResponse(designModelListBlocked());
+      }
+      if (url === HLD_DESIGN_MODEL_DETAIL_URL) {
+        return jsonResponse(designModelDetailResponse());
+      }
+      if (url === HLD_DESIGN_MODEL_REVIEW_URL) {
         return jsonResponse({ artifactStatus: "approved" });
       }
       if (url === REVIEW_URL) {
@@ -4578,6 +4808,348 @@ describe("ProjectRfpEvidencePage - Stage 6B HLD source bundle", () => {
   });
 });
 
+describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
+  // Drive the design-model slice while keeping the rest of the page healthy.
+  function designModelFetch(
+    listBody: Record<string, unknown>,
+    detailBody: Record<string, unknown> = designModelDetailResponse(),
+    onReview?: (init?: RequestInit) => Response
+  ): (url: string, init?: RequestInit) => Response {
+    return (url, init) => {
+      if (url === HLD_DESIGN_MODEL_LIST_URL) {
+        if (init?.method === "POST") {
+          return jsonResponse(
+            { artifact: designModelListItem(), sourceBundle: {}, payloadSummary: {} },
+            201
+          );
+        }
+        return jsonResponse(listBody);
+      }
+      if (url === HLD_DESIGN_MODEL_DETAIL_URL) return jsonResponse(detailBody);
+      if (url === HLD_DESIGN_MODEL_REVIEW_URL) {
+        return onReview ? onReview(init) : jsonResponse({ artifactStatus: "approved" });
+      }
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      if (url === HLD_READINESS_LIST_URL) return jsonResponse(hldReadinessListReady());
+      if (url === HLD_INTAKE_LIST_URL) return jsonResponse(hldIntakeListResponse());
+      if (url === HLD_KNOWLEDGE_PACK_LIST_URL) return jsonResponse(hldKnowledgePackListResponse());
+      if (url === HLD_SOURCE_BUNDLE_LIST_URL) return jsonResponse(sourceBundleListReady());
+      return jsonResponse({}, 200);
+    };
+  }
+
+  // Final HLD generation/document/diagram/proposal POST routes the design-model
+  // slice must never call. It is allowed to POST /rfp/hld-design-model.
+  const FINAL_HLD_POST_ROUTES = [
+    "/rfp/hld-diagram",
+    "/rfp/hld-document",
+    "/rfp/hld-proposal",
+    "/rfp/hld-html",
+    "/rfp/drawio",
+  ];
+  function finalHldPosts(calls: FetchCall[]): FetchCall[] {
+    return calls.filter(
+      (c) =>
+        c.init?.method === "POST" &&
+        FINAL_HLD_POST_ROUTES.some((route) => c.url.includes(route))
+    );
+  }
+
+  it("renders the ready design-model panel with compact counts, an enabled create button, a list, and no raw ids", async () => {
+    stubFetch(designModelFetch(designModelListReady()));
+    render(<ProjectRfpEvidencePage />);
+
+    const panel = await screen.findByTestId("hld-design-model-panel");
+    expect(panel).toBeInTheDocument();
+
+    const readiness = await screen.findByTestId("hld-design-model-readiness");
+    expect(readiness).toHaveTextContent("Ready to draft");
+    const summary = screen.getByTestId("hld-design-model-ready-summary");
+    expect(summary).toHaveTextContent("Source bundle version: 3");
+    expect(summary).toHaveTextContent("Source authorities: 7");
+    expect(summary).toHaveTextContent("Covered domains: 1");
+    expect(summary).toHaveTextContent("Excluded domains: 1");
+
+    expect(screen.getByTestId("hld-design-model-create")).not.toBeDisabled();
+    expect(screen.getByTestId("hld-design-model-list")).toBeInTheDocument();
+
+    // The compact panel never renders raw artifact / source bundle ids.
+    const panelText = panel.textContent ?? "";
+    expect(panelText).not.toContain(HLD_DESIGN_MODEL_ARTIFACT_ID);
+    expect(panelText).not.toContain(HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID);
+    expect(screen.getByTestId("hld-design-model-list").textContent ?? "").not.toContain(
+      HLD_DESIGN_MODEL_ARTIFACT_ID
+    );
+  });
+
+  it("renders a blocked design-model panel with a stable blocker code, a disabled create button, and an empty state", async () => {
+    stubFetch(designModelFetch(designModelListBlocked()));
+    render(<ProjectRfpEvidencePage />);
+
+    const blocked = await screen.findByTestId("hld-design-model-blocked");
+    expect(blocked).toHaveTextContent("latest_source_bundle_not_approved");
+    expect(blocked).toHaveTextContent("DESIGN-MODEL-BLOCKER-CANARY");
+
+    expect(screen.getByTestId("hld-design-model-create")).toBeDisabled();
+    expect(screen.getByTestId("hld-design-model-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-design-model-list")).toBeNull();
+    expect(screen.queryByTestId("hld-design-model-ready-summary")).toBeNull();
+  });
+
+  it("creates a design model with no body/authority fields, refreshes the list, and makes no final HLD POST", async () => {
+    const calls = stubFetch(designModelFetch(designModelListReady()));
+    render(<ProjectRfpEvidencePage />);
+
+    const createBtn = await screen.findByTestId("hld-design-model-create");
+    const listGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DESIGN_MODEL_LIST_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(createBtn);
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) => c.url === HLD_DESIGN_MODEL_LIST_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) => c.url === HLD_DESIGN_MODEL_LIST_URL && c.init?.method === "POST"
+    );
+    const rawBody = post?.init?.body;
+    const bodyText =
+      rawBody === undefined || rawBody === null ? "" : String(rawBody);
+    expect(rawBody === undefined || rawBody === null || bodyText === "{}").toBe(true);
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "createdBy",
+      "status",
+      "sourceArtifactIds",
+      "payload",
+      "artifactId",
+      "sourceHldSourceBundleArtifactId",
+    ]) {
+      expect(bodyText).not.toContain(forbidden);
+    }
+
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DESIGN_MODEL_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+
+    expect(finalHldPosts(calls)).toHaveLength(0);
+  });
+
+  it("inspects a design model into the drawer with sections/topology/diagram-intent/finding/review action, raw ids only in the audit", async () => {
+    stubFetch(designModelFetch(designModelListReady()));
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    await screen.findByTestId("review-drawer");
+    const content = await screen.findByTestId("hld-design-model-drawer-content");
+
+    expect(
+      screen.getByTestId("hld-design-model-drawer-covered")
+    ).toHaveTextContent("campus switching");
+    expect(
+      screen.getByTestId("hld-design-model-drawer-excluded")
+    ).toHaveTextContent("service only");
+
+    const sections = screen.getByTestId("hld-design-model-drawer-sections");
+    expect(sections).toHaveTextContent("DESIGN-SECTION-CANARY");
+    expect(sections).toHaveTextContent("DESIGN-DECISION-CANARY");
+
+    const topology = screen.getByTestId("hld-design-model-drawer-topology");
+    expect(topology).toHaveTextContent("TOPOLOGY-NODE-CANARY");
+    expect(topology).toHaveTextContent("TOPOLOGY-LINK-CANARY");
+    expect(topology).toHaveTextContent("TOPOLOGY-ZONE-CANARY");
+
+    const intents = screen.getByTestId("hld-design-model-drawer-diagram-intents");
+    expect(intents).toHaveTextContent("DIAGRAM-INTENT-CANARY");
+    // Diagram intents are intent records only; no rendered diagram surface.
+    expect(content.querySelector("svg")).toBeNull();
+
+    expect(
+      screen.getByTestId("hld-design-model-drawer-findings")
+    ).toHaveTextContent("VALIDATION-FINDING-CANARY");
+    expect(
+      screen.getByTestId("hld-design-model-drawer-review-actions")
+    ).toHaveTextContent("REVIEW-ACTION-CANARY");
+
+    // Raw artifact / source bundle / source reference ids live only in the audit.
+    const audit = content.querySelector(
+      "[data-testid='hld-design-model-drawer-audit']"
+    );
+    const auditText = audit?.textContent ?? "";
+    expect(auditText).toContain(HLD_DESIGN_MODEL_ARTIFACT_ID);
+    expect(auditText).toContain(HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID);
+    expect(auditText).toContain("src-bundle-ref");
+    expect(auditText).toContain("authority-ref");
+    expect(auditText).toContain("pack-ref");
+
+    const primary = content.cloneNode(true) as HTMLElement;
+    primary
+      .querySelector("[data-testid='hld-design-model-drawer-audit']")
+      ?.remove();
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).not.toContain(HLD_DESIGN_MODEL_ARTIFACT_ID);
+    expect(primaryText).not.toContain(HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID);
+    expect(primaryText).not.toContain("src-bundle-ref");
+    expect(primaryText).not.toContain("authority-ref");
+    expect(primaryText).not.toContain("pack-ref");
+  });
+
+  it("approves a design model posting only { decision }, refreshes the list, and makes no final HLD POST", async () => {
+    const calls = stubFetch(designModelFetch(designModelListReady()));
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-design-model-review");
+
+    const listGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DESIGN_MODEL_LIST_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-design-model-approve"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) => c.url === HLD_DESIGN_MODEL_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+    const reviewBody = JSON.parse(
+      String(
+        calls
+          .filter((c) => c.url === HLD_DESIGN_MODEL_REVIEW_URL)
+          .slice(-1)[0]?.init?.body
+      )
+    ) as Record<string, unknown>;
+    expect(Object.keys(reviewBody)).toEqual(["decision"]);
+    expect(reviewBody.decision).toBe("approved");
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "artifactId",
+      "status",
+      "payload",
+      "sourceArtifactIds",
+    ]) {
+      expect(reviewBody).not.toHaveProperty(forbidden);
+    }
+
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DESIGN_MODEL_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+    expect(finalHldPosts(calls)).toHaveLength(0);
+  });
+
+  it("requests changes posting { decision, note } with a trimmed note", async () => {
+    const calls = stubFetch(designModelFetch(designModelListReady()));
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-design-model-review");
+
+    fireEvent.change(screen.getByTestId("hld-design-model-review-note"), {
+      target: { value: "  Topology needs review.  " },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-design-model-reject"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) => c.url === HLD_DESIGN_MODEL_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+    const reviewBody = JSON.parse(
+      String(
+        calls
+          .filter((c) => c.url === HLD_DESIGN_MODEL_REVIEW_URL)
+          .slice(-1)[0]?.init?.body
+      )
+    ) as Record<string, unknown>;
+    expect(Object.keys(reviewBody).sort()).toEqual(["decision", "note"]);
+    expect(reviewBody.decision).toBe("rejected");
+    expect(reviewBody.note).toBe("Topology needs review.");
+    expect(finalHldPosts(calls)).toHaveLength(0);
+  });
+
+  it("shows a compact review error and never dumps server JSON when the review fails", async () => {
+    stubFetch(
+      designModelFetch(
+        designModelListReady(),
+        designModelDetailResponse(),
+        () =>
+          jsonResponse(
+            {
+              code: "hld_design_model_payload_stale",
+              staleCode: "redraft_required",
+              errors: ["DESIGN-MODEL-SERVER-JSON-LEAK-CANARY"],
+            },
+            409
+          )
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-design-model-review");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-design-model-approve"));
+    });
+
+    const reviewError = await screen.findByTestId("hld-design-model-review-error");
+    expect(reviewError).toHaveTextContent("Unable to review HLD design model.");
+    const errorText = reviewError.textContent ?? "";
+    expect(errorText).not.toContain("DESIGN-MODEL-SERVER-JSON-LEAK-CANARY");
+    expect(errorText).not.toContain("redraft_required");
+  });
+});
+
 describe("ProjectRfpEvidencePage static guards", () => {
   const SRC_PATH = join(process.cwd(), "src/app/projects/[id]/rfp/page.tsx");
   const TEST_PATH = join(process.cwd(), "tests/ui/project-rfp-page.test.tsx");
@@ -4660,6 +5232,22 @@ describe("ProjectRfpEvidencePage static guards", () => {
     // any future HLD model/diagram/document/html/draw.io/proposal route.
     for (const forbidden of [
       "/rfp/hld-model",
+      "/rfp/hld-diagram",
+      "/rfp/hld-document",
+      "/rfp/hld-proposal",
+      "/rfp/hld-html",
+      "/rfp/drawio",
+      "technical_proposal",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
+  });
+
+  it("wires the HLD design-model routes and adds no future final HLD document, diagram, draw.io, or proposal route", () => {
+    expect(source).toContain("/rfp/hld-design-model");
+    // The design-model surface is read/create/review only; it must never call
+    // any final HLD diagram/document/html/draw.io/proposal route.
+    for (const forbidden of [
       "/rfp/hld-diagram",
       "/rfp/hld-document",
       "/rfp/hld-proposal",
