@@ -61,6 +61,11 @@ const HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID = "art-hld-source-bundle-approv
 const HLD_DESIGN_MODEL_REVIEW_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-design-model-review`;
 const HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID = "art-hld-design-model-review-1";
 const HLD_DESIGN_MODEL_REVIEW_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID}/hld-design-model-review`;
+const HLD_DESIGN_MODEL_REBUILD_REQUEST_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-design-model-rebuild-request`;
+const HLD_DESIGN_MODEL_REBUILD_REQUEST_ARTIFACT_ID = "art-hld-design-model-rebuild-request-1";
+const HLD_DESIGN_MODEL_REBUILD_EXECUTE_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DESIGN_MODEL_REBUILD_REQUEST_ARTIFACT_ID}/hld-design-model-rebuild-request/execute`;
+const HLD_DESIGN_MODEL_REBUILT_ARTIFACT_ID = "art-hld-design-model-2";
+const HLD_DESIGN_MODEL_REBUILT_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DESIGN_MODEL_REBUILT_ARTIFACT_ID}/hld-design-model`;
 const HLD_INTAKE_FIELD_IDS = [
   "existing_network_context",
   "target_topology_intent",
@@ -1708,6 +1713,80 @@ function designModelReviewDetailResponse(): Record<string, unknown> {
   };
 }
 
+// ---- bounded design-model rebuild-request fixtures (Stage 6E-C) ------------
+
+function designModelRebuildRequestListItem(
+  id = HLD_DESIGN_MODEL_REBUILD_REQUEST_ARTIFACT_ID,
+  status = "generated",
+  version = 1,
+  sourceHldDesignModelArtifactId = HLD_DESIGN_MODEL_ARTIFACT_ID,
+  sourceReviewArtifactId = HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID
+): Record<string, unknown> {
+  return {
+    id,
+    projectId: PROJECT_ID,
+    stageId: "hld_design_delta_review",
+    type: "hld_design_model_rebuild_request",
+    status,
+    version,
+    sourceFileIds: [],
+    sourceArtifactIds: [sourceHldDesignModelArtifactId, sourceReviewArtifactId],
+    createdAt: "2026-06-23T10:00:00.000Z",
+    updatedAt: "2026-06-23T10:00:00.000Z",
+    payloadSummary: {
+      payloadKind: "rfp_hld_design_model_rebuild_request",
+      sourceHldDesignModelArtifactId,
+      sourceReviewArtifactId,
+      requestedAt: "2026-06-23T10:00:00.000Z",
+      status: "active",
+    },
+  };
+}
+
+function designModelRebuildRequestListEmpty(): Record<string, unknown> {
+  return { project: projectContext(), artifactCount: 0, artifacts: [] };
+}
+
+function designModelRebuildRequestListReady(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 1,
+    artifacts: [designModelRebuildRequestListItem()],
+  };
+}
+
+// Lean execute ok-response: a fresh candidate hld_design_model (needs_review)
+// plus consumed-request/source-bundle/payload summaries; no payload body.
+function designModelRebuildExecuteResponse(): Record<string, unknown> {
+  return {
+    artifact: {
+      id: HLD_DESIGN_MODEL_REBUILT_ARTIFACT_ID,
+      projectId: PROJECT_ID,
+      stageId: "hld_design_delta_review",
+      type: "hld_design_model",
+      status: "needs_review",
+      version: 2,
+      sourceFileIds: [],
+      sourceArtifactIds: [HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID],
+      createdAt: "2026-06-24T09:00:00.000Z",
+      updatedAt: "2026-06-24T09:00:00.000Z",
+    },
+    consumedRequest: {
+      id: HLD_DESIGN_MODEL_REBUILD_REQUEST_ARTIFACT_ID,
+      status: "consumed",
+      version: 1,
+    },
+    sourceBundle: {
+      artifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+      version: 3,
+    },
+    payloadSummary: {
+      payloadKind: "rfp_hld_design_model",
+      sourceBundleVersion: 3,
+    },
+  };
+}
+
 function stubFetch(
   handler?: (url: string, init?: RequestInit) => Response | Promise<Response>
 ): FetchCall[] {
@@ -1796,6 +1875,9 @@ function stubFetch(
       }
       if (url === HLD_DESIGN_MODEL_REVIEW_DETAIL_URL) {
         return jsonResponse(designModelReviewDetailResponse());
+      }
+      if (url === HLD_DESIGN_MODEL_REBUILD_REQUEST_LIST_URL) {
+        return jsonResponse(designModelRebuildRequestListEmpty());
       }
       if (url === REVIEW_URL) {
         return jsonResponse({ artifactStatus: "approved", artifact: baselineListItem() });
@@ -4933,7 +5015,9 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
     onReview?: (init?: RequestInit) => Response,
     reviewListBody: Record<string, unknown> = designModelReviewListEmpty(),
     reviewDetailBody: Record<string, unknown> = designModelReviewDetailResponse(),
-    onRunReview?: (init?: RequestInit) => Response
+    onRunReview?: (init?: RequestInit) => Response,
+    rebuildRequestListBody: Record<string, unknown> = designModelRebuildRequestListEmpty(),
+    onExecuteRebuild?: (init?: RequestInit) => Response
   ): (url: string, init?: RequestInit) => Response {
     return (url, init) => {
       if (url === HLD_DESIGN_MODEL_LIST_URL) {
@@ -4946,6 +5030,12 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
         return jsonResponse(listBody);
       }
       if (url === HLD_DESIGN_MODEL_DETAIL_URL) return jsonResponse(detailBody);
+      // The freshly rebuilt candidate draft the UI opens after an execution.
+      if (url === HLD_DESIGN_MODEL_REBUILT_DETAIL_URL) {
+        return jsonResponse(
+          designModelDetailResponse(HLD_DESIGN_MODEL_REBUILT_ARTIFACT_ID, "needs_review")
+        );
+      }
       if (url === HLD_DESIGN_MODEL_REVIEW_LIST_URL) {
         if (init?.method === "POST") {
           return onRunReview
@@ -4959,6 +5049,14 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
       }
       if (url === HLD_DESIGN_MODEL_REVIEW_URL) {
         return onReview ? onReview(init) : jsonResponse({ artifactStatus: "approved" });
+      }
+      if (url === HLD_DESIGN_MODEL_REBUILD_REQUEST_LIST_URL) {
+        return jsonResponse(rebuildRequestListBody);
+      }
+      if (url === HLD_DESIGN_MODEL_REBUILD_EXECUTE_URL) {
+        return onExecuteRebuild
+          ? onExecuteRebuild(init)
+          : jsonResponse(designModelRebuildExecuteResponse(), 201);
       }
       if (url === LIST_URL) return jsonResponse(listResponse());
       if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
@@ -5562,6 +5660,292 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
       ).toBe(true);
     });
   });
+
+  // --- Stage 6E-C bounded design-model rebuild execute surface -------------
+
+  it("disables the execute-rebuild action with explanatory text and no raw request id when no active rebuild request matches", async () => {
+    // A matching advisory review with bounded rebuild instructions, but the
+    // rebuild-request list is empty (default) so no request matches.
+    stubFetch(
+      designModelFetch(
+        designModelListReady(),
+        undefined,
+        undefined,
+        designModelReviewListReady()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-design-model-review-summary");
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    // The bounded rebuild instructions render and carry the execute action.
+    await screen.findByTestId("hld-design-model-review-rebuild");
+    const executeBtn = await screen.findByTestId(
+      "hld-design-model-rebuild-execute"
+    );
+    expect(executeBtn).toBeDisabled();
+    expect(
+      screen.getByTestId("hld-design-model-rebuild-execute-none")
+    ).toHaveTextContent("No active bounded rebuild request");
+
+    // With no active request there is no audit and no raw request id anywhere.
+    expect(
+      screen.queryByTestId("hld-design-model-rebuild-execute-audit")
+    ).toBeNull();
+    const content = screen.getByTestId("hld-design-model-drawer-content");
+    expect(content.textContent ?? "").not.toContain(
+      HLD_DESIGN_MODEL_REBUILD_REQUEST_ARTIFACT_ID
+    );
+  });
+
+  it("enables the execute-rebuild action with same-approved-source-bundle copy and keeps the request id in a collapsed audit", async () => {
+    stubFetch(
+      designModelFetch(
+        designModelListReady(),
+        undefined,
+        undefined,
+        designModelReviewListReady(),
+        undefined,
+        undefined,
+        designModelRebuildRequestListReady()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-design-model-review-summary");
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    const executeBtn = await screen.findByTestId(
+      "hld-design-model-rebuild-execute"
+    );
+    await waitFor(() => expect(executeBtn).not.toBeDisabled());
+
+    // Primary UI explains a same-approved-source-bundle candidate model draft.
+    const explainer = screen.getByTestId(
+      "hld-design-model-rebuild-execute-explainer"
+    );
+    expect(explainer).toHaveTextContent("same approved source bundle");
+    expect(explainer).toHaveTextContent("candidate model draft");
+    // The disabled-state copy is gone once a request matches.
+    expect(
+      screen.queryByTestId("hld-design-model-rebuild-execute-none")
+    ).toBeNull();
+
+    // The request id lives only in the collapsed rebuild audit.
+    const audit = screen.getByTestId("hld-design-model-rebuild-execute-audit");
+    expect(audit).toHaveTextContent(HLD_DESIGN_MODEL_REBUILD_REQUEST_ARTIFACT_ID);
+    const content = screen.getByTestId("hld-design-model-drawer-content");
+    const primary = content.cloneNode(true) as HTMLElement;
+    primary
+      .querySelector("[data-testid='hld-design-model-rebuild-execute-audit']")
+      ?.remove();
+    expect(primary.textContent ?? "").not.toContain(
+      HLD_DESIGN_MODEL_REBUILD_REQUEST_ARTIFACT_ID
+    );
+    // The review surface renders no machine-readable diagram/JSON dump.
+    expect(content.querySelector("svg")).toBeNull();
+    expect(content.querySelector("pre")).toBeNull();
+  });
+
+  it("executes the bounded rebuild with an empty body, refreshes all three lists, opens the needs-review draft, and makes no final HLD POST", async () => {
+    const calls = stubFetch(
+      designModelFetch(
+        designModelListReady(),
+        undefined,
+        undefined,
+        designModelReviewListReady(),
+        undefined,
+        undefined,
+        designModelRebuildRequestListReady()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-design-model-review-summary");
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    const executeBtn = await screen.findByTestId(
+      "hld-design-model-rebuild-execute"
+    );
+    await waitFor(() => expect(executeBtn).not.toBeDisabled());
+
+    const modelGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DESIGN_MODEL_LIST_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+    const reviewGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DESIGN_MODEL_REVIEW_LIST_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+    const rebuildGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DESIGN_MODEL_REBUILD_REQUEST_LIST_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(executeBtn);
+    });
+
+    // The POST goes to the execute route with an absent/empty body.
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_DESIGN_MODEL_REBUILD_EXECUTE_URL &&
+            c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+    const post = calls.find(
+      (c) =>
+        c.url === HLD_DESIGN_MODEL_REBUILD_EXECUTE_URL &&
+        c.init?.method === "POST"
+    );
+    const rawBody = post?.init?.body;
+    const bodyText =
+      rawBody === undefined || rawBody === null ? "" : String(rawBody);
+    expect(rawBody === undefined || rawBody === null || bodyText === "{}").toBe(
+      true
+    );
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "userId",
+      "status",
+      "payload",
+      "sourceArtifactIds",
+      "sourceHldDesignModelArtifactId",
+      "sourceReviewArtifactId",
+      "sku",
+      "pricing",
+      "catalog",
+      "config",
+      "executor",
+      "provider",
+    ]) {
+      expect(bodyText).not.toContain(forbidden);
+    }
+
+    // The design-model, advisory-review, and rebuild-request lists all refresh.
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DESIGN_MODEL_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(modelGetsBefore);
+    });
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DESIGN_MODEL_REVIEW_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(reviewGetsBefore);
+    });
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DESIGN_MODEL_REBUILD_REQUEST_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(rebuildGetsBefore);
+    });
+
+    // The fresh candidate draft is opened and shows as needs_review with no
+    // deterministic review yet (needing a fresh review + engineer approval).
+    await waitFor(() => {
+      expect(
+        calls.some((c) => c.url === HLD_DESIGN_MODEL_REBUILT_DETAIL_URL)
+      ).toBe(true);
+    });
+    const drawerContent = await screen.findByTestId(
+      "hld-design-model-drawer-content"
+    );
+    expect(drawerContent).toHaveTextContent("needs review");
+    await screen.findByTestId("hld-design-model-review-empty");
+
+    // Compact success copy appears and survives the switch to the new draft.
+    const success = await screen.findByTestId(
+      "hld-design-model-rebuild-execute-success"
+    );
+    expect(success).toHaveTextContent(
+      "New candidate model draft needs deterministic review"
+    );
+
+    expect(finalHldPosts(calls)).toHaveLength(0);
+  });
+
+  it("shows a compact execute error, never dumps server JSON, opens no draft, and makes no final HLD POST when execution fails", async () => {
+    const calls = stubFetch(
+      designModelFetch(
+        designModelListReady(),
+        undefined,
+        undefined,
+        designModelReviewListReady(),
+        undefined,
+        undefined,
+        designModelRebuildRequestListReady(),
+        () =>
+          jsonResponse(
+            {
+              code: "hld_design_model_rebuild_drafting_unavailable",
+              providerDetail: "REBUILD-EXECUTE-SERVER-JSON-LEAK-CANARY",
+              errors: ["REBUILD-EXECUTE-PROVIDER-CANARY"],
+            },
+            503
+          )
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-design-model-review-summary");
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    const executeBtn = await screen.findByTestId(
+      "hld-design-model-rebuild-execute"
+    );
+    await waitFor(() => expect(executeBtn).not.toBeDisabled());
+
+    await act(async () => {
+      fireEvent.click(executeBtn);
+    });
+
+    const execError = await screen.findByTestId(
+      "hld-design-model-rebuild-execute-error"
+    );
+    expect(execError).toHaveTextContent(
+      "Unable to execute bounded HLD design model rebuild."
+    );
+    const execErrorText = execError.textContent ?? "";
+    expect(execErrorText).not.toContain("REBUILD-EXECUTE-SERVER-JSON-LEAK-CANARY");
+    expect(execErrorText).not.toContain("REBUILD-EXECUTE-PROVIDER-CANARY");
+    expect(execErrorText).not.toContain(
+      "hld_design_model_rebuild_drafting_unavailable"
+    );
+
+    // A failed execution opens no new draft and triggers no final HLD output.
+    expect(
+      calls.some((c) => c.url === HLD_DESIGN_MODEL_REBUILT_DETAIL_URL)
+    ).toBe(false);
+    expect(finalHldPosts(calls)).toHaveLength(0);
+  });
 });
 
 describe("ProjectRfpEvidencePage static guards", () => {
@@ -5698,6 +6082,40 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "project-rfp-hld-design-model-review",
       "project-rfp-hld-design-model-review-inspection",
       "project-rfp-hld-design-model-review-deterministic",
+      "@/lib/db/",
+      "@anthropic-ai/sdk",
+    ]) {
+      expect(importLines.join("\n")).not.toContain(token);
+    }
+  });
+
+  it("wires the bounded design-model rebuild-request discovery and execute routes with no final-output route or server-service import", () => {
+    // The discovery (GET list) and execute (POST) routes are both wired.
+    expect(source).toContain("/rfp/hld-design-model-rebuild-request");
+    expect(source).toContain("/hld-design-model-rebuild-request/execute");
+    // Executing a bounded rebuild stays subordinate to a fresh review and
+    // engineer approval: no final HLD document/diagram/html/draw.io/proposal/
+    // export route may appear anywhere in the page source.
+    for (const forbidden of [
+      "/rfp/hld-diagram",
+      "/rfp/hld-document",
+      "/rfp/hld-proposal",
+      "/rfp/hld-html",
+      "/rfp/drawio",
+      "/rfp/hld-export",
+      "technical_proposal",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
+    // And it imports no rebuild server service/executor/store or provider SDK.
+    const importLines = source
+      .split("\n")
+      .filter((line) => line.trimStart().startsWith("import"));
+    for (const token of [
+      "project-rfp-hld-design-model-rebuild-request-service",
+      "project-rfp-hld-design-model-rebuild-executor",
+      "project-rfp-hld-design-model-rebuild-request",
+      "project-rfp-hld-design-model-rebuild-candidate-input",
       "@/lib/db/",
       "@anthropic-ai/sdk",
     ]) {
