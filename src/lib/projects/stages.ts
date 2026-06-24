@@ -103,6 +103,7 @@ export const PROJECT_STAGE_DEFINITIONS: readonly ProjectStageDefinition[] = [
       "hld_design_delta",
       "hld_intake",
       "hld_readiness_snapshot",
+      "hld_source_bundle",
       "hld_design_model",
       "hld_diagram",
       "hld_document",

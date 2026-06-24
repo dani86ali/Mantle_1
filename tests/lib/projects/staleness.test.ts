@@ -26,6 +26,7 @@ const ALL_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_design_delta",
   "hld_intake",
   "hld_readiness_snapshot",
+  "hld_source_bundle",
   "hld_design_model",
   "hld_diagram",
   "hld_document",
@@ -102,7 +103,12 @@ describe("getDirectDownstreamArtifactTypes", () => {
     expect(getDirectDownstreamArtifactTypes("hld_intake")).toEqual([
       "hld_readiness_snapshot",
     ]);
+    // The readiness snapshot now feeds the deterministic HLD source bundle,
+    // which in turn feeds the future HLD design model.
     expect(getDirectDownstreamArtifactTypes("hld_readiness_snapshot")).toEqual([
+      "hld_source_bundle",
+    ]);
+    expect(getDirectDownstreamArtifactTypes("hld_source_bundle")).toEqual([
       "hld_design_model",
     ]);
     expect(getDirectDownstreamArtifactTypes("hld_design_model")).toEqual([
@@ -143,6 +149,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "priced_boq",
       "hld_readiness_snapshot",
       "export_package",
+      "hld_source_bundle",
       "hld_design_model",
       "hld_diagram",
       "hld_document",
@@ -156,6 +163,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_readiness_snapshot",
       "technical_proposal",
       "export_package",
+      "hld_source_bundle",
       "hld_design_model",
       "hld_diagram",
       "hld_document",
@@ -187,6 +195,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_readiness_snapshot",
       "export_package",
       "compliance_matrix",
+      "hld_source_bundle",
       "hld_design_model",
       "hld_diagram",
       "hld_document",
@@ -201,8 +210,9 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_readiness_snapshot",
       "hld_design_delta",
       "technical_proposal",
-      "hld_design_model",
+      "hld_source_bundle",
       "export_package",
+      "hld_design_model",
       "hld_diagram",
       "hld_document",
     ]);
@@ -212,8 +222,9 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_readiness_snapshot",
       "hld_design_delta",
       "technical_proposal",
-      "hld_design_model",
+      "hld_source_bundle",
       "export_package",
+      "hld_design_model",
       "hld_diagram",
       "hld_document",
     ]);
@@ -224,6 +235,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
     // and the document feeds the proposal -> export.
     expect(getTransitiveDownstreamArtifactTypes("hld_intake")).toEqual([
       "hld_readiness_snapshot",
+      "hld_source_bundle",
       "hld_design_model",
       "hld_diagram",
       "hld_document",
@@ -233,6 +245,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
     expect(
       getTransitiveDownstreamArtifactTypes("hld_readiness_snapshot")
     ).toEqual([
+      "hld_source_bundle",
       "hld_design_model",
       "hld_diagram",
       "hld_document",
@@ -729,6 +742,56 @@ describe("planStaleArtifactUpdates", () => {
       "technical_proposal",
       "export_package",
     ]);
+  });
+
+  it("a change to hld_readiness_snapshot marks the new hld_source_bundle stale when present", () => {
+    const changed = artifact({
+      id: "hrs-1",
+      type: "hld_readiness_snapshot",
+      version: 1,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hsb-1", type: "hld_source_bundle", version: 1 }),
+        artifact({ id: "hdm-1", type: "hld_design_model", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "hld_source_bundle",
+      "hld_design_model",
+    ]);
+    expect(plan.find((u) => u.type === "hld_source_bundle")?.artifactId).toBe("hsb-1");
+  });
+
+  it("a change to hld_source_bundle marks the HLD model/diagram/document and proposal chain stale", () => {
+    const changed = artifact({
+      id: "hsb-1",
+      type: "hld_source_bundle",
+      version: 1,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hdm", type: "hld_design_model", version: 1 }),
+        artifact({ id: "hdg", type: "hld_diagram", version: 1 }),
+        artifact({ id: "hdoc", type: "hld_document", version: 1 }),
+        artifact({ id: "tp", type: "technical_proposal", version: 1 }),
+        artifact({ id: "exp", type: "export_package", version: 1 }),
+        // The readiness snapshot is upstream of the bundle; never planned.
+        artifact({ id: "hrs", type: "hld_readiness_snapshot", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "hld_design_model",
+      "hld_diagram",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(plan.map((u) => u.type)).not.toContain("hld_readiness_snapshot");
   });
 
   it("a change to hld_design_model marks diagram/document downstream but not the snapshot", () => {

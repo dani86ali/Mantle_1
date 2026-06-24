@@ -34,7 +34,9 @@ import type {
  * Stage 6 HLD readiness spine: the approved design inputs
  * (requirements_baseline, compliance_matrix, configuration_expansion) plus the
  * approved engineer design intake (hld_intake, a separate input root) feed
- * hld_readiness_snapshot, which feeds the future hld_design_model, which feeds
+ * hld_readiness_snapshot, which feeds the deterministic hld_source_bundle (the
+ * structured authority package compiled after readiness approval), which feeds
+ * the future hld_design_model, which feeds
  * the future hld_diagram and hld_document; an approved hld_document can feed
  * technical_proposal. The model/diagram/document nodes are future contracts -
  * only their staleness edges are declared here, no generation behavior.
@@ -62,7 +64,8 @@ const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   priced_boq: ["technical_proposal", "export_package"],
   hld_intake: ["hld_readiness_snapshot"],
   design_knowledge_pack: ["hld_readiness_snapshot"],
-  hld_readiness_snapshot: ["hld_design_model"],
+  hld_readiness_snapshot: ["hld_source_bundle"],
+  hld_source_bundle: ["hld_design_model"],
   hld_design_model: ["hld_diagram", "hld_document"],
   hld_diagram: [],
   hld_document: ["technical_proposal"],
