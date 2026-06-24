@@ -3,9 +3,11 @@
  * Source of truth: C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md
  * Canonical shape: src/types/project.ts. Versioning: src/lib/projects/artifacts.ts.
  *
- * Scope is intentionally minimal: insert a new versioned artifact row and read
- * artifacts back, tenant/project scoped. It does NOT wire BoQ loading, resolve
- * SKUs, price, export, or run approvals (later prompts). It DOES, on create,
+ * Scope is intentionally minimal: insert a new versioned artifact row, read
+ * artifacts back, and narrowly retire one exact version (status-only flip to
+ * "stale"/"failed", no staleness propagation), all tenant/project scoped. It does
+ * NOT wire BoQ loading, resolve SKUs, price, export, or run approvals (later
+ * prompts). It DOES, on create,
  * propagate staleness to the latest downstream artifact versions per the pure
  * planner (Prompt 133): immutable history is preserved - the new row and every
  * non-latest/upstream/unrelated row are never mutated, and a propagated update
@@ -169,6 +171,51 @@ export async function createProjectArtifactVersion(
     }
 
     return toProjectArtifact(row);
+  });
+}
+
+/** Input for {@link retireProjectArtifactVersion}. */
+export interface RetireProjectArtifactVersionInput {
+  tenantId: string;
+  projectId: string;
+  artifactId: string;
+  /** The exact version the caller observed; the claim matches it. */
+  expectedVersion: number;
+  /** The exact status the caller observed; the claim matches it. */
+  expectedStatus: ProjectArtifactStatus;
+  /** The terminal status to flip to. Only "stale" or "failed" are allowed. */
+  retiredStatus: "stale" | "failed";
+}
+
+/**
+ * Atomically retire ONE exact artifact version: flip its status to "stale" or
+ * "failed", scoped to (tenant, project, id, expectedVersion, expectedStatus) and
+ * touching ONLY status and updatedAt. Returns the updated ProjectArtifact (no
+ * tenantId), or null when no row matches that exact version+status - e.g. a
+ * concurrent caller already claimed it, or the version/status moved on. This is a
+ * narrow optimistic claim, NOT the staleness planner: it propagates no downstream
+ * staleness and never mutates payload, filePath, sourceFileIds, sourceArtifactIds,
+ * createdAt, stageId, type, or version. Callers use the null result to fail closed
+ * so a single bounded request is consumed at most once.
+ */
+export async function retireProjectArtifactVersion(
+  input: RetireProjectArtifactVersionInput
+): Promise<ProjectArtifact | null> {
+  return withTenantDb(input.tenantId, async (tx) => {
+    const [row] = await tx
+      .update(projectArtifacts)
+      .set({ status: input.retiredStatus, updatedAt: new Date() })
+      .where(
+        and(
+          eq(projectArtifacts.tenantId, input.tenantId),
+          eq(projectArtifacts.projectId, input.projectId),
+          eq(projectArtifacts.id, input.artifactId),
+          eq(projectArtifacts.version, input.expectedVersion),
+          eq(projectArtifacts.status, input.expectedStatus)
+        )
+      )
+      .returning();
+    return row ? toProjectArtifact(row) : null;
   });
 }
 

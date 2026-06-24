@@ -45,6 +45,7 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
     project_id: "projectId",
     type: "type",
     version: "version",
+    status: "status",
   };
 
   type Cond = { name: string; val: unknown };
@@ -104,7 +105,10 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
       return {
         set(values: Record<string, unknown>) {
           return {
-            async where(pred: Pred) {
+            // Mutates synchronously on call, then is either awaited directly
+            // (the create staleness loop) OR has .returning() chained (the
+            // retire path) - both resolve to the updated rows.
+            where(pred: Pred) {
               const conds = flatten(pred);
               const updated: StoredArtifact[] = [];
               for (const row of store.artifacts) {
@@ -113,7 +117,17 @@ const { store, mockDb, withTenantDb } = vi.hoisted(() => {
                   updated.push(row);
                 }
               }
-              return updated;
+              return {
+                async returning() {
+                  return updated;
+                },
+                then(
+                  resolve: (rows: StoredArtifact[]) => unknown,
+                  reject?: (err: unknown) => unknown
+                ) {
+                  return Promise.resolve(updated).then(resolve, reject);
+                },
+              };
             },
           };
         },
@@ -188,6 +202,7 @@ import {
   listProjectArtifactsByType,
   getLatestProjectArtifactVersion,
   getProjectArtifactById,
+  retireProjectArtifactVersion,
 } from "@/lib/db/project-artifact-store";
 import type { CreateProjectArtifactVersionInput } from "@/lib/db/project-artifact-store";
 
@@ -648,8 +663,162 @@ describe("tenant-scoped execution", () => {
   });
 });
 
+describe("retireProjectArtifactVersion", () => {
+  function rowOf(id: string): StoredArtifact {
+    const row = store.artifacts.find((a) => a.id === id);
+    if (row === undefined) throw new Error(`missing seeded row ${id}`);
+    return row;
+  }
+
+  it("flips status on an exact tenant/project/id/version/status match and returns the row", async () => {
+    seedArtifact({
+      id: "req-1",
+      type: "hld_design_model_rebuild_request",
+      stageId: "hld_design_delta_review",
+      status: "needs_review",
+      version: 1,
+    });
+    const updated = await retireProjectArtifactVersion({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: "req-1",
+      expectedVersion: 1,
+      expectedStatus: "needs_review",
+      retiredStatus: "stale",
+    });
+    expect(updated).not.toBeNull();
+    expect(updated!.status).toBe("stale");
+    expect("tenantId" in updated!).toBe(false);
+    expect(rowOf("req-1").status).toBe("stale");
+  });
+
+  it("returns null and changes nothing when the status no longer matches (already claimed)", async () => {
+    seedArtifact({ id: "req-1", status: "stale", version: 1 });
+    const updated = await retireProjectArtifactVersion({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: "req-1",
+      expectedVersion: 1,
+      expectedStatus: "needs_review",
+      retiredStatus: "failed",
+    });
+    expect(updated).toBeNull();
+    expect(rowOf("req-1").status).toBe("stale");
+  });
+
+  it("returns null on a version mismatch", async () => {
+    seedArtifact({ id: "req-1", status: "needs_review", version: 2 });
+    const updated = await retireProjectArtifactVersion({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: "req-1",
+      expectedVersion: 1,
+      expectedStatus: "needs_review",
+      retiredStatus: "stale",
+    });
+    expect(updated).toBeNull();
+    expect(rowOf("req-1").status).toBe("needs_review");
+  });
+
+  it("is tenant and project scoped", async () => {
+    seedArtifact({ id: "req-1", status: "needs_review", version: 1 });
+    const base = {
+      artifactId: "req-1",
+      expectedVersion: 1,
+      expectedStatus: "needs_review" as const,
+      retiredStatus: "stale" as const,
+    };
+    expect(
+      await retireProjectArtifactVersion({ ...base, tenantId: OTHER_TENANT, projectId: PROJECT })
+    ).toBeNull();
+    expect(
+      await retireProjectArtifactVersion({ ...base, tenantId: TENANT, projectId: OTHER_PROJECT })
+    ).toBeNull();
+    expect(rowOf("req-1").status).toBe("needs_review");
+  });
+
+  it("updates only status and updatedAt, preserving every other field", async () => {
+    const createdAt = new Date("2026-05-21T08:00:00.000Z");
+    const updatedAt = new Date("2026-05-21T08:00:00.000Z");
+    seedArtifact({
+      id: "req-1",
+      type: "hld_design_model_rebuild_request",
+      stageId: "hld_design_delta_review",
+      status: "needs_review",
+      version: 3,
+      payload: { kind: "request" },
+      filePath: "s3://bucket/x",
+      sourceFileIds: ["f-1"],
+      sourceArtifactIds: ["a-1", "a-2"],
+      createdAt,
+      updatedAt,
+    });
+    const updated = await retireProjectArtifactVersion({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: "req-1",
+      expectedVersion: 3,
+      expectedStatus: "needs_review",
+      retiredStatus: "failed",
+    });
+    const row = rowOf("req-1");
+    expect(row.status).toBe("failed");
+    expect(row.version).toBe(3);
+    expect(row.payload).toEqual({ kind: "request" });
+    expect(row.filePath).toBe("s3://bucket/x");
+    expect(row.sourceFileIds).toEqual(["f-1"]);
+    expect(row.sourceArtifactIds).toEqual(["a-1", "a-2"]);
+    expect(row.stageId).toBe("hld_design_delta_review");
+    expect(row.type).toBe("hld_design_model_rebuild_request");
+    expect(row.createdAt).toBe(createdAt);
+    expect(row.updatedAt).not.toBe(updatedAt);
+    expect(updated!.updatedAt).toBeInstanceOf(Date);
+    expect(updated!.updatedAt.getTime()).toBeGreaterThanOrEqual(createdAt.getTime());
+  });
+
+  it("does not propagate downstream staleness", async () => {
+    seedArtifact({
+      id: "nb",
+      type: "normalized_boq",
+      stageId: "boq_format_validation",
+      version: 1,
+      status: "approved",
+    });
+    seedArtifact({
+      id: "pb",
+      type: "priced_boq",
+      stageId: "boq_pricing_review",
+      version: 1,
+      status: "approved",
+    });
+    await retireProjectArtifactVersion({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: "nb",
+      expectedVersion: 1,
+      expectedStatus: "approved",
+      retiredStatus: "stale",
+    });
+    expect(rowOf("nb").status).toBe("stale");
+    expect(rowOf("pb").status).toBe("approved");
+  });
+
+  it("opens a tenant-scoped transaction for the input tenant", async () => {
+    seedArtifact({ id: "req-1", status: "needs_review", version: 1 });
+    await retireProjectArtifactVersion({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: "req-1",
+      expectedVersion: 1,
+      expectedStatus: "needs_review",
+      retiredStatus: "stale",
+    });
+    expect(withTenantDb).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+});
+
 describe("module surface", () => {
-  it("exposes only the five repository functions", () => {
+  it("exposes only the repository functions", () => {
     expect(Object.keys(artifactStore).sort()).toEqual(
       [
         "createProjectArtifactVersion",
@@ -657,6 +826,7 @@ describe("module surface", () => {
         "getProjectArtifactById",
         "listProjectArtifacts",
         "listProjectArtifactsByType",
+        "retireProjectArtifactVersion",
       ].sort()
     );
   });
