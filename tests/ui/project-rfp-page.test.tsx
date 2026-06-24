@@ -5483,6 +5483,85 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
     expect(runErrorText).not.toContain("REVIEW-RUN-SERVER-JSON-LEAK-CANARY");
     expect(runErrorText).not.toContain("latest_source_bundle_not_approved");
   });
+
+  it("disables run-review for a non-reviewable model row and drawer but keeps Inspect available", async () => {
+    const listBody = {
+      project: projectContext(),
+      artifactCount: 1,
+      artifacts: [designModelListItem(HLD_DESIGN_MODEL_ARTIFACT_ID, "approved")],
+      designModelReadiness: DESIGN_MODEL_READY_READINESS,
+    };
+    stubFetch(
+      designModelFetch(
+        listBody,
+        designModelDetailResponse(HLD_DESIGN_MODEL_ARTIFACT_ID, "approved"),
+        undefined,
+        designModelReviewListEmpty()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    // The row run-review action is disabled for a non-reviewable model...
+    const runBtn = await screen.findByTestId("hld-design-model-review-run");
+    expect(runBtn).toBeDisabled();
+    // ...but Inspect stays available.
+    const inspect = screen.getByTestId("hld-design-model-inspect");
+    expect(inspect).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-design-model-drawer-content");
+
+    // The drawer's run action is disabled too.
+    const drawerRun = screen.getByTestId("hld-design-model-review-run-drawer");
+    expect(drawerRun).toBeDisabled();
+  });
+
+  it("auto-fetches the review detail for an already-open model drawer once the review list arrives", async () => {
+    let releaseReviewList: () => void = () => {};
+    const reviewListGate = new Promise<void>((resolve) => {
+      releaseReviewList = resolve;
+    });
+    const base = designModelFetch(
+      designModelListReady(),
+      designModelDetailResponse(),
+      undefined,
+      designModelReviewListReady()
+    );
+    const calls = stubFetch(async (url, init) => {
+      if (
+        url === HLD_DESIGN_MODEL_REVIEW_LIST_URL &&
+        (init?.method ?? "GET") === "GET"
+      ) {
+        await reviewListGate;
+      }
+      return base(url, init);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    // Open the drawer before the (gated) review list resolves.
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-design-model-drawer-content");
+
+    // With no review yet, the sanitized detail has not been requested.
+    expect(
+      calls.some((c) => c.url === HLD_DESIGN_MODEL_REVIEW_DETAIL_URL)
+    ).toBe(false);
+
+    // Release the review list; the open drawer should now fetch the detail.
+    await act(async () => {
+      releaseReviewList();
+    });
+    await waitFor(() => {
+      expect(
+        calls.some((c) => c.url === HLD_DESIGN_MODEL_REVIEW_DETAIL_URL)
+      ).toBe(true);
+    });
+  });
 });
 
 describe("ProjectRfpEvidencePage static guards", () => {

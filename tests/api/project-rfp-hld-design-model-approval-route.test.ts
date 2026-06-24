@@ -316,6 +316,60 @@ describe("POST .../hld-design-model/review - result mapping", () => {
     expect("errors" in body).toBe(false);
   });
 
+  it("maps hld_design_model_review_required to 409 with the model artifact summary", async () => {
+    mockReview.mockResolvedValue({
+      status: "hld_design_model_review_required",
+      artifact: ARTIFACT_SUMMARY,
+    });
+
+    const res = await POST(req(), PARAMS);
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("hld_design_model_review_required");
+    expect(body.artifact).toEqual(ARTIFACT_SUMMARY);
+  });
+
+  it("maps invalid_hld_design_model_review_payload to 409 with both summaries and errors", async () => {
+    const reviewArtifact = { ...ARTIFACT_SUMMARY, id: "rev-1", type: "hld_design_model_review" };
+    mockReview.mockResolvedValue({
+      status: "invalid_hld_design_model_review_payload",
+      artifact: ARTIFACT_SUMMARY,
+      reviewArtifact,
+      errors: ["payload: must be an object"],
+    });
+
+    const res = await POST(req(), PARAMS);
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("hld_design_model_review_payload_invalid");
+    expect(body.artifact).toEqual(ARTIFACT_SUMMARY);
+    expect(body.reviewArtifact).toEqual(reviewArtifact);
+    expect(body.errors).toEqual(["payload: must be an object"]);
+  });
+
+  it("maps blocking_hld_design_model_review_findings to 409 with recommendation and counts", async () => {
+    const reviewArtifact = { ...ARTIFACT_SUMMARY, id: "rev-1", type: "hld_design_model_review" };
+    mockReview.mockResolvedValue({
+      status: "blocking_hld_design_model_review_findings",
+      artifact: ARTIFACT_SUMMARY,
+      reviewArtifact,
+      recommendation: "reject_required",
+      findingCounts: { blocking: 2, warning: 1, suggestion: 0 },
+    });
+
+    const res = await POST(req(), PARAMS);
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("hld_design_model_review_findings_blocking");
+    expect(body.artifact).toEqual(ARTIFACT_SUMMARY);
+    expect(body.reviewArtifact).toEqual(reviewArtifact);
+    expect(body.recommendation).toBe("reject_required");
+    expect(body.findingCounts).toEqual({ blocking: 2, warning: 1, suggestion: 0 });
+  });
+
   it("maps ok to 200 with { approval, artifactStatus, stageStatus, artifact } and no status discriminator", async () => {
     const res = await POST(req(), PARAMS);
 

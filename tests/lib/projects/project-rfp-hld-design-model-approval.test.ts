@@ -49,11 +49,16 @@ import {
   RFP_HLD_DESIGN_MODEL_PAYLOAD_KIND,
   type RfpHldDesignModelPayload,
 } from "@/lib/projects/project-rfp-hld-design-model";
+import {
+  RFP_HLD_DESIGN_MODEL_REVIEW_PAYLOAD_KIND,
+  type RfpHldDesignModelReviewPayload,
+} from "@/lib/projects/project-rfp-hld-design-model-review";
 
 const TENANT = "44444444-4444-4444-4444-444444444444";
 const PROJECT = "proj-1";
 const BUNDLE_ID = "hsb-1";
 const MODEL_ID = "hdm-1";
+const REVIEW_ID = "hrev-1";
 const DECIDER = "u-approver-7";
 const CREATED_AT = "2026-06-24T00:00:00.000Z";
 const CREATED_DATE = new Date(CREATED_AT);
@@ -222,6 +227,77 @@ function validModelArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectAr
   };
 }
 
+function validReviewPayload(
+  overrides: Partial<RfpHldDesignModelReviewPayload> = {}
+): RfpHldDesignModelReviewPayload {
+  return {
+    payloadKind: RFP_HLD_DESIGN_MODEL_REVIEW_PAYLOAD_KIND,
+    sourceArtifactIds: [MODEL_ID, BUNDLE_ID],
+    sourceHldDesignModelArtifactId: MODEL_ID,
+    sourceHldSourceBundleArtifactId: BUNDLE_ID,
+    reviewedAt: CREATED_AT,
+    reviewer: { type: "deterministic" },
+    sourceReferences: [{ id: "ref-1", artifactId: MODEL_ID }],
+    findings: [
+      {
+        id: "f-1",
+        severity: "warning",
+        category: "topology_risk",
+        message: "Advisory warning only.",
+        sourceReferenceIds: ["ref-1"],
+      },
+      {
+        id: "f-2",
+        severity: "suggestion",
+        category: "unclear_narrative",
+        message: "Advisory suggestion only.",
+        sourceReferenceIds: ["ref-1"],
+      },
+    ],
+    recommendation: "proceed_to_engineer_review",
+    ...overrides,
+  };
+}
+
+function blockingReviewPayload(): RfpHldDesignModelReviewPayload {
+  return validReviewPayload({
+    findings: [
+      {
+        id: "f-block",
+        severity: "blocking",
+        category: "source_mismatch",
+        message: "Blocking advisory finding.",
+        sourceReferenceIds: ["ref-1"],
+      },
+      {
+        id: "f-warn",
+        severity: "warning",
+        category: "topology_risk",
+        message: "Advisory warning alongside the blocker.",
+        sourceReferenceIds: ["ref-1"],
+      },
+    ],
+    recommendation: "reject_required",
+  });
+}
+
+function validReviewArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
+  return {
+    id: REVIEW_ID,
+    projectId: PROJECT,
+    stageId: "hld_design_delta_review",
+    type: "hld_design_model_review",
+    status: "generated",
+    version: 1,
+    payload: validReviewPayload() as unknown as Record<string, unknown>,
+    sourceFileIds: [],
+    sourceArtifactIds: [MODEL_ID, BUNDLE_ID],
+    createdAt: CREATED_DATE,
+    updatedAt: CREATED_DATE,
+    ...overrides,
+  };
+}
+
 /** Default getProjectArtifactById: model for MODEL_ID, bundle for BUNDLE_ID. */
 function setArtifactRows(model: ProjectArtifact | null, bundle: ProjectArtifact | null): void {
   mockGetArtifactById.mockImplementation(async (_t: string, _p: string, id: string) => {
@@ -267,7 +343,7 @@ beforeEach(() => {
   setArtifactRows(validModelArtifact(), validBundleArtifact());
   mockListProjectArtifacts
     .mockReset()
-    .mockResolvedValue([validBundleArtifact(), validModelArtifact()]);
+    .mockResolvedValue([validBundleArtifact(), validModelArtifact(), validReviewArtifact()]);
   mockCreateApproval.mockReset().mockResolvedValue(makeCreated());
 });
 
@@ -464,6 +540,122 @@ describe("reviewRfpHldDesignModelArtifact - approval currency gate", () => {
   });
 });
 
+describe("reviewRfpHldDesignModelArtifact - advisory review gate", () => {
+  it("approves when the current matching review has only warning/suggestion findings", async () => {
+    // Default beforeEach review carries one warning and one suggestion.
+    const result = await review({ decidedAt: DECIDED_AT });
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks with hld_design_model_review_required when no review exists", async () => {
+    mockListProjectArtifacts.mockResolvedValue([
+      validBundleArtifact(),
+      validModelArtifact(),
+    ]);
+    const result = await review();
+    expect(result.status).toBe("hld_design_model_review_required");
+    if (result.status !== "hld_design_model_review_required") throw new Error("unreachable");
+    expect(result.artifact.id).toBe(MODEL_ID);
+    expect("payload" in result.artifact).toBe(false);
+    expect(JSON.stringify(result)).not.toContain(TENANT);
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("blocks with invalid_hld_design_model_review_payload when the latest review payload is invalid", async () => {
+    mockListProjectArtifacts.mockResolvedValue([
+      validBundleArtifact(),
+      validModelArtifact(),
+      validReviewArtifact({ payload: { junk: true } }),
+    ]);
+    const result = await review();
+    expect(result.status).toBe("invalid_hld_design_model_review_payload");
+    if (result.status !== "invalid_hld_design_model_review_payload") throw new Error("unreachable");
+    expect(result.reviewArtifact.id).toBe(REVIEW_ID);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect("payload" in result.artifact).toBe(false);
+    expect("payload" in result.reviewArtifact).toBe(false);
+    expect(JSON.stringify(result)).not.toContain(TENANT);
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("blocks with blocking_hld_design_model_review_findings when the current review has a blocking finding", async () => {
+    mockListProjectArtifacts.mockResolvedValue([
+      validBundleArtifact(),
+      validModelArtifact(),
+      validReviewArtifact({
+        payload: blockingReviewPayload() as unknown as Record<string, unknown>,
+      }),
+    ]);
+    const result = await review();
+    expect(result.status).toBe("blocking_hld_design_model_review_findings");
+    if (result.status !== "blocking_hld_design_model_review_findings") throw new Error("unreachable");
+    expect(result.recommendation).toBe("reject_required");
+    expect(result.findingCounts.blocking).toBe(1);
+    expect(result.findingCounts.warning).toBe(1);
+    expect(result.reviewArtifact.id).toBe(REVIEW_ID);
+    expect(JSON.stringify(result)).not.toContain(TENANT);
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("ignores retired (stale/rejected/failed) reviews and requires a current one", async () => {
+    for (const status of ["stale", "rejected", "failed"] as ProjectArtifactStatus[]) {
+      mockCreateApproval.mockClear();
+      mockListProjectArtifacts.mockResolvedValue([
+        validBundleArtifact(),
+        validModelArtifact(),
+        validReviewArtifact({ status }),
+      ]);
+      const result = await review();
+      expect(result.status, status).toBe("hld_design_model_review_required");
+      expect(mockCreateApproval, status).not.toHaveBeenCalled();
+    }
+  });
+
+  it("selects the latest review version and fails closed on its invalid payload", async () => {
+    mockListProjectArtifacts.mockResolvedValue([
+      validBundleArtifact(),
+      validModelArtifact(),
+      validReviewArtifact({ id: "hrev-old", version: 1 }),
+      validReviewArtifact({ id: "hrev-new", version: 2, payload: { junk: true } }),
+    ]);
+    const result = await review();
+    expect(result.status).toBe("invalid_hld_design_model_review_payload");
+    if (result.status !== "invalid_hld_design_model_review_payload") throw new Error("unreachable");
+    expect(result.reviewArtifact.id).toBe("hrev-new");
+  });
+
+  it("requires a fresh review when the latest valid review ties to a stale bundle id", async () => {
+    const payload = validReviewPayload({
+      sourceArtifactIds: [MODEL_ID, "stale-bundle"],
+      sourceHldSourceBundleArtifactId: "stale-bundle",
+    });
+    mockListProjectArtifacts.mockResolvedValue([
+      validBundleArtifact(),
+      validModelArtifact(),
+      validReviewArtifact({
+        payload: payload as unknown as Record<string, unknown>,
+        sourceArtifactIds: [MODEL_ID, "stale-bundle"],
+      }),
+    ]);
+    const result = await review();
+    expect(result.status).toBe("hld_design_model_review_required");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("records a REJECTION even when no review exists", async () => {
+    mockListProjectArtifacts.mockResolvedValue([
+      validBundleArtifact(),
+      validModelArtifact(),
+    ]);
+    mockCreateApproval.mockResolvedValue(makeCreated("rejected"));
+    const result = await review({ decision: "rejected" });
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+    expect(mockListProjectArtifacts).not.toHaveBeenCalled();
+  });
+});
+
 describe("reviewRfpHldDesignModelArtifact - result hygiene", () => {
   it("ok result returns lean summaries without leaking the payload body or tenantId", async () => {
     const payload = validDesignModelPayload();
@@ -529,6 +721,7 @@ describe("module purity (static source check)", () => {
       "@/lib/projects/approvals",
       "@/lib/projects/project-rfp-hld-design-model",
       "@/lib/projects/project-rfp-hld-design-model-readiness",
+      "@/lib/projects/project-rfp-hld-design-model-review",
       "@/types/project",
     ]);
   });

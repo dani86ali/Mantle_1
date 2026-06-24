@@ -21,7 +21,14 @@
  * invalid_hld_design_model_payload -> 409 hld_design_model_payload_invalid (with the
  * artifact summary), stale_hld_design_model_payload -> 409
  * hld_design_model_payload_stale (with the artifact summary, the staleCode, and any
- * messages/errors), approval_failed -> 409 hld_design_model_review_failed, ok -> 200
+ * messages/errors), hld_design_model_review_required -> 409
+ * hld_design_model_review_required (with the model artifact summary),
+ * invalid_hld_design_model_review_payload -> 409 hld_design_model_review_payload_invalid
+ * (with the model + review artifact summaries and validation errors),
+ * blocking_hld_design_model_review_findings -> 409
+ * hld_design_model_review_findings_blocking (with the model + review artifact
+ * summaries, the recommendation, and finding counts), approval_failed -> 409
+ * hld_design_model_review_failed, ok -> 200
  * with { approval, artifactStatus, stageStatus, artifact }. An unexpected service
  * error maps to a controlled 500 that never exposes the thrown error. Imports only
  * Next.js server primitives, requireAuth, and the HLD design-model approval service.
@@ -152,6 +159,43 @@ export async function POST(
           staleCode: result.staleCode,
           ...(result.messages !== undefined ? { messages: result.messages } : {}),
           ...(result.errors !== undefined ? { errors: result.errors } : {}),
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "hld_design_model_review_required") {
+      return NextResponse.json(
+        {
+          code: "hld_design_model_review_required",
+          error:
+            "A current deterministic HLD design model review is required before approval.",
+          artifact: result.artifact,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "invalid_hld_design_model_review_payload") {
+      return NextResponse.json(
+        {
+          code: "hld_design_model_review_payload_invalid",
+          error: "The current HLD design model review payload is invalid.",
+          artifact: result.artifact,
+          reviewArtifact: result.reviewArtifact,
+          errors: result.errors,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "blocking_hld_design_model_review_findings") {
+      return NextResponse.json(
+        {
+          code: "hld_design_model_review_findings_blocking",
+          error:
+            "The current HLD design model review has blocking findings; resolve them before approval.",
+          artifact: result.artifact,
+          reviewArtifact: result.reviewArtifact,
+          recommendation: result.recommendation,
+          findingCounts: result.findingCounts,
         },
         { status: 409 }
       );

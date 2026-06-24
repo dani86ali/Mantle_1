@@ -22,13 +22,24 @@
  * records nothing. A REJECTION skips every payload check so a malformed or stale
  * draft can still be rejected.
  *
+ * After those gates pass, APPROVAL additionally fails closed (Stage 6E-B) unless a
+ * current valid advisory hld_design_model_review exists for this exact model and the
+ * current source bundle: the latest non-retired review of the model must validate
+ * against the Stage 6E-B review contract, tie to the model and current bundle, and
+ * carry no blocking findings. Missing -> hld_design_model_review_required; an invalid
+ * latest review payload -> invalid_hld_design_model_review_payload; a current valid
+ * review with blocking findings -> blocking_hld_design_model_review_findings. Warnings
+ * and suggestions are advisory and proceed to engineer approval. Retired
+ * (stale/rejected/failed/missing/not_applicable) reviews are ignored. This gate runs
+ * purely over the live artifacts snapshot already loaded by the currency gate.
+ *
  * This service runs no AI and makes no SKU/pricing/catalog/configuration/design
  * decision; configuration authority stays the approved upstream artifacts. It
  * imports exactly the project/artifact/approval stores, the pure approval helper,
- * the Stage 6C contract, the pure Stage 6C readiness helper, and canonical project
- * types - no fs/path, no raw-document reader, no AI/provider, no pricing/SKU/catalog/
- * config service, no route or UI. Summaries are lean and serializable (ISO dates,
- * copied arrays, no payload body, no tenantId).
+ * the Stage 6C contract, the pure Stage 6C readiness helper, the Stage 6E-B review
+ * contract, and canonical project types - no fs/path, no raw-document reader, no
+ * AI/provider, no pricing/SKU/catalog/config service, no route or UI. Summaries are
+ * lean and serializable (ISO dates, copied arrays, no payload body, no tenantId).
  */
 import { getProjectById } from "@/lib/db/project-store";
 import {
@@ -42,6 +53,11 @@ import {
   getRfpHldDesignModelReadinessReport,
   validateRfpHldDesignModelSourceCompatibility,
 } from "@/lib/projects/project-rfp-hld-design-model-readiness";
+import {
+  validateRfpHldDesignModelReviewPayload,
+  type RfpHldDesignModelReviewPayload,
+  type RfpHldDesignModelReviewRecommendation,
+} from "@/lib/projects/project-rfp-hld-design-model-review";
 import type {
   Project,
   ProjectApproval,
@@ -52,6 +68,22 @@ import type {
 
 const DESIGN_MODEL_TYPE: ProjectArtifact["type"] = "hld_design_model";
 const DESIGN_MODEL_STAGE: ProjectArtifact["stageId"] = "hld_design_delta_review";
+const DESIGN_MODEL_REVIEW_TYPE: ProjectArtifact["type"] = "hld_design_model_review";
+
+/**
+ * Review artifact statuses that may still gate an approval. Retired statuses
+ * (stale/rejected/failed/missing/not_applicable) are ignored as if no review
+ * existed, so an obsolete review never blocks or satisfies the gate.
+ */
+const ALLOWED_REVIEW_STATUSES: ReadonlySet<ProjectArtifactStatus> =
+  new Set<ProjectArtifactStatus>(["generated", "needs_review", "approved"]);
+
+/** Per-severity advisory finding tally surfaced on a blocking-review block. */
+export interface RfpHldDesignModelReviewFindingCounts {
+  blocking: number;
+  warning: number;
+  suggestion: number;
+}
 
 export interface ReviewRfpHldDesignModelArtifactInput {
   tenantId: string;
@@ -115,6 +147,23 @@ export type ReviewRfpHldDesignModelArtifactResult =
       messages?: string[];
       errors?: string[];
     }
+  | {
+      status: "hld_design_model_review_required";
+      artifact: RfpHldDesignModelReviewArtifactSummary;
+    }
+  | {
+      status: "invalid_hld_design_model_review_payload";
+      artifact: RfpHldDesignModelReviewArtifactSummary;
+      reviewArtifact: RfpHldDesignModelReviewArtifactSummary;
+      errors: string[];
+    }
+  | {
+      status: "blocking_hld_design_model_review_findings";
+      artifact: RfpHldDesignModelReviewArtifactSummary;
+      reviewArtifact: RfpHldDesignModelReviewArtifactSummary;
+      recommendation: RfpHldDesignModelReviewRecommendation;
+      findingCounts: RfpHldDesignModelReviewFindingCounts;
+    }
   | { status: "approval_failed" }
   | {
       status: "ok";
@@ -153,21 +202,34 @@ function toArtifactSummary(
 }
 
 /**
- * Approval-only currency gate. Returns the invalid/stale result that must short-
- * circuit the approval, or null when the persisted model is valid and still ties to
- * the current approved source bundle. Reads stores but mutates nothing and never
- * leaks the payload body.
+ * Outcome of the approval-only currency gate. `block` is the invalid/stale result
+ * that must short-circuit the approval; when it is null the persisted model is valid
+ * and still ties to the resolved current approved source bundle, and the live
+ * artifacts list plus that bundle are handed back so the review gate can run over the
+ * same snapshot without a second store read.
+ */
+type EvaluatePersistedModelOutcome =
+  | { block: ReviewRfpHldDesignModelArtifactResult }
+  | { block: null; artifacts: ProjectArtifact[]; sourceBundle: ProjectArtifact };
+
+/**
+ * Approval-only currency gate. Reads stores but mutates nothing and never leaks the
+ * payload body. Behavior and result statuses are unchanged from the prior version;
+ * it now also returns the live artifacts snapshot and resolved source bundle on the
+ * passing path so the caller's review gate reuses them.
  */
 async function evaluatePersistedModel(
   tenantId: string,
   projectId: string,
   artifact: ProjectArtifact
-): Promise<ReviewRfpHldDesignModelArtifactResult | null> {
+): Promise<EvaluatePersistedModelOutcome> {
   const validation = validateRfpHldDesignModelPayload(artifact.payload);
   if (!validation.valid) {
     return {
-      status: "invalid_hld_design_model_payload",
-      artifact: toArtifactSummary(artifact),
+      block: {
+        status: "invalid_hld_design_model_payload",
+        artifact: toArtifactSummary(artifact),
+      },
     };
   }
 
@@ -176,10 +238,12 @@ async function evaluatePersistedModel(
   const readiness = getRfpHldDesignModelReadinessReport({ projectId, artifacts });
   if (readiness.status !== "ready" || readiness.sourceBundle === undefined) {
     return {
-      status: "stale_hld_design_model_payload",
-      artifact: toArtifactSummary(artifact),
-      staleCode: "source_readiness_blocked",
-      messages: [...readiness.messages],
+      block: {
+        status: "stale_hld_design_model_payload",
+        artifact: toArtifactSummary(artifact),
+        staleCode: "source_readiness_blocked",
+        messages: [...readiness.messages],
+      },
     };
   }
 
@@ -192,10 +256,12 @@ async function evaluatePersistedModel(
   );
   if (sourceBundle === null || sourceBundle.projectId !== projectId) {
     return {
-      status: "stale_hld_design_model_payload",
-      artifact: toArtifactSummary(artifact),
-      staleCode: "source_bundle_not_found",
-      messages: ["The current approved hld_source_bundle could not be resolved."],
+      block: {
+        status: "stale_hld_design_model_payload",
+        artifact: toArtifactSummary(artifact),
+        staleCode: "source_bundle_not_found",
+        messages: ["The current approved hld_source_bundle could not be resolved."],
+      },
     };
   }
 
@@ -220,10 +286,12 @@ async function evaluatePersistedModel(
   }
   if (bundleErrors.length > 0) {
     return {
-      status: "stale_hld_design_model_payload",
-      artifact: toArtifactSummary(artifact),
-      staleCode: "source_compatibility_mismatch",
-      errors: bundleErrors,
+      block: {
+        status: "stale_hld_design_model_payload",
+        artifact: toArtifactSummary(artifact),
+        staleCode: "source_compatibility_mismatch",
+        errors: bundleErrors,
+      },
     };
   }
 
@@ -232,12 +300,14 @@ async function evaluatePersistedModel(
     artifact.sourceArtifactIds[0] !== sourceBundle.id
   ) {
     return {
-      status: "stale_hld_design_model_payload",
-      artifact: toArtifactSummary(artifact),
-      staleCode: "source_artifact_ids_mismatch",
-      messages: [
-        "The artifact sourceArtifactIds no longer equals the current source bundle id.",
-      ],
+      block: {
+        status: "stale_hld_design_model_payload",
+        artifact: toArtifactSummary(artifact),
+        staleCode: "source_artifact_ids_mismatch",
+        messages: [
+          "The artifact sourceArtifactIds no longer equals the current source bundle id.",
+        ],
+      },
     };
   }
 
@@ -247,13 +317,107 @@ async function evaluatePersistedModel(
   });
   if (!compatibility.valid) {
     return {
-      status: "stale_hld_design_model_payload",
-      artifact: toArtifactSummary(artifact),
-      staleCode: "source_compatibility_mismatch",
-      errors: compatibility.errors.slice(),
+      block: {
+        status: "stale_hld_design_model_payload",
+        artifact: toArtifactSummary(artifact),
+        staleCode: "source_compatibility_mismatch",
+        errors: compatibility.errors.slice(),
+      },
     };
   }
 
+  return { block: null, artifacts, sourceBundle };
+}
+
+/**
+ * Advisory review gate (Stage 6E-B). Runs only after the currency gate passes,
+ * purely over the already-fetched artifacts snapshot - it reads no store and runs no
+ * AI. Returns the result that must short-circuit the approval, or null when a current
+ * valid matching review with no blocking findings clears the model to engineer
+ * approval. Warnings/suggestions are advisory and do not block. Summaries stay lean
+ * (no payload body, no tenantId).
+ */
+function evaluateReviewGate(
+  model: ProjectArtifact,
+  sourceBundle: ProjectArtifact,
+  artifacts: ProjectArtifact[]
+): ReviewRfpHldDesignModelArtifactResult | null {
+  // Candidate reviews of THIS model: correct project/type/stage, a non-retired
+  // status, and a row-level link whose first source is this model artifact. The
+  // link is payload-independent so an invalid-payload review is still detected.
+  const candidates = artifacts
+    .filter(
+      (a) =>
+        a.projectId === model.projectId &&
+        a.type === DESIGN_MODEL_REVIEW_TYPE &&
+        a.stageId === DESIGN_MODEL_STAGE &&
+        ALLOWED_REVIEW_STATUSES.has(a.status) &&
+        a.sourceArtifactIds.length > 0 &&
+        a.sourceArtifactIds[0] === model.id
+    )
+    .sort(
+      (a, b) =>
+        b.version - a.version || b.createdAt.getTime() - a.createdAt.getTime()
+    );
+
+  if (candidates.length === 0) {
+    return {
+      status: "hld_design_model_review_required",
+      artifact: toArtifactSummary(model),
+    };
+  }
+
+  // Fail closed on the LATEST candidate only; an older review never rescues it.
+  const latest = candidates[0];
+  const validation = validateRfpHldDesignModelReviewPayload(latest.payload);
+  if (!validation.valid) {
+    return {
+      status: "invalid_hld_design_model_review_payload",
+      artifact: toArtifactSummary(model),
+      reviewArtifact: toArtifactSummary(latest),
+      errors: validation.errors.slice(),
+    };
+  }
+
+  const payload = latest.payload as unknown as RfpHldDesignModelReviewPayload;
+  // A structurally valid review that points at a different model/bundle, or whose
+  // row sources are not exactly [model, current bundle], is not current - treat it
+  // as if no matching review exists so a fresh review is required.
+  const tiesToCurrent =
+    payload.sourceHldDesignModelArtifactId === model.id &&
+    payload.sourceHldSourceBundleArtifactId === sourceBundle.id &&
+    latest.sourceArtifactIds.length === 2 &&
+    latest.sourceArtifactIds[0] === model.id &&
+    latest.sourceArtifactIds[1] === sourceBundle.id;
+  if (!tiesToCurrent) {
+    return {
+      status: "hld_design_model_review_required",
+      artifact: toArtifactSummary(model),
+    };
+  }
+
+  const findingCounts: RfpHldDesignModelReviewFindingCounts = {
+    blocking: 0,
+    warning: 0,
+    suggestion: 0,
+  };
+  for (const finding of payload.findings) {
+    if (finding.severity === "blocking") findingCounts.blocking += 1;
+    else if (finding.severity === "warning") findingCounts.warning += 1;
+    else if (finding.severity === "suggestion") findingCounts.suggestion += 1;
+  }
+
+  if (findingCounts.blocking > 0) {
+    return {
+      status: "blocking_hld_design_model_review_findings",
+      artifact: toArtifactSummary(model),
+      reviewArtifact: toArtifactSummary(latest),
+      recommendation: payload.recommendation,
+      findingCounts,
+    };
+  }
+
+  // Current, valid, no blocking findings: advisory warnings/suggestions proceed.
   return null;
 }
 
@@ -308,8 +472,14 @@ export async function reviewRfpHldDesignModelArtifact(
   }
 
   if (decision === "approved") {
-    const blocked = await evaluatePersistedModel(tenantId, projectId, artifact);
-    if (blocked !== null) return blocked;
+    const evaluated = await evaluatePersistedModel(tenantId, projectId, artifact);
+    if (evaluated.block !== null) return evaluated.block;
+    const reviewBlocked = evaluateReviewGate(
+      artifact,
+      evaluated.sourceBundle,
+      evaluated.artifacts
+    );
+    if (reviewBlocked !== null) return reviewBlocked;
   }
 
   const artifactSummary = toArtifactSummary(artifact);

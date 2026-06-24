@@ -3445,6 +3445,10 @@ export default function ProjectRfpEvidencePage() {
     useState(false);
   const [hldDesignModelReviewDetailError, setHldDesignModelReviewDetailError] =
     useState<string | null>(null);
+  // The review-detail artifact id we have already requested for the open model
+  // drawer. Guards the late-arrival auto-fetch from re-firing (and looping on a
+  // detail error) once a review id has been attempted for the current drawer.
+  const hldDesignModelReviewDetailRequestedRef = useRef<string | null>(null);
 
   const [hldDesignModelReviewRunningId, setHldDesignModelReviewRunningId] =
     useState<string | null>(null);
@@ -4028,6 +4032,23 @@ export default function ProjectRfpEvidencePage() {
     }
     return map;
   }, [hldDesignModelReviewList]);
+
+  // If the design-model drawer is open and a matching advisory review later
+  // arrives (or changes), fetch its sanitized detail once. The requested-id ref
+  // keeps this from re-firing for the same review - including after a detail
+  // error - so there is no retry loop. A non-design-model (or closed) drawer
+  // clears the ref so the next open starts fresh.
+  useEffect(() => {
+    if (drawer === null || drawer.kind !== "hld-design-model") {
+      hldDesignModelReviewDetailRequestedRef.current = null;
+      return;
+    }
+    const review = hldDesignModelReviewByModelId.get(drawer.activeId);
+    if (review === undefined) return;
+    if (hldDesignModelReviewDetailRequestedRef.current === review.id) return;
+    hldDesignModelReviewDetailRequestedRef.current = review.id;
+    void loadHldDesignModelReviewDetail(review.id);
+  }, [drawer, hldDesignModelReviewByModelId, loadHldDesignModelReviewDetail]);
 
   // Final evidence content is fetched only here, on an explicit Inspect click.
   const loadPackageDetail = useCallback(
@@ -5541,13 +5562,12 @@ export default function ProjectRfpEvidencePage() {
   function openHldDesignModelDrawer(artifactId: string): void {
     setDrawer({ kind: "hld-design-model", activeId: artifactId });
     void loadHldDesignModelDetail(artifactId);
-    const review = hldDesignModelReviewByModelId.get(artifactId);
-    if (review !== undefined) {
-      void loadHldDesignModelReviewDetail(review.id);
-    } else {
-      setHldDesignModelReviewDetail(null);
-      setHldDesignModelReviewDetailError(null);
-    }
+    // Reset the requested-detail guard and clear any prior detail; the drawer
+    // effect fetches the matching review's detail now (if the list already has
+    // one) or later when the review list arrives for this open model.
+    hldDesignModelReviewDetailRequestedRef.current = null;
+    setHldDesignModelReviewDetail(null);
+    setHldDesignModelReviewDetailError(null);
   }
 
   function drawerIds(): string[] {
@@ -7157,7 +7177,7 @@ export default function ProjectRfpEvidencePage() {
               <button
                 type="button"
                 data-testid="hld-design-model-review-run-drawer"
-                disabled={hldDesignModelReviewRunningId !== null}
+                disabled={hldDesignModelReviewRunningId !== null || !reviewable}
                 onClick={() => void runHldDesignModelReview(artifact.id)}
                 className={PLAIN_BTN}
               >
@@ -7262,7 +7282,7 @@ export default function ProjectRfpEvidencePage() {
               <button
                 type="button"
                 data-testid="hld-design-model-review-run-drawer"
-                disabled={hldDesignModelReviewRunningId !== null}
+                disabled={hldDesignModelReviewRunningId !== null || !reviewable}
                 onClick={() => void runHldDesignModelReview(artifact.id)}
                 className={PLAIN_BTN}
               >
@@ -9240,7 +9260,8 @@ export default function ProjectRfpEvidencePage() {
                                           type="button"
                                           data-testid="hld-design-model-review-run"
                                           disabled={
-                                            hldDesignModelReviewRunningId !== null
+                                            hldDesignModelReviewRunningId !== null ||
+                                            !isReviewableStatus(item.status)
                                           }
                                           onClick={() =>
                                             void runHldDesignModelReview(item.id)
