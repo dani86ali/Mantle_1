@@ -49,6 +49,10 @@ const HLD_KNOWLEDGE_PACK_ARTIFACT_ID = "art-hld-pack-1";
 const HLD_KNOWLEDGE_PACK_APPROVED_ID = "art-hld-pack-approved-1";
 const HLD_KNOWLEDGE_PACK_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_KNOWLEDGE_PACK_ARTIFACT_ID}/hld-knowledge-pack`;
 const HLD_KNOWLEDGE_PACK_REVIEW_URL = `${HLD_KNOWLEDGE_PACK_DETAIL_URL}/review`;
+const HLD_SOURCE_BUNDLE_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-source-bundle`;
+const HLD_SOURCE_BUNDLE_ARTIFACT_ID = "art-hld-source-bundle-1";
+const HLD_SOURCE_BUNDLE_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_SOURCE_BUNDLE_ARTIFACT_ID}/hld-source-bundle`;
+const HLD_SOURCE_BUNDLE_REVIEW_URL = `${HLD_SOURCE_BUNDLE_DETAIL_URL}/review`;
 const HLD_INTAKE_FIELD_IDS = [
   "existing_network_context",
   "target_topology_intent",
@@ -1180,6 +1184,207 @@ function hldKnowledgePackDetailResponse(
   };
 }
 
+function sourceBundleListItem(
+  id = HLD_SOURCE_BUNDLE_ARTIFACT_ID,
+  status = "needs_review",
+  version = 1
+): Record<string, unknown> {
+  return {
+    id,
+    projectId: PROJECT_ID,
+    stageId: "hld_design_delta_review",
+    type: "hld_source_bundle",
+    status,
+    version,
+    createdAt: "2026-06-21T09:00:00.000Z",
+    updatedAt: "2026-06-21T09:05:00.000Z",
+    payloadSummary: {
+      payloadKind: "rfp_hld_source_bundle",
+      createdBy: "user-1",
+      createdAt: "2026-06-21T09:00:00.000Z",
+      sourceArtifactCount: 7,
+      designKnowledgePackCount: 1,
+      coveredDomainCount: 1,
+      missingDomainCount: 0,
+      excludedDomainCount: 1,
+      assumptionCount: 1,
+      constraintCount: 1,
+      warningCount: 0,
+      blockerCount: 0,
+    },
+  };
+}
+
+const SOURCE_BUNDLE_READY_READINESS = {
+  status: "ready",
+  summary: {
+    compiledFromReadinessSnapshotArtifactId: "hrs-1",
+    sourceArtifactCount: 7,
+    designKnowledgePackCount: 1,
+    coveredDomainCount: 1,
+    missingDomainCount: 0,
+    excludedDomainCount: 1,
+    assumptionCount: 1,
+    constraintCount: 1,
+    warningCount: 0,
+    blockerCount: 0,
+  },
+};
+
+const SOURCE_BUNDLE_BLOCKED_READINESS = {
+  status: "blocked",
+  code: "hld_readiness_not_ready",
+  messages: [
+    "HLD-SOURCE-BUNDLE-BLOCKER-CANARY An approved HLD readiness snapshot is required.",
+  ],
+};
+
+function sourceBundleListReady(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 1,
+    artifacts: [sourceBundleListItem()],
+    sourceBundleReadiness: SOURCE_BUNDLE_READY_READINESS,
+  };
+}
+
+function sourceBundleListBlocked(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 0,
+    artifacts: [],
+    sourceBundleReadiness: SOURCE_BUNDLE_BLOCKED_READINESS,
+  };
+}
+
+function sourceBundleDetailResponse(
+  id = HLD_SOURCE_BUNDLE_ARTIFACT_ID,
+  status = "needs_review"
+): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: {
+      id,
+      projectId: PROJECT_ID,
+      stageId: "hld_design_delta_review",
+      type: "hld_source_bundle",
+      status,
+      version: 1,
+      createdAt: "2026-06-21T09:00:00.000Z",
+      updatedAt: "2026-06-21T09:05:00.000Z",
+    },
+    sourceBundle: {
+      payloadKind: "rfp_hld_source_bundle",
+      createdBy: "user-1",
+      createdAt: "2026-06-21T09:00:00.000Z",
+      sourceArtifactIds: [
+        "evp-1",
+        "req-1",
+        "cmx-1",
+        "cfg-1",
+        "intake-1",
+        "hrs-1",
+        "pack-1",
+      ],
+      lineage: {
+        compiledFromReadinessSnapshotArtifactId: "hrs-1",
+        compiledArtifactIds: [
+          "evp-1",
+          "req-1",
+          "cmx-1",
+          "cfg-1",
+          "intake-1",
+          "hrs-1",
+          "pack-1",
+        ],
+      },
+      authorities: {
+        evidencePackage: {
+          artifactId: "evp-1",
+          artifactType: "evidence_package",
+          stageId: "intake_package_review",
+          status: "approved",
+          version: 2,
+        },
+        requirementsBaseline: {
+          artifactId: "req-1",
+          artifactType: "requirements_baseline",
+          stageId: "requirements_baseline_review",
+          status: "approved",
+          version: 1,
+        },
+        complianceMatrix: {
+          artifactId: "cmx-1",
+          artifactType: "compliance_matrix",
+          stageId: "compliance_matrix_review",
+          status: "approved",
+          version: 1,
+        },
+        configurationAuthority: {
+          artifactId: "cfg-1",
+          artifactType: "configuration_expansion",
+          stageId: "configuration_expansion_review",
+          status: "approved",
+          version: 1,
+          sourceKind: "configuration_expansion",
+        },
+        hldIntake: {
+          artifactId: "intake-1",
+          artifactType: "hld_intake",
+          stageId: "hld_design_delta_review",
+          status: "approved",
+          version: 1,
+        },
+        hldReadinessSnapshot: {
+          artifactId: "hrs-1",
+          artifactType: "hld_readiness_snapshot",
+          stageId: "hld_design_delta_review",
+          status: "approved",
+          version: 1,
+          payloadKind: "rfp_hld_readiness_snapshot",
+        },
+      },
+      designKnowledgePackRefs: [
+        {
+          artifactId: "pack-1",
+          artifactType: "design_knowledge_pack",
+          stageId: "hld_design_delta_review",
+          status: "approved",
+          version: 1,
+          payloadKind: "rfp_hld_design_knowledge_pack",
+          domain: "campus_switching",
+        },
+      ],
+      coveredDomains: ["campus_switching"],
+      missingDomains: [],
+      excludedDomains: ["service_only"],
+      assumptions: [
+        {
+          id: "asm-1",
+          statement:
+            "SOURCE-BUNDLE-ASSUMPTION-CANARY redundant power feeds are present.",
+        },
+      ],
+      constraints: [
+        {
+          id: "con-1",
+          statement: "SOURCE-BUNDLE-CONSTRAINT-CANARY two-rack footprint.",
+        },
+      ],
+      warnings: [
+        {
+          id: "warn-1",
+          code: "SOURCE_BUNDLE_WARNING_CODE",
+          message: "SOURCE-BUNDLE-WARNING-CANARY excluded domain not covered.",
+          severity: "warning",
+        },
+      ],
+      blockers: [],
+      validation: { status: "passed", checkedAt: "2026-06-21T09:00:00.000Z" },
+    },
+  };
+}
+
 function stubFetch(
   handler?: (url: string, init?: RequestInit) => Response | Promise<Response>
 ): FetchCall[] {
@@ -1229,6 +1434,21 @@ function stubFetch(
       }
       if (url === HLD_KNOWLEDGE_PACK_DETAIL_URL) {
         return jsonResponse(hldKnowledgePackDetailResponse());
+      }
+      if (url === HLD_SOURCE_BUNDLE_LIST_URL) {
+        if (init?.method === "POST") {
+          return jsonResponse(
+            { artifact: sourceBundleListItem(), payloadSummary: {} },
+            201
+          );
+        }
+        return jsonResponse(sourceBundleListBlocked());
+      }
+      if (url === HLD_SOURCE_BUNDLE_DETAIL_URL) {
+        return jsonResponse(sourceBundleDetailResponse());
+      }
+      if (url === HLD_SOURCE_BUNDLE_REVIEW_URL) {
+        return jsonResponse({ artifactStatus: "approved" });
       }
       if (url === REVIEW_URL) {
         return jsonResponse({ artifactStatus: "approved", artifact: baselineListItem() });
@@ -4024,6 +4244,340 @@ describe("ProjectRfpEvidencePage - Stage 6A HLD design knowledge packs", () => {
   });
 });
 
+describe("ProjectRfpEvidencePage - Stage 6B HLD source bundle", () => {
+  // Drive the source-bundle slice while keeping the rest of the page healthy.
+  function sourceBundleFetch(
+    listBody: Record<string, unknown>,
+    detailBody: Record<string, unknown> = sourceBundleDetailResponse(),
+    onReview?: (init?: RequestInit) => Response
+  ): (url: string, init?: RequestInit) => Response {
+    return (url, init) => {
+      if (url === HLD_SOURCE_BUNDLE_LIST_URL) {
+        if (init?.method === "POST") {
+          return jsonResponse(
+            { artifact: sourceBundleListItem(), payloadSummary: {} },
+            201
+          );
+        }
+        return jsonResponse(listBody);
+      }
+      if (url === HLD_SOURCE_BUNDLE_DETAIL_URL) return jsonResponse(detailBody);
+      if (url === HLD_SOURCE_BUNDLE_REVIEW_URL) {
+        return onReview ? onReview(init) : jsonResponse({ artifactStatus: "approved" });
+      }
+      if (url === LIST_URL) return jsonResponse(listResponse());
+      if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse());
+      if (url === COMPLIANCE_MATRIX_LIST_URL) return jsonResponse(complianceMatrixListResponse());
+      if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+      if (url === EVIDENCE_PACKAGE_LIST_URL) return jsonResponse(evidencePackageListResponse());
+      if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
+      if (url === HLD_READINESS_LIST_URL) return jsonResponse(hldReadinessListReady());
+      if (url === HLD_INTAKE_LIST_URL) return jsonResponse(hldIntakeListResponse());
+      if (url === HLD_KNOWLEDGE_PACK_LIST_URL) return jsonResponse(hldKnowledgePackListResponse());
+      return jsonResponse({}, 200);
+    };
+  }
+
+  // Future HLD generation/proposal POST routes the source-bundle slice must never call.
+  const HLD_GENERATION_POST_ROUTES = [
+    "/rfp/hld-model",
+    "/rfp/hld-diagram",
+    "/rfp/hld-document",
+    "/rfp/hld-proposal",
+    "/rfp/hld-html",
+    "/rfp/drawio",
+    "/rfp/hld-readiness-snapshot",
+  ];
+  function generationPosts(calls: FetchCall[]): FetchCall[] {
+    return calls.filter(
+      (c) =>
+        c.init?.method === "POST" &&
+        HLD_GENERATION_POST_ROUTES.some((route) => c.url.includes(route))
+    );
+  }
+
+  it("renders the ready source-bundle panel with compact counts, an enabled create button, and no raw artifact ids", async () => {
+    stubFetch(sourceBundleFetch(sourceBundleListReady()));
+    render(<ProjectRfpEvidencePage />);
+
+    const panel = await screen.findByTestId("hld-source-bundle-panel");
+    expect(panel).toBeInTheDocument();
+
+    const readiness = await screen.findByTestId("hld-source-bundle-readiness");
+    expect(readiness).toHaveTextContent("Ready to compile");
+    const summary = screen.getByTestId("hld-source-bundle-ready-summary");
+    expect(summary).toHaveTextContent("Source authorities: 7");
+    expect(summary).toHaveTextContent("Knowledge packs: 1");
+    expect(summary).toHaveTextContent("Covered domains: 1");
+    expect(summary).toHaveTextContent("Excluded domains: 1");
+
+    expect(screen.getByTestId("hld-source-bundle-create")).not.toBeDisabled();
+
+    // The compact panel never renders raw artifact / provenance ids as primary text.
+    const panelText = panel.textContent ?? "";
+    expect(panelText).not.toContain(HLD_SOURCE_BUNDLE_ARTIFACT_ID);
+    expect(panelText).not.toContain("hrs-1");
+    expect(screen.getByTestId("hld-source-bundle-list").textContent ?? "").not.toContain(
+      HLD_SOURCE_BUNDLE_ARTIFACT_ID
+    );
+  });
+
+  it("renders a blocked source-bundle panel with a stable blocker code and a disabled create button", async () => {
+    stubFetch(sourceBundleFetch(sourceBundleListBlocked()));
+    render(<ProjectRfpEvidencePage />);
+
+    const blocked = await screen.findByTestId("hld-source-bundle-blocked");
+    expect(blocked).toHaveTextContent("hld_readiness_not_ready");
+    expect(blocked).toHaveTextContent("HLD-SOURCE-BUNDLE-BLOCKER-CANARY");
+
+    expect(screen.getByTestId("hld-source-bundle-create")).toBeDisabled();
+    // No persisted bundles yet -> empty state, not a list table.
+    expect(screen.getByTestId("hld-source-bundle-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-source-bundle-list")).toBeNull();
+    expect(screen.queryByTestId("hld-source-bundle-ready-summary")).toBeNull();
+  });
+
+  it("compiles a source bundle with no authority body, refreshes the list, and makes no HLD generation POST", async () => {
+    const calls = stubFetch(sourceBundleFetch(sourceBundleListReady()));
+    render(<ProjectRfpEvidencePage />);
+
+    const createBtn = await screen.findByTestId("hld-source-bundle-create");
+    const listGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_SOURCE_BUNDLE_LIST_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(createBtn);
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) => c.url === HLD_SOURCE_BUNDLE_LIST_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) => c.url === HLD_SOURCE_BUNDLE_LIST_URL && c.init?.method === "POST"
+    );
+    const rawBody = post?.init?.body;
+    const bodyText =
+      rawBody === undefined || rawBody === null ? "" : String(rawBody);
+    // Posted body is empty/absent; no authority fields ride along.
+    expect(rawBody === undefined || rawBody === null || bodyText === "{}").toBe(true);
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "createdBy",
+      "status",
+      "sourceArtifactIds",
+      "payload",
+      "artifactId",
+    ]) {
+      expect(bodyText).not.toContain(forbidden);
+    }
+
+    // The list refreshes after a successful compile.
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_SOURCE_BUNDLE_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+
+    // No HLD model/diagram/document/proposal/readiness-snapshot generation POST.
+    expect(generationPosts(calls)).toHaveLength(0);
+  });
+
+  it("inspects a source bundle into the drawer with distinct covered/excluded/missing sections and raw ids only in the audit", async () => {
+    stubFetch(sourceBundleFetch(sourceBundleListReady()));
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-source-bundle-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    await screen.findByTestId("review-drawer");
+    const content = await screen.findByTestId("hld-source-bundle-drawer-content");
+
+    // Covered, excluded, and missing domains render as distinct sections.
+    expect(
+      screen.getByTestId("hld-source-bundle-drawer-covered")
+    ).toHaveTextContent("campus switching");
+    expect(
+      screen.getByTestId("hld-source-bundle-drawer-excluded")
+    ).toHaveTextContent("service only");
+    expect(
+      screen.getByTestId("hld-source-bundle-drawer-missing")
+    ).toHaveTextContent("None");
+
+    // Assumptions and warnings are visible as structured text.
+    expect(
+      screen.getByTestId("hld-source-bundle-drawer-assumptions")
+    ).toHaveTextContent("SOURCE-BUNDLE-ASSUMPTION-CANARY");
+    expect(
+      screen.getByTestId("hld-source-bundle-drawer-warnings")
+    ).toHaveTextContent("SOURCE-BUNDLE-WARNING-CANARY");
+
+    // Raw artifact / source / authority ids live only in the collapsed audit.
+    const audit = content.querySelector(
+      "[data-testid='hld-source-bundle-drawer-audit']"
+    );
+    const auditText = audit?.textContent ?? "";
+    expect(auditText).toContain(HLD_SOURCE_BUNDLE_ARTIFACT_ID);
+    expect(auditText).toContain("evp-1");
+    expect(auditText).toContain("hrs-1");
+    expect(auditText).toContain("pack-1");
+
+    const primary = content.cloneNode(true) as HTMLElement;
+    primary
+      .querySelector("[data-testid='hld-source-bundle-drawer-audit']")
+      ?.remove();
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).not.toContain(HLD_SOURCE_BUNDLE_ARTIFACT_ID);
+    expect(primaryText).not.toContain("evp-1");
+    expect(primaryText).not.toContain("hrs-1");
+    expect(primaryText).not.toContain("pack-1");
+  });
+
+  it("approves a source bundle posting only { decision }, refreshes the list, and makes no HLD generation POST", async () => {
+    const calls = stubFetch(sourceBundleFetch(sourceBundleListReady()));
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-source-bundle-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-source-bundle-review");
+
+    const listGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_SOURCE_BUNDLE_LIST_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-source-bundle-approve"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) => c.url === HLD_SOURCE_BUNDLE_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+    const reviewBody = JSON.parse(
+      String(
+        calls
+          .filter((c) => c.url === HLD_SOURCE_BUNDLE_REVIEW_URL)
+          .slice(-1)[0]?.init?.body
+      )
+    ) as Record<string, unknown>;
+    expect(Object.keys(reviewBody)).toEqual(["decision"]);
+    expect(reviewBody.decision).toBe("approved");
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "artifactId",
+      "status",
+      "payload",
+      "sourceArtifactIds",
+    ]) {
+      expect(reviewBody).not.toHaveProperty(forbidden);
+    }
+
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_SOURCE_BUNDLE_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+    expect(generationPosts(calls)).toHaveLength(0);
+  });
+
+  it("sends an optional review note as { decision, note } when requesting changes", async () => {
+    const calls = stubFetch(sourceBundleFetch(sourceBundleListReady()));
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-source-bundle-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-source-bundle-review");
+
+    fireEvent.change(screen.getByTestId("hld-source-bundle-review-note"), {
+      target: { value: "  Snapshot looks stale.  " },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-source-bundle-reject"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) => c.url === HLD_SOURCE_BUNDLE_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+    const reviewBody = JSON.parse(
+      String(
+        calls
+          .filter((c) => c.url === HLD_SOURCE_BUNDLE_REVIEW_URL)
+          .slice(-1)[0]?.init?.body
+      )
+    ) as Record<string, unknown>;
+    expect(Object.keys(reviewBody).sort()).toEqual(["decision", "note"]);
+    expect(reviewBody.decision).toBe("rejected");
+    expect(reviewBody.note).toBe("Snapshot looks stale.");
+    expect(generationPosts(calls)).toHaveLength(0);
+  });
+
+  it("shows a compact review error and never dumps server JSON when the review fails", async () => {
+    stubFetch(
+      sourceBundleFetch(
+        sourceBundleListReady(),
+        sourceBundleDetailResponse(),
+        () =>
+          jsonResponse(
+            {
+              code: "hld_source_bundle_payload_stale",
+              staleCode: "recompute_blocked",
+              errors: ["SERVER-JSON-LEAK-CANARY"],
+            },
+            409
+          )
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-source-bundle-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-source-bundle-review");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-source-bundle-approve"));
+    });
+
+    const reviewError = await screen.findByTestId("hld-source-bundle-review-error");
+    expect(reviewError).toHaveTextContent("Unable to review HLD source bundle.");
+    // The compact error never echoes the server JSON payload.
+    const errorText = reviewError.textContent ?? "";
+    expect(errorText).not.toContain("SERVER-JSON-LEAK-CANARY");
+    expect(errorText).not.toContain("recompute_blocked");
+  });
+});
+
 describe("ProjectRfpEvidencePage static guards", () => {
   const SRC_PATH = join(process.cwd(), "src/app/projects/[id]/rfp/page.tsx");
   const TEST_PATH = join(process.cwd(), "tests/ui/project-rfp-page.test.tsx");
@@ -4098,5 +4652,22 @@ describe("ProjectRfpEvidencePage static guards", () => {
     // Lifecycle is its own decision slice and never reaches the artifact-level
     // review route; it posts only to the rows/review route.
     expect(source).toContain("/compliance-matrix/rows/review");
+  });
+
+  it("wires the HLD source-bundle routes and adds no future HLD generation, document, draw.io, or proposal route", () => {
+    expect(source).toContain("/rfp/hld-source-bundle");
+    // The source-bundle surface is read/compile/review only; it must never call
+    // any future HLD model/diagram/document/html/draw.io/proposal route.
+    for (const forbidden of [
+      "/rfp/hld-model",
+      "/rfp/hld-diagram",
+      "/rfp/hld-document",
+      "/rfp/hld-proposal",
+      "/rfp/hld-html",
+      "/rfp/drawio",
+      "technical_proposal",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
   });
 });
