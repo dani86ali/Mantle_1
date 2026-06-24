@@ -1066,6 +1066,113 @@ interface HldDesignModelDetail {
   designModel: HldDesignModelDetailPayload;
 }
 
+// ---- HLD design model REVIEW (Stage 6E-B) read models ----------------------
+//
+// Advisory, deterministic quality review over a candidate `hld_design_model`,
+// checked against its approved `hld_source_bundle`. The review never approves
+// the model and is not final design authority; engineer approval remains
+// required. All types are kept local to the client page (no server-service,
+// store, provider, or pricing/catalog/config import).
+
+/** Advisory finding severity counts for a design-model review. */
+interface HldDesignModelReviewSeverityCounts {
+  blocking: number;
+  warning: number;
+  suggestion: number;
+}
+
+/** Lean review list payload summary (counts/provenance only, no body). */
+interface HldDesignModelReviewListPayloadSummary {
+  payloadKind?: string;
+  reviewedAt?: string;
+  reviewerType?: string;
+  sourceHldDesignModelArtifactId?: string;
+  sourceHldSourceBundleArtifactId?: string;
+  findingCount?: number;
+  findingCountsBySeverity?: HldDesignModelReviewSeverityCounts;
+  recommendation?: string;
+  hasBoundedRebuildInstructions?: boolean;
+}
+
+/** One advisory hld_design_model_review artifact in the list response. */
+interface HldDesignModelReviewListItem {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  payloadSummary?: HldDesignModelReviewListPayloadSummary;
+}
+
+/** Lean list response of GET .../rfp/hld-design-model-review. */
+interface HldDesignModelReviewListResponse {
+  artifactCount: number;
+  artifacts: HldDesignModelReviewListItem[];
+}
+
+/** Who produced the advisory review (deterministic for this stage). */
+interface HldDesignModelReviewReviewer {
+  type: string;
+  id?: string;
+  label?: string;
+}
+
+/** One structured source reference on a review (ids/labels only, no body). */
+interface HldDesignModelReviewSourceReference {
+  id: string;
+  artifactId: string;
+  domain?: string;
+  sectionId?: string;
+}
+
+/** One advisory quality finding raised against the candidate model. */
+interface HldDesignModelReviewFinding {
+  id: string;
+  severity: string;
+  category: string;
+  message: string;
+  sourceReferenceIds: string[];
+  recommendedAction?: string;
+}
+
+/** Bounded single-attempt redraft directive (text only, never a JSON dump). */
+interface HldDesignModelReviewBoundedRebuild {
+  summary: string;
+  instructions: string;
+  maxAttempts?: number;
+}
+
+/** Sanitized hld_design_model_review payload returned in the detail response. */
+interface HldDesignModelReviewDetailPayload {
+  payloadKind?: string;
+  sourceArtifactIds?: string[];
+  sourceHldDesignModelArtifactId?: string;
+  sourceHldSourceBundleArtifactId?: string;
+  reviewedAt?: string;
+  reviewer?: HldDesignModelReviewReviewer;
+  sourceReferences?: HldDesignModelReviewSourceReference[];
+  findings?: HldDesignModelReviewFinding[];
+  recommendation?: string;
+  boundedRebuildInstructions?: HldDesignModelReviewBoundedRebuild;
+}
+
+/** Lean detail artifact summary for a review. */
+interface HldDesignModelReviewDetailArtifact {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+}
+
+/** Detail response of GET .../artifacts/[id]/hld-design-model-review. */
+interface HldDesignModelReviewDetailResponse {
+  artifact?: HldDesignModelReviewDetailArtifact;
+  review?: HldDesignModelReviewDetailPayload;
+}
+
+/** Loaded review detail: the artifact summary plus the sanitized review. */
+interface HldDesignModelReviewDetail {
+  artifact: HldDesignModelReviewDetailArtifact;
+  review: HldDesignModelReviewDetailPayload;
+}
+
 /**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
@@ -1203,6 +1310,16 @@ const HLD_DESIGN_MODEL_CREATE_ERROR = "Unable to create HLD design model draft."
 const HLD_DESIGN_MODEL_APPROVE_SUCCESS = "HLD design model approved.";
 const HLD_DESIGN_MODEL_REJECT_SUCCESS = "HLD design model changes requested.";
 const HLD_DESIGN_MODEL_REVIEW_ERROR = "Unable to review HLD design model.";
+
+/** Exact UI copy for the advisory deterministic design-model review surface. */
+const HLD_DESIGN_MODEL_REVIEW_LIST_ERROR =
+  "Unable to load HLD design model reviews.";
+const HLD_DESIGN_MODEL_REVIEW_DETAIL_ERROR =
+  "Unable to load HLD design model review detail.";
+const HLD_DESIGN_MODEL_REVIEW_RUN_SUCCESS =
+  "Deterministic design-model review completed (advisory).";
+const HLD_DESIGN_MODEL_REVIEW_RUN_ERROR =
+  "Unable to run deterministic design-model review.";
 
 /** Exact UI copy required for the no-BoQ service-only exception request states. */
 const NO_BOQ_EXCEPTION_SUCCESS =
@@ -2793,6 +2910,39 @@ function TechnicalDetails({
   );
 }
 
+/**
+ * Compact advisory summary for one deterministic design-model review: an
+ * advisory/deterministic label, the recommendation, and severity counts. It
+ * renders no raw artifact ids and is not approval authority.
+ */
+function HldDesignModelReviewSummary({
+  summary,
+}: {
+  summary: HldDesignModelReviewListPayloadSummary;
+}) {
+  const counts = summary.findingCountsBySeverity ?? {
+    blocking: 0,
+    warning: 0,
+    suggestion: 0,
+  };
+  return (
+    <div data-testid="hld-design-model-review-summary" className="space-y-0.5">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+        Deterministic / advisory
+        {summary.reviewerType ? ` (${humanizeToken(summary.reviewerType)})` : ""}
+      </p>
+      <p className="text-xs text-text-secondary">
+        Recommendation:{" "}
+        {summary.recommendation ? humanizeToken(summary.recommendation) : "n/a"}
+      </p>
+      <p className="text-xs text-text-secondary">
+        Blocking {counts.blocking} / Warning {counts.warning} / Suggestion{" "}
+        {counts.suggestion}
+      </p>
+    </div>
+  );
+}
+
 function WorkflowStep({
   number,
   title,
@@ -3281,6 +3431,27 @@ export default function ProjectRfpEvidencePage() {
   const [hldDesignModelReviewPending, setHldDesignModelReviewPending] = useState(false);
   const [hldDesignModelReviewError, setHldDesignModelReviewError] = useState<string | null>(null);
   const [hldDesignModelReviewSuccess, setHldDesignModelReviewSuccess] = useState<string | null>(null);
+
+  // Advisory deterministic design-model review (Stage 6E-B). Read/run only; it
+  // never approves the model and adds no final-output behavior.
+  const [hldDesignModelReviewList, setHldDesignModelReviewList] =
+    useState<HldDesignModelReviewListResponse | null>(null);
+  const [hldDesignModelReviewListError, setHldDesignModelReviewListError] =
+    useState<string | null>(null);
+
+  const [hldDesignModelReviewDetail, setHldDesignModelReviewDetail] =
+    useState<HldDesignModelReviewDetail | null>(null);
+  const [hldDesignModelReviewDetailLoading, setHldDesignModelReviewDetailLoading] =
+    useState(false);
+  const [hldDesignModelReviewDetailError, setHldDesignModelReviewDetailError] =
+    useState<string | null>(null);
+
+  const [hldDesignModelReviewRunningId, setHldDesignModelReviewRunningId] =
+    useState<string | null>(null);
+  const [hldDesignModelReviewRunError, setHldDesignModelReviewRunError] =
+    useState<string | null>(null);
+  const [hldDesignModelReviewRunSuccess, setHldDesignModelReviewRunSuccess] =
+    useState<string | null>(null);
 
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
@@ -3785,6 +3956,78 @@ export default function ProjectRfpEvidencePage() {
     },
     [id]
   );
+
+  // Advisory deterministic review list (lean, counts-only) loaded on mount and
+  // refreshed after a review is run. It carries no model/source-bundle body.
+  const loadHldDesignModelReviewList = useCallback(async (): Promise<void> => {
+    setHldDesignModelReviewListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-design-model-review`);
+      const body = (await res.json().catch(() => null)) as HldDesignModelReviewListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
+        setHldDesignModelReviewList(null);
+        setHldDesignModelReviewListError(HLD_DESIGN_MODEL_REVIEW_LIST_ERROR);
+        return;
+      }
+      setHldDesignModelReviewList(body);
+    } catch {
+      setHldDesignModelReviewList(null);
+      setHldDesignModelReviewListError(HLD_DESIGN_MODEL_REVIEW_LIST_ERROR);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldDesignModelReviewList();
+  }, [loadHldDesignModelReviewList]);
+
+  // The advisory review's sanitized detail is fetched only on drawer open or
+  // immediately after a review is run for the open model.
+  const loadHldDesignModelReviewDetail = useCallback(
+    async (reviewArtifactId: string): Promise<void> => {
+      setHldDesignModelReviewDetail(null);
+      setHldDesignModelReviewDetailError(null);
+      setHldDesignModelReviewDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${reviewArtifactId}/hld-design-model-review`
+        );
+        const body = (await res.json().catch(() => null)) as HldDesignModelReviewDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.review === undefined
+        ) {
+          setHldDesignModelReviewDetailError(HLD_DESIGN_MODEL_REVIEW_DETAIL_ERROR);
+          return;
+        }
+        setHldDesignModelReviewDetail({
+          artifact: body.artifact,
+          review: body.review,
+        });
+      } catch {
+        setHldDesignModelReviewDetailError(HLD_DESIGN_MODEL_REVIEW_DETAIL_ERROR);
+      } finally {
+        setHldDesignModelReviewDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  // Latest advisory review per candidate model id, matched by the review's
+  // payloadSummary.sourceHldDesignModelArtifactId (highest version wins).
+  const hldDesignModelReviewByModelId = useMemo(() => {
+    const map = new Map<string, HldDesignModelReviewListItem>();
+    for (const item of hldDesignModelReviewList?.artifacts ?? []) {
+      const modelId = item.payloadSummary?.sourceHldDesignModelArtifactId;
+      if (modelId === undefined || modelId === "") continue;
+      const existing = map.get(modelId);
+      if (existing === undefined || item.version > existing.version) {
+        map.set(modelId, item);
+      }
+    }
+    return map;
+  }, [hldDesignModelReviewList]);
 
   // Final evidence content is fetched only here, on an explicit Inspect click.
   const loadPackageDetail = useCallback(
@@ -4757,6 +5000,52 @@ export default function ProjectRfpEvidencePage() {
     ]
   );
 
+  // Run the advisory deterministic review for a candidate model draft. The body
+  // is exactly { sourceHldDesignModelArtifactId }; no tenant/project/reviewedBy/
+  // status/payload/source/pricing/SKU/catalog/config field is ever sent. On
+  // success it refreshes the review and model lists (and, when the matching
+  // drawer is open, the review detail) without echoing any server JSON.
+  const runHldDesignModelReview = useCallback(
+    async (modelArtifactId: string): Promise<void> => {
+      if (hldDesignModelReviewRunningId !== null) return;
+      setHldDesignModelReviewRunningId(modelArtifactId);
+      setHldDesignModelReviewRunError(null);
+      setHldDesignModelReviewRunSuccess(null);
+      try {
+        const res = await fetch(`/api/projects/${id}/rfp/hld-design-model-review`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sourceHldDesignModelArtifactId: modelArtifactId }),
+        });
+        const body = (await res.json().catch(() => null)) as {
+          artifact?: { id?: unknown };
+        } | null;
+        if (!res.ok) {
+          setHldDesignModelReviewRunError(HLD_DESIGN_MODEL_REVIEW_RUN_ERROR);
+          return;
+        }
+        setHldDesignModelReviewRunSuccess(HLD_DESIGN_MODEL_REVIEW_RUN_SUCCESS);
+        void loadHldDesignModelReviewList();
+        void loadHldDesignModelList();
+        const createdReviewId = body?.artifact?.id;
+        if (typeof createdReviewId === "string") {
+          void loadHldDesignModelReviewDetail(createdReviewId);
+        }
+      } catch {
+        setHldDesignModelReviewRunError(HLD_DESIGN_MODEL_REVIEW_RUN_ERROR);
+      } finally {
+        setHldDesignModelReviewRunningId(null);
+      }
+    },
+    [
+      hldDesignModelReviewRunningId,
+      id,
+      loadHldDesignModelList,
+      loadHldDesignModelReviewDetail,
+      loadHldDesignModelReviewList,
+    ]
+  );
+
   const workflow = useMemo(
     () =>
       buildRfpOperatorWorkflow({
@@ -5252,6 +5541,13 @@ export default function ProjectRfpEvidencePage() {
   function openHldDesignModelDrawer(artifactId: string): void {
     setDrawer({ kind: "hld-design-model", activeId: artifactId });
     void loadHldDesignModelDetail(artifactId);
+    const review = hldDesignModelReviewByModelId.get(artifactId);
+    if (review !== undefined) {
+      void loadHldDesignModelReviewDetail(review.id);
+    } else {
+      setHldDesignModelReviewDetail(null);
+      setHldDesignModelReviewDetailError(null);
+    }
   }
 
   function drawerIds(): string[] {
@@ -6695,6 +6991,18 @@ export default function ProjectRfpEvidencePage() {
     const engineerReview = designModel.engineerReview;
     const sourceBundleArtifactId = designModel.sourceHldSourceBundleArtifactId;
 
+    // Advisory deterministic review matched to this model draft (latest version).
+    const matchingReview = hldDesignModelReviewByModelId.get(artifact.id);
+    const reviewDetail =
+      hldDesignModelReviewDetail !== null &&
+      hldDesignModelReviewDetail.review.sourceHldDesignModelArtifactId ===
+        artifact.id
+        ? hldDesignModelReviewDetail
+        : null;
+    const reviewFindings = reviewDetail?.review.findings ?? [];
+    const reviewRebuild = reviewDetail?.review.boundedRebuildInstructions;
+    const reviewSourceReferences = reviewDetail?.review.sourceReferences ?? [];
+
     const domainSection = (
       testId: string,
       label: string,
@@ -6830,6 +7138,147 @@ export default function ProjectRfpEvidencePage() {
               </ul>
             </div>
           )}
+        <div data-testid="hld-design-model-review-panel" className={SUBTLE_CARD}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Deterministic design-model review (advisory)
+          </p>
+          <p className="mt-1 text-xs text-text-tertiary">
+            Advisory deterministic review only. This is not final design authority
+            and does not approve the model; engineer approval remains required.
+          </p>
+          {matchingReview === undefined ? (
+            <div className="mt-2 space-y-2">
+              <p
+                data-testid="hld-design-model-review-empty"
+                className="text-xs text-text-tertiary"
+              >
+                No deterministic review yet for this model draft.
+              </p>
+              <button
+                type="button"
+                data-testid="hld-design-model-review-run-drawer"
+                disabled={hldDesignModelReviewRunningId !== null}
+                onClick={() => void runHldDesignModelReview(artifact.id)}
+                className={PLAIN_BTN}
+              >
+                Run deterministic review
+              </button>
+            </div>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {matchingReview.payloadSummary !== undefined && (
+                <HldDesignModelReviewSummary
+                  summary={matchingReview.payloadSummary}
+                />
+              )}
+              {hldDesignModelReviewDetailLoading && (
+                <p className="text-xs text-text-tertiary">
+                  Loading review detail...
+                </p>
+              )}
+              {hldDesignModelReviewDetailError !== null && (
+                <p
+                  data-testid="hld-design-model-review-detail-error"
+                  className="text-xs text-destructive"
+                >
+                  {hldDesignModelReviewDetailError}
+                </p>
+              )}
+              {reviewDetail !== null && (
+                <>
+                  <div data-testid="hld-design-model-review-findings">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+                      Findings ({reviewFindings.length})
+                    </p>
+                    {reviewFindings.length > 0 ? (
+                      <ul className="mt-1 space-y-1">
+                        {reviewFindings.map((finding, findingIndex) => (
+                          <li
+                            key={findingIndex}
+                            className="text-xs text-text-secondary"
+                          >
+                            <span className="font-medium">
+                              [{humanizeToken(finding.severity)}]{" "}
+                              {humanizeToken(finding.category)}
+                            </span>
+                            {" - "}
+                            {finding.message}
+                            {finding.recommendedAction !== undefined && (
+                              <span className="block text-text-tertiary">
+                                Recommended action: {finding.recommendedAction}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-xs text-text-tertiary">None</p>
+                    )}
+                  </div>
+                  {reviewRebuild !== undefined && (
+                    <div data-testid="hld-design-model-review-rebuild">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+                        Bounded rebuild instructions
+                      </p>
+                      <p className="mt-1 text-xs text-text-secondary">
+                        {reviewRebuild.summary}
+                      </p>
+                      <p className="mt-1 text-xs text-text-secondary">
+                        {reviewRebuild.instructions}
+                      </p>
+                      {reviewRebuild.maxAttempts !== undefined && (
+                        <p className="mt-1 text-xs text-text-tertiary">
+                          Max attempts: {reviewRebuild.maxAttempts}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <TechnicalDetails
+                    testId="hld-design-model-review-audit"
+                    label="Review audit (review, model, source bundle, and reference IDs)"
+                  >
+                    <p>Review artifact: {reviewDetail.artifact.id}</p>
+                    {reviewDetail.review.sourceHldDesignModelArtifactId !==
+                      undefined && (
+                      <p>
+                        Model: {reviewDetail.review.sourceHldDesignModelArtifactId}
+                      </p>
+                    )}
+                    {reviewDetail.review.sourceHldSourceBundleArtifactId !==
+                      undefined && (
+                      <p>
+                        Source bundle:{" "}
+                        {reviewDetail.review.sourceHldSourceBundleArtifactId}
+                      </p>
+                    )}
+                    {reviewSourceReferences.map((ref, refIndex) => (
+                      <p key={refIndex}>
+                        Reference {ref.id}: {ref.artifactId}
+                      </p>
+                    ))}
+                  </TechnicalDetails>
+                </>
+              )}
+              <button
+                type="button"
+                data-testid="hld-design-model-review-run-drawer"
+                disabled={hldDesignModelReviewRunningId !== null}
+                onClick={() => void runHldDesignModelReview(artifact.id)}
+                className={PLAIN_BTN}
+              >
+                Re-run deterministic review
+              </button>
+            </div>
+          )}
+          {hldDesignModelReviewRunError !== null && (
+            <p
+              data-testid="hld-design-model-review-run-error-drawer"
+              className="mt-2 text-xs text-destructive"
+            >
+              {hldDesignModelReviewRunError}
+            </p>
+          )}
+        </div>
         {reviewable && (
           <div data-testid="hld-design-model-review" className={SUBTLE_CARD}>
             <label className="flex flex-col text-xs text-text-tertiary">
@@ -8758,15 +9207,54 @@ export default function ProjectRfpEvidencePage() {
                                 {summary?.designSectionCount ?? 0} sections,{" "}
                                 {nodeCount} nodes / {linkCount} links
                               </td>
-                              <td className="border border-[var(--border)] px-2 py-1">
-                                <button
-                                  type="button"
-                                  data-testid="hld-design-model-inspect"
-                                  onClick={() => openHldDesignModelDrawer(item.id)}
-                                  className={PLAIN_BTN}
-                                >
-                                  Inspect
-                                </button>
+                              <td className="border border-[var(--border)] px-2 py-1 align-top">
+                                {(() => {
+                                  const review =
+                                    hldDesignModelReviewByModelId.get(item.id);
+                                  return (
+                                    <div className="space-y-1.5">
+                                      {review?.payloadSummary !== undefined ? (
+                                        <HldDesignModelReviewSummary
+                                          summary={review.payloadSummary}
+                                        />
+                                      ) : (
+                                        <p
+                                          data-testid="hld-design-model-review-summary-empty"
+                                          className="text-xs text-text-tertiary"
+                                        >
+                                          Not yet reviewed (advisory)
+                                        </p>
+                                      )}
+                                      <div className="flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          data-testid="hld-design-model-inspect"
+                                          onClick={() =>
+                                            openHldDesignModelDrawer(item.id)
+                                          }
+                                          className={PLAIN_BTN}
+                                        >
+                                          Inspect
+                                        </button>
+                                        <button
+                                          type="button"
+                                          data-testid="hld-design-model-review-run"
+                                          disabled={
+                                            hldDesignModelReviewRunningId !== null
+                                          }
+                                          onClick={() =>
+                                            void runHldDesignModelReview(item.id)
+                                          }
+                                          className={PLAIN_BTN}
+                                        >
+                                          {review === undefined
+                                            ? "Run review"
+                                            : "Re-run review"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </td>
                             </tr>
                           );
@@ -8784,6 +9272,30 @@ export default function ProjectRfpEvidencePage() {
                   No HLD design models yet.
                 </p>
               )}
+            {hldDesignModelReviewListError && (
+              <p
+                data-testid="hld-design-model-review-list-error"
+                className="mt-2 text-xs text-text-tertiary"
+              >
+                {hldDesignModelReviewListError}
+              </p>
+            )}
+            {hldDesignModelReviewRunError && (
+              <p
+                data-testid="hld-design-model-review-run-error"
+                className="mt-2 text-xs text-destructive"
+              >
+                {hldDesignModelReviewRunError}
+              </p>
+            )}
+            {hldDesignModelReviewRunSuccess && (
+              <p
+                data-testid="hld-design-model-review-run-success"
+                className="mt-2 text-xs text-emerald-300"
+              >
+                {hldDesignModelReviewRunSuccess}
+              </p>
+            )}
           </div>
         </section>
       </div>

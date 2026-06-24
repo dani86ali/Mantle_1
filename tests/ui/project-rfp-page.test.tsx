@@ -58,6 +58,9 @@ const HLD_DESIGN_MODEL_ARTIFACT_ID = "art-hld-design-model-1";
 const HLD_DESIGN_MODEL_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DESIGN_MODEL_ARTIFACT_ID}/hld-design-model`;
 const HLD_DESIGN_MODEL_REVIEW_URL = `${HLD_DESIGN_MODEL_DETAIL_URL}/review`;
 const HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID = "art-hld-source-bundle-approved-1";
+const HLD_DESIGN_MODEL_REVIEW_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-design-model-review`;
+const HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID = "art-hld-design-model-review-1";
+const HLD_DESIGN_MODEL_REVIEW_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID}/hld-design-model-review`;
 const HLD_INTAKE_FIELD_IDS = [
   "existing_network_context",
   "target_topology_intent",
@@ -1600,6 +1603,111 @@ function designModelDetailResponse(
   };
 }
 
+// ---- advisory deterministic design-model review fixtures -------------------
+
+function designModelReviewListItem(
+  id = HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID,
+  status = "generated",
+  version = 1
+): Record<string, unknown> {
+  return {
+    id,
+    projectId: PROJECT_ID,
+    stageId: "hld_design_delta_review",
+    type: "hld_design_model_review",
+    status,
+    version,
+    createdAt: "2026-06-23T09:00:00.000Z",
+    updatedAt: "2026-06-23T09:05:00.000Z",
+    payloadSummary: {
+      payloadKind: "rfp_hld_design_model_review",
+      reviewedAt: "2026-06-23T09:00:00.000Z",
+      reviewerType: "deterministic",
+      sourceHldDesignModelArtifactId: HLD_DESIGN_MODEL_ARTIFACT_ID,
+      sourceHldSourceBundleArtifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+      findingCount: 1,
+      findingCountsBySeverity: { blocking: 0, warning: 1, suggestion: 0 },
+      recommendation: "rebuild_recommended",
+      hasBoundedRebuildInstructions: true,
+    },
+  };
+}
+
+function designModelReviewListEmpty(): Record<string, unknown> {
+  return { project: projectContext(), artifactCount: 0, artifacts: [] };
+}
+
+function designModelReviewListReady(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 1,
+    artifacts: [designModelReviewListItem()],
+  };
+}
+
+function designModelReviewCreateResponse(): Record<string, unknown> {
+  return {
+    artifact: {
+      id: HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID,
+      status: "generated",
+      version: 1,
+    },
+    recommendation: "rebuild_recommended",
+    findingCount: 1,
+    findingCountsBySeverity: { blocking: 0, warning: 1, suggestion: 0 },
+  };
+}
+
+function designModelReviewDetailResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: {
+      id: HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID,
+      status: "generated",
+      version: 1,
+    },
+    review: {
+      payloadKind: "rfp_hld_design_model_review",
+      sourceArtifactIds: [
+        HLD_DESIGN_MODEL_ARTIFACT_ID,
+        HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+      ],
+      sourceHldDesignModelArtifactId: HLD_DESIGN_MODEL_ARTIFACT_ID,
+      sourceHldSourceBundleArtifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+      reviewedAt: "2026-06-23T09:00:00.000Z",
+      reviewer: { type: "deterministic", label: "Deterministic reviewer" },
+      sourceReferences: [
+        {
+          id: "rev-model-ref-1",
+          artifactId: HLD_DESIGN_MODEL_ARTIFACT_ID,
+          domain: "campus_switching",
+        },
+        {
+          id: "rev-bundle-ref-1",
+          artifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+        },
+      ],
+      findings: [
+        {
+          id: "rf-1",
+          severity: "warning",
+          category: "scope_gap",
+          message: "REVIEW-FINDING-CANARY excluded domain not modeled.",
+          sourceReferenceIds: ["rev-model-ref-1"],
+          recommendedAction: "REVIEW-RECOMMENDED-ACTION-CANARY confirm scope.",
+        },
+      ],
+      recommendation: "rebuild_recommended",
+      boundedRebuildInstructions: {
+        summary: "REVIEW-REBUILD-SUMMARY-CANARY redraft the affected narrative.",
+        instructions:
+          "REVIEW-REBUILD-INSTRUCTIONS-CANARY restate the affected section from the same approved inputs.",
+        maxAttempts: 1,
+      },
+    },
+  };
+}
+
 function stubFetch(
   handler?: (url: string, init?: RequestInit) => Response | Promise<Response>
 ): FetchCall[] {
@@ -1679,6 +1787,15 @@ function stubFetch(
       }
       if (url === HLD_DESIGN_MODEL_REVIEW_URL) {
         return jsonResponse({ artifactStatus: "approved" });
+      }
+      if (url === HLD_DESIGN_MODEL_REVIEW_LIST_URL) {
+        if (init?.method === "POST") {
+          return jsonResponse(designModelReviewCreateResponse(), 201);
+        }
+        return jsonResponse(designModelReviewListEmpty());
+      }
+      if (url === HLD_DESIGN_MODEL_REVIEW_DETAIL_URL) {
+        return jsonResponse(designModelReviewDetailResponse());
       }
       if (url === REVIEW_URL) {
         return jsonResponse({ artifactStatus: "approved", artifact: baselineListItem() });
@@ -4813,7 +4930,10 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
   function designModelFetch(
     listBody: Record<string, unknown>,
     detailBody: Record<string, unknown> = designModelDetailResponse(),
-    onReview?: (init?: RequestInit) => Response
+    onReview?: (init?: RequestInit) => Response,
+    reviewListBody: Record<string, unknown> = designModelReviewListEmpty(),
+    reviewDetailBody: Record<string, unknown> = designModelReviewDetailResponse(),
+    onRunReview?: (init?: RequestInit) => Response
   ): (url: string, init?: RequestInit) => Response {
     return (url, init) => {
       if (url === HLD_DESIGN_MODEL_LIST_URL) {
@@ -4826,6 +4946,17 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
         return jsonResponse(listBody);
       }
       if (url === HLD_DESIGN_MODEL_DETAIL_URL) return jsonResponse(detailBody);
+      if (url === HLD_DESIGN_MODEL_REVIEW_LIST_URL) {
+        if (init?.method === "POST") {
+          return onRunReview
+            ? onRunReview(init)
+            : jsonResponse(designModelReviewCreateResponse(), 201);
+        }
+        return jsonResponse(reviewListBody);
+      }
+      if (url === HLD_DESIGN_MODEL_REVIEW_DETAIL_URL) {
+        return jsonResponse(reviewDetailBody);
+      }
       if (url === HLD_DESIGN_MODEL_REVIEW_URL) {
         return onReview ? onReview(init) : jsonResponse({ artifactStatus: "approved" });
       }
@@ -5148,6 +5279,210 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
     expect(errorText).not.toContain("DESIGN-MODEL-SERVER-JSON-LEAK-CANARY");
     expect(errorText).not.toContain("redraft_required");
   });
+
+  // --- Stage 6E-B advisory deterministic review surface --------------------
+
+  it("shows the advisory deterministic review summary on the model row with no raw ids", async () => {
+    stubFetch(
+      designModelFetch(designModelListReady(), undefined, undefined, designModelReviewListReady())
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const panel = await screen.findByTestId("hld-design-model-panel");
+    const summary = await screen.findByTestId("hld-design-model-review-summary");
+    // Advisory/deterministic label, recommendation, and severity counts.
+    expect(summary).toHaveTextContent("Deterministic / advisory");
+    expect(summary).toHaveTextContent("deterministic");
+    expect(summary).toHaveTextContent("rebuild recommended");
+    expect(summary).toHaveTextContent("Blocking 0");
+    expect(summary).toHaveTextContent("Warning 1");
+    expect(summary).toHaveTextContent("Suggestion 0");
+    // A run/re-run action is present on the row.
+    expect(screen.getByTestId("hld-design-model-review-run")).toBeInTheDocument();
+
+    // The compact panel still never renders raw model/source-bundle/review ids.
+    const panelText = panel.textContent ?? "";
+    expect(panelText).not.toContain(HLD_DESIGN_MODEL_ARTIFACT_ID);
+    expect(panelText).not.toContain(HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID);
+    expect(panelText).not.toContain(HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID);
+  });
+
+  it("runs the deterministic review posting exactly { sourceHldDesignModelArtifactId }, refreshes both lists, and makes no final HLD POST", async () => {
+    const calls = stubFetch(
+      designModelFetch(designModelListReady(), undefined, undefined, designModelReviewListReady())
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const runBtn = await screen.findByTestId("hld-design-model-review-run");
+    const reviewGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DESIGN_MODEL_REVIEW_LIST_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+    const modelGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DESIGN_MODEL_LIST_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(runBtn);
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_DESIGN_MODEL_REVIEW_LIST_URL &&
+            c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) =>
+        c.url === HLD_DESIGN_MODEL_REVIEW_LIST_URL && c.init?.method === "POST"
+    );
+    const reviewBody = JSON.parse(String(post?.init?.body)) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(reviewBody)).toEqual(["sourceHldDesignModelArtifactId"]);
+    expect(reviewBody.sourceHldDesignModelArtifactId).toBe(
+      HLD_DESIGN_MODEL_ARTIFACT_ID
+    );
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "reviewedBy",
+      "status",
+      "payload",
+      "sourceArtifactIds",
+      "sku",
+      "pricing",
+      "catalog",
+    ]) {
+      expect(reviewBody).not.toHaveProperty(forbidden);
+    }
+
+    // Both the review list and the model list refresh after a successful run.
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DESIGN_MODEL_REVIEW_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(reviewGetsBefore);
+    });
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DESIGN_MODEL_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(modelGetsBefore);
+    });
+    expect(finalHldPosts(calls)).toHaveLength(0);
+  });
+
+  it("opens the drawer showing review findings and bounded rebuild, with raw ids only in the collapsed review audit", async () => {
+    stubFetch(
+      designModelFetch(designModelListReady(), undefined, undefined, designModelReviewListReady())
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    // Wait for the review list to load so the drawer resolves a matching review.
+    await screen.findByTestId("hld-design-model-review-summary");
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    const content = await screen.findByTestId("hld-design-model-drawer-content");
+    const reviewPanel = await screen.findByTestId(
+      "hld-design-model-review-panel"
+    );
+    // Advisory/deterministic framing and not-final-authority language.
+    expect(reviewPanel).toHaveTextContent("advisory");
+    expect(reviewPanel).toHaveTextContent("engineer approval remains required");
+
+    const findings = await screen.findByTestId(
+      "hld-design-model-review-findings"
+    );
+    expect(findings).toHaveTextContent("REVIEW-FINDING-CANARY");
+    expect(findings).toHaveTextContent("REVIEW-RECOMMENDED-ACTION-CANARY");
+
+    const rebuild = screen.getByTestId("hld-design-model-review-rebuild");
+    expect(rebuild).toHaveTextContent("REVIEW-REBUILD-SUMMARY-CANARY");
+    expect(rebuild).toHaveTextContent("REVIEW-REBUILD-INSTRUCTIONS-CANARY");
+    // The review surface renders no machine-readable diagram/JSON dump.
+    expect(content.querySelector("svg")).toBeNull();
+    expect(content.querySelector("pre")).toBeNull();
+
+    // Raw review/model/source-bundle/source-reference ids live only in audits.
+    const reviewAudit = content.querySelector(
+      "[data-testid='hld-design-model-review-audit']"
+    );
+    const reviewAuditText = reviewAudit?.textContent ?? "";
+    expect(reviewAuditText).toContain(HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID);
+    expect(reviewAuditText).toContain(HLD_DESIGN_MODEL_ARTIFACT_ID);
+    expect(reviewAuditText).toContain(HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID);
+    expect(reviewAuditText).toContain("rev-model-ref-1");
+    expect(reviewAuditText).toContain("rev-bundle-ref-1");
+
+    // Strip BOTH collapsed audit areas; no raw id may remain in primary text.
+    const primary = content.cloneNode(true) as HTMLElement;
+    primary
+      .querySelector("[data-testid='hld-design-model-review-audit']")
+      ?.remove();
+    primary
+      .querySelector("[data-testid='hld-design-model-drawer-audit']")
+      ?.remove();
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).not.toContain(HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID);
+    expect(primaryText).not.toContain(HLD_DESIGN_MODEL_ARTIFACT_ID);
+    expect(primaryText).not.toContain(HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID);
+    expect(primaryText).not.toContain("rev-model-ref-1");
+    expect(primaryText).not.toContain("rev-bundle-ref-1");
+  });
+
+  it("shows a compact run-review error and never dumps server JSON when review creation fails", async () => {
+    stubFetch(
+      designModelFetch(
+        designModelListReady(),
+        undefined,
+        undefined,
+        designModelReviewListReady(),
+        undefined,
+        () =>
+          jsonResponse(
+            {
+              code: "hld_design_model_review_source_bundle_unavailable",
+              blockerCode: "latest_source_bundle_not_approved",
+              errors: ["REVIEW-RUN-SERVER-JSON-LEAK-CANARY"],
+            },
+            409
+          )
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const runBtn = await screen.findByTestId("hld-design-model-review-run");
+    await act(async () => {
+      fireEvent.click(runBtn);
+    });
+
+    const runError = await screen.findByTestId(
+      "hld-design-model-review-run-error"
+    );
+    expect(runError).toHaveTextContent(
+      "Unable to run deterministic design-model review."
+    );
+    const runErrorText = runError.textContent ?? "";
+    expect(runErrorText).not.toContain("REVIEW-RUN-SERVER-JSON-LEAK-CANARY");
+    expect(runErrorText).not.toContain("latest_source_bundle_not_approved");
+  });
 });
 
 describe("ProjectRfpEvidencePage static guards", () => {
@@ -5256,6 +5591,38 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "technical_proposal",
     ]) {
       expect(source).not.toContain(forbidden);
+    }
+  });
+
+  it("wires the advisory deterministic design-model review route and adds no final-output route or server-service import", () => {
+    // The advisory review surface is wired and posts only the model artifact id.
+    expect(source).toContain("/rfp/hld-design-model-review");
+    expect(source).toContain("sourceHldDesignModelArtifactId");
+    // It stays advisory: no final HLD document/diagram/html/draw.io/proposal/
+    // export route call may appear anywhere in the page source.
+    for (const forbidden of [
+      "/rfp/hld-diagram",
+      "/rfp/hld-document",
+      "/rfp/hld-proposal",
+      "/rfp/hld-html",
+      "/rfp/drawio",
+      "/rfp/hld-export",
+      "technical_proposal",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
+    // And it imports no review server service, store, or provider SDK.
+    const importLines = source
+      .split("\n")
+      .filter((line) => line.trimStart().startsWith("import"));
+    for (const token of [
+      "project-rfp-hld-design-model-review",
+      "project-rfp-hld-design-model-review-inspection",
+      "project-rfp-hld-design-model-review-deterministic",
+      "@/lib/db/",
+      "@anthropic-ai/sdk",
+    ]) {
+      expect(importLines.join("\n")).not.toContain(token);
     }
   });
 });
