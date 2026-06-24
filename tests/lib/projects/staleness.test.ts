@@ -29,6 +29,7 @@ const ALL_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_source_bundle",
   "hld_design_model",
   "hld_design_model_review",
+  "hld_design_model_rebuild_request",
   "hld_diagram",
   "hld_document",
   "design_knowledge_pack",
@@ -138,6 +139,20 @@ describe("getDirectDownstreamArtifactTypes", () => {
     expect(getTransitiveDownstreamArtifactTypes("export_package")).toEqual([]);
     expect(getDirectDownstreamArtifactTypes("hld_diagram")).toEqual([]);
     expect(getTransitiveDownstreamArtifactTypes("hld_diagram")).toEqual([]);
+  });
+
+  it("hld_design_model_rebuild_request is a leaf - request metadata, not authority", () => {
+    // Not downstream of any artifact type, so a model/review change never marks
+    // it stale; duplicate prevention keys on the specific source model id.
+    expect(getDirectDownstreamArtifactTypes("hld_design_model_rebuild_request")).toEqual([]);
+    expect(
+      getTransitiveDownstreamArtifactTypes("hld_design_model_rebuild_request")
+    ).toEqual([]);
+    for (const type of ALL_ARTIFACT_TYPES) {
+      expect(getDirectDownstreamArtifactTypes(type)).not.toContain(
+        "hld_design_model_rebuild_request"
+      );
+    }
   });
 });
 

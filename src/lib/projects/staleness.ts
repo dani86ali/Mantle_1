@@ -70,6 +70,9 @@ const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   hld_source_bundle: ["hld_design_model"],
   hld_design_model: ["hld_design_model_review"],
   hld_design_model_review: ["hld_diagram", "hld_document"],
+  // Request metadata only - not design authority and never an upstream of any
+  // generated output, so it is a leaf with no downstream edges.
+  hld_design_model_rebuild_request: [],
   hld_diagram: [],
   hld_document: ["technical_proposal"],
   technical_proposal: ["export_package"],

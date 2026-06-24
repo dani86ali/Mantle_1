@@ -77,6 +77,10 @@ export type ProjectArtifactStatus =
  * gates the model. A model change stales its advisory review; a review change
  * stales future diagram/document outputs without marking the model stale.
  *
+ * `hld_design_model_rebuild_request` is bounded engineer request metadata to
+ * redraft a candidate `hld_design_model` after its advisory review. It is NOT
+ * design authority and never executes a rebuild; it only records the request.
+ *
  * `design_knowledge_pack` is the approved domain knowledge artifact for HLD
  * readiness (Stage 6.3): structured solution patterns, validated topology
  * options, and design constraints curated per-project. Its payload schema and
@@ -99,6 +103,7 @@ export type ProjectArtifactType =
   | "hld_source_bundle"
   | "hld_design_model"
   | "hld_design_model_review"
+  | "hld_design_model_rebuild_request"
   | "hld_diagram"
   | "hld_document"
   | "design_knowledge_pack"
