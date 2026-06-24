@@ -28,6 +28,7 @@ const ALL_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_readiness_snapshot",
   "hld_source_bundle",
   "hld_design_model",
+  "hld_design_model_review",
   "hld_diagram",
   "hld_document",
   "design_knowledge_pack",
@@ -111,7 +112,12 @@ describe("getDirectDownstreamArtifactTypes", () => {
     expect(getDirectDownstreamArtifactTypes("hld_source_bundle")).toEqual([
       "hld_design_model",
     ]);
+    // The model now feeds its advisory review, which in turn feeds the future
+    // diagram and document.
     expect(getDirectDownstreamArtifactTypes("hld_design_model")).toEqual([
+      "hld_design_model_review",
+    ]);
+    expect(getDirectDownstreamArtifactTypes("hld_design_model_review")).toEqual([
       "hld_diagram",
       "hld_document",
     ]);
@@ -151,6 +157,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "export_package",
       "hld_source_bundle",
       "hld_design_model",
+      "hld_design_model_review",
       "hld_diagram",
       "hld_document",
     ]);
@@ -165,6 +172,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "export_package",
       "hld_source_bundle",
       "hld_design_model",
+      "hld_design_model_review",
       "hld_diagram",
       "hld_document",
     ]);
@@ -197,6 +205,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "compliance_matrix",
       "hld_source_bundle",
       "hld_design_model",
+      "hld_design_model_review",
       "hld_diagram",
       "hld_document",
     ]);
@@ -213,6 +222,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_source_bundle",
       "export_package",
       "hld_design_model",
+      "hld_design_model_review",
       "hld_diagram",
       "hld_document",
     ]);
@@ -225,18 +235,20 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_source_bundle",
       "export_package",
       "hld_design_model",
+      "hld_design_model_review",
       "hld_diagram",
       "hld_document",
     ]);
   });
 
   it("walks the Stage 6 HLD readiness spine deterministically", () => {
-    // intake feeds the snapshot, which feeds model -> {diagram, document},
-    // and the document feeds the proposal -> export.
+    // intake feeds the snapshot, which feeds model -> review ->
+    // {diagram, document}, and the document feeds the proposal -> export.
     expect(getTransitiveDownstreamArtifactTypes("hld_intake")).toEqual([
       "hld_readiness_snapshot",
       "hld_source_bundle",
       "hld_design_model",
+      "hld_design_model_review",
       "hld_diagram",
       "hld_document",
       "technical_proposal",
@@ -247,12 +259,23 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
     ).toEqual([
       "hld_source_bundle",
       "hld_design_model",
+      "hld_design_model_review",
       "hld_diagram",
       "hld_document",
       "technical_proposal",
       "export_package",
     ]);
+    // The model feeds its advisory review first, then diagram/document.
     expect(getTransitiveDownstreamArtifactTypes("hld_design_model")).toEqual([
+      "hld_design_model_review",
+      "hld_diagram",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(
+      getTransitiveDownstreamArtifactTypes("hld_design_model_review")
+    ).toEqual([
       "hld_diagram",
       "hld_document",
       "technical_proposal",
@@ -331,6 +354,16 @@ describe("isArtifactTypeDownstreamOf", () => {
     expect(
       isArtifactTypeDownstreamOf("hld_readiness_snapshot", "hld_design_model")
     ).toBe(true);
+    // The advisory review sits between the model and the diagram/document.
+    expect(
+      isArtifactTypeDownstreamOf("hld_design_model", "hld_design_model_review")
+    ).toBe(true);
+    expect(
+      isArtifactTypeDownstreamOf("hld_design_model_review", "hld_diagram")
+    ).toBe(true);
+    expect(
+      isArtifactTypeDownstreamOf("hld_design_model_review", "hld_document")
+    ).toBe(true);
     expect(
       isArtifactTypeDownstreamOf("hld_design_model", "hld_document")
     ).toBe(true);
@@ -366,6 +399,10 @@ describe("isArtifactTypeDownstreamOf", () => {
     ).toBe(false);
     expect(
       isArtifactTypeDownstreamOf("priced_boq", "hld_readiness_snapshot")
+    ).toBe(false);
+    // The advisory review is downstream of the model, never the reverse.
+    expect(
+      isArtifactTypeDownstreamOf("hld_design_model_review", "hld_design_model")
     ).toBe(false);
     // hld_intake is an input root: nothing upstream feeds it.
     expect(
@@ -794,10 +831,40 @@ describe("planStaleArtifactUpdates", () => {
     expect(plan.map((u) => u.type)).not.toContain("hld_readiness_snapshot");
   });
 
-  it("a change to hld_design_model marks diagram/document downstream but not the snapshot", () => {
+  it("a change to hld_design_model marks its advisory review and the diagram/document chain stale but not the snapshot", () => {
     const changed = artifact({
       id: "hdm-1",
       type: "hld_design_model",
+      version: 1,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hdmr", type: "hld_design_model_review", version: 1 }),
+        artifact({ id: "hdg", type: "hld_diagram", version: 1 }),
+        artifact({ id: "hdoc", type: "hld_document", version: 1 }),
+        artifact({ id: "tp", type: "technical_proposal", version: 1 }),
+        artifact({ id: "exp", type: "export_package", version: 1 }),
+        // hld_readiness_snapshot is upstream of the model; never planned.
+        artifact({ id: "hrs", type: "hld_readiness_snapshot", version: 1 }),
+      ],
+    });
+    // The model stales its advisory review, then the future diagram/document.
+    expect(plan.map((u) => u.type)).toEqual([
+      "hld_design_model_review",
+      "hld_diagram",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(plan.map((u) => u.type)).not.toContain("hld_readiness_snapshot");
+  });
+
+  it("a change to hld_design_model_review stales the diagram/document and proposal chain but not the model", () => {
+    const changed = artifact({
+      id: "hdmr-1",
+      type: "hld_design_model_review",
       version: 1,
     });
     const plan = planStaleArtifactUpdates({
@@ -808,7 +875,9 @@ describe("planStaleArtifactUpdates", () => {
         artifact({ id: "hdoc", type: "hld_document", version: 1 }),
         artifact({ id: "tp", type: "technical_proposal", version: 1 }),
         artifact({ id: "exp", type: "export_package", version: 1 }),
-        // hld_readiness_snapshot is upstream of the model; never planned.
+        // The model and snapshot are upstream of the advisory review; a review
+        // change must never mark them stale.
+        artifact({ id: "hdm", type: "hld_design_model", version: 1 }),
         artifact({ id: "hrs", type: "hld_readiness_snapshot", version: 1 }),
       ],
     });
@@ -818,6 +887,7 @@ describe("planStaleArtifactUpdates", () => {
       "technical_proposal",
       "export_package",
     ]);
+    expect(plan.map((u) => u.type)).not.toContain("hld_design_model");
     expect(plan.map((u) => u.type)).not.toContain("hld_readiness_snapshot");
   });
 

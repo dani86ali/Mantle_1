@@ -70,6 +70,13 @@ export type ProjectArtifactStatus =
  * only and adds NO model/diagram/document generation behavior. The legacy
  * `hld_design_delta` artifact is unchanged.
  *
+ * `hld_design_model_review` is advisory, reviewable quality metadata for a
+ * candidate `hld_design_model`, produced by checking it against its approved
+ * `hld_source_bundle` before any diagram/document work. It is NOT final design
+ * authority and never approves the model on its own; engineer approval still
+ * gates the model. A model change stales its advisory review; a review change
+ * stales future diagram/document outputs without marking the model stale.
+ *
  * `design_knowledge_pack` is the approved domain knowledge artifact for HLD
  * readiness (Stage 6.3): structured solution patterns, validated topology
  * options, and design constraints curated per-project. Its payload schema and
@@ -91,6 +98,7 @@ export type ProjectArtifactType =
   | "hld_readiness_snapshot"
   | "hld_source_bundle"
   | "hld_design_model"
+  | "hld_design_model_review"
   | "hld_diagram"
   | "hld_document"
   | "design_knowledge_pack"

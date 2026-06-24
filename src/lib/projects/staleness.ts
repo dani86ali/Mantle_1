@@ -36,10 +36,12 @@ import type {
  * approved engineer design intake (hld_intake, a separate input root) feed
  * hld_readiness_snapshot, which feeds the deterministic hld_source_bundle (the
  * structured authority package compiled after readiness approval), which feeds
- * the future hld_design_model, which feeds
- * the future hld_diagram and hld_document; an approved hld_document can feed
- * technical_proposal. The model/diagram/document nodes are future contracts -
- * only their staleness edges are declared here, no generation behavior.
+ * the hld_design_model, which feeds its advisory hld_design_model_review, which
+ * feeds the future hld_diagram and hld_document; an approved hld_document can
+ * feed technical_proposal. A model change stales its advisory review, and a
+ * review change stales the future diagram/document outputs without marking the
+ * model stale. The diagram/document nodes are future contracts - only their
+ * staleness edges are declared here, no generation behavior.
  *
  * Stage 6.3: design_knowledge_pack is an approved domain knowledge artifact
  * (solution patterns, validated topologies, design constraints) that feeds
@@ -66,7 +68,8 @@ const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   design_knowledge_pack: ["hld_readiness_snapshot"],
   hld_readiness_snapshot: ["hld_source_bundle"],
   hld_source_bundle: ["hld_design_model"],
-  hld_design_model: ["hld_diagram", "hld_document"],
+  hld_design_model: ["hld_design_model_review"],
+  hld_design_model_review: ["hld_diagram", "hld_document"],
   hld_diagram: [],
   hld_document: ["technical_proposal"],
   technical_proposal: ["export_package"],

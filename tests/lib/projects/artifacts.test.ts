@@ -53,14 +53,17 @@ describe("getArtifactTypesForStage", () => {
   });
 
   it("returns the Stage 6 HLD readiness spine for hld_design_delta_review", () => {
-    // The legacy delta plus the Stage 6 HLD intake/readiness/model/diagram/
-    // document contracts all flow through the existing HLD stage metadata.
-    // design_knowledge_pack is added in Stage 6.3.
+    // The legacy delta plus the Stage 6 HLD intake/readiness/source-bundle/
+    // model/model-review/diagram/document contracts all flow through the
+    // existing HLD stage metadata. design_knowledge_pack is added in Stage 6.3;
+    // hld_design_model_review is the advisory quality-review contract (6E-B).
     expect(getArtifactTypesForStage("hld_design_delta_review")).toEqual([
       "hld_design_delta",
       "hld_intake",
       "hld_readiness_snapshot",
+      "hld_source_bundle",
       "hld_design_model",
+      "hld_design_model_review",
       "hld_diagram",
       "hld_document",
       "design_knowledge_pack",
@@ -89,7 +92,9 @@ describe("isArtifactTypeAllowedForStage", () => {
       "hld_design_delta",
       "hld_intake",
       "hld_readiness_snapshot",
+      "hld_source_bundle",
       "hld_design_model",
+      "hld_design_model_review",
       "hld_diagram",
       "hld_document",
       "design_knowledge_pack",
@@ -401,6 +406,7 @@ describe("Stage 6 is contract-only: no HLD generation behavior", () => {
   it("materializing a future HLD artifact produces an empty contract row, not content", () => {
     for (const type of [
       "hld_design_model",
+      "hld_design_model_review",
       "hld_diagram",
       "hld_document",
     ] as const) {

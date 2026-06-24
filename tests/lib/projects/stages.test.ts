@@ -23,6 +23,7 @@ const VALID_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_readiness_snapshot",
   "hld_source_bundle",
   "hld_design_model",
+  "hld_design_model_review",
   "hld_diagram",
   "hld_document",
   "design_knowledge_pack",
@@ -36,6 +37,7 @@ const STAGE_6_HLD_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_readiness_snapshot",
   "hld_source_bundle",
   "hld_design_model",
+  "hld_design_model_review",
   "hld_diagram",
   "hld_document",
 ];
@@ -221,6 +223,7 @@ describe("artifact metadata", () => {
       "hld_readiness_snapshot",
       "hld_source_bundle",
       "hld_design_model",
+      "hld_design_model_review",
       "hld_diagram",
       "hld_document",
       "design_knowledge_pack",
