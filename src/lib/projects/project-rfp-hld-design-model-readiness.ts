@@ -120,9 +120,9 @@ export function getRfpHldDesignModelReadinessReport(input: {
     artifactId: latest.id,
     version: latest.version,
     status: latest.status,
-    sourceArtifactIds: payloadSourceIds,
-    coveredDomains: bundlePayload.coveredDomains,
-    excludedDomains: bundlePayload.excludedDomains,
+    sourceArtifactIds: [...payloadSourceIds],
+    coveredDomains: [...bundlePayload.coveredDomains],
+    excludedDomains: [...bundlePayload.excludedDomains],
   };
 
   const expectedSource: RfpHldDesignModelExpectedSource = {
@@ -130,8 +130,8 @@ export function getRfpHldDesignModelReadinessReport(input: {
     sourceBundleVersion: latest.version,
     sourceBundlePayloadKind: RFP_HLD_SOURCE_BUNDLE_PAYLOAD_KIND,
     sourceArtifactIds: [latest.id],
-    coveredDomains: bundlePayload.coveredDomains,
-    excludedDomains: bundlePayload.excludedDomains,
+    coveredDomains: [...bundlePayload.coveredDomains],
+    excludedDomains: [...bundlePayload.excludedDomains],
   };
 
   return {

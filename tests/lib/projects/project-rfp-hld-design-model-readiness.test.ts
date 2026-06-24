@@ -252,6 +252,23 @@ describe("getRfpHldDesignModelReadinessReport - ready", () => {
     expect(expectedSource!.coveredDomains).toEqual(["campus_switching"]);
     expect(expectedSource!.excludedDomains).toEqual(["service_only"]);
   });
+
+  it("returned arrays are copies, not the same references as the source-bundle payload", () => {
+    const bundlePayload = validBundlePayload();
+    const bundle = makeArtifact({
+      payload: bundlePayload as unknown as Record<string, unknown>,
+    });
+    const { sourceBundle, expectedSource } = getRfpHldDesignModelReadinessReport({
+      projectId: PROJECT_ID,
+      artifacts: [bundle],
+    });
+    expect(sourceBundle).toBeDefined();
+    expect(sourceBundle!.sourceArtifactIds).not.toBe(bundlePayload.sourceArtifactIds);
+    expect(sourceBundle!.coveredDomains).not.toBe(bundlePayload.coveredDomains);
+    expect(sourceBundle!.excludedDomains).not.toBe(bundlePayload.excludedDomains);
+    expect(expectedSource!.coveredDomains).not.toBe(bundlePayload.coveredDomains);
+    expect(expectedSource!.excludedDomains).not.toBe(bundlePayload.excludedDomains);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -359,19 +376,36 @@ describe("validateRfpHldDesignModelSourceCompatibility - rejects non-approved or
 // ---------------------------------------------------------------------------
 
 describe("static purity - allowed imports", () => {
-  it("source file contains only allowed imports", () => {
-    const src = readFileSync(
-      join(__dirname, "../../../src/lib/projects/project-rfp-hld-design-model-readiness.ts"),
-      "utf8"
-    );
-    const importLines = src.split("\n").filter((l) => l.trim().startsWith("import"));
+  const SRC_PATH = join(
+    __dirname,
+    "../../../src/lib/projects/project-rfp-hld-design-model-readiness.ts"
+  );
+  const ALLOWED_MODULES = new Set([
+    "@/types/project",
+    "@/lib/projects/project-rfp-hld-source-bundle",
+    "@/lib/projects/project-rfp-hld-design-model",
+  ]);
+
+  it("source file imports only from the allowed module set", () => {
+    const src = readFileSync(SRC_PATH, "utf8");
+    // Extract quoted specifiers after `from` (handles multiline declarations)
+    const specifiers = Array.from(src.matchAll(/from\s+["']([^"']+)["']/g)).map((m) => m[1]);
+    expect(specifiers.length).toBeGreaterThan(0);
+    for (const spec of specifiers) {
+      expect(ALLOWED_MODULES.has(spec)).toBe(true);
+    }
+  });
+
+  it("source file does not import forbidden modules", () => {
+    const src = readFileSync(SRC_PATH, "utf8");
     const forbidden = [
       "drizzle", "node:fs", "node:path", "react", "next/", "ai/", "anthropic",
       "openai", "catalog", "pricing", "config-expansion",
     ];
-    for (const line of importLines) {
+    const specifiers = Array.from(src.matchAll(/from\s+["']([^"']+)["']/g)).map((m) => m[1].toLowerCase());
+    for (const spec of specifiers) {
       for (const bad of forbidden) {
-        expect(line.toLowerCase()).not.toContain(bad);
+        expect(spec).not.toContain(bad);
       }
     }
   });
