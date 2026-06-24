@@ -4,11 +4,10 @@ import { describe, it, expect, vi } from "vitest";
 
 // The Anthropic SDK is never imported here: every behavior test injects a
 // fake client through config.client, so no real client is constructed and
-// the network is never reached. The adapter module is one of exactly three
-// Project-chain modules allowed to import @anthropic-ai/sdk (the
-// requirements adapter suite proves that three-file allowlist); the static
-// source checks at the bottom of this suite prove this adapter's own
-// import surface and purity.
+// the network is never reached. The adapter module is one of exactly four
+// Project-chain modules allowed to import @anthropic-ai/sdk; the static
+// source checks at the bottom of this suite prove this adapter's own import
+// surface and purity.
 import {
   createAnthropicRfpExtractionDeltaCandidateDraftingExecutor,
   type AnthropicRfpExtractionDeltaDraftingMessageRequest,

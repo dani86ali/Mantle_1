@@ -18,9 +18,12 @@
  * (Stage 6D-004) plus human engineer approval before any downstream stage may
  * rely on it. This boundary claims no design or AI authority.
  *
- * It imports EXACTLY the candidate-input bundle type and nothing else.
+ * It imports EXACTLY the candidate-input bundle type and the Anthropic drafting
+ * adapter factory - it never imports the provider SDK directly, and the
+ * configured factory below is the single environment-reading wiring seam.
  */
 import type { RfpHldDesignModelCandidateInputBundle } from "@/lib/projects/project-rfp-hld-design-model-candidate-input";
+import { createAnthropicRfpHldDesignModelDraftingExecutor } from "@/lib/projects/project-rfp-hld-design-model-drafting-anthropic";
 
 /**
  * Everything the injected executor receives: exactly the deterministic
@@ -88,13 +91,42 @@ export async function draftRfpHldDesignModelCandidate(
   return { status: "drafted", draft };
 }
 
+/** The optional max-tokens override; positive finite integers only. */
+function parseMaxTokensOverride(raw: string | undefined): number | undefined {
+  if (typeof raw !== "string" || raw.trim() === "") return undefined;
+  const parsed = Number(raw.trim());
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 /**
- * The configured drafting executor, or null while no provider adapter is
- * implemented. Stage 6D-003 wires no adapter, so this is an unconditional null
- * seam: it reads no environment configuration, constructs nothing, and calls no
- * provider. A later stage may return a configured executor here; callers must
- * treat null as "HLD design-model candidate drafting unavailable".
+ * The configured drafting executor, or null while ANTHROPIC_API_KEY is missing
+ * or blank. This is the single environment-reading wiring seam: it reads ONLY
+ * ANTHROPIC_API_KEY, BOMATIC_RFP_HLD_DESIGN_MODEL_DRAFTING_MODEL, and
+ * BOMATIC_RFP_HLD_DESIGN_MODEL_DRAFTING_MAX_TOKENS, and constructs the Anthropic
+ * adapter executor through its factory. The model override is applied only when
+ * nonblank and the max-tokens override only when it parses to a positive
+ * integer; otherwise the adapter defaults stand. The factory never invokes the
+ * executor, and this seam performs no DB/store/file/raw-document/route/UI or
+ * network work. Callers must treat null as "HLD design-model candidate drafting
+ * unavailable"; any returned executor stays candidate-only and untrusted.
  */
 export function getConfiguredRfpHldDesignModelDraftingExecutor(): RfpHldDesignModelDraftingExecutor | null {
-  return null;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (typeof apiKey !== "string" || apiKey.trim() === "") return null;
+
+  const modelOverride =
+    process.env.BOMATIC_RFP_HLD_DESIGN_MODEL_DRAFTING_MODEL;
+  const maxTokensOverride = parseMaxTokensOverride(
+    process.env.BOMATIC_RFP_HLD_DESIGN_MODEL_DRAFTING_MAX_TOKENS
+  );
+
+  return createAnthropicRfpHldDesignModelDraftingExecutor({
+    apiKey: apiKey.trim(),
+    ...(typeof modelOverride === "string" && modelOverride.trim() !== ""
+      ? { model: modelOverride.trim() }
+      : {}),
+    ...(maxTokensOverride !== undefined
+      ? { maxTokens: maxTokensOverride }
+      : {}),
+  });
 }

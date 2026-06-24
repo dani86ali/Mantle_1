@@ -2,10 +2,10 @@
  * Anthropic-backed RFP compliance-matrix drafting executor (Stage 5).
  * Source of truth: C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md
  *
- * One of exactly three Project-chain modules allowed to import
+ * One of exactly four Project-chain modules allowed to import
  * @anthropic-ai/sdk (the others are the requirements and extraction-delta
- * drafting adapters). It adapts the provider-neutral compliance-matrix
- * drafting contract
+ * drafting adapters, plus the HLD design-model drafting adapter). It adapts
+ * the provider-neutral compliance-matrix drafting contract
  * (src/lib/projects/project-rfp-compliance-matrix-drafting.ts) to the
  * Anthropic Messages API: one plain messages.create call per drafting run,
  * carrying only the whitelisted executor input plus a fixed system

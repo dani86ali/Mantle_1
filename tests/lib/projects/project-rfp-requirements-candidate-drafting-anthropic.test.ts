@@ -4,10 +4,10 @@ import { describe, it, expect, vi } from "vitest";
 
 // The Anthropic SDK is never imported here: every behavior test injects a
 // fake client through config.client, so no real client is constructed and
-// the network is never reached. The adapter module is one of exactly three
+// the network is never reached. The adapter module is one of exactly four
 // Project-chain modules allowed to import @anthropic-ai/sdk (the others are
-// the extraction-delta and compliance-matrix drafting adapters), proven by
-// the static source checks at the bottom of this suite.
+// the extraction-delta, compliance-matrix, and HLD design-model drafting
+// adapters), proven by the static source checks at the bottom of this suite.
 import {
   createAnthropicRfpRequirementCandidateDraftingExecutor,
   type AnthropicRfpDraftingMessageRequest,
@@ -477,6 +477,10 @@ describe("Anthropic drafting adapter module purity (static source check)", () =>
     process.cwd(),
     "src/lib/projects/project-rfp-compliance-matrix-drafting-anthropic.ts"
   );
+  const HLD_DESIGN_MODEL_ADAPTER_PATH = join(
+    process.cwd(),
+    "src/lib/projects/project-rfp-hld-design-model-drafting-anthropic.ts"
+  );
   const TEST_PATH = join(
     process.cwd(),
     "tests/lib/projects/project-rfp-requirements-candidate-drafting-anthropic.test.ts"
@@ -513,7 +517,7 @@ describe("Anthropic drafting adapter module purity (static source check)", () =>
     expect(importLines[1]).toMatch(/^import type \{/);
   });
 
-  it("limits Project-chain (src/lib/projects, src/app) @anthropic-ai/sdk imports to exactly the three approved drafting adapters", () => {
+  it("limits Project-chain (src/lib/projects, src/app) @anthropic-ai/sdk imports to exactly the four approved drafting adapters", () => {
     // Legacy frozen modules outside the Project chain (src/lib/ai, src/lib/llm,
     // src/lib/agent) keep their own SDK imports and are out of scope here.
     const sdkImport = /from\s+["']@anthropic-ai\/sdk["']/;
@@ -529,6 +533,7 @@ describe("Anthropic drafting adapter module purity (static source check)", () =>
       [
         EXTRACTION_DELTA_ADAPTER_PATH,
         COMPLIANCE_MATRIX_ADAPTER_PATH,
+        HLD_DESIGN_MODEL_ADAPTER_PATH,
         ADAPTER_PATH,
       ].sort()
     );

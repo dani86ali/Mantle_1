@@ -2,10 +2,10 @@
  * Anthropic-backed RFP requirement-candidate drafting executor (Milestone 2).
  * Source of truth: C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md
  *
- * One of exactly three Project-chain modules allowed to import
+ * One of exactly four Project-chain modules allowed to import
  * @anthropic-ai/sdk (the others are the extraction-delta and
- * compliance-matrix drafting adapters). It adapts the provider-neutral
- * drafting contract
+ * compliance-matrix drafting adapters, plus the HLD design-model drafting
+ * adapter). It adapts the provider-neutral drafting contract
  * (src/lib/projects/project-rfp-requirements-candidate-drafting.ts) to the
  * Anthropic Messages API: one plain messages.create call per drafting run,
  * carrying only the whitelisted executor input plus a fixed system
