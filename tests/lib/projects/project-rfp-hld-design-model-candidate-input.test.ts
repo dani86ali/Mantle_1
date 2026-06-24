@@ -279,7 +279,7 @@ describe("buildRfpHldDesignModelCandidateInput - source purity", () => {
     expect(/^[\x00-\x7F]*$/.test(testSource)).toBe(true);
   });
 
-  it("imports only canonical project types and the two HLD contracts", () => {
+  it("imports only canonical project types and the HLD contracts", () => {
     const specifiers = Array.from(
       source.matchAll(/from\s+"([^"]+)"/g),
       (m: RegExpMatchArray) => m[1]
@@ -288,6 +288,8 @@ describe("buildRfpHldDesignModelCandidateInput - source purity", () => {
       "@/types/project",
       "@/lib/projects/project-rfp-hld-source-bundle",
       "@/lib/projects/project-rfp-hld-design-model",
+      // Type-only (erased at runtime): optional rebuild-context shape.
+      "@/lib/projects/project-rfp-hld-design-model-rebuild-candidate-input",
     ]);
     for (const spec of specifiers) {
       expect(allowed.has(spec)).toBe(true);

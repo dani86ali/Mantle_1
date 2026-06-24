@@ -10,9 +10,10 @@
  * requirements, compliance, configuration, raw documents, files, storage paths,
  * tables, document text) are ever loaded or carried.
  *
- * Imports EXACTLY canonical project types, the source-bundle contract, and the
- * design-model contract - nothing else. It introduces no runtime AI authority:
- * any future drafting is candidate-only, subordinate to deterministic
+ * Imports EXACTLY canonical project types, the source-bundle and design-model
+ * contracts, and (type-only) the rebuild candidate-input contract for the
+ * optional rebuild context - nothing else. It introduces no runtime AI
+ * authority: any future drafting is candidate-only, subordinate to deterministic
  * validation and human engineer approval.
  */
 import type { ProjectArtifact } from "@/types/project";
@@ -26,6 +27,10 @@ import {
   type RfpHldSourceBundleFinding,
 } from "@/lib/projects/project-rfp-hld-source-bundle";
 import { RFP_HLD_DESIGN_MODEL_PAYLOAD_KIND } from "@/lib/projects/project-rfp-hld-design-model";
+// Type-only (erased at runtime): the base bundle exposes an optional rebuild
+// context, whose shape and pure builder live in the rebuild candidate-input
+// contract. No runtime dependency is introduced in this direction.
+import type { RfpHldDesignModelRebuildDraftingContext } from "@/lib/projects/project-rfp-hld-design-model-rebuild-candidate-input";
 
 /** Stable discriminator for the candidate-input bundle. */
 export const RFP_HLD_DESIGN_MODEL_CANDIDATE_INPUT_PAYLOAD_KIND =
@@ -91,6 +96,14 @@ export interface RfpHldDesignModelCandidateInputBundle {
   constraints: RfpHldSourceBundleStatementEntry[];
   warnings: RfpHldSourceBundleFinding[];
   instructions: RfpHldDesignModelCandidateDraftingInstructions;
+  /**
+   * Optional bounded rebuild context, present ONLY on a redraft pass. When set,
+   * the drafting prompt frames ONE bounded correction pass from this SAME
+   * approved source bundle; it carries sanitized summaries and no new authority.
+   * Absent for normal initial drafting. Built by
+   * buildRfpHldDesignModelRebuildCandidateInput, never by the initial builder.
+   */
+  rebuildContext?: RfpHldDesignModelRebuildDraftingContext;
 }
 
 /** Reason a draftable source bundle was rejected. */

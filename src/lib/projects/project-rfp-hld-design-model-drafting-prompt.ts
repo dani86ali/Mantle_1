@@ -13,8 +13,13 @@
  * fields. It introduces no runtime AI authority: any future drafting is
  * candidate-only, subordinate to deterministic validation and human approval.
  *
+ * When (and only when) the bundle carries a rebuild context, an additional
+ * explicit, whitelisted `rebuild` section is appended framing ONE bounded
+ * correction pass from the SAME approved source bundle with no new authority.
+ * The fixed system instruction is unchanged across both paths.
+ *
  * Imports EXACTLY the candidate-input contract and the design-model kind - nothing
- * else.
+ * else; the rebuild-context shape is derived from the bundle type, not imported.
  */
 import {
   RFP_HLD_DESIGN_MODEL_CANDIDATE_INPUT_PAYLOAD_KIND,
@@ -44,9 +49,52 @@ export const RFP_HLD_DESIGN_MODEL_DRAFTING_SYSTEM_PROMPT: string = [
   "Deterministic validation and human engineer review remain the hard gates.",
 ].join("\n");
 
+/** The non-optional rebuild context carried on a redraft bundle. */
+type RfpHldDesignModelDraftingRebuildContext = NonNullable<
+  RfpHldDesignModelCandidateInputBundle["rebuildContext"]
+>;
+
+/**
+ * Fixed framing for a bounded rebuild correction pass. Provider-neutral; mirrors
+ * and reinforces the redraft limitations carried in the candidate input. Listing
+ * the prohibited actions here is instruction text, never emitted content.
+ */
+export const RFP_HLD_DESIGN_MODEL_REBUILD_DRAFTING_INSTRUCTION: string = [
+  "This run is exactly ONE bounded correction pass on a prior CANDIDATE",
+  "rfp_hld_design_model, driven by its advisory review. Redraft ONLY from the",
+  "same approved hld_source_bundle-derived candidate input above; add no new",
+  "source artifacts, scope, domains, SKU, pricing, catalog, or configuration",
+  "decisions, no hardware sizing, and no invented topology facts.",
+  "Emit no final HLD document, HTML, diagram, Mermaid, draw.io/XML, SVG,",
+  "TP/proposal, export, or certification claim.",
+  "Output stays candidate-only, subordinate to deterministic validation and",
+  "human engineer approval.",
+].join("\n");
+
+/**
+ * The whitelisted rebuild section, mirrored field-by-field from the bundle's
+ * rebuild context (plus the fixed framing). Any field smuggled onto the context
+ * is structurally excluded.
+ */
+export interface RfpHldDesignModelDraftingRebuildPayload {
+  mode: "bounded_correction_pass";
+  instruction: string;
+  sourceHldSourceBundleArtifactId: RfpHldDesignModelDraftingRebuildContext["sourceHldSourceBundleArtifactId"];
+  rebuildRequestArtifactId: RfpHldDesignModelDraftingRebuildContext["rebuildRequestArtifactId"];
+  sourceModelArtifactId: RfpHldDesignModelDraftingRebuildContext["sourceModelArtifactId"];
+  sourceReviewArtifactId: RfpHldDesignModelDraftingRebuildContext["sourceReviewArtifactId"];
+  priorModelSummary: RfpHldDesignModelDraftingRebuildContext["priorModelSummary"];
+  reviewRecommendation: RfpHldDesignModelDraftingRebuildContext["reviewRecommendation"];
+  reviewFindingSummaries: RfpHldDesignModelDraftingRebuildContext["reviewFindingSummaries"];
+  engineerReason: RfpHldDesignModelDraftingRebuildContext["engineerReason"];
+  engineerInstructions: RfpHldDesignModelDraftingRebuildContext["engineerInstructions"];
+  limitations: RfpHldDesignModelDraftingRebuildContext["limitations"];
+}
+
 /**
  * The whitelisted user payload, built with explicit, stable key ordering. Mirrors
- * only fields already present on the candidate-input bundle.
+ * only fields already present on the candidate-input bundle, plus an optional
+ * `rebuild` section when the bundle carries a rebuild context.
  */
 export interface RfpHldDesignModelDraftingUserPayload {
   payloadKind: RfpHldDesignModelCandidateInputBundle["payloadKind"];
@@ -65,6 +113,8 @@ export interface RfpHldDesignModelDraftingUserPayload {
   constraints: RfpHldDesignModelCandidateInputBundle["constraints"];
   warnings: RfpHldDesignModelCandidateInputBundle["warnings"];
   instructions: RfpHldDesignModelCandidateInputBundle["instructions"];
+  /** Present only on a redraft pass; absent for normal initial drafting. */
+  rebuild?: RfpHldDesignModelDraftingRebuildPayload;
 }
 
 /** Provider-neutral prompt/input payload for a later drafting executor. */
@@ -81,9 +131,10 @@ function cloneJson<T>(value: T): T {
 /**
  * Serialize a deterministic candidate-input bundle into a provider-neutral
  * { system, user } request. The `user` string is JSON.stringify of an explicitly
- * key-ordered whitelist of bundle fields - nothing else. Pure: no provider/AI/
- * network/DB/file/env work; persists nothing. Throws only on programmer misuse
- * (wrong payloadKind on the supplied bundle).
+ * key-ordered whitelist of bundle fields - nothing else; when the bundle carries
+ * a rebuild context, an explicit, whitelisted `rebuild` section is appended last.
+ * Pure: no provider/AI/network/DB/file/env work; persists nothing. Throws only on
+ * programmer misuse (wrong payloadKind on the supplied bundle).
  */
 export function buildRfpHldDesignModelDraftingRequest(
   bundle: RfpHldDesignModelCandidateInputBundle
@@ -118,6 +169,27 @@ export function buildRfpHldDesignModelDraftingRequest(
     warnings: cloneJson(bundle.warnings),
     instructions: cloneJson(bundle.instructions),
   };
+
+  // Append the bounded rebuild section ONLY when the bundle carries a context.
+  // Each field is mirrored explicitly, so any field smuggled onto the context is
+  // structurally excluded; the section is always last for stable key ordering.
+  const rebuildContext = bundle.rebuildContext;
+  if (rebuildContext !== undefined && rebuildContext !== null) {
+    payload.rebuild = {
+      mode: "bounded_correction_pass",
+      instruction: RFP_HLD_DESIGN_MODEL_REBUILD_DRAFTING_INSTRUCTION,
+      sourceHldSourceBundleArtifactId: rebuildContext.sourceHldSourceBundleArtifactId,
+      rebuildRequestArtifactId: rebuildContext.rebuildRequestArtifactId,
+      sourceModelArtifactId: rebuildContext.sourceModelArtifactId,
+      sourceReviewArtifactId: rebuildContext.sourceReviewArtifactId,
+      priorModelSummary: cloneJson(rebuildContext.priorModelSummary),
+      reviewRecommendation: rebuildContext.reviewRecommendation,
+      reviewFindingSummaries: cloneJson(rebuildContext.reviewFindingSummaries),
+      engineerReason: rebuildContext.engineerReason,
+      engineerInstructions: rebuildContext.engineerInstructions,
+      limitations: cloneJson(rebuildContext.limitations),
+    };
+  }
 
   return {
     system: RFP_HLD_DESIGN_MODEL_DRAFTING_SYSTEM_PROMPT,

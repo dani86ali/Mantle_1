@@ -13,7 +13,9 @@ import {
 import {
   buildRfpHldDesignModelDraftingRequest,
   RFP_HLD_DESIGN_MODEL_DRAFTING_SYSTEM_PROMPT,
+  RFP_HLD_DESIGN_MODEL_REBUILD_DRAFTING_INSTRUCTION,
 } from "@/lib/projects/project-rfp-hld-design-model-drafting-prompt";
+import type { RfpHldDesignModelRebuildDraftingContext } from "@/lib/projects/project-rfp-hld-design-model-rebuild-candidate-input";
 import type { ProjectArtifact } from "@/types/project";
 
 const PROJECT_ID = "proj-1";
@@ -110,6 +112,59 @@ function validBundle(): RfpHldDesignModelCandidateInputBundle {
   if (result.status !== "ok") throw new Error("expected ok bundle");
   return result.bundle;
 }
+
+function rebuildContext(): RfpHldDesignModelRebuildDraftingContext {
+  return {
+    sourceHldSourceBundleArtifactId: ARTIFACT_ID,
+    rebuildRequestArtifactId: "request-1",
+    sourceModelArtifactId: "model-1",
+    sourceReviewArtifactId: "review-1",
+    priorModelSummary: {
+      coveredDomains: ["campus_switching"],
+      excludedDomains: ["service_only"],
+      designSectionCount: 2,
+      topologyNodeCount: 3,
+      topologyLinkCount: 1,
+      topologyZoneCount: 1,
+      diagramIntentCount: 0,
+      sourceReferenceCount: 4,
+      validationFindingCount: 0,
+    },
+    reviewRecommendation: "rebuild_recommended",
+    reviewFindingSummaries: [
+      {
+        id: "rf-1", severity: "warning", category: "unclear_narrative",
+        message: "Thin rationale.", recommendedAction: "Clarify it.",
+      },
+    ],
+    engineerReason: "Clarify the rationale for the customer.",
+    engineerInstructions: "Redraft using the approved inputs only.",
+    limitations: [
+      "Redraft from exactly the same approved hld_source_bundle as the prior model; add or change no source artifacts.",
+    ],
+  };
+}
+
+function rebuildBundle(): RfpHldDesignModelCandidateInputBundle {
+  const bundle = validBundle();
+  bundle.rebuildContext = rebuildContext();
+  return bundle;
+}
+
+const REBUILD_SECTION_KEYS = [
+  "mode",
+  "instruction",
+  "sourceHldSourceBundleArtifactId",
+  "rebuildRequestArtifactId",
+  "sourceModelArtifactId",
+  "sourceReviewArtifactId",
+  "priorModelSummary",
+  "reviewRecommendation",
+  "reviewFindingSummaries",
+  "engineerReason",
+  "engineerInstructions",
+  "limitations",
+];
 
 const WHITELIST_KEYS = [
   "payloadKind",
@@ -256,6 +311,92 @@ describe("RFP_HLD_DESIGN_MODEL_DRAFTING_SYSTEM_PROMPT - guardrails", () => {
     expect(Object.keys(parsed)).not.toContain("html");
     expect(Object.keys(parsed)).not.toContain("diagram");
     expect(Object.keys(parsed)).not.toContain("drawio");
+  });
+});
+
+describe("buildRfpHldDesignModelDraftingRequest - rebuild context", () => {
+  it("omits the rebuild section for normal initial drafting", () => {
+    const parsed = JSON.parse(
+      buildRfpHldDesignModelDraftingRequest(validBundle()).user
+    ) as Record<string, unknown>;
+    expect(Object.keys(parsed)).not.toContain("rebuild");
+  });
+
+  it("includes the rebuild section only when the bundle carries a rebuild context", () => {
+    const parsed = JSON.parse(
+      buildRfpHldDesignModelDraftingRequest(rebuildBundle()).user
+    ) as Record<string, unknown>;
+    expect(parsed.rebuild).toBeDefined();
+  });
+
+  it("serializes exactly the whitelisted rebuild keys", () => {
+    const parsed = JSON.parse(buildRfpHldDesignModelDraftingRequest(rebuildBundle()).user);
+    expect(Object.keys(parsed.rebuild).sort()).toEqual(REBUILD_SECTION_KEYS.slice().sort());
+    expect(parsed.rebuild.mode).toBe("bounded_correction_pass");
+  });
+
+  it("carries the sanitized rebuild context through verbatim", () => {
+    const parsed = JSON.parse(buildRfpHldDesignModelDraftingRequest(rebuildBundle()).user);
+    const r = parsed.rebuild;
+    expect(r.sourceHldSourceBundleArtifactId).toBe(ARTIFACT_ID);
+    expect(r.rebuildRequestArtifactId).toBe("request-1");
+    expect(r.sourceModelArtifactId).toBe("model-1");
+    expect(r.sourceReviewArtifactId).toBe("review-1");
+    expect(r.reviewRecommendation).toBe("rebuild_recommended");
+    expect(r.priorModelSummary.designSectionCount).toBe(2);
+    expect(r.reviewFindingSummaries[0].id).toBe("rf-1");
+    expect(r.instruction).toBe(RFP_HLD_DESIGN_MODEL_REBUILD_DRAFTING_INSTRUCTION);
+  });
+
+  it("keeps the system prompt constant on a rebuild bundle", () => {
+    expect(buildRfpHldDesignModelDraftingRequest(rebuildBundle()).system).toBe(
+      RFP_HLD_DESIGN_MODEL_DRAFTING_SYSTEM_PROMPT
+    );
+  });
+
+  it("does not serialize fields smuggled onto the rebuild context", () => {
+    const bundle = rebuildBundle();
+    const smuggled = bundle.rebuildContext as unknown as Record<string, unknown>;
+    smuggled.rawModelBody = "RAW MODEL BODY";
+    smuggled.unitPrice = 999;
+    smuggled.evil = "should-not-appear";
+    const req = buildRfpHldDesignModelDraftingRequest(bundle);
+    expect(req.user).not.toContain("RAW MODEL BODY");
+    expect(req.user).not.toContain("rawModelBody");
+    expect(req.user).not.toContain("unitPrice");
+    expect(req.user).not.toContain("should-not-appear");
+  });
+});
+
+describe("buildRfpHldDesignModelDraftingRequest - rebuild prohibitions", () => {
+  const user = buildRfpHldDesignModelDraftingRequest(rebuildBundle()).user.toLowerCase();
+
+  it("frames one bounded correction pass from the same approved source bundle", () => {
+    expect(user).toContain("bounded correction pass");
+    expect(user).toContain("same approved");
+    expect(user).toContain("candidate-only");
+  });
+
+  it("forbids new scope, authority decisions, hardware sizing, and invented topology", () => {
+    expect(user).toContain("scope");
+    expect(user).toContain("sku");
+    expect(user).toContain("pricing");
+    expect(user).toContain("catalog");
+    expect(user).toContain("configuration");
+    expect(user).toContain("hardware sizing");
+    expect(user).toContain("invented topology");
+  });
+
+  it("forbids final outputs, diagrams, documents, exports, and certification claims", () => {
+    expect(user).toContain("document");
+    expect(user).toContain("html");
+    expect(user).toContain("diagram");
+    expect(user).toContain("mermaid");
+    expect(user).toContain("draw.io");
+    expect(user).toContain("svg");
+    expect(user).toContain("tp/proposal");
+    expect(user).toContain("export");
+    expect(user).toContain("certification");
   });
 });
 
