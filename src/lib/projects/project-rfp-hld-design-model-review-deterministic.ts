@@ -230,17 +230,27 @@ function isApprovedBundle(a: ProjectArtifact | null, projectId: string): boolean
 }
 
 /**
- * Resolve the approved `hld_source_bundle` to review against. Prefer the bundle id
- * the model itself claims (payload field, else the single row source id) when it
- * still resolves to an approved, valid bundle; otherwise fall back to the current
- * ready bundle from the Stage 6C readiness report. Returns null when none is
- * available (so the service writes nothing).
+ * Resolve the approved `hld_source_bundle` to review against. Always prefer the
+ * current ready approved bundle reported by the Stage 6C readiness helper - even
+ * when the model row/payload declares a different bundle id. A mismatch means the
+ * payload builder will record a blocking `source_mismatch` finding. Only when no
+ * current ready bundle exists does the service fall back to the model-declared
+ * approved bundle. Returns null when neither resolves (so the service writes nothing).
  */
 async function resolveApprovedSourceBundle(
   tenantId: string,
   projectId: string,
   model: ProjectArtifact
 ): Promise<ProjectArtifact | null> {
+  const artifacts = await listProjectArtifacts(tenantId, projectId);
+  const readiness = getRfpHldDesignModelReadinessReport({ projectId, artifacts });
+  if (readiness.status === "ready" && readiness.sourceBundle !== undefined) {
+    const bundleId = readiness.sourceBundle.artifactId;
+    const ready = artifacts.find((a) => a.id === bundleId) ?? null;
+    if (isApprovedBundle(ready, projectId)) return ready;
+  }
+
+  // No current ready bundle - fall back to the model-declared approved bundle.
   const candidateIds: string[] = [];
   const payloadBundleId = str(asObject(model.payload)?.sourceHldSourceBundleArtifactId).trim();
   if (payloadBundleId !== "") candidateIds.push(payloadBundleId);
@@ -253,13 +263,6 @@ async function resolveApprovedSourceBundle(
     if (isApprovedBundle(candidate, projectId)) return candidate;
   }
 
-  const artifacts = await listProjectArtifacts(tenantId, projectId);
-  const readiness = getRfpHldDesignModelReadinessReport({ projectId, artifacts });
-  if (readiness.status === "ready" && readiness.sourceBundle !== undefined) {
-    const bundleId = readiness.sourceBundle.artifactId;
-    const ready = artifacts.find((a) => a.id === bundleId) ?? null;
-    if (isApprovedBundle(ready, projectId)) return ready;
-  }
   return null;
 }
 
