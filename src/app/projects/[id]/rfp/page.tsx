@@ -731,6 +731,145 @@ function hldKnowledgePackDraftComplete(
   );
 }
 
+// ---- HLD source bundle (Stage 6B) read models -----------------------------
+
+/** Human labels for the six required source-bundle authority slots. */
+const HLD_SOURCE_BUNDLE_AUTHORITY_LABELS: Record<string, string> = {
+  evidencePackage: "Evidence package",
+  requirementsBaseline: "Requirements baseline",
+  complianceMatrix: "Compliance matrix",
+  configurationAuthority: "Configuration authority",
+  hldIntake: "HLD intake",
+  hldReadinessSnapshot: "HLD readiness snapshot",
+};
+
+/** Lean source-bundle payload summary (counts/provenance only, no body). */
+interface HldSourceBundlePayloadSummary {
+  payloadKind?: string;
+  createdBy?: string;
+  createdAt?: string;
+  sourceArtifactCount?: number;
+  designKnowledgePackCount?: number;
+  coveredDomainCount?: number;
+  missingDomainCount?: number;
+  excludedDomainCount?: number;
+  assumptionCount?: number;
+  constraintCount?: number;
+  warningCount?: number;
+  blockerCount?: number;
+}
+
+/** One hld_source_bundle artifact in the list response. */
+interface HldSourceBundleListItem {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  payloadSummary?: HldSourceBundlePayloadSummary;
+}
+
+/** Read-only readiness probe summary (counts/provenance only, never a body). */
+interface HldSourceBundleReadinessSummary {
+  compiledFromReadinessSnapshotArtifactId?: string;
+  sourceArtifactCount?: number;
+  designKnowledgePackCount?: number;
+  coveredDomainCount?: number;
+  missingDomainCount?: number;
+  excludedDomainCount?: number;
+  assumptionCount?: number;
+  constraintCount?: number;
+  warningCount?: number;
+  blockerCount?: number;
+}
+
+/** Source-bundle readiness probe: ready, blocked, or invalid persisted shape. */
+type HldSourceBundleReadiness =
+  | { status: "ready"; summary: HldSourceBundleReadinessSummary }
+  | { status: "blocked"; code: string; messages: string[] }
+  | { status: "invalid_payload"; errors: string[] };
+
+/** Lean list response of GET /api/projects/[id]/rfp/hld-source-bundle. */
+interface HldSourceBundleListResponse {
+  artifactCount: number;
+  artifacts: HldSourceBundleListItem[];
+  sourceBundleReadiness: HldSourceBundleReadiness;
+}
+
+/** One already-approved upstream authority reference (no payload body). */
+interface HldSourceBundleAuthorityReference {
+  artifactId: string;
+  artifactType?: string;
+  stageId?: string;
+  status?: string;
+  version?: number;
+  payloadKind?: string;
+  sourceKind?: string;
+}
+
+/** One approved design knowledge-pack reference for a covered domain. */
+interface HldSourceBundleDesignKnowledgePackReference {
+  artifactId: string;
+  domain: string;
+  version?: number;
+  status?: string;
+}
+
+/** One structured assumption/constraint statement entry. */
+interface HldSourceBundleStatementEntry {
+  id: string;
+  statement: string;
+  sourceArtifactId?: string;
+  sourceDomain?: string;
+}
+
+/** One structured warning/blocker finding. */
+interface HldSourceBundleFinding {
+  id: string;
+  code: string;
+  message: string;
+  severity?: string;
+}
+
+/** Sanitized source-bundle payload returned alongside the artifact summary. */
+interface HldSourceBundleDetailPayload {
+  payloadKind?: string;
+  createdBy?: string;
+  createdAt?: string;
+  sourceArtifactIds?: string[];
+  lineage?: {
+    compiledFromReadinessSnapshotArtifactId?: string;
+    compiledArtifactIds?: string[];
+  };
+  authorities?: Record<string, HldSourceBundleAuthorityReference>;
+  designKnowledgePackRefs?: HldSourceBundleDesignKnowledgePackReference[];
+  coveredDomains?: string[];
+  missingDomains?: string[];
+  excludedDomains?: string[];
+  assumptions?: HldSourceBundleStatementEntry[];
+  constraints?: HldSourceBundleStatementEntry[];
+  warnings?: HldSourceBundleFinding[];
+  blockers?: HldSourceBundleFinding[];
+  validation?: { status?: string; checkedAt?: string };
+}
+
+/** Lean detail artifact summary for a source bundle. */
+interface HldSourceBundleDetailArtifact {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+}
+
+/** Detail response of GET .../artifacts/[id]/hld-source-bundle. */
+interface HldSourceBundleDetailResponse {
+  artifact?: HldSourceBundleDetailArtifact;
+  sourceBundle?: HldSourceBundleDetailPayload;
+}
+
+/** Loaded source-bundle detail: the artifact summary plus sanitized bundle. */
+interface HldSourceBundleDetail {
+  artifact: HldSourceBundleDetailArtifact;
+  sourceBundle: HldSourceBundleDetailPayload;
+}
+
 /**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
@@ -754,7 +893,8 @@ type DrawerKind =
   | "compliance"
   | "hld-readiness"
   | "hld-intake"
-  | "hld-knowledge-pack";
+  | "hld-knowledge-pack"
+  | "hld-source-bundle";
 
 interface DrawerState {
   kind: DrawerKind;
@@ -846,6 +986,16 @@ const HLD_KNOWLEDGE_PACK_CREATE_ERROR = "Unable to create HLD knowledge pack dra
 const HLD_KNOWLEDGE_PACK_APPROVE_SUCCESS = "HLD knowledge pack approved.";
 const HLD_KNOWLEDGE_PACK_REJECT_SUCCESS = "HLD knowledge pack changes requested.";
 const HLD_KNOWLEDGE_PACK_REVIEW_ERROR = "Unable to review HLD knowledge pack.";
+
+/** Exact UI copy required for the HLD source-bundle list/detail/create/review states. */
+const HLD_SOURCE_BUNDLE_LIST_ERROR = "Unable to load HLD source bundles.";
+const HLD_SOURCE_BUNDLE_DETAIL_ERROR = "Unable to load HLD source bundle detail.";
+const HLD_SOURCE_BUNDLE_CREATE_SUCCESS =
+  "HLD source bundle compiled for engineer review.";
+const HLD_SOURCE_BUNDLE_CREATE_ERROR = "Unable to compile HLD source bundle.";
+const HLD_SOURCE_BUNDLE_APPROVE_SUCCESS = "HLD source bundle approved.";
+const HLD_SOURCE_BUNDLE_REJECT_SUCCESS = "HLD source bundle changes requested.";
+const HLD_SOURCE_BUNDLE_REVIEW_ERROR = "Unable to review HLD source bundle.";
 
 /** Exact UI copy required for the no-BoQ service-only exception request states. */
 const NO_BOQ_EXCEPTION_SUCCESS =
@@ -2890,6 +3040,24 @@ export default function ProjectRfpEvidencePage() {
   const [hldKnowledgePackReviewError, setHldKnowledgePackReviewError] = useState<string | null>(null);
   const [hldKnowledgePackReviewSuccess, setHldKnowledgePackReviewSuccess] = useState<string | null>(null);
 
+  // HLD source bundle list/detail plus the compile action and review state.
+  const [hldSourceBundleList, setHldSourceBundleList] = useState<HldSourceBundleListResponse | null>(null);
+  const [hldSourceBundleListLoading, setHldSourceBundleListLoading] = useState(true);
+  const [hldSourceBundleListError, setHldSourceBundleListError] = useState<string | null>(null);
+
+  const [hldSourceBundleDetail, setHldSourceBundleDetail] = useState<HldSourceBundleDetail | null>(null);
+  const [hldSourceBundleDetailLoading, setHldSourceBundleDetailLoading] = useState(false);
+  const [hldSourceBundleDetailError, setHldSourceBundleDetailError] = useState<string | null>(null);
+
+  const [hldSourceBundleCreatePending, setHldSourceBundleCreatePending] = useState(false);
+  const [hldSourceBundleCreateError, setHldSourceBundleCreateError] = useState<string | null>(null);
+  const [hldSourceBundleCreateSuccess, setHldSourceBundleCreateSuccess] = useState<string | null>(null);
+
+  const [hldSourceBundleReviewNote, setHldSourceBundleReviewNote] = useState("");
+  const [hldSourceBundleReviewPending, setHldSourceBundleReviewPending] = useState(false);
+  const [hldSourceBundleReviewError, setHldSourceBundleReviewError] = useState<string | null>(null);
+  const [hldSourceBundleReviewSuccess, setHldSourceBundleReviewSuccess] = useState<string | null>(null);
+
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -3259,6 +3427,71 @@ export default function ProjectRfpEvidencePage() {
         setHldKnowledgePackDetailError(HLD_KNOWLEDGE_PACK_DETAIL_ERROR);
       } finally {
         setHldKnowledgePackDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  const loadHldSourceBundleList = useCallback(async (): Promise<void> => {
+    setHldSourceBundleListLoading(true);
+    setHldSourceBundleListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-source-bundle`);
+      const body = (await res.json().catch(() => null)) as HldSourceBundleListResponse | null;
+      if (
+        !res.ok ||
+        body === null ||
+        !Array.isArray(body.artifacts) ||
+        body.sourceBundleReadiness === undefined
+      ) {
+        setHldSourceBundleList(null);
+        setHldSourceBundleListError(HLD_SOURCE_BUNDLE_LIST_ERROR);
+        return;
+      }
+      setHldSourceBundleList(body);
+    } catch {
+      setHldSourceBundleList(null);
+      setHldSourceBundleListError(HLD_SOURCE_BUNDLE_LIST_ERROR);
+    } finally {
+      setHldSourceBundleListLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldSourceBundleList();
+  }, [loadHldSourceBundleList]);
+
+  // A source bundle's sanitized content is fetched only here, on Inspect click.
+  const loadHldSourceBundleDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setHldSourceBundleDetail(null);
+      setHldSourceBundleDetailError(null);
+      setHldSourceBundleReviewNote("");
+      setHldSourceBundleReviewError(null);
+      setHldSourceBundleReviewSuccess(null);
+      setHldSourceBundleDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-source-bundle`
+        );
+        const body = (await res.json().catch(() => null)) as HldSourceBundleDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.sourceBundle === undefined
+        ) {
+          setHldSourceBundleDetailError(HLD_SOURCE_BUNDLE_DETAIL_ERROR);
+          return;
+        }
+        setHldSourceBundleDetail({
+          artifact: body.artifact,
+          sourceBundle: body.sourceBundle,
+        });
+      } catch {
+        setHldSourceBundleDetailError(HLD_SOURCE_BUNDLE_DETAIL_ERROR);
+      } finally {
+        setHldSourceBundleDetailLoading(false);
       }
     },
     [id]
@@ -4082,6 +4315,84 @@ export default function ProjectRfpEvidencePage() {
     ]
   );
 
+  // Compile a new source bundle from the already-approved upstream authorities.
+  // The deterministic assembler runs server-side; the request carries no body
+  // and no tenant/project/user/artifact/status/source/payload authority field.
+  const submitHldSourceBundleCreate = useCallback(async (): Promise<void> => {
+    if (hldSourceBundleCreatePending) return;
+    setHldSourceBundleCreatePending(true);
+    setHldSourceBundleCreateError(null);
+    setHldSourceBundleCreateSuccess(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-source-bundle`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        setHldSourceBundleCreateError(HLD_SOURCE_BUNDLE_CREATE_ERROR);
+        return;
+      }
+      setHldSourceBundleCreateSuccess(HLD_SOURCE_BUNDLE_CREATE_SUCCESS);
+      void loadHldSourceBundleList();
+    } catch {
+      setHldSourceBundleCreateError(HLD_SOURCE_BUNDLE_CREATE_ERROR);
+    } finally {
+      setHldSourceBundleCreatePending(false);
+    }
+  }, [hldSourceBundleCreatePending, id, loadHldSourceBundleList]);
+
+  const submitHldSourceBundleReview = useCallback(
+    async (decision: "approved" | "rejected"): Promise<void> => {
+      if (hldSourceBundleDetail === null || hldSourceBundleReviewPending) return;
+      setHldSourceBundleReviewPending(true);
+      setHldSourceBundleReviewError(null);
+      setHldSourceBundleReviewSuccess(null);
+      try {
+        const note = hldSourceBundleReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${hldSourceBundleDetail.artifact.id}/hld-source-bundle/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(note === "" ? { decision } : { decision, note }),
+          }
+        );
+        if (!res.ok) {
+          setHldSourceBundleReviewError(HLD_SOURCE_BUNDLE_REVIEW_ERROR);
+          return;
+        }
+        setHldSourceBundleDetail((prev) =>
+          prev === null
+            ? prev
+            : {
+                artifact: {
+                  ...prev.artifact,
+                  status: decision === "approved" ? "approved" : "rejected",
+                },
+                sourceBundle: prev.sourceBundle,
+              }
+        );
+        setHldSourceBundleReviewNote("");
+        setHldSourceBundleReviewSuccess(
+          decision === "approved"
+            ? HLD_SOURCE_BUNDLE_APPROVE_SUCCESS
+            : HLD_SOURCE_BUNDLE_REJECT_SUCCESS
+        );
+        void loadHldSourceBundleList();
+      } catch {
+        setHldSourceBundleReviewError(HLD_SOURCE_BUNDLE_REVIEW_ERROR);
+      } finally {
+        setHldSourceBundleReviewPending(false);
+      }
+    },
+    [
+      hldSourceBundleDetail,
+      hldSourceBundleReviewNote,
+      hldSourceBundleReviewPending,
+      id,
+      loadHldSourceBundleList,
+    ]
+  );
+
   const workflow = useMemo(
     () =>
       buildRfpOperatorWorkflow({
@@ -4569,6 +4880,11 @@ export default function ProjectRfpEvidencePage() {
     void loadHldKnowledgePackDetail(artifactId);
   }
 
+  function openHldSourceBundleDrawer(artifactId: string): void {
+    setDrawer({ kind: "hld-source-bundle", activeId: artifactId });
+    void loadHldSourceBundleDetail(artifactId);
+  }
+
   function drawerIds(): string[] {
     if (drawer === null) return [];
     if (drawer.kind === "evidence") return data?.evidence.map((item) => item.id) ?? [];
@@ -4590,6 +4906,9 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "hld-knowledge-pack") {
       return hldKnowledgePackList?.artifacts.map((item) => item.id) ?? [];
     }
+    if (drawer.kind === "hld-source-bundle") {
+      return hldSourceBundleList?.artifacts.map((item) => item.id) ?? [];
+    }
     return complianceList?.artifacts.map((item) => item.id) ?? [];
   }
 
@@ -4601,6 +4920,7 @@ export default function ProjectRfpEvidencePage() {
     else if (kind === "hld-readiness") openHldReadinessDrawer(activeId);
     else if (kind === "hld-intake") openHldIntakeDrawer(activeId);
     else if (kind === "hld-knowledge-pack") openHldKnowledgePackDrawer(activeId);
+    else if (kind === "hld-source-bundle") openHldSourceBundleDrawer(activeId);
     else openComplianceDrawer(activeId);
   }
 
@@ -5785,6 +6105,206 @@ export default function ProjectRfpEvidencePage() {
     );
   }
 
+  function renderHldSourceBundleDrawerContent(): ReactNode {
+    if (hldSourceBundleDetail === null) return null;
+    const { artifact, sourceBundle } = hldSourceBundleDetail;
+    const reviewable = isReviewableStatus(artifact.status);
+    const sourceArtifactIds = sourceBundle.sourceArtifactIds ?? [];
+    const authorityEntries = Object.entries(sourceBundle.authorities ?? {});
+    const packRefs = sourceBundle.designKnowledgePackRefs ?? [];
+    const coveredDomains = sourceBundle.coveredDomains ?? [];
+    const missingDomains = sourceBundle.missingDomains ?? [];
+    const excludedDomains = sourceBundle.excludedDomains ?? [];
+    const assumptions = sourceBundle.assumptions ?? [];
+    const constraints = sourceBundle.constraints ?? [];
+    const warnings = sourceBundle.warnings ?? [];
+    const blockers = sourceBundle.blockers ?? [];
+    const readinessSnapshotId =
+      sourceBundle.lineage?.compiledFromReadinessSnapshotArtifactId;
+
+    const domainSection = (
+      testId: string,
+      label: string,
+      domains: string[]
+    ): ReactNode => (
+      <div data-testid={testId} className={SUBTLE_CARD}>
+        <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+          {label} ({domains.length})
+        </p>
+        {domains.length > 0 ? (
+          <p className="mt-1 text-xs text-text-secondary">
+            {domains.map(humanizeToken).join(", ")}
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-text-tertiary">None</p>
+        )}
+      </div>
+    );
+    const statementSection = (
+      testId: string,
+      label: string,
+      entries: HldSourceBundleStatementEntry[]
+    ): ReactNode => (
+      <div data-testid={testId} className={SUBTLE_CARD}>
+        <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+          {label} ({entries.length})
+        </p>
+        {entries.length > 0 ? (
+          <ul className="mt-1 space-y-0.5">
+            {entries.map((entry, entryIndex) => (
+              <li key={entryIndex} className="text-xs text-text-primary">
+                {entry.statement}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-xs text-text-tertiary">None</p>
+        )}
+      </div>
+    );
+    const findingSection = (
+      testId: string,
+      label: string,
+      findings: HldSourceBundleFinding[]
+    ): ReactNode => (
+      <div data-testid={testId} className={SUBTLE_CARD}>
+        <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+          {label} ({findings.length})
+        </p>
+        {findings.length > 0 ? (
+          <ul className="mt-1 space-y-0.5">
+            {findings.map((finding, findingIndex) => (
+              <li key={findingIndex} className="text-xs text-text-secondary">
+                {finding.message}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-xs text-text-tertiary">None</p>
+        )}
+      </div>
+    );
+
+    return (
+      <div data-testid="hld-source-bundle-drawer-content" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={artifact.status} />
+            <span className="text-xs text-text-secondary">Version {artifact.version}</span>
+          </div>
+          <div className="mt-2 grid gap-1 text-xs text-text-secondary sm:grid-cols-2">
+            <p>Source authorities: {sourceArtifactIds.length}</p>
+            <p>Knowledge packs: {packRefs.length}</p>
+            <p>Covered domains: {coveredDomains.length}</p>
+            <p>Excluded domains: {excludedDomains.length}</p>
+            <p>Assumptions: {assumptions.length}</p>
+            <p>Constraints: {constraints.length}</p>
+            <p>Warnings: {warnings.length}</p>
+            <p>Blockers: {blockers.length}</p>
+          </div>
+        </div>
+        <div
+          data-testid="hld-source-bundle-drawer-authorities"
+          className={SUBTLE_CARD}
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Source authorities ({authorityEntries.length})
+          </p>
+          {authorityEntries.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {authorityEntries.map(([key, ref]) => (
+                <li key={key} className="text-xs text-text-secondary">
+                  {HLD_SOURCE_BUNDLE_AUTHORITY_LABELS[key] ?? humanizeToken(key)}
+                  {ref.version !== undefined ? ` (v${ref.version})` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-text-tertiary">None</p>
+          )}
+        </div>
+        {domainSection("hld-source-bundle-drawer-covered", "Covered domains", coveredDomains)}
+        {domainSection(
+          "hld-source-bundle-drawer-missing",
+          "Missing or blocked domains",
+          missingDomains
+        )}
+        {domainSection("hld-source-bundle-drawer-excluded", "Excluded domains", excludedDomains)}
+        {statementSection("hld-source-bundle-drawer-assumptions", "Assumptions", assumptions)}
+        {statementSection("hld-source-bundle-drawer-constraints", "Constraints", constraints)}
+        {findingSection("hld-source-bundle-drawer-warnings", "Warnings", warnings)}
+        {findingSection("hld-source-bundle-drawer-blockers", "Blockers", blockers)}
+        {reviewable && (
+          <div data-testid="hld-source-bundle-review" className={SUBTLE_CARD}>
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Review note (optional)
+              <textarea
+                data-testid="hld-source-bundle-review-note"
+                value={hldSourceBundleReviewNote}
+                disabled={hldSourceBundleReviewPending}
+                onChange={(e) => setHldSourceBundleReviewNote(e.target.value)}
+                rows={2}
+                className={FIELD}
+              />
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid="hld-source-bundle-approve"
+                disabled={hldSourceBundleReviewPending}
+                onClick={() => void submitHldSourceBundleReview("approved")}
+                className={ACTION_BTN}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="hld-source-bundle-reject"
+                disabled={hldSourceBundleReviewPending}
+                onClick={() => void submitHldSourceBundleReview("rejected")}
+                className={PLAIN_BTN}
+              >
+                Request changes
+              </button>
+            </div>
+            {hldSourceBundleReviewError && (
+              <p data-testid="hld-source-bundle-review-error" className={`mt-2 ${ERROR_BOX}`}>
+                {hldSourceBundleReviewError}
+              </p>
+            )}
+            {hldSourceBundleReviewSuccess && (
+              <p data-testid="hld-source-bundle-review-success" className="mt-2 text-xs text-emerald-300">
+                {hldSourceBundleReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        <TechnicalDetails
+          testId="hld-source-bundle-drawer-audit"
+          label="Technical details (artifact and authority IDs)"
+        >
+          <p>Artifact: {artifact.id}</p>
+          {readinessSnapshotId !== undefined && readinessSnapshotId !== "" && (
+            <p>Compiled from readiness snapshot: {readinessSnapshotId}</p>
+          )}
+          {authorityEntries.map(([key, ref]) => (
+            <p key={key}>
+              {HLD_SOURCE_BUNDLE_AUTHORITY_LABELS[key] ?? humanizeToken(key)}: {ref.artifactId}
+            </p>
+          ))}
+          {packRefs.map((ref, refIndex) => (
+            <p key={refIndex}>
+              Knowledge pack ({humanizeToken(ref.domain)}): {ref.artifactId}
+            </p>
+          ))}
+          {sourceArtifactIds.map((srcId, srcIndex) => (
+            <p key={srcIndex}>Source {srcIndex + 1}: {srcId}</p>
+          ))}
+        </TechnicalDetails>
+      </div>
+    );
+  }
+
   function renderDrawerContent(): ReactNode {
     if (drawer === null) return null;
     if (drawer.kind === "evidence") return renderEvidenceDrawerContent();
@@ -5794,6 +6314,7 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "hld-readiness") return renderHldReadinessDrawerContent();
     if (drawer.kind === "hld-intake") return renderHldIntakeDrawerContent();
     if (drawer.kind === "hld-knowledge-pack") return renderHldKnowledgePackDrawerContent();
+    if (drawer.kind === "hld-source-bundle") return renderHldSourceBundleDrawerContent();
     return renderComplianceDrawerContent();
   }
 
@@ -5812,7 +6333,9 @@ export default function ProjectRfpEvidencePage() {
                 ? "HLD intake answers"
                 : drawer?.kind === "hld-knowledge-pack"
                   ? "HLD design knowledge pack"
-                  : "Compliance matrix";
+                  : drawer?.kind === "hld-source-bundle"
+                    ? "HLD source bundle"
+                    : "Compliance matrix";
   const drawerLoading =
     drawer?.kind === "evidence"
       ? detailLoading
@@ -5828,7 +6351,9 @@ export default function ProjectRfpEvidencePage() {
                 ? hldIntakeDetailLoading
                 : drawer?.kind === "hld-knowledge-pack"
                   ? hldKnowledgePackDetailLoading
-                  : complianceDetailLoading;
+                  : drawer?.kind === "hld-source-bundle"
+                    ? hldSourceBundleDetailLoading
+                    : complianceDetailLoading;
   const drawerError =
     drawer?.kind === "evidence"
       ? detailError
@@ -5844,7 +6369,9 @@ export default function ProjectRfpEvidencePage() {
                 ? hldIntakeDetailError
                 : drawer?.kind === "hld-knowledge-pack"
                   ? hldKnowledgePackDetailError
-                  : complianceDetailError;
+                  : drawer?.kind === "hld-source-bundle"
+                    ? hldSourceBundleDetailError
+                    : complianceDetailError;
 
   return (
     <main className="min-h-screen bg-bg-primary px-4 py-6 sm:px-6 lg:px-8">
@@ -7262,6 +7789,213 @@ export default function ProjectRfpEvidencePage() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div
+            data-testid="hld-source-bundle-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                HLD Source Bundle
+              </h3>
+              <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                Compile the approved upstream authorities into a structured HLD
+                source bundle for engineer review. This references approved
+                records only; it does not generate any HLD design, diagram,
+                document, or proposal.
+              </p>
+            </div>
+            {hldSourceBundleListError && (
+              <div data-testid="hld-source-bundle-error" className={`mt-3 ${ERROR_BOX}`}>
+                {hldSourceBundleListError}
+              </div>
+            )}
+            {hldSourceBundleListLoading && (
+              <p className="mt-3 text-sm text-text-tertiary">
+                Loading HLD source bundles...
+              </p>
+            )}
+            {hldSourceBundleList !== null &&
+              (() => {
+                const readiness = hldSourceBundleList.sourceBundleReadiness;
+                const ready = readiness.status === "ready";
+                const statusLabelText =
+                  readiness.status === "ready"
+                    ? "Ready to compile"
+                    : readiness.status === "blocked"
+                      ? "Blocked"
+                      : "Invalid payload";
+                return (
+                  <div
+                    data-testid="hld-source-bundle-readiness"
+                    className={`mt-3 ${SUBTLE_CARD}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className={MUTED_TEXT}>
+                        Source bundle:{" "}
+                        <span
+                          className={`font-medium ${ready ? "text-emerald-300" : "text-amber-200"}`}
+                        >
+                          {statusLabelText}
+                        </span>
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="hld-source-bundle-create"
+                        disabled={!ready || hldSourceBundleCreatePending}
+                        onClick={() => void submitHldSourceBundleCreate()}
+                        className={ACTION_BTN}
+                      >
+                        Compile source bundle
+                      </button>
+                    </div>
+                    {readiness.status === "ready" && (
+                      <div
+                        data-testid="hld-source-bundle-ready-summary"
+                        className="mt-2 grid gap-1 text-xs text-text-secondary sm:grid-cols-2"
+                      >
+                        <p>Source authorities: {readiness.summary.sourceArtifactCount ?? 0}</p>
+                        <p>Knowledge packs: {readiness.summary.designKnowledgePackCount ?? 0}</p>
+                        <p>Covered domains: {readiness.summary.coveredDomainCount ?? 0}</p>
+                        <p>Excluded domains: {readiness.summary.excludedDomainCount ?? 0}</p>
+                        <p>Assumptions: {readiness.summary.assumptionCount ?? 0}</p>
+                        <p>Constraints: {readiness.summary.constraintCount ?? 0}</p>
+                        <p>Warnings: {readiness.summary.warningCount ?? 0}</p>
+                        <p>Blockers: {readiness.summary.blockerCount ?? 0}</p>
+                      </div>
+                    )}
+                    {readiness.status === "blocked" && (
+                      <div data-testid="hld-source-bundle-blocked" className="mt-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                          Blocker code: {readiness.code}
+                        </p>
+                        <ul className="mt-1 space-y-0.5">
+                          {readiness.messages.map((message, messageIndex) => (
+                            <li key={messageIndex} className="text-xs text-amber-200">
+                              {message}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {readiness.status === "invalid_payload" && (
+                      <div data-testid="hld-source-bundle-invalid" className="mt-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+                          Invalid payload
+                        </p>
+                        <ul className="mt-1 space-y-0.5">
+                          {readiness.errors.map((error, errorIndex) => (
+                            <li key={errorIndex} className="text-xs text-destructive">
+                              {error}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            {hldSourceBundleCreateError && (
+              <p
+                data-testid="hld-source-bundle-create-error"
+                className="mt-3 text-xs text-destructive"
+              >
+                {hldSourceBundleCreateError}
+              </p>
+            )}
+            {hldSourceBundleCreateSuccess && (
+              <p
+                data-testid="hld-source-bundle-create-success"
+                className="mt-3 text-xs text-emerald-300"
+              >
+                {hldSourceBundleCreateSuccess}
+              </p>
+            )}
+            {hldSourceBundleList !== null &&
+              hldSourceBundleList.artifacts.length > 0 && (
+                <div className="mt-3 overflow-x-auto">
+                  <table
+                    data-testid="hld-source-bundle-list"
+                    className="w-full border-collapse text-xs"
+                  >
+                    <thead>
+                      <tr className="text-left text-text-tertiary">
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Status
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Version
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Sources
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Knowledge packs
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Domains
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Review
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hldSourceBundleList.artifacts
+                        .slice()
+                        .sort((a, b) => b.version - a.version)
+                        .map((item) => {
+                          const summary = item.payloadSummary;
+                          const excluded = summary?.excludedDomainCount ?? 0;
+                          return (
+                            <tr
+                              key={item.id}
+                              data-testid="hld-source-bundle-row"
+                              className="align-top"
+                            >
+                              <td className="border border-[var(--border)] px-2 py-1">
+                                <StatusBadge status={item.status} />
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                v{item.version}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.sourceArtifactCount ?? 0}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.designKnowledgePackCount ?? 0}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.coveredDomainCount ?? 0} covered
+                                {excluded > 0 ? `, ${excluded} excluded` : ""}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1">
+                                <button
+                                  type="button"
+                                  data-testid="hld-source-bundle-inspect"
+                                  onClick={() => openHldSourceBundleDrawer(item.id)}
+                                  className={PLAIN_BTN}
+                                >
+                                  Inspect
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            {hldSourceBundleList !== null &&
+              hldSourceBundleList.artifacts.length === 0 && (
+                <p
+                  data-testid="hld-source-bundle-empty"
+                  className="mt-3 text-xs text-text-tertiary"
+                >
+                  No HLD source bundles yet.
+                </p>
+              )}
           </div>
         </section>
       </div>
