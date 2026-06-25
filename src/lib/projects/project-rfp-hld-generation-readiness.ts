@@ -50,6 +50,7 @@ export type RfpHldGenerationReadinessStatus =
 
 export type RfpHldGenerationReadinessBlockerCode =
   | "no_approved_hld_design_model"
+  | "approved_model_wrong_stage"
   | "approved_model_payload_invalid"
   | "approved_model_source_not_single_bundle"
   | "source_bundle_missing"
@@ -473,6 +474,9 @@ function nextActionFor(blockers: readonly RfpHldGenerationReadinessBlocker[]): s
   if (codes.has("no_approved_hld_design_model")) {
     return "Approve a current HLD design model after deterministic review.";
   }
+  if (codes.has("approved_model_wrong_stage")) {
+    return "Reapprove the HLD design model on the hld_design_delta_review stage before future HLD generation.";
+  }
   if (
     codes.has("source_bundle_missing") ||
     codes.has("source_bundle_not_approved") ||
@@ -517,6 +521,23 @@ export function getRfpHldGenerationReadiness(
       blockers,
       warnings,
       nextAction: nextActionFor(blockers),
+    };
+  }
+
+  if (approvedModel.stageId !== HLD_STAGE) {
+    addBlocker(
+      blockers,
+      "approved_model_wrong_stage",
+      `The latest approved HLD design model is on stage '${approvedModel.stageId}' but must be on '${HLD_STAGE}' before HLD generation.`
+    );
+    return {
+      status: "blocked",
+      ready: false,
+      approvedModel: toModelSummary(approvedModel),
+      blockers,
+      warnings,
+      nextAction: nextActionFor(blockers),
+      technicalAudit: { approvedModelArtifactId: approvedModel.id },
     };
   }
 

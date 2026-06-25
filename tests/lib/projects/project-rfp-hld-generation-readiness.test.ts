@@ -303,6 +303,32 @@ describe("getRfpHldGenerationReadiness", () => {
     expect(blockerCodes(artifacts)).toContain("no_approved_hld_design_model");
   });
 
+  it("blocks when the latest approved model is on the wrong stage", () => {
+    const artifacts = [
+      ...upstreamArtifacts(),
+      sourceBundle(),
+      model({ stageId: "intake_package_review" }),
+      review(),
+    ];
+    const report = getRfpHldGenerationReadiness({ projectId: PROJECT, artifacts });
+
+    expect(report.status).toBe("blocked");
+    expect(report.ready).toBe(false);
+    expect(report.blockers.map((b) => b.code)).toContain("approved_model_wrong_stage");
+    expect(report.approvedModel?.stageId).toBe("intake_package_review");
+    expect(
+      report.blockers.find((b) => b.code === "approved_model_wrong_stage")?.message
+    ).toContain("hld_design_delta_review");
+  });
+
+  it("fails closed before downstream validation for a wrong-stage approved model", () => {
+    const artifacts = [model({ stageId: "intake_package_review" })];
+    const report = getRfpHldGenerationReadiness({ projectId: PROJECT, artifacts });
+
+    expect(report.ready).toBe(false);
+    expect(report.blockers.map((b) => b.code)).toEqual(["approved_model_wrong_stage"]);
+  });
+
   it("blocks when the approved model payload is invalid", () => {
     const artifacts = [...upstreamArtifacts(), sourceBundle(), model({ payload: { junk: true } }), review()];
     expect(blockerCodes(artifacts)).toContain("approved_model_payload_invalid");
