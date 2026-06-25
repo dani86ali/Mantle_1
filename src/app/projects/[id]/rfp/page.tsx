@@ -1360,6 +1360,12 @@ const HLD_DESIGN_MODEL_REBUILD_EXECUTE_SUCCESS =
   "Bounded rebuild executed. New candidate model draft needs deterministic review and engineer approval.";
 const HLD_DESIGN_MODEL_REBUILD_EXECUTE_ERROR =
   "Unable to execute bounded HLD design model rebuild.";
+const HLD_DESIGN_MODEL_REBUILD_REQUEST_CREATE_SUCCESS =
+  "Bounded rebuild requested. Execute it below to draft a new candidate model for deterministic review and engineer approval.";
+const HLD_DESIGN_MODEL_REBUILD_REQUEST_CREATE_ERROR =
+  "Unable to request bounded HLD design model rebuild.";
+const HLD_DESIGN_MODEL_REBUILD_REQUEST_DUPLICATE =
+  "A bounded rebuild request is already active for this model draft and review. Execute it below.";
 
 /** Exact UI copy required for the no-BoQ service-only exception request states. */
 const NO_BOQ_EXCEPTION_SUCCESS =
@@ -3489,6 +3495,10 @@ export default function ProjectRfpEvidencePage() {
   // drawer. Guards the late-arrival auto-fetch from re-firing (and looping on a
   // detail error) once a review id has been attempted for the current drawer.
   const hldDesignModelReviewDetailRequestedRef = useRef<string | null>(null);
+  // Tracks the review artifact id whose bounded-rebuild instructions have already
+  // been prefilled into the create form, so prefill happens once per review and
+  // never clobbers an engineer's in-progress edits.
+  const hldDesignModelRebuildRequestPrefillRef = useRef<string | null>(null);
 
   const [hldDesignModelReviewRunningId, setHldDesignModelReviewRunningId] =
     useState<string | null>(null);
@@ -3512,6 +3522,31 @@ export default function ProjectRfpEvidencePage() {
   const [
     hldDesignModelRebuildExecuteSuccess,
     setHldDesignModelRebuildExecuteSuccess,
+  ] = useState<string | null>(null);
+
+  // Compact bounded rebuild-request creation (Stage 6E-D). The engineer enters a
+  // reason and instructions (instructions may be prefilled from the advisory
+  // review but stay editable); submit POSTs exactly the four bounded fields and
+  // refreshes the request list so the Execute action below becomes available.
+  const [
+    hldDesignModelRebuildRequestReason,
+    setHldDesignModelRebuildRequestReason,
+  ] = useState<string>("");
+  const [
+    hldDesignModelRebuildRequestInstructions,
+    setHldDesignModelRebuildRequestInstructions,
+  ] = useState<string>("");
+  const [
+    hldDesignModelRebuildRequestSubmitting,
+    setHldDesignModelRebuildRequestSubmitting,
+  ] = useState<boolean>(false);
+  const [
+    hldDesignModelRebuildRequestError,
+    setHldDesignModelRebuildRequestError,
+  ] = useState<string | null>(null);
+  const [
+    hldDesignModelRebuildRequestSuccess,
+    setHldDesignModelRebuildRequestSuccess,
   ] = useState<string | null>(null);
 
   const loadList = useCallback(
@@ -4157,6 +4192,28 @@ export default function ProjectRfpEvidencePage() {
     hldDesignModelReviewDetailRequestedRef.current = review.id;
     void loadHldDesignModelReviewDetail(review.id);
   }, [drawer, hldDesignModelReviewByModelId, loadHldDesignModelReviewDetail]);
+
+  // Prefill the rebuild-request instructions once per matching advisory review
+  // (from its bounded-rebuild instructions, if any) and reset the form when a
+  // new review detail arrives for the open model. A closed/non-design-model
+  // drawer clears the ref so the next open prefills fresh.
+  useEffect(() => {
+    if (drawer === null || drawer.kind !== "hld-design-model") {
+      hldDesignModelRebuildRequestPrefillRef.current = null;
+      return;
+    }
+    const detail = hldDesignModelReviewDetail;
+    if (detail === null) return;
+    if (detail.review.sourceHldDesignModelArtifactId !== drawer.activeId) return;
+    if (hldDesignModelRebuildRequestPrefillRef.current === detail.artifact.id) return;
+    hldDesignModelRebuildRequestPrefillRef.current = detail.artifact.id;
+    setHldDesignModelRebuildRequestReason("");
+    setHldDesignModelRebuildRequestInstructions(
+      detail.review.boundedRebuildInstructions?.instructions ?? ""
+    );
+    setHldDesignModelRebuildRequestError(null);
+    setHldDesignModelRebuildRequestSuccess(null);
+  }, [drawer, hldDesignModelReviewDetail]);
 
   // Final evidence content is fetched only here, on an explicit Inspect click.
   const loadPackageDetail = useCallback(
@@ -5183,6 +5240,79 @@ export default function ProjectRfpEvidencePage() {
   // then switches the drawer to the freshly drafted candidate (clearing stale
   // review-detail) so it shows as needing a fresh deterministic review and
   // engineer approval. No server JSON, payload, or provider error is echoed.
+  const submitHldDesignModelRebuildRequest = useCallback(
+    async (
+      sourceHldDesignModelArtifactId: string,
+      sourceReviewArtifactId: string
+    ): Promise<void> => {
+      if (hldDesignModelRebuildRequestSubmitting) return;
+      const reason = hldDesignModelRebuildRequestReason.trim();
+      const instructions = hldDesignModelRebuildRequestInstructions.trim();
+      if (reason === "" || instructions === "") return;
+      setHldDesignModelRebuildRequestSubmitting(true);
+      setHldDesignModelRebuildRequestError(null);
+      setHldDesignModelRebuildRequestSuccess(null);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/hld-design-model-rebuild-request`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            // Exactly the four bounded fields. Tenant/project/requestedBy
+            // authority comes only from the session and URL on the server.
+            body: JSON.stringify({
+              sourceHldDesignModelArtifactId,
+              sourceReviewArtifactId,
+              reason,
+              instructions,
+            }),
+          }
+        );
+        const body = (await res.json().catch(() => null)) as {
+          code?: unknown;
+        } | null;
+        if (!res.ok) {
+          if (
+            body?.code === "hld_design_model_rebuild_request_already_active"
+          ) {
+            // A request already matches: refresh the list so the Execute action
+            // surfaces, and show compact duplicate copy (no server detail).
+            setHldDesignModelRebuildRequestError(
+              HLD_DESIGN_MODEL_REBUILD_REQUEST_DUPLICATE
+            );
+            void loadHldDesignModelRebuildRequestList();
+            return;
+          }
+          setHldDesignModelRebuildRequestError(
+            HLD_DESIGN_MODEL_REBUILD_REQUEST_CREATE_ERROR
+          );
+          return;
+        }
+        setHldDesignModelRebuildRequestSuccess(
+          HLD_DESIGN_MODEL_REBUILD_REQUEST_CREATE_SUCCESS
+        );
+        setHldDesignModelRebuildRequestReason("");
+        setHldDesignModelRebuildRequestInstructions("");
+        // Refresh so the matching request appears and Execute becomes enabled;
+        // never auto-execute - the engineer triggers the rebuild explicitly.
+        void loadHldDesignModelRebuildRequestList();
+      } catch {
+        setHldDesignModelRebuildRequestError(
+          HLD_DESIGN_MODEL_REBUILD_REQUEST_CREATE_ERROR
+        );
+      } finally {
+        setHldDesignModelRebuildRequestSubmitting(false);
+      }
+    },
+    [
+      hldDesignModelRebuildRequestSubmitting,
+      hldDesignModelRebuildRequestReason,
+      hldDesignModelRebuildRequestInstructions,
+      id,
+      loadHldDesignModelRebuildRequestList,
+    ]
+  );
+
   const executeHldDesignModelRebuildRequest = useCallback(
     async (rebuildRequestArtifactId: string): Promise<void> => {
       if (hldDesignModelRebuildExecutingId !== null) return;
@@ -7203,6 +7333,30 @@ export default function ProjectRfpEvidencePage() {
       activeRebuildRequest === undefined ||
       hldDesignModelRebuildExecutingId !== null;
 
+    // Bounded rebuild-request creation eligibility (Stage 6E-D). The loaded
+    // sanitized review detail must match BOTH the current advisory review id and
+    // this open model draft, and the review must justify a rebuild (a blocking
+    // finding, or a rebuild_recommended/reject_required recommendation). If a
+    // request already matches, no second create action is offered - Execute
+    // remains the only action.
+    const reviewDetailMatchesCurrent =
+      reviewDetail !== null &&
+      matchingReview !== undefined &&
+      reviewDetail.artifact.id === matchingReview.id;
+    const reviewJustifiesRebuild =
+      reviewDetail !== null &&
+      (reviewFindings.some((finding) => finding.severity === "blocking") ||
+        reviewDetail.review.recommendation === "rebuild_recommended" ||
+        reviewDetail.review.recommendation === "reject_required");
+    const rebuildRequestCreateEligible =
+      reviewDetailMatchesCurrent &&
+      reviewJustifiesRebuild &&
+      activeRebuildRequest === undefined;
+    const rebuildRequestSubmitDisabled =
+      hldDesignModelRebuildRequestSubmitting ||
+      hldDesignModelRebuildRequestReason.trim() === "" ||
+      hldDesignModelRebuildRequestInstructions.trim() === "";
+
     const domainSection = (
       testId: string,
       label: string,
@@ -7497,6 +7651,92 @@ export default function ProjectRfpEvidencePage() {
                         )}
                       </div>
                     </div>
+                  )}
+                  {rebuildRequestCreateEligible ? (
+                    <div
+                      data-testid="hld-design-model-rebuild-request-create"
+                      className="space-y-2"
+                    >
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+                        Request bounded rebuild
+                      </p>
+                      <p className="text-xs text-text-tertiary">
+                        Request a single bounded rebuild from the same approved
+                        source bundle. The rebuilt draft still needs a fresh
+                        deterministic review and engineer approval; it is not
+                        final design authority.
+                      </p>
+                      <label className="flex flex-col text-xs text-text-tertiary">
+                        Reason
+                        <textarea
+                          data-testid="hld-design-model-rebuild-request-reason"
+                          value={hldDesignModelRebuildRequestReason}
+                          disabled={hldDesignModelRebuildRequestSubmitting}
+                          onChange={(e) =>
+                            setHldDesignModelRebuildRequestReason(e.target.value)
+                          }
+                          rows={2}
+                          className={FIELD}
+                        />
+                      </label>
+                      <label className="flex flex-col text-xs text-text-tertiary">
+                        Instructions
+                        <textarea
+                          data-testid="hld-design-model-rebuild-request-instructions"
+                          value={hldDesignModelRebuildRequestInstructions}
+                          disabled={hldDesignModelRebuildRequestSubmitting}
+                          onChange={(e) =>
+                            setHldDesignModelRebuildRequestInstructions(
+                              e.target.value
+                            )
+                          }
+                          rows={3}
+                          className={FIELD}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        data-testid="hld-design-model-rebuild-request-submit"
+                        disabled={rebuildRequestSubmitDisabled}
+                        onClick={() =>
+                          void submitHldDesignModelRebuildRequest(
+                            artifact.id,
+                            reviewDetail.artifact.id
+                          )
+                        }
+                        className={PLAIN_BTN}
+                      >
+                        {hldDesignModelRebuildRequestSubmitting
+                          ? "Requesting bounded rebuild..."
+                          : "Request bounded rebuild"}
+                      </button>
+                    </div>
+                  ) : (
+                    reviewDetailMatchesCurrent &&
+                    !reviewJustifiesRebuild && (
+                      <p
+                        data-testid="hld-design-model-rebuild-request-ineligible"
+                        className="text-xs text-text-tertiary"
+                      >
+                        This advisory review does not justify a bounded rebuild.
+                      </p>
+                    )
+                  )}
+                  {hldDesignModelRebuildRequestError !== null && (
+                    <p
+                      data-testid="hld-design-model-rebuild-request-error"
+                      className="text-xs text-destructive"
+                    >
+                      {hldDesignModelRebuildRequestError}
+                    </p>
+                  )}
+                  {hldDesignModelRebuildRequestSuccess !== null && (
+                    <p
+                      data-testid="hld-design-model-rebuild-request-success"
+                      className="text-xs text-emerald-300"
+                    >
+                      {hldDesignModelRebuildRequestSuccess}
+                    </p>
                   )}
                   <TechnicalDetails
                     testId="hld-design-model-review-audit"

@@ -1713,6 +1713,31 @@ function designModelReviewDetailResponse(): Record<string, unknown> {
   };
 }
 
+// Advisory review detail that does NOT justify a bounded rebuild: no blocking
+// finding and an approve-leaning recommendation. Same review/model ids so the
+// detail still matches the open model draft and current advisory review.
+function designModelReviewDetailNonJustifying(): Record<string, unknown> {
+  const base = designModelReviewDetailResponse();
+  const review = base.review as Record<string, unknown>;
+  return {
+    ...base,
+    review: {
+      ...review,
+      findings: [
+        {
+          id: "rf-1",
+          severity: "suggestion",
+          category: "style",
+          message: "REVIEW-FINDING-CANARY optional clarity improvement.",
+          sourceReferenceIds: ["rev-model-ref-1"],
+        },
+      ],
+      recommendation: "approve_recommended",
+      boundedRebuildInstructions: undefined,
+    },
+  };
+}
+
 // ---- bounded design-model rebuild-request fixtures (Stage 6E-C) ------------
 
 function designModelRebuildRequestListItem(
@@ -5016,8 +5041,11 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
     reviewListBody: Record<string, unknown> = designModelReviewListEmpty(),
     reviewDetailBody: Record<string, unknown> = designModelReviewDetailResponse(),
     onRunReview?: (init?: RequestInit) => Response,
-    rebuildRequestListBody: Record<string, unknown> = designModelRebuildRequestListEmpty(),
-    onExecuteRebuild?: (init?: RequestInit) => Response
+    rebuildRequestListBody:
+      | Record<string, unknown>
+      | (() => Record<string, unknown>) = designModelRebuildRequestListEmpty(),
+    onExecuteRebuild?: (init?: RequestInit) => Response,
+    onCreateRebuildRequest?: (init?: RequestInit) => Response
   ): (url: string, init?: RequestInit) => Response {
     return (url, init) => {
       if (url === HLD_DESIGN_MODEL_LIST_URL) {
@@ -5051,7 +5079,19 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
         return onReview ? onReview(init) : jsonResponse({ artifactStatus: "approved" });
       }
       if (url === HLD_DESIGN_MODEL_REBUILD_REQUEST_LIST_URL) {
-        return jsonResponse(rebuildRequestListBody);
+        if (init?.method === "POST") {
+          return onCreateRebuildRequest
+            ? onCreateRebuildRequest(init)
+            : jsonResponse(
+                { artifact: designModelRebuildRequestListItem() },
+                201
+              );
+        }
+        return jsonResponse(
+          typeof rebuildRequestListBody === "function"
+            ? rebuildRequestListBody()
+            : rebuildRequestListBody
+        );
       }
       if (url === HLD_DESIGN_MODEL_REBUILD_EXECUTE_URL) {
         return onExecuteRebuild
@@ -5737,6 +5777,13 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
     expect(
       screen.queryByTestId("hld-design-model-rebuild-execute-none")
     ).toBeNull();
+    // With a request already active, no second create action is offered.
+    expect(
+      screen.queryByTestId("hld-design-model-rebuild-request-create")
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("hld-design-model-rebuild-request-submit")
+    ).toBeNull();
 
     // The request id lives only in the collapsed rebuild audit.
     const audit = screen.getByTestId("hld-design-model-rebuild-execute-audit");
@@ -5944,6 +5991,248 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
     expect(
       calls.some((c) => c.url === HLD_DESIGN_MODEL_REBUILT_DETAIL_URL)
     ).toBe(false);
+    expect(finalHldPosts(calls)).toHaveLength(0);
+  });
+
+  // --- Stage 6E-D bounded design-model rebuild-request create surface -------
+
+  it("creates a bounded rebuild request with exactly the four allowed body keys, then refreshes the list so the create form disappears and Execute becomes enabled", async () => {
+    let created = false;
+    const calls = stubFetch(
+      designModelFetch(
+        designModelListReady(),
+        undefined,
+        undefined,
+        designModelReviewListReady(),
+        undefined,
+        undefined,
+        // Dynamic list: empty until a request is created, ready afterwards.
+        () =>
+          created
+            ? designModelRebuildRequestListReady()
+            : designModelRebuildRequestListEmpty(),
+        undefined,
+        (init) => {
+          created = true;
+          // The route returns 201 { artifact } on success.
+          return jsonResponse(
+            { artifact: designModelRebuildRequestListItem() },
+            201
+          );
+        }
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-design-model-review-summary");
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    // The create form is eligible (justified review, empty request list) and the
+    // instructions field is prefilled from the advisory bounded instructions.
+    const createForm = await screen.findByTestId(
+      "hld-design-model-rebuild-request-create"
+    );
+    expect(createForm).toBeInTheDocument();
+    const reason = screen.getByTestId(
+      "hld-design-model-rebuild-request-reason"
+    ) as HTMLTextAreaElement;
+    const instructions = screen.getByTestId(
+      "hld-design-model-rebuild-request-instructions"
+    ) as HTMLTextAreaElement;
+    expect(instructions.value).toContain("REVIEW-REBUILD-INSTRUCTIONS-CANARY");
+
+    await act(async () => {
+      fireEvent.change(reason, {
+        target: { value: "Address the excluded scope domain." },
+      });
+      fireEvent.change(instructions, {
+        target: { value: "Restate the affected section from the same inputs." },
+      });
+    });
+
+    const submit = screen.getByTestId("hld-design-model-rebuild-request-submit");
+    await waitFor(() => expect(submit).not.toBeDisabled());
+    await act(async () => {
+      fireEvent.click(submit);
+    });
+
+    // The POST carries exactly the four allowed keys and no forbidden field.
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_DESIGN_MODEL_REBUILD_REQUEST_LIST_URL &&
+            c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+    const post = calls.find(
+      (c) =>
+        c.url === HLD_DESIGN_MODEL_REBUILD_REQUEST_LIST_URL &&
+        c.init?.method === "POST"
+    );
+    const parsed = JSON.parse(String(post?.init?.body ?? "{}")) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(parsed).sort()).toEqual([
+      "instructions",
+      "reason",
+      "sourceHldDesignModelArtifactId",
+      "sourceReviewArtifactId",
+    ]);
+    expect(parsed.sourceHldDesignModelArtifactId).toBe(
+      HLD_DESIGN_MODEL_ARTIFACT_ID
+    );
+    expect(parsed.sourceReviewArtifactId).toBe(
+      HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID
+    );
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "userId",
+      "status",
+      "payload",
+      "sourceArtifactIds",
+      "sku",
+      "pricing",
+      "catalog",
+      "config",
+      "executor",
+      "provider",
+    ]) {
+      expect(Object.prototype.hasOwnProperty.call(parsed, forbidden)).toBe(
+        false
+      );
+    }
+
+    // Compact success copy appears.
+    const success = await screen.findByTestId(
+      "hld-design-model-rebuild-request-success"
+    );
+    expect(success).toHaveTextContent("Bounded rebuild requested");
+
+    // The list refresh makes the create form disappear and Execute enable.
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("hld-design-model-rebuild-request-create")
+      ).toBeNull();
+    });
+    const executeBtn = await screen.findByTestId(
+      "hld-design-model-rebuild-execute"
+    );
+    await waitFor(() => expect(executeBtn).not.toBeDisabled());
+
+    // No execution was triggered and no final HLD route was posted.
+    expect(
+      calls.some(
+        (c) =>
+          c.url === HLD_DESIGN_MODEL_REBUILD_EXECUTE_URL &&
+          c.init?.method === "POST"
+      )
+    ).toBe(false);
+    expect(finalHldPosts(calls)).toHaveLength(0);
+  });
+
+  it("does not offer a create action and never POSTs when the current advisory review does not justify a rebuild", async () => {
+    const calls = stubFetch(
+      designModelFetch(
+        designModelListReady(),
+        undefined,
+        undefined,
+        designModelReviewListReady(),
+        designModelReviewDetailNonJustifying()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-design-model-review-summary");
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    // Detail loaded and matches, but the review does not justify a rebuild.
+    await screen.findByTestId("hld-design-model-rebuild-request-ineligible");
+    expect(
+      screen.queryByTestId("hld-design-model-rebuild-request-create")
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("hld-design-model-rebuild-request-submit")
+    ).toBeNull();
+
+    // No create POST was ever made.
+    expect(
+      calls.some(
+        (c) =>
+          c.url === HLD_DESIGN_MODEL_REBUILD_REQUEST_LIST_URL &&
+          c.init?.method === "POST"
+      )
+    ).toBe(false);
+  });
+
+  it("shows a compact create error that never leaks server JSON/codes/provider text and makes no final HLD POST when creation fails", async () => {
+    const calls = stubFetch(
+      designModelFetch(
+        designModelListReady(),
+        undefined,
+        undefined,
+        designModelReviewListReady(),
+        undefined,
+        undefined,
+        designModelRebuildRequestListEmpty(),
+        undefined,
+        () =>
+          jsonResponse(
+            {
+              code: "hld_design_model_rebuild_request_payload_invalid",
+              providerDetail: "REBUILD-CREATE-SERVER-JSON-LEAK-CANARY",
+              errors: ["REBUILD-CREATE-PROVIDER-CANARY"],
+            },
+            409
+          )
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-design-model-review-summary");
+    const inspect = await screen.findByTestId("hld-design-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    const reason = await screen.findByTestId(
+      "hld-design-model-rebuild-request-reason"
+    );
+    const instructions = screen.getByTestId(
+      "hld-design-model-rebuild-request-instructions"
+    );
+    await act(async () => {
+      fireEvent.change(reason, { target: { value: "Address the gap." } });
+      fireEvent.change(instructions, { target: { value: "Restate it." } });
+    });
+    const submit = screen.getByTestId("hld-design-model-rebuild-request-submit");
+    await waitFor(() => expect(submit).not.toBeDisabled());
+    await act(async () => {
+      fireEvent.click(submit);
+    });
+
+    const createError = await screen.findByTestId(
+      "hld-design-model-rebuild-request-error"
+    );
+    expect(createError).toHaveTextContent(
+      "Unable to request bounded HLD design model rebuild."
+    );
+    const errorText = createError.textContent ?? "";
+    expect(errorText).not.toContain("REBUILD-CREATE-SERVER-JSON-LEAK-CANARY");
+    expect(errorText).not.toContain("REBUILD-CREATE-PROVIDER-CANARY");
+    expect(errorText).not.toContain(
+      "hld_design_model_rebuild_request_payload_invalid"
+    );
+
     expect(finalHldPosts(calls)).toHaveLength(0);
   });
 });
