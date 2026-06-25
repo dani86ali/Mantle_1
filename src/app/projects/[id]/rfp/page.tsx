@@ -1066,6 +1066,91 @@ interface HldDesignModelDetail {
   designModel: HldDesignModelDetailPayload;
 }
 
+// ---- HLD generation readiness (Stage 6F) read models -----------------------
+
+type HldGenerationReadinessStatus =
+  | "ready"
+  | "blocked"
+  | "not_found"
+  | "wrong_mode";
+
+interface HldGenerationReadinessBlocker {
+  code: string;
+  message: string;
+  details?: string[];
+}
+
+interface HldGenerationReadinessWarning {
+  code: string;
+  message: string;
+}
+
+interface HldGenerationReadinessArtifactSummary {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface HldGenerationReadinessModelSummary
+  extends HldGenerationReadinessArtifactSummary {
+  sourceHldSourceBundleArtifactId?: string;
+  sourceBundleVersion?: number;
+  coveredDomainCount: number;
+  excludedDomainCount: number;
+  designSectionCount: number;
+  topologyNodeCount: number;
+  topologyLinkCount: number;
+  diagramIntentCount: number;
+}
+
+interface HldGenerationReadinessSourceBundleSummary
+  extends HldGenerationReadinessArtifactSummary {
+  sourceArtifactCount: number;
+  coveredDomainCount: number;
+  excludedDomainCount: number;
+  designKnowledgePackCount: number;
+  assumptionCount: number;
+  warningCount: number;
+  blockerCount: number;
+}
+
+interface HldGenerationReadinessReviewSummary
+  extends HldGenerationReadinessArtifactSummary {
+  reviewedAt?: string;
+  reviewerType?: string;
+  sourceHldDesignModelArtifactId?: string;
+  sourceHldSourceBundleArtifactId?: string;
+  recommendation?: string;
+  findingCount: number;
+  findingCounts: {
+    blocking: number;
+    warning: number;
+    suggestion: number;
+  };
+}
+
+interface HldGenerationReadinessTechnicalAudit {
+  approvedModelArtifactId?: string;
+  sourceBundleArtifactId?: string;
+  reviewArtifactId?: string;
+  approvedModelSourceArtifactIds?: string[];
+  sourceBundleSourceArtifactIds?: string[];
+  reviewSourceArtifactIds?: string[];
+}
+
+interface HldGenerationReadinessResponse {
+  status: HldGenerationReadinessStatus;
+  ready: boolean;
+  approvedModel?: HldGenerationReadinessModelSummary;
+  sourceBundle?: HldGenerationReadinessSourceBundleSummary;
+  review?: HldGenerationReadinessReviewSummary;
+  blockers: HldGenerationReadinessBlocker[];
+  warnings: HldGenerationReadinessWarning[];
+  nextAction: string;
+  technicalAudit?: HldGenerationReadinessTechnicalAudit;
+}
 // ---- HLD design model REVIEW (Stage 6E-B) read models ----------------------
 //
 // Advisory, deterministic quality review over a candidate `hld_design_model`,
@@ -1342,6 +1427,9 @@ const HLD_DESIGN_MODEL_CREATE_ERROR = "Unable to create HLD design model draft."
 const HLD_DESIGN_MODEL_APPROVE_SUCCESS = "HLD design model approved.";
 const HLD_DESIGN_MODEL_REJECT_SUCCESS = "HLD design model changes requested.";
 const HLD_DESIGN_MODEL_REVIEW_ERROR = "Unable to review HLD design model.";
+
+/** Exact UI copy required for the HLD generation-readiness gate failure state. */
+const HLD_GENERATION_READINESS_ERROR = "Unable to load HLD generation readiness.";
 
 /** Exact UI copy for the advisory deterministic design-model review surface. */
 const HLD_DESIGN_MODEL_REVIEW_LIST_ERROR =
@@ -2989,6 +3077,140 @@ function HldDesignModelReviewSummary({
   );
 }
 
+function HldGenerationReadinessPanel({
+  report,
+  loading,
+  error,
+}: {
+  report: HldGenerationReadinessResponse | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const ready = report?.ready === true && report.status === "ready";
+  const statusText =
+    report === null
+      ? "Unknown"
+      : ready
+        ? "Ready for future HLD generation"
+        : report.status === "not_found"
+          ? "Project not found"
+          : report.status === "wrong_mode"
+            ? "Wrong project mode"
+            : "Blocked";
+  const blockerDetails = report?.blockers.flatMap((blocker) => blocker.details ?? []) ?? [];
+
+  return (
+    <div
+      data-testid="hld-generation-readiness-panel"
+      className="mt-4 border-t border-[var(--border)] pt-4"
+    >
+      <div>
+        <h3 className="text-sm font-semibold text-text-primary">
+          HLD generation readiness
+        </h3>
+        <p className={`mt-0.5 ${MUTED_TEXT}`}>
+          Read-only downstream gate for future HLD diagram/document stages.
+        </p>
+      </div>
+      {error !== null && (
+        <div data-testid="hld-generation-readiness-error" className={`mt-3 ${ERROR_BOX}`}>
+          {error}
+        </div>
+      )}
+      {loading && (
+        <p className="mt-3 text-sm text-text-tertiary">
+          Loading HLD generation readiness...
+        </p>
+      )}
+      {report !== null && (
+        <div data-testid="hld-generation-readiness-summary" className={`mt-3 ${SUBTLE_CARD}`}>
+          <p className={MUTED_TEXT}>
+            Gate: <span className={`font-medium ${ready ? "text-emerald-300" : "text-amber-200"}`}>{statusText}</span>
+          </p>
+          <p data-testid="hld-generation-readiness-next-action" className="mt-1 text-xs text-text-secondary">
+            {report.nextAction}
+          </p>
+
+          <div data-testid="hld-generation-readiness-artifacts" className="mt-3 grid gap-2 text-xs text-text-secondary sm:grid-cols-3">
+            {report.approvedModel !== undefined ? (
+              <div>
+                <p className="font-semibold text-text-primary">
+                  Approved model: v{report.approvedModel.version} ({statusLabel(report.approvedModel.status)})
+                </p>
+                <p>Domains {report.approvedModel.coveredDomainCount} covered / {report.approvedModel.excludedDomainCount} excluded</p>
+                <p>Topology {report.approvedModel.topologyNodeCount} nodes / {report.approvedModel.topologyLinkCount} links</p>
+              </div>
+            ) : (
+              <p>No approved model summary.</p>
+            )}
+            {report.sourceBundle !== undefined ? (
+              <div>
+                <p className="font-semibold text-text-primary">
+                  Source bundle: v{report.sourceBundle.version} ({statusLabel(report.sourceBundle.status)})
+                </p>
+                <p>Authorities {report.sourceBundle.sourceArtifactCount}</p>
+                <p>Knowledge packs {report.sourceBundle.designKnowledgePackCount}</p>
+              </div>
+            ) : (
+              <p>No source bundle summary.</p>
+            )}
+            {report.review !== undefined ? (
+              <div>
+                <p className="font-semibold text-text-primary">
+                  Review: v{report.review.version} ({statusLabel(report.review.status)})
+                </p>
+                <p>Recommendation: {report.review.recommendation !== undefined ? humanizeToken(report.review.recommendation) : "n/a"}</p>
+                <p>Blocking {report.review.findingCounts.blocking} / Warning {report.review.findingCounts.warning} / Suggestion {report.review.findingCounts.suggestion}</p>
+              </div>
+            ) : (
+              <p>No matching review summary.</p>
+            )}
+          </div>
+
+          {report.blockers.length > 0 && (
+            <div data-testid="hld-generation-readiness-blockers" className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">Blockers</p>
+              <ul className="mt-1 space-y-1">
+                {report.blockers.map((blocker) => (
+                  <li key={`${blocker.code}:${blocker.message}`} className="text-xs text-amber-200">
+                    <span className="font-semibold">{blocker.code}</span>: {blocker.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {report.warnings.length > 0 && (
+            <div data-testid="hld-generation-readiness-warnings" className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">Warnings</p>
+              <ul className="mt-1 space-y-1">
+                {report.warnings.map((warning) => (
+                  <li key={`${warning.code}:${warning.message}`} className="text-xs text-text-secondary">
+                    <span className="font-semibold">{warning.code}</span>: {warning.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {(report.technicalAudit !== undefined || blockerDetails.length > 0) && (
+            <TechnicalDetails testId="hld-generation-readiness-audit" label="Technical details (artifact IDs)">
+              {report.technicalAudit?.approvedModelArtifactId !== undefined && <p>Approved model ID: {report.technicalAudit.approvedModelArtifactId}</p>}
+              {report.technicalAudit?.sourceBundleArtifactId !== undefined && <p>Source bundle ID: {report.technicalAudit.sourceBundleArtifactId}</p>}
+              {report.technicalAudit?.reviewArtifactId !== undefined && <p>Review ID: {report.technicalAudit.reviewArtifactId}</p>}
+              {report.technicalAudit?.approvedModelSourceArtifactIds !== undefined && <p>Approved model source IDs: {report.technicalAudit.approvedModelSourceArtifactIds.join(", ")}</p>}
+              {report.technicalAudit?.sourceBundleSourceArtifactIds !== undefined && <p>Source bundle source IDs: {report.technicalAudit.sourceBundleSourceArtifactIds.join(", ")}</p>}
+              {report.technicalAudit?.reviewSourceArtifactIds !== undefined && <p>Review source IDs: {report.technicalAudit.reviewSourceArtifactIds.join(", ")}</p>}
+              {blockerDetails.map((detail, detailIndex) => (
+                <p key={detailIndex}>Blocker detail: {detail}</p>
+              ))}
+            </TechnicalDetails>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 function WorkflowStep({
   number,
   title,
@@ -3549,6 +3771,14 @@ export default function ProjectRfpEvidencePage() {
     setHldDesignModelRebuildRequestSuccess,
   ] = useState<string | null>(null);
 
+  // Stage 6F read-only downstream gate. It never offers generation here; it only
+  // reports whether future HLD output stages may consume the approved model.
+  const [hldGenerationReadiness, setHldGenerationReadiness] =
+    useState<HldGenerationReadinessResponse | null>(null);
+  const [hldGenerationReadinessLoading, setHldGenerationReadinessLoading] =
+    useState(true);
+  const [hldGenerationReadinessError, setHldGenerationReadinessError] =
+    useState<string | null>(null);
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -4076,6 +4306,37 @@ export default function ProjectRfpEvidencePage() {
     void loadHldDesignModelReviewList();
   }, [loadHldDesignModelReviewList]);
 
+  const loadHldGenerationReadiness = useCallback(async (): Promise<void> => {
+    setHldGenerationReadinessLoading(true);
+    setHldGenerationReadinessError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-generation-readiness`);
+      const body = (await res.json().catch(() => null)) as HldGenerationReadinessResponse | null;
+      if (
+        body === null ||
+        typeof body.status !== "string" ||
+        typeof body.ready !== "boolean" ||
+        !Array.isArray(body.blockers) ||
+        !Array.isArray(body.warnings) ||
+        typeof body.nextAction !== "string" ||
+        (!res.ok && body.status !== "not_found" && body.status !== "wrong_mode")
+      ) {
+        setHldGenerationReadiness(null);
+        setHldGenerationReadinessError(HLD_GENERATION_READINESS_ERROR);
+        return;
+      }
+      setHldGenerationReadiness(body);
+    } catch {
+      setHldGenerationReadiness(null);
+      setHldGenerationReadinessError(HLD_GENERATION_READINESS_ERROR);
+    } finally {
+      setHldGenerationReadinessLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldGenerationReadiness();
+  }, [loadHldGenerationReadiness]);
   // Executable-active rebuild requests (lean ids/status only), loaded on mount
   // and refreshed after an execution. The request body is NEVER sent: this is a
   // GET whose tenant/project authority comes only from the session and URL, and
@@ -4875,6 +5136,7 @@ export default function ProjectRfpEvidencePage() {
       setHldIntakeCreateSuccess(HLD_INTAKE_CREATE_SUCCESS);
       void loadHldIntakeList();
       void loadHldReadinessList();
+      void loadHldGenerationReadiness();
     } catch {
       setHldIntakeCreateError(HLD_INTAKE_CREATE_ERROR);
     } finally {
@@ -4884,6 +5146,7 @@ export default function ProjectRfpEvidencePage() {
     hldIntakeCreatePending,
     hldIntakeDraft,
     id,
+    loadHldGenerationReadiness,
     loadHldIntakeList,
     loadHldReadinessList,
   ]);
@@ -4927,6 +5190,7 @@ export default function ProjectRfpEvidencePage() {
         );
         void loadHldIntakeList();
         void loadHldReadinessList();
+        void loadHldGenerationReadiness();
       } catch {
         setHldIntakeReviewError(HLD_INTAKE_REVIEW_ERROR);
       } finally {
@@ -4938,6 +5202,7 @@ export default function ProjectRfpEvidencePage() {
       hldIntakeReviewNote,
       hldIntakeReviewPending,
       id,
+      loadHldGenerationReadiness,
       loadHldIntakeList,
       loadHldReadinessList,
     ]
@@ -4965,6 +5230,7 @@ export default function ProjectRfpEvidencePage() {
       // fresh readiness read keeps the domain summary in step with the new draft.
       void loadHldKnowledgePackList();
       void loadHldReadinessList();
+      void loadHldGenerationReadiness();
     } catch {
       setHldKnowledgePackCreateError(HLD_KNOWLEDGE_PACK_CREATE_ERROR);
     } finally {
@@ -4974,6 +5240,7 @@ export default function ProjectRfpEvidencePage() {
     hldKnowledgePackCreatePending,
     hldKnowledgePackDraft,
     id,
+    loadHldGenerationReadiness,
     loadHldKnowledgePackList,
     loadHldReadinessList,
   ]);
@@ -5017,6 +5284,7 @@ export default function ProjectRfpEvidencePage() {
         );
         void loadHldKnowledgePackList();
         void loadHldReadinessList();
+        void loadHldGenerationReadiness();
       } catch {
         setHldKnowledgePackReviewError(HLD_KNOWLEDGE_PACK_REVIEW_ERROR);
       } finally {
@@ -5028,6 +5296,7 @@ export default function ProjectRfpEvidencePage() {
       hldKnowledgePackReviewNote,
       hldKnowledgePackReviewPending,
       id,
+      loadHldGenerationReadiness,
       loadHldKnowledgePackList,
       loadHldReadinessList,
     ]
@@ -5051,12 +5320,18 @@ export default function ProjectRfpEvidencePage() {
       }
       setHldSourceBundleCreateSuccess(HLD_SOURCE_BUNDLE_CREATE_SUCCESS);
       void loadHldSourceBundleList();
+      void loadHldGenerationReadiness();
     } catch {
       setHldSourceBundleCreateError(HLD_SOURCE_BUNDLE_CREATE_ERROR);
     } finally {
       setHldSourceBundleCreatePending(false);
     }
-  }, [hldSourceBundleCreatePending, id, loadHldSourceBundleList]);
+  }, [
+    hldSourceBundleCreatePending,
+    id,
+    loadHldGenerationReadiness,
+    loadHldSourceBundleList,
+  ]);
 
   const submitHldSourceBundleReview = useCallback(
     async (decision: "approved" | "rejected"): Promise<void> => {
@@ -5096,6 +5371,7 @@ export default function ProjectRfpEvidencePage() {
             : HLD_SOURCE_BUNDLE_REJECT_SUCCESS
         );
         void loadHldSourceBundleList();
+        void loadHldGenerationReadiness();
       } catch {
         setHldSourceBundleReviewError(HLD_SOURCE_BUNDLE_REVIEW_ERROR);
       } finally {
@@ -5107,6 +5383,7 @@ export default function ProjectRfpEvidencePage() {
       hldSourceBundleReviewNote,
       hldSourceBundleReviewPending,
       id,
+      loadHldGenerationReadiness,
       loadHldSourceBundleList,
     ]
   );
@@ -5126,12 +5403,18 @@ export default function ProjectRfpEvidencePage() {
       }
       setHldDesignModelCreateSuccess(HLD_DESIGN_MODEL_CREATE_SUCCESS);
       void loadHldDesignModelList();
+      void loadHldGenerationReadiness();
     } catch {
       setHldDesignModelCreateError(HLD_DESIGN_MODEL_CREATE_ERROR);
     } finally {
       setHldDesignModelCreatePending(false);
     }
-  }, [hldDesignModelCreatePending, id, loadHldDesignModelList]);
+  }, [
+    hldDesignModelCreatePending,
+    id,
+    loadHldDesignModelList,
+    loadHldGenerationReadiness,
+  ]);
 
   const submitHldDesignModelReview = useCallback(
     async (decision: "approved" | "rejected"): Promise<void> => {
@@ -5171,6 +5454,7 @@ export default function ProjectRfpEvidencePage() {
             : HLD_DESIGN_MODEL_REJECT_SUCCESS
         );
         void loadHldDesignModelList();
+        void loadHldGenerationReadiness();
       } catch {
         setHldDesignModelReviewError(HLD_DESIGN_MODEL_REVIEW_ERROR);
       } finally {
@@ -5183,6 +5467,7 @@ export default function ProjectRfpEvidencePage() {
       hldDesignModelReviewPending,
       id,
       loadHldDesignModelList,
+      loadHldGenerationReadiness,
     ]
   );
 
@@ -5213,6 +5498,7 @@ export default function ProjectRfpEvidencePage() {
         setHldDesignModelReviewRunSuccess(HLD_DESIGN_MODEL_REVIEW_RUN_SUCCESS);
         void loadHldDesignModelReviewList();
         void loadHldDesignModelList();
+        void loadHldGenerationReadiness();
         const createdReviewId = body?.artifact?.id;
         if (typeof createdReviewId === "string") {
           void loadHldDesignModelReviewDetail(createdReviewId);
@@ -5227,6 +5513,7 @@ export default function ProjectRfpEvidencePage() {
       hldDesignModelReviewRunningId,
       id,
       loadHldDesignModelList,
+      loadHldGenerationReadiness,
       loadHldDesignModelReviewDetail,
       loadHldDesignModelReviewList,
     ]
@@ -5335,6 +5622,7 @@ export default function ProjectRfpEvidencePage() {
         void loadHldDesignModelList();
         void loadHldDesignModelReviewList();
         void loadHldDesignModelRebuildRequestList();
+        void loadHldGenerationReadiness();
         const newModelArtifactId = body?.artifact?.id;
         if (typeof newModelArtifactId === "string" && newModelArtifactId !== "") {
           // Switch to the new draft, clearing any stale advisory-review detail so
@@ -5357,6 +5645,7 @@ export default function ProjectRfpEvidencePage() {
       loadHldDesignModelDetail,
       loadHldDesignModelList,
       loadHldDesignModelRebuildRequestList,
+      loadHldGenerationReadiness,
       loadHldDesignModelReviewList,
     ]
   );
@@ -9821,6 +10110,12 @@ export default function ProjectRfpEvidencePage() {
               </p>
             )}
           </div>
+
+          <HldGenerationReadinessPanel
+            report={hldGenerationReadiness}
+            loading={hldGenerationReadinessLoading}
+            error={hldGenerationReadinessError}
+          />
         </section>
       </div>
 

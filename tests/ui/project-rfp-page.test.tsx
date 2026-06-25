@@ -66,6 +66,7 @@ const HLD_DESIGN_MODEL_REBUILD_REQUEST_ARTIFACT_ID = "art-hld-design-model-rebui
 const HLD_DESIGN_MODEL_REBUILD_EXECUTE_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DESIGN_MODEL_REBUILD_REQUEST_ARTIFACT_ID}/hld-design-model-rebuild-request/execute`;
 const HLD_DESIGN_MODEL_REBUILT_ARTIFACT_ID = "art-hld-design-model-2";
 const HLD_DESIGN_MODEL_REBUILT_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DESIGN_MODEL_REBUILT_ARTIFACT_ID}/hld-design-model`;
+const HLD_GENERATION_READINESS_URL = `/api/projects/${PROJECT_ID}/rfp/hld-generation-readiness`;
 const HLD_INTAKE_FIELD_IDS = [
   "existing_network_context",
   "target_topology_intent",
@@ -1738,6 +1739,104 @@ function designModelReviewDetailNonJustifying(): Record<string, unknown> {
   };
 }
 
+// ---- generation-readiness fixtures (Stage 6F) ------------------------------
+
+function hldGenerationReadinessReady(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    status: "ready",
+    ready: true,
+    approvedModel: {
+      id: HLD_DESIGN_MODEL_ARTIFACT_ID,
+      projectId: PROJECT_ID,
+      stageId: "hld_design_delta_review",
+      type: "hld_design_model",
+      status: "approved",
+      version: 2,
+      createdAt: "2026-06-24T09:00:00.000Z",
+      updatedAt: "2026-06-24T09:05:00.000Z",
+      sourceHldSourceBundleArtifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+      sourceBundleVersion: 3,
+      coveredDomainCount: 1,
+      excludedDomainCount: 1,
+      designSectionCount: 1,
+      topologyNodeCount: 2,
+      topologyLinkCount: 1,
+      diagramIntentCount: 1,
+    },
+    sourceBundle: {
+      id: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+      projectId: PROJECT_ID,
+      stageId: "hld_design_delta_review",
+      type: "hld_source_bundle",
+      status: "approved",
+      version: 3,
+      createdAt: "2026-06-21T09:00:00.000Z",
+      updatedAt: "2026-06-21T09:05:00.000Z",
+      sourceArtifactCount: 7,
+      coveredDomainCount: 1,
+      excludedDomainCount: 1,
+      designKnowledgePackCount: 1,
+      assumptionCount: 1,
+      warningCount: 0,
+      blockerCount: 0,
+    },
+    review: {
+      id: HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID,
+      projectId: PROJECT_ID,
+      stageId: "hld_design_delta_review",
+      type: "hld_design_model_review",
+      status: "approved",
+      version: 1,
+      createdAt: "2026-06-24T10:00:00.000Z",
+      updatedAt: "2026-06-24T10:05:00.000Z",
+      reviewedAt: "2026-06-24T10:00:00.000Z",
+      reviewerType: "deterministic",
+      sourceHldDesignModelArtifactId: HLD_DESIGN_MODEL_ARTIFACT_ID,
+      sourceHldSourceBundleArtifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+      recommendation: "approve_recommended",
+      findingCount: 0,
+      findingCounts: { blocking: 0, warning: 0, suggestion: 0 },
+    },
+    blockers: [],
+    warnings: [],
+    nextAction: "Approved HLD design model is ready for future HLD generation.",
+    technicalAudit: {
+      approvedModelArtifactId: HLD_DESIGN_MODEL_ARTIFACT_ID,
+      sourceBundleArtifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+      reviewArtifactId: HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID,
+      approvedModelSourceArtifactIds: [HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID],
+      sourceBundleSourceArtifactIds: ["evp-1", "req-1", "cmx-1", "cfg-1", "intake-1", "hrs-1", "pack-1"],
+      reviewSourceArtifactIds: [HLD_DESIGN_MODEL_ARTIFACT_ID, HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID],
+    },
+  };
+}
+
+function hldGenerationReadinessBlocked(): Record<string, unknown> {
+  const ready = hldGenerationReadinessReady();
+  return {
+    ...ready,
+    status: "blocked",
+    ready: false,
+    review: undefined,
+    blockers: [
+      {
+        code: "matching_review_missing",
+        message:
+          "GENERATION-READINESS-BLOCKER-CANARY No current deterministic advisory review exists for the approved model.",
+        details: ["GENERATION-READINESS-DETAIL-CANARY review artifact not current."],
+      },
+    ],
+    nextAction:
+      "GENERATION-READINESS-NEXT-ACTION-CANARY Run a fresh deterministic HLD design-model review for the approved model.",
+    technicalAudit: {
+      approvedModelArtifactId: HLD_DESIGN_MODEL_ARTIFACT_ID,
+      sourceBundleArtifactId: HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID,
+      approvedModelSourceArtifactIds: [HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID],
+      sourceBundleSourceArtifactIds: ["evp-1", "req-1", "cmx-1", "cfg-1", "intake-1", "hrs-1", "pack-1"],
+    },
+  };
+}
 // ---- bounded design-model rebuild-request fixtures (Stage 6E-C) ------------
 
 function designModelRebuildRequestListItem(
@@ -1904,6 +2003,9 @@ function stubFetch(
       if (url === HLD_DESIGN_MODEL_REBUILD_REQUEST_LIST_URL) {
         return jsonResponse(designModelRebuildRequestListEmpty());
       }
+      if (url === HLD_GENERATION_READINESS_URL) {
+        return jsonResponse(hldGenerationReadinessBlocked());
+      }
       if (url === REVIEW_URL) {
         return jsonResponse({ artifactStatus: "approved", artifact: baselineListItem() });
       }
@@ -1940,6 +2042,9 @@ function stage5ComplianceFetch(
     }
     if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
     if (url === HLD_READINESS_LIST_URL) return jsonResponse(hldReadinessListBlocked());
+    if (url === HLD_GENERATION_READINESS_URL) {
+      return jsonResponse(hldGenerationReadinessBlocked());
+    }
     return jsonResponse({}, 200);
   };
 }
@@ -4728,6 +4833,9 @@ describe("ProjectRfpEvidencePage - Stage 6B HLD source bundle", () => {
       if (url === HLD_READINESS_LIST_URL) return jsonResponse(hldReadinessListReady());
       if (url === HLD_INTAKE_LIST_URL) return jsonResponse(hldIntakeListResponse());
       if (url === HLD_KNOWLEDGE_PACK_LIST_URL) return jsonResponse(hldKnowledgePackListResponse());
+      if (url === HLD_GENERATION_READINESS_URL) {
+        return jsonResponse(hldGenerationReadinessBlocked());
+      }
       return jsonResponse({}, 200);
     };
   }
@@ -5108,6 +5216,9 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
       if (url === HLD_INTAKE_LIST_URL) return jsonResponse(hldIntakeListResponse());
       if (url === HLD_KNOWLEDGE_PACK_LIST_URL) return jsonResponse(hldKnowledgePackListResponse());
       if (url === HLD_SOURCE_BUNDLE_LIST_URL) return jsonResponse(sourceBundleListReady());
+      if (url === HLD_GENERATION_READINESS_URL) {
+        return jsonResponse(hldGenerationReadinessBlocked());
+      }
       return jsonResponse({}, 200);
     };
   }
@@ -5129,6 +5240,87 @@ describe("ProjectRfpEvidencePage - Stage 6D HLD design model", () => {
     );
   }
 
+  // --- Stage 6F generation-readiness gate ----------------------------------
+
+  it("renders the ready generation-readiness gate with compact summaries and raw ids only in collapsed audit", async () => {
+    const calls = stubFetch((url, init) => {
+      if (url === HLD_GENERATION_READINESS_URL) {
+        return jsonResponse(hldGenerationReadinessReady());
+      }
+      return designModelFetch(
+        designModelListReady(),
+        undefined,
+        undefined,
+        designModelReviewListReady()
+      )(url, init);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const panel = await screen.findByTestId("hld-generation-readiness-panel");
+    const summary = await screen.findByTestId("hld-generation-readiness-summary");
+    expect(summary).toHaveTextContent("Ready for future HLD generation");
+    expect(summary).toHaveTextContent("Approved model: v2 (approved)");
+    expect(summary).toHaveTextContent("Source bundle: v3 (approved)");
+    expect(summary).toHaveTextContent("Review: v1 (approved)");
+    expect(summary).toHaveTextContent("approve recommended");
+    expect(screen.queryByTestId("hld-generation-readiness-blockers")).toBeNull();
+    expect(within(panel).queryByRole("button", { name: /generate/i })).toBeNull();
+
+    const primary = panel.cloneNode(true) as HTMLElement;
+    primary
+      .querySelector("[data-testid='hld-generation-readiness-audit']")
+      ?.remove();
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).not.toContain(HLD_DESIGN_MODEL_ARTIFACT_ID);
+    expect(primaryText).not.toContain(HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID);
+    expect(primaryText).not.toContain(HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID);
+
+    const audit = screen.getByTestId("hld-generation-readiness-audit");
+    expect(audit.tagName).toBe("DETAILS");
+    expect(audit.hasAttribute("open")).toBe(false);
+    expect(audit).toHaveTextContent(HLD_DESIGN_MODEL_ARTIFACT_ID);
+    expect(audit).toHaveTextContent(HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID);
+    expect(audit).toHaveTextContent(HLD_DESIGN_MODEL_REVIEW_ARTIFACT_ID);
+    expect(finalHldPosts(calls)).toHaveLength(0);
+  });
+
+  it("renders the blocked generation-readiness gate with stable blocker copy and no primary raw ids", async () => {
+    stubFetch((url, init) => {
+      if (url === HLD_GENERATION_READINESS_URL) {
+        return jsonResponse(hldGenerationReadinessBlocked());
+      }
+      return designModelFetch(
+        designModelListReady(),
+        undefined,
+        undefined,
+        designModelReviewListReady()
+      )(url, init);
+    });
+    render(<ProjectRfpEvidencePage />);
+
+    const panel = await screen.findByTestId("hld-generation-readiness-panel");
+    const summary = await screen.findByTestId("hld-generation-readiness-summary");
+    expect(summary).toHaveTextContent("Blocked");
+    expect(summary).toHaveTextContent("GENERATION-READINESS-NEXT-ACTION-CANARY");
+
+    const blockers = await screen.findByTestId("hld-generation-readiness-blockers");
+    expect(blockers).toHaveTextContent("matching_review_missing");
+    expect(blockers).toHaveTextContent("GENERATION-READINESS-BLOCKER-CANARY");
+
+    const primary = panel.cloneNode(true) as HTMLElement;
+    primary
+      .querySelector("[data-testid='hld-generation-readiness-audit']")
+      ?.remove();
+    const primaryText = primary.textContent ?? "";
+    expect(primaryText).not.toContain(HLD_DESIGN_MODEL_ARTIFACT_ID);
+    expect(primaryText).not.toContain(HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID);
+    expect(primaryText).not.toContain("GENERATION-READINESS-DETAIL-CANARY");
+
+    const audit = screen.getByTestId("hld-generation-readiness-audit");
+    expect(audit).toHaveTextContent(HLD_DESIGN_MODEL_ARTIFACT_ID);
+    expect(audit).toHaveTextContent(HLD_DESIGN_MODEL_SOURCE_BUNDLE_APPROVED_ID);
+    expect(audit).toHaveTextContent("GENERATION-READINESS-DETAIL-CANARY");
+  });
   it("renders the ready design-model panel with compact counts, an enabled create button, a list, and no raw ids", async () => {
     stubFetch(designModelFetch(designModelListReady()));
     render(<ProjectRfpEvidencePage />);
@@ -6378,6 +6570,32 @@ describe("ProjectRfpEvidencePage static guards", () => {
     }
   });
 
+  it("wires the HLD generation-readiness gate without final-output route, POST action, or server-service import", () => {
+    expect(source).toContain("/rfp/hld-generation-readiness");
+    expect(source).toContain("hld-generation-readiness-panel");
+    expect(source).not.toContain("/rfp/hld-generation-readiness/generate");
+    for (const forbidden of [
+      "/rfp/hld-diagram",
+      "/rfp/hld-document",
+      "/rfp/hld-proposal",
+      "/rfp/hld-html",
+      "/rfp/drawio",
+      "/rfp/hld-export",
+      "technical_proposal",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
+    const importLines = source
+      .split("\n")
+      .filter((line) => line.trimStart().startsWith("import"));
+    for (const token of [
+      "project-rfp-hld-generation-readiness",
+      "@/lib/db/",
+      "@anthropic-ai/sdk",
+    ]) {
+      expect(importLines.join("\n")).not.toContain(token);
+    }
+  });
   it("wires the bounded design-model rebuild-request discovery and execute routes with no final-output route or server-service import", () => {
     // The discovery (GET list) and execute (POST) routes are both wired.
     expect(source).toContain("/rfp/hld-design-model-rebuild-request");
