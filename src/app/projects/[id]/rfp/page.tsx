@@ -1553,6 +1553,17 @@ interface HldDocumentModelDetail {
 }
 // >>> HLD-DOC-MODEL-COPY-END
 
+// Stage 6H-B compact engineer review of a needs_review hld_document_model.
+// Client-only request/response shapes; no server type, store, or authority
+// import. The decision body is exactly { decision } or { decision, note }.
+type HldDocumentModelReviewDecision = "approve" | "reject";
+
+/** Lean success response of the hld_document_model review route. */
+interface HldDocumentModelReviewResponse {
+  artifactStatus?: ProjectArtifactStatus;
+  artifact?: HldDocumentModelDetailArtifact;
+}
+
 /**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
@@ -1717,6 +1728,12 @@ const HLD_DOCUMENT_MODEL_CREATE_SUCCESS =
   "HLD document model compiled for operator inspection.";
 const HLD_DOCUMENT_MODEL_CREATE_ERROR = "Unable to compile HLD document model.";
 // >>> HLD-DOC-MODEL-COPY-END
+
+/** Exact UI copy for the Stage 6H-B HLD document model review controls. */
+const HLD_DOCUMENT_MODEL_APPROVE_SUCCESS = "HLD document model approved.";
+const HLD_DOCUMENT_MODEL_REJECT_SUCCESS =
+  "HLD document model changes requested.";
+const HLD_DOCUMENT_MODEL_REVIEW_ERROR = "Unable to review HLD document model.";
 
 /** Exact UI copy for the advisory deterministic design-model review surface. */
 const HLD_DESIGN_MODEL_REVIEW_LIST_ERROR =
@@ -4121,6 +4138,16 @@ export default function ProjectRfpEvidencePage() {
     useState<string | null>(null);
   const [hldDocumentModelCreateSuccess, setHldDocumentModelCreateSuccess] =
     useState<string | null>(null);
+  // Stage 6H-B compact engineer review of a needs_review document model. The
+  // note is optional and only sent when nonblank; no authority body is carried.
+  const [hldDocumentModelReviewNote, setHldDocumentModelReviewNote] =
+    useState("");
+  const [hldDocumentModelReviewPending, setHldDocumentModelReviewPending] =
+    useState(false);
+  const [hldDocumentModelReviewError, setHldDocumentModelReviewError] =
+    useState<string | null>(null);
+  const [hldDocumentModelReviewSuccess, setHldDocumentModelReviewSuccess] =
+    useState<string | null>(null);
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -5944,6 +5971,73 @@ export default function ProjectRfpEvidencePage() {
     loadHldDocumentModelDetail,
   ]);
 
+  // Stage 6H-B engineer decision on a needs_review document model. The body is
+  // exactly { decision } (or { decision, note } when the trimmed note is
+  // nonblank). On success it refreshes the list and the open detail. It carries
+  // no authority/source/payload/pricing/SKU/catalog/config/provider field.
+  const submitHldDocumentModelReview = useCallback(
+    async (decision: HldDocumentModelReviewDecision): Promise<void> => {
+      if (hldDocumentModelDetail === null || hldDocumentModelReviewPending)
+        return;
+      const artifactId = hldDocumentModelDetail.artifact.id;
+      setHldDocumentModelReviewPending(true);
+      setHldDocumentModelReviewError(null);
+      setHldDocumentModelReviewSuccess(null);
+      try {
+        const note = hldDocumentModelReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-document-model/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              note === "" ? { decision } : { decision, note }
+            ),
+          }
+        );
+        if (!res.ok) {
+          setHldDocumentModelReviewError(HLD_DOCUMENT_MODEL_REVIEW_ERROR);
+          return;
+        }
+        const body = (await res
+          .json()
+          .catch(() => null)) as HldDocumentModelReviewResponse | null;
+        const nextStatus: ProjectArtifactStatus =
+          body?.artifactStatus ??
+          body?.artifact?.status ??
+          (decision === "approve" ? "approved" : "rejected");
+        setHldDocumentModelDetail((prev) =>
+          prev === null
+            ? prev
+            : {
+                artifact: { ...prev.artifact, status: nextStatus },
+                documentModel: prev.documentModel,
+              }
+        );
+        setHldDocumentModelReviewNote("");
+        setHldDocumentModelReviewSuccess(
+          decision === "approve"
+            ? HLD_DOCUMENT_MODEL_APPROVE_SUCCESS
+            : HLD_DOCUMENT_MODEL_REJECT_SUCCESS
+        );
+        void loadHldDocumentModelList();
+        void loadHldDocumentModelDetail(artifactId);
+      } catch {
+        setHldDocumentModelReviewError(HLD_DOCUMENT_MODEL_REVIEW_ERROR);
+      } finally {
+        setHldDocumentModelReviewPending(false);
+      }
+    },
+    [
+      hldDocumentModelDetail,
+      hldDocumentModelReviewNote,
+      hldDocumentModelReviewPending,
+      id,
+      loadHldDocumentModelList,
+      loadHldDocumentModelDetail,
+    ]
+  );
+
   // Stage 6G-B engineer decision on a needs_review diagram draft. The body is
   // exactly { decision } (or { decision, note } when the trimmed note is
   // nonblank). On success it refreshes the list and selected detail.
@@ -6752,6 +6846,9 @@ export default function ProjectRfpEvidencePage() {
 
   function openHldDocumentModelDrawer(artifactId: string): void {
     setDrawer({ kind: "hld-document-model", activeId: artifactId });
+    setHldDocumentModelReviewNote("");
+    setHldDocumentModelReviewError(null);
+    setHldDocumentModelReviewSuccess(null);
     void loadHldDocumentModelDetail(artifactId);
   }
 
@@ -9202,6 +9299,92 @@ export default function ProjectRfpEvidencePage() {
           ) : (
             <p className="mt-1 text-xs text-text-tertiary">None</p>
           )
+        )}
+        {/* Stage 6H-B compact review: a needs_review model is decided here;
+            approved and rejected models stay read-only. */}
+        {artifact.status === "needs_review" && (
+          <div data-testid="hld-document-model-review" className={SUBTLE_CARD}>
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Review note (optional)
+              <textarea
+                data-testid="hld-document-model-review-note"
+                value={hldDocumentModelReviewNote}
+                disabled={hldDocumentModelReviewPending}
+                onChange={(e) => setHldDocumentModelReviewNote(e.target.value)}
+                rows={2}
+                className={FIELD}
+              />
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid="hld-document-model-approve"
+                disabled={hldDocumentModelReviewPending}
+                onClick={() => void submitHldDocumentModelReview("approve")}
+                className={ACTION_BTN}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="hld-document-model-reject"
+                disabled={hldDocumentModelReviewPending}
+                onClick={() => void submitHldDocumentModelReview("reject")}
+                className={PLAIN_BTN}
+              >
+                Request changes
+              </button>
+            </div>
+            {hldDocumentModelReviewError && (
+              <p
+                data-testid="hld-document-model-review-error"
+                className={`mt-2 ${ERROR_BOX}`}
+              >
+                {hldDocumentModelReviewError}
+              </p>
+            )}
+            {hldDocumentModelReviewSuccess && (
+              <p
+                data-testid="hld-document-model-review-success"
+                className="mt-2 text-xs text-emerald-300"
+              >
+                {hldDocumentModelReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        {artifact.status === "approved" && (
+          <div
+            data-testid="hld-document-model-review-approved"
+            className={`${SUBTLE_CARD} text-xs text-emerald-300`}
+          >
+            This HLD document model is approved. It remains read-only here.
+            {hldDocumentModelReviewSuccess && (
+              <p
+                data-testid="hld-document-model-review-success"
+                className="mt-1 text-emerald-300"
+              >
+                {hldDocumentModelReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        {artifact.status === "rejected" && (
+          <div
+            data-testid="hld-document-model-review-rejected"
+            className={`${SUBTLE_CARD} text-xs text-text-secondary`}
+          >
+            Changes were requested on this HLD document model. It remains
+            read-only here.
+            {hldDocumentModelReviewSuccess && (
+              <p
+                data-testid="hld-document-model-review-success"
+                className="mt-1 text-text-secondary"
+              >
+                {hldDocumentModelReviewSuccess}
+              </p>
+            )}
+          </div>
         )}
         <TechnicalDetails
           testId="hld-document-model-drawer-audit"

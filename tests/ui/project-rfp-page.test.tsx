@@ -74,6 +74,7 @@ const HLD_DIAGRAM_REVIEW_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_
 const HLD_DOCUMENT_MODEL_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-document-model`;
 const HLD_DOCUMENT_MODEL_ARTIFACT_ID = "art-hld-document-model-1";
 const HLD_DOCUMENT_MODEL_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DOCUMENT_MODEL_ARTIFACT_ID}/hld-document-model`;
+const HLD_DOCUMENT_MODEL_REVIEW_URL = `${HLD_DOCUMENT_MODEL_DETAIL_URL}/review`;
 const HLD_INTAKE_FIELD_IDS = [
   "existing_network_context",
   "target_topology_intent",
@@ -7168,11 +7169,11 @@ describe("ProjectRfpEvidencePage - Stage 6G-A HLD diagram draft surface", () => 
 });
 
 describe("ProjectRfpEvidencePage - Stage 6H-A HLD document model surface", () => {
-  // Final document-output / review / proposal POST routes the internal
-  // document-model surface must never call. It may GET/POST only the internal
-  // /rfp/hld-document-model draft list/create route.
+  // Final document-output / proposal POST routes the internal document-model
+  // surface must never call. It may GET/POST the internal /rfp/hld-document-model
+  // list/create route and the artifact-scoped /hld-document-model/review route
+  // (Stage 6H-B); only the document-output suffixes below stay forbidden.
   const FINAL_DOC_MODEL_ROUTES = [
-    "/rfp/hld-document-model/review",
     "/rfp/hld-document-model/download",
     "/rfp/hld-document-model/upload",
     "/rfp/hld-document-model/export",
@@ -7208,9 +7209,13 @@ describe("ProjectRfpEvidencePage - Stage 6H-A HLD document model surface", () =>
     diagramListBody: Record<string, unknown> = hldDiagramListEmpty(),
     docListBody: Record<string, unknown> = hldDocumentModelListEmpty(),
     docDetailBody: Record<string, unknown> = hldDocumentModelDetailResponse(),
-    onCreate?: (init?: RequestInit) => Response
+    onCreate?: (init?: RequestInit) => Response,
+    onReview?: (init?: RequestInit) => Response
   ): (url: string, init?: RequestInit) => Response {
     return (url, init) => {
+      if (url === HLD_DOCUMENT_MODEL_REVIEW_URL && init?.method === "POST") {
+        return onReview ? onReview(init) : jsonResponse({ ok: true }, 200);
+      }
       if (url === HLD_DOCUMENT_MODEL_LIST_URL) {
         if (init?.method === "POST") {
           return onCreate
@@ -7451,7 +7456,7 @@ describe("ProjectRfpEvidencePage - Stage 6H-A HLD document model surface", () =>
     expect(outsideText).not.toContain(HLD_DOC_MODEL_DIAGRAM_ID);
   });
 
-  it("renders no raw JSON/pre dump and no document-model review/approval controls, and calls no document-model output route", async () => {
+  it("renders no raw JSON/pre dump in the document-model drawer and calls no document-model output route", async () => {
     const calls = stubFetch(
       docModelFetch(
         hldGenerationReadinessReady(),
@@ -7471,12 +7476,357 @@ describe("ProjectRfpEvidencePage - Stage 6H-A HLD document model surface", () =>
     );
     // No raw JSON/pre/blob dump in the drawer.
     expect(content.querySelector("pre")).toBeNull();
-    // No review/approval controls on the internal document-model surface.
+    // No document-output (download/upload/export/final/generate/render) route is
+    // ever called from the inspection surface.
+    expect(finalDocModelCalls(calls)).toHaveLength(0);
+  });
+
+  // ---- Stage 6H-B HLD document model review controls -----------------------
+
+  it("exposes approve/request-changes controls and a note input for a needs_review document model", async () => {
+    stubFetch(
+      docModelFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDocumentModelListResponse()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-document-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    await screen.findByTestId("hld-document-model-drawer-content");
+    expect(screen.getByTestId("hld-document-model-review")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("hld-document-model-review-note")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("hld-document-model-approve")).toBeInTheDocument();
+    expect(screen.getByTestId("hld-document-model-reject")).toBeInTheDocument();
+  });
+
+  it("keeps an approved document model readable and read-only with no approve/request-changes controls", async () => {
+    stubFetch(
+      docModelFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDocumentModelListResponse("approved"),
+        hldDocumentModelDetailResponse(
+          HLD_DOCUMENT_MODEL_ARTIFACT_ID,
+          "approved"
+        )
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-document-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    const content = await screen.findByTestId(
+      "hld-document-model-drawer-content"
+    );
+    // The structured spine is still readable.
+    expect(
+      within(content).getByTestId("hld-document-model-drawer-purpose")
+    ).toHaveTextContent("HLD-DOCMODEL-PURPOSE-CANARY");
+    // But there are no review controls.
     expect(screen.queryByTestId("hld-document-model-review")).toBeNull();
     expect(screen.queryByTestId("hld-document-model-approve")).toBeNull();
     expect(screen.queryByTestId("hld-document-model-reject")).toBeNull();
-    // No review/download/upload/export/final route is ever called.
+    expect(
+      screen.getByTestId("hld-document-model-review-approved")
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a rejected document model readable and read-only with no approve/request-changes controls", async () => {
+    stubFetch(
+      docModelFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDocumentModelListResponse("rejected"),
+        hldDocumentModelDetailResponse(
+          HLD_DOCUMENT_MODEL_ARTIFACT_ID,
+          "rejected"
+        )
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-document-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    await screen.findByTestId("hld-document-model-drawer-content");
+    expect(screen.queryByTestId("hld-document-model-review")).toBeNull();
+    expect(screen.queryByTestId("hld-document-model-approve")).toBeNull();
+    expect(screen.queryByTestId("hld-document-model-reject")).toBeNull();
+    expect(
+      screen.getByTestId("hld-document-model-review-rejected")
+    ).toBeInTheDocument();
+  });
+
+  it("approves a document model posting exactly { decision: approve }, refreshes list and detail, shows compact success, and makes no output POST", async () => {
+    const calls = stubFetch(
+      docModelFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDocumentModelListResponse()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-document-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-document-model-drawer-content");
+
+    const listGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DOCUMENT_MODEL_LIST_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+    const detailGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DOCUMENT_MODEL_DETAIL_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-document-model-approve"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_DOCUMENT_MODEL_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) => c.url === HLD_DOCUMENT_MODEL_REVIEW_URL && c.init?.method === "POST"
+    );
+    const bodyText = String(post?.init?.body ?? "");
+    expect(JSON.parse(bodyText)).toEqual({ decision: "approve" });
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "artifactId",
+      "decidedBy",
+      "source",
+      "status",
+      "payload",
+      "authority",
+      "sku",
+      "pricing",
+      "catalog",
+      "config",
+      "provider",
+      "note",
+    ]) {
+      expect(bodyText).not.toContain(forbidden);
+    }
+
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DOCUMENT_MODEL_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+    expect(
+      calls.filter(
+        (c) =>
+          c.url === HLD_DOCUMENT_MODEL_DETAIL_URL &&
+          (c.init?.method ?? "GET") === "GET"
+      ).length
+    ).toBeGreaterThan(detailGetsBefore);
+    expect(
+      await screen.findByTestId("hld-document-model-review-success")
+    ).toBeInTheDocument();
     expect(finalDocModelCalls(calls)).toHaveLength(0);
+  });
+
+  it("requests changes with a note posting exactly { decision: reject, note }, refreshes list and detail, shows compact success, and makes no output POST", async () => {
+    const calls = stubFetch(
+      docModelFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDocumentModelListResponse()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-document-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-document-model-drawer-content");
+
+    const listGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DOCUMENT_MODEL_LIST_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+    const detailGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DOCUMENT_MODEL_DETAIL_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("hld-document-model-review-note"), {
+        target: { value: "  tighten the site scope summary  " },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-document-model-reject"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_DOCUMENT_MODEL_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) => c.url === HLD_DOCUMENT_MODEL_REVIEW_URL && c.init?.method === "POST"
+    );
+    const bodyText = String(post?.init?.body ?? "");
+    expect(JSON.parse(bodyText)).toEqual({
+      decision: "reject",
+      note: "tighten the site scope summary",
+    });
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "artifactId",
+      "decidedBy",
+      "source",
+      "status",
+      "payload",
+      "authority",
+      "sku",
+      "pricing",
+      "catalog",
+      "config",
+      "provider",
+    ]) {
+      expect(bodyText).not.toContain(forbidden);
+    }
+
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DOCUMENT_MODEL_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+    expect(
+      calls.filter(
+        (c) =>
+          c.url === HLD_DOCUMENT_MODEL_DETAIL_URL &&
+          (c.init?.method ?? "GET") === "GET"
+      ).length
+    ).toBeGreaterThan(detailGetsBefore);
+    expect(
+      await screen.findByTestId("hld-document-model-review-success")
+    ).toBeInTheDocument();
+    expect(finalDocModelCalls(calls)).toHaveLength(0);
+  });
+
+  it("shows a stable compact error and dumps no raw server JSON when a review fails", async () => {
+    const calls = stubFetch(
+      docModelFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDocumentModelListResponse(),
+        hldDocumentModelDetailResponse(),
+        undefined,
+        () =>
+          jsonResponse(
+            { error: "DOC_MODEL_REVIEW_RAW_SERVER_CANARY", code: 500 },
+            500
+          )
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-document-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-document-model-drawer-content");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-document-model-approve"));
+    });
+
+    const error = await screen.findByTestId("hld-document-model-review-error");
+    expect(error).toHaveTextContent("Unable to review HLD document model.");
+    // The stable copy is shown; the raw server payload never reaches the DOM.
+    expect(document.body.textContent ?? "").not.toContain(
+      "DOC_MODEL_REVIEW_RAW_SERVER_CANARY"
+    );
+    expect(screen.queryByTestId("hld-document-model-review-success")).toBeNull();
+    expect(finalDocModelCalls(calls)).toHaveLength(0);
+  });
+
+  it("calls no document-model output/download/upload/export/final/generate/render route across an approve review", async () => {
+    const calls = stubFetch(
+      docModelFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDocumentModelListResponse()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-document-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-document-model-drawer-content");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-document-model-approve"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_DOCUMENT_MODEL_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    // The only POST is the artifact-scoped review; no output/final route fires.
+    expect(finalDocModelCalls(calls)).toHaveLength(0);
+    for (const route of [
+      "/hld-document-model/download",
+      "/hld-document-model/upload",
+      "/hld-document-model/export",
+      "/hld-document-model/final",
+      "/hld-document-model/generate",
+      "/hld-document-model/render",
+    ]) {
+      expect(calls.some((c) => c.url.includes(route))).toBe(false);
+    }
   });
 });
 
@@ -7827,10 +8177,10 @@ describe("ProjectRfpEvidencePage static guards", () => {
     // allowed internal /rfp/hld-document-model route (with the -model suffix) is
     // not tripped by this matcher.
     expect(FINAL_HLD_DOCUMENT_ROUTE_RE.test(source)).toBe(false);
-    // It is inspection/create only: no document-model output/review suffix and no
-    // final HLD document/diagram/html/draw.io/proposal/export route may appear.
+    // It is inspection/create plus the artifact-scoped review route (Stage 6H-B):
+    // the document-model output suffixes and the final HLD document/diagram/html/
+    // draw.io/proposal/export routes stay forbidden.
     for (const forbidden of [
-      "/rfp/hld-document-model/review",
       "/rfp/hld-document-model/download",
       "/rfp/hld-document-model/upload",
       "/rfp/hld-document-model/export",
@@ -7862,6 +8212,61 @@ describe("ProjectRfpEvidencePage static guards", () => {
     for (const token of [
       "project-rfp-hld-document-model-service",
       "project-rfp-hld-document-model-inspection",
+      "project-rfp-hld-document-model",
+      "@/lib/db/",
+      "@/lib/ai",
+      "@/lib/llm",
+      "@anthropic-ai/sdk",
+      "openai",
+    ]) {
+      expect(importLines.join("\n")).not.toContain(token);
+    }
+  });
+
+  it("wires the internal Stage 6H-B HLD document model review route and controls but adds no document-output route or server-service import", () => {
+    // The artifact-scoped review route segment and compact controls are wired.
+    expect(source).toContain("/hld-document-model/review");
+    expect(source).toContain("hld-document-model-review");
+    expect(source).toContain("hld-document-model-review-note");
+    expect(source).toContain("hld-document-model-approve");
+    expect(source).toContain("hld-document-model-reject");
+    // The bare future final /rfp/hld-document output route stays forbidden; the
+    // allowed /rfp/hld-document-model route (with the -model suffix) and the
+    // artifact-scoped review route do not trip the matcher.
+    expect(FINAL_HLD_DOCUMENT_ROUTE_RE.test(source)).toBe(false);
+    // Review is decision-only: no document-model output suffix and no final HLD
+    // document/diagram/html/draw.io/proposal/export route may appear.
+    for (const forbidden of [
+      "/rfp/hld-document-model/download",
+      "/rfp/hld-document-model/upload",
+      "/rfp/hld-document-model/export",
+      "/rfp/hld-document-model/final",
+      "/rfp/hld-document-model/generate",
+      "/rfp/hld-document-model/render",
+      "/rfp/hld-diagram/generate",
+      "/rfp/hld-diagram/download",
+      "/rfp/hld-diagram/upload",
+      "/rfp/hld-diagram/export",
+      "/rfp/hld-diagram/final",
+      "/rfp/hld-document/review",
+      "/rfp/hld-document/download",
+      "/rfp/hld-document/upload",
+      "/rfp/hld-document/export",
+      "/rfp/hld-document/final",
+      "/rfp/hld-proposal",
+      "/rfp/hld-html",
+      "/rfp/drawio",
+      "/rfp/hld-export",
+      "technical_proposal",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
+    // And it imports no document-model review server service/store or provider SDK.
+    const importLines = source
+      .split("\n")
+      .filter((line) => line.trimStart().startsWith("import"));
+    for (const token of [
+      "project-rfp-hld-document-model-review",
       "project-rfp-hld-document-model",
       "@/lib/db/",
       "@/lib/ai",
