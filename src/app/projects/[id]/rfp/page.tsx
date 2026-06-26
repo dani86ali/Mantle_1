@@ -1415,6 +1415,144 @@ interface HldDiagramDetail {
   diagram: HldDiagramDetailPayload;
 }
 
+// ---- HLD DOCUMENT MODEL (Stage 6H-A) read models ---------------------------
+// >>> HLD-DOC-MODEL-COPY-START
+//
+// Inspection-only surface over internal `hld_document_model` artifacts: a
+// deterministic structured spine compiled from an approved `hld_design_model`
+// and its approved `hld_diagram` over the approved `hld_source_bundle`, for
+// operator inspection only. The page reads the lean list (counts/provenance
+// only), creates one model with NO body, and fetches the sanitized detail on an
+// explicit Inspect click. All types are local to the client page (no server
+// service, store, provider, or pricing/catalog/config import).
+
+/** Lean list payload summary (counts/provenance only, never a body). */
+interface HldDocumentModelListPayloadSummary {
+  payloadKind?: string;
+  title?: string;
+  coveredDomainCount?: number;
+  excludedDomainCount?: number;
+  assumptionCount?: number;
+  designSummaryCount?: number;
+  topologySummaryCount?: number;
+  siteOrScopeSummaryCount?: number;
+  implementationNoteCount?: number;
+  dependencyCount?: number;
+  riskCount?: number;
+  complianceTraceCount?: number;
+  boqTraceCount?: number;
+  diagramReferenceCount?: number;
+  validationFindingCount?: number;
+  sourceHldSourceBundleArtifactId?: string;
+  sourceHldDesignModelArtifactId?: string;
+  sourceHldDiagramArtifactId?: string;
+  sourceModelVersion?: number;
+  sourceDiagramVersion?: number;
+}
+
+/** One internal hld_document_model artifact in the list response. */
+interface HldDocumentModelListItem {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  payloadSummary?: HldDocumentModelListPayloadSummary;
+}
+
+/** Lean list response of GET .../rfp/hld-document-model. */
+interface HldDocumentModelListResponse {
+  artifactCount: number;
+  artifacts: HldDocumentModelListItem[];
+}
+
+/** A concise structured text entry traced to coarse upstream artifact ids. */
+interface HldDocumentModelTextEntry {
+  id: string;
+  text: string;
+  sourceRefIds?: string[];
+}
+
+/** A titled summary section of concise structured text items. */
+interface HldDocumentModelSummarySection {
+  id: string;
+  title: string;
+  items: HldDocumentModelTextEntry[];
+  sourceRefIds?: string[];
+}
+
+/** A coarse, labelled count of upstream references (no SKU/pricing authority). */
+interface HldDocumentModelTraceSummary {
+  id: string;
+  label: string;
+  referencedCount: number;
+  sourceRefIds?: string[];
+}
+
+/** A structured pointer at the approved diagram by id/title/type only. */
+interface HldDocumentModelDiagramReference {
+  id: string;
+  diagramArtifactId: string;
+  diagramTitle: string;
+  diagramType: string;
+  sourceRefIds?: string[];
+}
+
+/** One structured validation finding raised against the model. */
+interface HldDocumentModelFinding {
+  id: string;
+  severity: string;
+  code: string;
+  message: string;
+  sourceRefIds?: string[];
+}
+
+/** Sanitized rfp_hld_document_model contract returned in the detail response. */
+interface HldDocumentModelDetailPayload {
+  payloadKind?: string;
+  createdAt?: string;
+  createdBy?: string;
+  sourceArtifactIds?: string[];
+  sourceHldSourceBundleArtifactId?: string;
+  sourceHldDesignModelArtifactId?: string;
+  sourceHldDiagramArtifactId?: string;
+  sourceModelVersion?: number;
+  sourceDiagramVersion?: number;
+  title?: string;
+  documentPurpose?: string;
+  coveredDomains?: string[];
+  excludedDomains?: string[];
+  assumptions?: HldDocumentModelTextEntry[];
+  designSummary?: HldDocumentModelSummarySection[];
+  topologySummary?: HldDocumentModelSummarySection[];
+  siteOrScopeSummary?: HldDocumentModelSummarySection[];
+  implementationNotes?: HldDocumentModelTextEntry[];
+  dependencies?: HldDocumentModelTextEntry[];
+  risksAndCaveats?: HldDocumentModelTextEntry[];
+  complianceTraceSummary?: HldDocumentModelTraceSummary[];
+  boqTraceSummary?: HldDocumentModelTraceSummary[];
+  diagramReferences?: HldDocumentModelDiagramReference[];
+  validationFindings?: HldDocumentModelFinding[];
+}
+
+/** Lean detail artifact summary for a document model. */
+interface HldDocumentModelDetailArtifact {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+}
+
+/** Detail response of GET .../artifacts/[id]/hld-document-model. */
+interface HldDocumentModelDetailResponse {
+  artifact?: HldDocumentModelDetailArtifact;
+  documentModel?: HldDocumentModelDetailPayload;
+}
+
+/** Loaded model detail: the artifact summary plus the sanitized model. */
+interface HldDocumentModelDetail {
+  artifact: HldDocumentModelDetailArtifact;
+  documentModel: HldDocumentModelDetailPayload;
+}
+// >>> HLD-DOC-MODEL-COPY-END
+
 /**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
@@ -1441,7 +1579,8 @@ type DrawerKind =
   | "hld-knowledge-pack"
   | "hld-source-bundle"
   | "hld-design-model"
-  | "hld-diagram";
+  | "hld-diagram"
+  | "hld-document-model";
 
 interface DrawerState {
   kind: DrawerKind;
@@ -1568,6 +1707,16 @@ const HLD_DIAGRAM_CREATE_ERROR = "Unable to create HLD diagram draft.";
 const HLD_DIAGRAM_APPROVE_SUCCESS = "HLD diagram draft approved.";
 const HLD_DIAGRAM_REJECT_SUCCESS = "HLD diagram draft changes requested.";
 const HLD_DIAGRAM_REVIEW_ERROR = "Unable to review HLD diagram draft.";
+
+// >>> HLD-DOC-MODEL-COPY-START
+/** Exact UI copy for the Stage 6H-A HLD document model list/detail/create. */
+const HLD_DOCUMENT_MODEL_LIST_ERROR = "Unable to load HLD document models.";
+const HLD_DOCUMENT_MODEL_DETAIL_ERROR =
+  "Unable to load HLD document model detail.";
+const HLD_DOCUMENT_MODEL_CREATE_SUCCESS =
+  "HLD document model compiled for operator inspection.";
+const HLD_DOCUMENT_MODEL_CREATE_ERROR = "Unable to compile HLD document model.";
+// >>> HLD-DOC-MODEL-COPY-END
 
 /** Exact UI copy for the advisory deterministic design-model review surface. */
 const HLD_DESIGN_MODEL_REVIEW_LIST_ERROR =
@@ -3950,6 +4099,28 @@ export default function ProjectRfpEvidencePage() {
   const [hldDiagramReviewSuccess, setHldDiagramReviewSuccess] = useState<
     string | null
   >(null);
+  // Stage 6H-A internal HLD document model inspection surface. Read/create/
+  // inspect only; gated by the Stage 6F readiness value and an approved diagram.
+  // It approves nothing and carries no authority body.
+  const [hldDocumentModelList, setHldDocumentModelList] =
+    useState<HldDocumentModelListResponse | null>(null);
+  const [hldDocumentModelListLoading, setHldDocumentModelListLoading] =
+    useState(true);
+  const [hldDocumentModelListError, setHldDocumentModelListError] = useState<
+    string | null
+  >(null);
+  const [hldDocumentModelDetail, setHldDocumentModelDetail] =
+    useState<HldDocumentModelDetail | null>(null);
+  const [hldDocumentModelDetailLoading, setHldDocumentModelDetailLoading] =
+    useState(false);
+  const [hldDocumentModelDetailError, setHldDocumentModelDetailError] =
+    useState<string | null>(null);
+  const [hldDocumentModelCreatePending, setHldDocumentModelCreatePending] =
+    useState(false);
+  const [hldDocumentModelCreateError, setHldDocumentModelCreateError] =
+    useState<string | null>(null);
+  const [hldDocumentModelCreateSuccess, setHldDocumentModelCreateSuccess] =
+    useState<string | null>(null);
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -4560,6 +4731,65 @@ export default function ProjectRfpEvidencePage() {
         setHldDiagramDetailError(HLD_DIAGRAM_DETAIL_ERROR);
       } finally {
         setHldDiagramDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  // Stage 6H-A internal document model list (lean, counts-only) loaded on mount
+  // and refreshed after a create. It carries no model body.
+  const loadHldDocumentModelList = useCallback(async (): Promise<void> => {
+    setHldDocumentModelListLoading(true);
+    setHldDocumentModelListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-document-model`);
+      const body = (await res.json().catch(() => null)) as HldDocumentModelListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
+        setHldDocumentModelList(null);
+        setHldDocumentModelListError(HLD_DOCUMENT_MODEL_LIST_ERROR);
+        return;
+      }
+      setHldDocumentModelList(body);
+    } catch {
+      setHldDocumentModelList(null);
+      setHldDocumentModelListError(HLD_DOCUMENT_MODEL_LIST_ERROR);
+    } finally {
+      setHldDocumentModelListLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldDocumentModelList();
+  }, [loadHldDocumentModelList]);
+
+  // A document model's sanitized content is fetched only here, on Inspect click.
+  const loadHldDocumentModelDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setHldDocumentModelDetail(null);
+      setHldDocumentModelDetailError(null);
+      setHldDocumentModelDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-document-model`
+        );
+        const body = (await res.json().catch(() => null)) as HldDocumentModelDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.documentModel === undefined
+        ) {
+          setHldDocumentModelDetailError(HLD_DOCUMENT_MODEL_DETAIL_ERROR);
+          return;
+        }
+        setHldDocumentModelDetail({
+          artifact: body.artifact,
+          documentModel: body.documentModel,
+        });
+      } catch {
+        setHldDocumentModelDetailError(HLD_DOCUMENT_MODEL_DETAIL_ERROR);
+      } finally {
+        setHldDocumentModelDetailLoading(false);
       }
     },
     [id]
@@ -5676,6 +5906,44 @@ export default function ProjectRfpEvidencePage() {
     }
   }, [hldDiagramCreatePending, id, loadHldDiagramList, loadHldDiagramDetail]);
 
+  // Compile exactly ONE internal hld_document_model. The route reads no body, so
+  // the POST sends no body and no authority/source/payload field. On success it
+  // refreshes the list and, when the new artifact id is present, opens its detail.
+  const submitHldDocumentModelCreate = useCallback(async (): Promise<void> => {
+    if (hldDocumentModelCreatePending) return;
+    setHldDocumentModelCreatePending(true);
+    setHldDocumentModelCreateError(null);
+    setHldDocumentModelCreateSuccess(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-document-model`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => null)) as
+        | { artifact?: { id?: string } }
+        | null;
+      if (!res.ok) {
+        setHldDocumentModelCreateError(HLD_DOCUMENT_MODEL_CREATE_ERROR);
+        return;
+      }
+      setHldDocumentModelCreateSuccess(HLD_DOCUMENT_MODEL_CREATE_SUCCESS);
+      void loadHldDocumentModelList();
+      const newId = body?.artifact?.id;
+      if (typeof newId === "string" && newId !== "") {
+        setDrawer({ kind: "hld-document-model", activeId: newId });
+        void loadHldDocumentModelDetail(newId);
+      }
+    } catch {
+      setHldDocumentModelCreateError(HLD_DOCUMENT_MODEL_CREATE_ERROR);
+    } finally {
+      setHldDocumentModelCreatePending(false);
+    }
+  }, [
+    hldDocumentModelCreatePending,
+    id,
+    loadHldDocumentModelList,
+    loadHldDocumentModelDetail,
+  ]);
+
   // Stage 6G-B engineer decision on a needs_review diagram draft. The body is
   // exactly { decision } (or { decision, note } when the trimmed note is
   // nonblank). On success it refreshes the list and selected detail.
@@ -6482,6 +6750,11 @@ export default function ProjectRfpEvidencePage() {
     void loadHldDiagramDetail(artifactId);
   }
 
+  function openHldDocumentModelDrawer(artifactId: string): void {
+    setDrawer({ kind: "hld-document-model", activeId: artifactId });
+    void loadHldDocumentModelDetail(artifactId);
+  }
+
   function drawerIds(): string[] {
     if (drawer === null) return [];
     if (drawer.kind === "evidence") return data?.evidence.map((item) => item.id) ?? [];
@@ -6512,6 +6785,9 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "hld-diagram") {
       return hldDiagramList?.artifacts.map((item) => item.id) ?? [];
     }
+    if (drawer.kind === "hld-document-model") {
+      return hldDocumentModelList?.artifacts.map((item) => item.id) ?? [];
+    }
     return complianceList?.artifacts.map((item) => item.id) ?? [];
   }
 
@@ -6526,6 +6802,8 @@ export default function ProjectRfpEvidencePage() {
     else if (kind === "hld-source-bundle") openHldSourceBundleDrawer(activeId);
     else if (kind === "hld-design-model") openHldDesignModelDrawer(activeId);
     else if (kind === "hld-diagram") openHldDiagramDrawer(activeId);
+    else if (kind === "hld-document-model")
+      openHldDocumentModelDrawer(activeId);
     else openComplianceDrawer(activeId);
   }
 
@@ -8721,6 +8999,248 @@ export default function ProjectRfpEvidencePage() {
     );
   }
 
+  function renderHldDocumentModelDrawerContent(): ReactNode {
+    if (hldDocumentModelDetail === null) return null;
+    const { artifact, documentModel } = hldDocumentModelDetail;
+    const coveredDomains = documentModel.coveredDomains ?? [];
+    const excludedDomains = documentModel.excludedDomains ?? [];
+    const assumptions = documentModel.assumptions ?? [];
+    const designSummary = documentModel.designSummary ?? [];
+    const topologySummary = documentModel.topologySummary ?? [];
+    const siteOrScopeSummary = documentModel.siteOrScopeSummary ?? [];
+    const implementationNotes = documentModel.implementationNotes ?? [];
+    const dependencies = documentModel.dependencies ?? [];
+    const risksAndCaveats = documentModel.risksAndCaveats ?? [];
+    const complianceTraceSummary = documentModel.complianceTraceSummary ?? [];
+    const boqTraceSummary = documentModel.boqTraceSummary ?? [];
+    const diagramReferences = documentModel.diagramReferences ?? [];
+    const validationFindings = documentModel.validationFindings ?? [];
+    const sourceArtifactIds = documentModel.sourceArtifactIds ?? [];
+
+    const textList = (entries: HldDocumentModelTextEntry[]): ReactNode =>
+      entries.length > 0 ? (
+        <ul className="mt-1 space-y-0.5">
+          {entries.map((entry, i) => (
+            <li key={i} className="text-xs text-text-secondary">
+              {entry.text}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-xs text-text-tertiary">None</p>
+      );
+
+    const sectionList = (
+      sections: HldDocumentModelSummarySection[]
+    ): ReactNode =>
+      sections.length > 0 ? (
+        <ul className="mt-1 space-y-1">
+          {sections.map((section, i) => (
+            <li key={i} className="text-xs text-text-secondary">
+              <span className="font-medium">{section.title}</span>
+              {section.items.length > 0 && (
+                <ul className="ml-3 list-disc">
+                  {section.items.map((item, j) => (
+                    <li key={j}>{item.text}</li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-xs text-text-tertiary">None</p>
+      );
+
+    const traceList = (
+      traces: HldDocumentModelTraceSummary[]
+    ): ReactNode =>
+      traces.length > 0 ? (
+        <ul className="mt-1 space-y-0.5">
+          {traces.map((trace, i) => (
+            <li key={i} className="text-xs text-text-secondary">
+              {trace.label}: {trace.referencedCount}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-xs text-text-tertiary">None</p>
+      );
+
+    const sectionCard = (
+      testId: string,
+      label: string,
+      child: ReactNode
+    ): ReactNode => (
+      <div data-testid={testId} className={SUBTLE_CARD}>
+        <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+          {label}
+        </p>
+        {child}
+      </div>
+    );
+
+    // >>> HLD-DOC-MODEL-COPY-START
+    return (
+      <div data-testid="hld-document-model-drawer-content" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={artifact.status} />
+            <span className="text-xs text-text-secondary">
+              Version {artifact.version}
+            </span>
+          </div>
+          <div className="mt-2 grid gap-1 text-xs text-text-secondary sm:grid-cols-2">
+            <p>Title: {documentModel.title ?? "Untitled model"}</p>
+            <p>Source model version: {documentModel.sourceModelVersion ?? 0}</p>
+            <p>Source diagram version: {documentModel.sourceDiagramVersion ?? 0}</p>
+            <p>Covered domains: {coveredDomains.length}</p>
+            <p>Excluded domains: {excludedDomains.length}</p>
+            <p>Assumptions: {assumptions.length}</p>
+            <p>Compliance trace: {complianceTraceSummary.length}</p>
+            <p>BoQ trace: {boqTraceSummary.length}</p>
+            <p>Diagram references: {diagramReferences.length}</p>
+            <p>Validation findings: {validationFindings.length}</p>
+          </div>
+        </div>
+        {sectionCard(
+          "hld-document-model-drawer-purpose",
+          "Purpose",
+          <p className="mt-1 text-xs text-text-secondary">
+            {documentModel.documentPurpose ?? "n/a"}
+          </p>
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-domains",
+          "Covered / excluded domains",
+          <div className="mt-1 grid gap-1 text-xs text-text-secondary sm:grid-cols-2">
+            <p>
+              Covered:{" "}
+              {coveredDomains.length > 0
+                ? coveredDomains.map(humanizeToken).join(", ")
+                : "None"}
+            </p>
+            <p>
+              Excluded:{" "}
+              {excludedDomains.length > 0
+                ? excludedDomains.map(humanizeToken).join(", ")
+                : "None"}
+            </p>
+          </div>
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-assumptions",
+          "Assumptions",
+          textList(assumptions)
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-design",
+          "Design summary",
+          sectionList(designSummary)
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-topology",
+          "Topology summary",
+          sectionList(topologySummary)
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-sites",
+          "Site / scope summary",
+          sectionList(siteOrScopeSummary)
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-implementation",
+          "Implementation notes",
+          textList(implementationNotes)
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-dependencies",
+          "Dependencies",
+          textList(dependencies)
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-risks",
+          "Risks and caveats",
+          textList(risksAndCaveats)
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-compliance",
+          "Compliance trace",
+          traceList(complianceTraceSummary)
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-boq",
+          "BoQ trace",
+          traceList(boqTraceSummary)
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-diagrams",
+          "Diagram references",
+          diagramReferences.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {diagramReferences.map((ref, i) => (
+                <li key={i} className="text-xs text-text-secondary">
+                  {ref.diagramTitle} ({humanizeToken(ref.diagramType)})
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-text-tertiary">None</p>
+          )
+        )}
+        {sectionCard(
+          "hld-document-model-drawer-findings",
+          "Validation findings",
+          validationFindings.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {validationFindings.map((finding, i) => (
+                <li key={i} className="text-xs text-text-secondary">
+                  [{finding.severity}] {finding.message} ({finding.code})
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-text-tertiary">None</p>
+          )
+        )}
+        <TechnicalDetails
+          testId="hld-document-model-drawer-audit"
+          label="Technical details (artifact and source model/diagram/bundle ids)"
+        >
+          <p>Artifact: {artifact.id}</p>
+          {documentModel.sourceHldDesignModelArtifactId !== undefined &&
+            documentModel.sourceHldDesignModelArtifactId !== "" && (
+              <p>
+                Source design model:{" "}
+                {documentModel.sourceHldDesignModelArtifactId}
+              </p>
+            )}
+          {documentModel.sourceHldDiagramArtifactId !== undefined &&
+            documentModel.sourceHldDiagramArtifactId !== "" && (
+              <p>Source diagram: {documentModel.sourceHldDiagramArtifactId}</p>
+            )}
+          {documentModel.sourceHldSourceBundleArtifactId !== undefined &&
+            documentModel.sourceHldSourceBundleArtifactId !== "" && (
+              <p>
+                Source bundle: {documentModel.sourceHldSourceBundleArtifactId}
+              </p>
+            )}
+          {sourceArtifactIds.map((srcId, srcIndex) => (
+            <p key={`src-${srcIndex}`}>
+              Source {srcIndex + 1}: {srcId}
+            </p>
+          ))}
+          {diagramReferences.map((ref, refIndex) => (
+            <p key={`ref-${refIndex}`}>
+              Diagram {ref.diagramTitle}: {ref.diagramArtifactId}
+            </p>
+          ))}
+        </TechnicalDetails>
+      </div>
+    );
+    // >>> HLD-DOC-MODEL-COPY-END
+  }
+
   function renderDrawerContent(): ReactNode {
     if (drawer === null) return null;
     if (drawer.kind === "evidence") return renderEvidenceDrawerContent();
@@ -8733,6 +9253,8 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "hld-source-bundle") return renderHldSourceBundleDrawerContent();
     if (drawer.kind === "hld-design-model") return renderHldDesignModelDrawerContent();
     if (drawer.kind === "hld-diagram") return renderHldDiagramDrawerContent();
+    if (drawer.kind === "hld-document-model")
+      return renderHldDocumentModelDrawerContent();
     return renderComplianceDrawerContent();
   }
 
@@ -8757,7 +9279,9 @@ export default function ProjectRfpEvidencePage() {
                       ? "HLD design model"
                       : drawer?.kind === "hld-diagram"
                         ? "HLD diagram draft"
-                        : "Compliance matrix";
+                        : drawer?.kind === "hld-document-model"
+                          ? "HLD document model"
+                          : "Compliance matrix";
   const drawerLoading =
     drawer?.kind === "evidence"
       ? detailLoading
@@ -8779,7 +9303,9 @@ export default function ProjectRfpEvidencePage() {
                       ? hldDesignModelDetailLoading
                       : drawer?.kind === "hld-diagram"
                         ? hldDiagramDetailLoading
-                        : complianceDetailLoading;
+                        : drawer?.kind === "hld-document-model"
+                          ? hldDocumentModelDetailLoading
+                          : complianceDetailLoading;
   const drawerError =
     drawer?.kind === "evidence"
       ? detailError
@@ -8801,7 +9327,9 @@ export default function ProjectRfpEvidencePage() {
                       ? hldDesignModelDetailError
                       : drawer?.kind === "hld-diagram"
                         ? hldDiagramDetailError
-                        : complianceDetailError;
+                        : drawer?.kind === "hld-document-model"
+                          ? hldDocumentModelDetailError
+                          : complianceDetailError;
 
   return (
     <main className="min-h-screen bg-bg-primary px-4 py-6 sm:px-6 lg:px-8">
@@ -10861,6 +11389,205 @@ export default function ProjectRfpEvidencePage() {
               </p>
             )}
           </div>
+
+          {/* >>> HLD-DOC-MODEL-COPY-START */}
+          <div
+            data-testid="hld-document-model-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                HLD document model (Stage 6H-A)
+              </h3>
+              <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                Internal structured model compiled from the approved HLD design
+                model and approved HLD diagram, for operator inspection only.
+              </p>
+            </div>
+            {(() => {
+              const docModelReady =
+                hldGenerationReadiness?.status === "ready" &&
+                hldGenerationReadiness.ready === true;
+              const hasApprovedDiagram = (
+                hldDiagramList?.artifacts ?? []
+              ).some((item) => item.status === "approved");
+              const docModelCanCreate = docModelReady && hasApprovedDiagram;
+              return (
+                <div
+                  data-testid="hld-document-model-readiness"
+                  className={`mt-3 ${SUBTLE_CARD}`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className={MUTED_TEXT}>
+                      Stage 6F readiness:{" "}
+                      <span
+                        className={`font-medium ${docModelCanCreate ? "text-emerald-300" : "text-amber-200"}`}
+                      >
+                        {docModelCanCreate
+                          ? "Ready to compile model"
+                          : "Blocked"}
+                      </span>
+                    </p>
+                    {docModelCanCreate && (
+                      <button
+                        type="button"
+                        data-testid="hld-document-model-create"
+                        disabled={hldDocumentModelCreatePending}
+                        onClick={() => void submitHldDocumentModelCreate()}
+                        className={ACTION_BTN}
+                      >
+                        Create HLD document model
+                      </button>
+                    )}
+                  </div>
+                  {!docModelCanCreate && (
+                    <p
+                      data-testid="hld-document-model-blocked"
+                      className="mt-2 text-xs text-amber-200"
+                    >
+                      Stage 6F generation readiness and an approved HLD diagram
+                      are required before compiling the document model.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+            {hldDocumentModelCreateError && (
+              <p
+                data-testid="hld-document-model-create-error"
+                className="mt-3 text-xs text-destructive"
+              >
+                {hldDocumentModelCreateError}
+              </p>
+            )}
+            {hldDocumentModelCreateSuccess && (
+              <p
+                data-testid="hld-document-model-create-success"
+                className="mt-3 text-xs text-emerald-300"
+              >
+                {hldDocumentModelCreateSuccess}
+              </p>
+            )}
+            {hldDocumentModelListError && (
+              <div
+                data-testid="hld-document-model-error"
+                className={`mt-3 ${ERROR_BOX}`}
+              >
+                {hldDocumentModelListError}
+              </div>
+            )}
+            {hldDocumentModelListLoading && (
+              <p className="mt-3 text-sm text-text-tertiary">
+                Loading HLD document models...
+              </p>
+            )}
+            {hldDocumentModelList !== null &&
+              hldDocumentModelList.artifacts.length > 0 && (
+                <div className="mt-3 overflow-x-auto">
+                  <table
+                    data-testid="hld-document-model-list"
+                    className="w-full border-collapse text-xs"
+                  >
+                    <thead>
+                      <tr className="text-left text-text-tertiary">
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Status
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Version
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Title
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Domains
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Summaries / traces
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Diagrams
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Source
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Inspect
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hldDocumentModelList.artifacts
+                        .slice()
+                        .sort((a, b) => b.version - a.version)
+                        .map((item) => {
+                          const summary = item.payloadSummary;
+                          const summaryCount =
+                            (summary?.designSummaryCount ?? 0) +
+                            (summary?.topologySummaryCount ?? 0) +
+                            (summary?.siteOrScopeSummaryCount ?? 0);
+                          const traceCount =
+                            (summary?.complianceTraceCount ?? 0) +
+                            (summary?.boqTraceCount ?? 0);
+                          return (
+                            <tr
+                              key={item.id}
+                              data-testid="hld-document-model-row"
+                              className="align-top"
+                            >
+                              <td className="border border-[var(--border)] px-2 py-1">
+                                <StatusBadge status={item.status} />
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                v{item.version}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.title ?? "Untitled model"}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.coveredDomainCount ?? 0} covered /{" "}
+                                {summary?.excludedDomainCount ?? 0} excluded
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summaryCount} summaries / {traceCount} traces
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.diagramReferenceCount ?? 0}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                v{summary?.sourceModelVersion ?? 0} / v
+                                {summary?.sourceDiagramVersion ?? 0}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1">
+                                <button
+                                  type="button"
+                                  data-testid="hld-document-model-inspect"
+                                  onClick={() =>
+                                    openHldDocumentModelDrawer(item.id)
+                                  }
+                                  className={PLAIN_BTN}
+                                >
+                                  Inspect
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            {hldDocumentModelList !== null &&
+              hldDocumentModelList.artifacts.length === 0 && (
+                <p
+                  data-testid="hld-document-model-empty"
+                  className="mt-3 text-xs text-text-tertiary"
+                >
+                  No HLD document models yet.
+                </p>
+              )}
+          </div>
+          {/* >>> HLD-DOC-MODEL-COPY-END */}
         </section>
       </div>
 
