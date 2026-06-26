@@ -496,6 +496,69 @@ describe("createRfpHldDocumentModelDraft - precondition gates", () => {
       expect(mockCreateArtifact).not.toHaveBeenCalled();
     }
   });
+
+  // --- wrong-project edge cases -------------------------------------------
+
+  it("fails precondition (source_bundle_unavailable) when the bundle row belongs to a different project", async () => {
+    mockGetArtifactById.mockImplementation(
+      artifactsById({
+        [MODEL_ID]: modelArtifact(),
+        [BUNDLE_ID]: bundleArtifact({ projectId: "other-project" }),
+        [REVIEW_ID]: reviewArtifact(),
+      })
+    );
+    const result = await createRfpHldDocumentModelDraft(baseInput());
+    expect(result).toEqual({ status: "precondition_failed", code: "source_bundle_unavailable" });
+    expect(mockCreateArtifact).not.toHaveBeenCalled();
+  });
+
+  it("fails precondition (approved_model_unavailable) when the model row belongs to a different project", async () => {
+    mockGetArtifactById.mockImplementation(
+      artifactsById({
+        [MODEL_ID]: modelArtifact({ projectId: "other-project" }),
+        [BUNDLE_ID]: bundleArtifact(),
+        [REVIEW_ID]: reviewArtifact(),
+      })
+    );
+    const result = await createRfpHldDocumentModelDraft(baseInput());
+    expect(result).toEqual({ status: "precondition_failed", code: "approved_model_unavailable" });
+    expect(mockCreateArtifact).not.toHaveBeenCalled();
+  });
+
+  it("fails precondition (review_unavailable) when the review row belongs to a different project", async () => {
+    mockGetArtifactById.mockImplementation(
+      artifactsById({
+        [MODEL_ID]: modelArtifact(),
+        [BUNDLE_ID]: bundleArtifact(),
+        [REVIEW_ID]: reviewArtifact({ projectId: "other-project" }),
+      })
+    );
+    const result = await createRfpHldDocumentModelDraft(baseInput());
+    expect(result).toEqual({ status: "precondition_failed", code: "review_unavailable" });
+    expect(mockCreateArtifact).not.toHaveBeenCalled();
+  });
+
+  it("fails precondition (approved_diagram_stale_or_invalid) when diagram payload sourceReviewArtifactId points at a different id", async () => {
+    // Payload is internally consistent (validator passes) but sourceReviewArtifactId
+    // does not match the approved review id, so selectCurrentApprovedDiagram rejects it.
+    const wrongReviewPayload = diagramPayload({
+      sourceReviewArtifactId: "other-review",
+      sourceArtifactIds: [MODEL_ID, BUNDLE_ID, "other-review"],
+      sourceReferences: [
+        { id: "sr-model", artifactId: MODEL_ID, artifactType: "hld_design_model" },
+        { id: "sr-bundle", artifactId: BUNDLE_ID, artifactType: "hld_source_bundle" },
+        { id: "sr-review", artifactId: "other-review", artifactType: "hld_design_model_review" },
+      ],
+    });
+    // Row sourceArtifactIds kept matching so the row-level sameOrdered check passes;
+    // the payload-level sourceReviewArtifactId mismatch is what must reject it.
+    mockListByType.mockResolvedValue([
+      diagramArtifact({ payload: wrongReviewPayload }),
+    ]);
+    const result = await createRfpHldDocumentModelDraft(baseInput());
+    expect(result).toEqual({ status: "precondition_failed", code: "approved_diagram_stale_or_invalid" });
+    expect(mockCreateArtifact).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
