@@ -63,12 +63,14 @@ export type ProjectArtifactStatus =
  * `hld_readiness_snapshot` is the durable record that the approved upstream
  * design inputs (requirements baseline, compliance matrix, configured BoQ, and
  * intake answers, plus any approved design knowledge) are in place before HLD
- * work may begin. `hld_design_model`, `hld_diagram`, and `hld_document` are
- * FUTURE/PLACEHOLDER contracts only - the structured HLD model, its topology
- * diagrams, and the reviewable HLD document - declared here so the stage and
- * staleness contracts stay type-complete. This slice defines the contracts
- * only and adds NO model/diagram/document generation behavior. The legacy
- * `hld_design_delta` artifact is unchanged.
+ * work may begin. `hld_design_model` is the structured HLD model and
+ * `hld_diagram` its reviewed topology diagram. `hld_document_model` is the
+ * internal, structured HLD document spine/model: a reviewable projection
+ * compiled from the approved design model and diagram for review BEFORE any
+ * final document is rendered; it carries NO rendered output. `hld_document`
+ * stays RESERVED for a FUTURE final rendered/reviewable HLD document/package
+ * and must NOT be overloaded with the structured `hld_document_model`. The
+ * legacy `hld_design_delta` artifact is unchanged.
  *
  * `hld_design_model_review` is advisory, reviewable quality metadata for a
  * candidate `hld_design_model`, produced by checking it against its approved
@@ -105,6 +107,7 @@ export type ProjectArtifactType =
   | "hld_design_model_review"
   | "hld_design_model_rebuild_request"
   | "hld_diagram"
+  | "hld_document_model"
   | "hld_document"
   | "design_knowledge_pack"
   | "technical_proposal"

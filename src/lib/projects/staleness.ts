@@ -37,11 +37,14 @@ import type {
  * hld_readiness_snapshot, which feeds the deterministic hld_source_bundle (the
  * structured authority package compiled after readiness approval), which feeds
  * the hld_design_model, which feeds its advisory hld_design_model_review, which
- * feeds the future hld_diagram and hld_document; an approved hld_document can
- * feed technical_proposal. A model change stales its advisory review, and a
- * review change stales the future diagram/document outputs without marking the
- * model stale. The diagram/document nodes are future contracts - only their
- * staleness edges are declared here, no generation behavior.
+ * feeds the hld_diagram and the structured hld_document_model; the diagram also
+ * feeds hld_document_model, which feeds the future rendered hld_document, and an
+ * approved hld_document can feed technical_proposal. A model change stales its
+ * advisory review; a review change stales the diagram and the document model
+ * without marking the model stale; a diagram change stales the document model;
+ * and a document-model change stales the future hld_document. hld_document stays
+ * a future rendered-output contract - only its staleness edges are declared
+ * here, no generation behavior.
  *
  * Stage 6.3: design_knowledge_pack is an approved domain knowledge artifact
  * (solution patterns, validated topologies, design constraints) that feeds
@@ -69,11 +72,12 @@ const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   hld_readiness_snapshot: ["hld_source_bundle"],
   hld_source_bundle: ["hld_design_model"],
   hld_design_model: ["hld_design_model_review"],
-  hld_design_model_review: ["hld_diagram", "hld_document"],
+  hld_design_model_review: ["hld_diagram", "hld_document_model"],
   // Request metadata only - not design authority and never an upstream of any
   // generated output, so it is a leaf with no downstream edges.
   hld_design_model_rebuild_request: [],
-  hld_diagram: [],
+  hld_diagram: ["hld_document_model"],
+  hld_document_model: ["hld_document"],
   hld_document: ["technical_proposal"],
   technical_proposal: ["export_package"],
   export_package: [],

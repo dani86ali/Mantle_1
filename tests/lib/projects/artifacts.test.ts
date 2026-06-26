@@ -54,9 +54,11 @@ describe("getArtifactTypesForStage", () => {
 
   it("returns the Stage 6 HLD readiness spine for hld_design_delta_review", () => {
     // The legacy delta plus the Stage 6 HLD intake/readiness/source-bundle/
-    // model/model-review/diagram/document contracts all flow through the
-    // existing HLD stage metadata. design_knowledge_pack is added in Stage 6.3;
-    // hld_design_model_review is the advisory quality-review contract (6E-B).
+    // model/model-review/diagram/document-model/document contracts all flow
+    // through the existing HLD stage metadata. design_knowledge_pack is added in
+    // Stage 6.3; hld_design_model_review is the advisory quality-review contract
+    // (6E-B); hld_document_model is the internal structured document spine (6H-A),
+    // sitting before the still-reserved final hld_document.
     expect(getArtifactTypesForStage("hld_design_delta_review")).toEqual([
       "hld_design_delta",
       "hld_intake",
@@ -66,6 +68,7 @@ describe("getArtifactTypesForStage", () => {
       "hld_design_model_review",
       "hld_design_model_rebuild_request",
       "hld_diagram",
+      "hld_document_model",
       "hld_document",
       "design_knowledge_pack",
     ]);
@@ -98,6 +101,7 @@ describe("isArtifactTypeAllowedForStage", () => {
       "hld_design_model_review",
       "hld_design_model_rebuild_request",
       "hld_diagram",
+      "hld_document_model",
       "hld_document",
       "design_knowledge_pack",
     ] as const) {
@@ -151,6 +155,10 @@ describe("isArtifactTypeAllowedForStage", () => {
     ).toBe(false);
     expect(
       isArtifactTypeAllowedForStage("proposal_review", "hld_design_model")
+    ).toBe(false);
+    // The internal document model belongs only to the HLD stage.
+    expect(
+      isArtifactTypeAllowedForStage("proposal_review", "hld_document_model")
     ).toBe(false);
   });
 });
@@ -410,6 +418,7 @@ describe("Stage 6 is contract-only: no HLD generation behavior", () => {
       "hld_design_model",
       "hld_design_model_review",
       "hld_diagram",
+      "hld_document_model",
       "hld_document",
     ] as const) {
       const row = materializeProjectArtifactVersion({

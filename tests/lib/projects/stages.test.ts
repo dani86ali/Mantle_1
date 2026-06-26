@@ -26,6 +26,7 @@ const VALID_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_design_model_review",
   "hld_design_model_rebuild_request",
   "hld_diagram",
+  "hld_document_model",
   "hld_document",
   "design_knowledge_pack",
   "technical_proposal",
@@ -40,6 +41,7 @@ const STAGE_6_HLD_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_design_model",
   "hld_design_model_review",
   "hld_diagram",
+  "hld_document_model",
   "hld_document",
 ];
 
@@ -218,6 +220,8 @@ describe("artifact metadata", () => {
     );
     // The Stage 6 HLD readiness/design artifacts attach to the existing HLD
     // stage as a contract-level change; no new TP or HLD-generation stage.
+    // hld_document_model is the internal structured document spine, distinct from
+    // the still-reserved final hld_document.
     expect(hld?.artifactTypes).toEqual([
       "hld_design_delta",
       "hld_intake",
@@ -227,6 +231,7 @@ describe("artifact metadata", () => {
       "hld_design_model_review",
       "hld_design_model_rebuild_request",
       "hld_diagram",
+      "hld_document_model",
       "hld_document",
       "design_knowledge_pack",
     ]);
