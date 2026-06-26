@@ -2,20 +2,17 @@
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/hld-diagram/review.
  *
  * Records one human approve/reject decision for the EXACT internal hld_diagram draft
- * artifact named in the URL (the HLD diagram-draft review gate). This route never
- * reads file contents, parses documents, generates downstream artifacts, prices,
- * looks up a catalog, resolves SKUs or configuration, calls AI, or produces any final
- * HLD document / diagram markup - it only records one decision.
+ * artifact named in the URL (the HLD diagram-draft review gate); it only records one
+ * decision and delegates all gating to the approval service.
  *
  * Authenticated via requireAuth; session.tenantId is the only tenant authority,
  * session.userId is the only decidedBy authority, and the route params id/artifactId
  * are the only project/artifact authority. The request body is STRICT: a plain object
  * with ONLY a client-facing { decision: "approve" | "reject", note? } - decision is
- * mapped to the service's canonical "approved" | "rejected". Any extra key (including
- * tenantId/projectId/artifactId/decidedBy/status/payload/source/authority/pricing/
- * SKU/catalog/config/provider/final-output fields), a non-string note, a non-object
- * body, or an invalid decision yields 400 invalid_rfp_hld_diagram_review_request. A
- * present note is trimmed and omitted when blank.
+ * mapped to the service's canonical "approved" | "rejected". Any extra key, a
+ * non-string note, a non-object body, or an invalid decision yields 400
+ * invalid_rfp_hld_diagram_review_request. A present note is trimmed and omitted when
+ * blank.
  *
  * Result maps to HTTP: not_found -> 404 project_not_found, wrong_mode -> 409
  * wrong_project_mode (with the lean project summary), artifact_not_found -> 404
@@ -54,10 +51,9 @@ function invalidRequest(): NextResponse {
 /**
  * Strictly validate the request body to the minimal client review shape, or null when
  * invalid. The body must be a plain object whose only keys are "decision" and an
- * optional "note"; any extra key (tenant/project/artifact/decidedBy/status/payload/
- * source/authority/pricing/SKU/catalog/config/provider/final-output) is rejected. The
- * client decision "approve"/"reject" is mapped to the canonical "approved"/"rejected".
- * A present note must be a string and is trimmed; a blank trimmed note is omitted.
+ * optional "note"; any extra key is rejected. The client decision "approve"/"reject"
+ * is mapped to the canonical "approved"/"rejected". A present note must be a string
+ * and is trimmed; a blank trimmed note is omitted.
  */
 function parseReviewBody(body: unknown): ParsedReviewBody | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return null;

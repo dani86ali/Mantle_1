@@ -7,10 +7,9 @@
  * artifact version named by the caller, on the hld_design_delta_review stage. It
  * loads the Project and the exact artifact, gates on rfp mode, the hld_diagram type
  * within the hld_design_delta_review stage, and reviewable status, then persists
- * exactly one approval through createProjectApproval (its only mutation; it creates
- * no artifact version, runs no generation, and writes no diagram payload).
+ * exactly one approval through createProjectApproval (its only mutation).
  *
- * Because an approved diagram draft becomes the reviewed topology future HLD output
+ * Because an approved diagram draft becomes the reviewed topology future HLD work
  * builds on, APPROVAL additionally fails closed unless the persisted draft is still
  * sound: the payload re-validates against the Stage 6G-A contract, the artifact row
  * source ids equal the payload's [model, bundle, review] ids, and each of the three
@@ -21,16 +20,10 @@
  * stale - either records nothing. A REJECTION skips every diagram payload and
  * source-chain check so a malformed or stale draft can still be retired.
  *
- * This service runs no AI and makes no SKU/pricing/catalog/configuration/design
- * decision; configuration authority stays the approved upstream artifacts. It reads
- * only Project state through the project/artifact stores, never reads a raw
- * RFP/PDF/DOCX/XLSX file, storage path, evidence/file store, or any upstream payload
- * body, and produces no final HLD document, HTML, diagram markup, proposal, or
- * export. It imports exactly the project/artifact/approval stores, the pure approval
- * helper, the Stage 6G-A diagram contract, and canonical project types - no fs/path,
- * no raw-document reader, no AI/provider, no pricing/SKU/catalog/config service, no
- * route or UI. Summaries are lean and serializable (ISO dates, copied arrays, no
- * payload body, no tenantId).
+ * Configuration authority stays with the approved upstream artifacts. The service
+ * reads only Project state through the project/artifact stores and never reads an
+ * upstream payload body. Summaries are lean and serializable (ISO dates, copied
+ * arrays, no payload body, no tenantId).
  */
 import { getProjectById } from "@/lib/db/project-store";
 import { getProjectArtifactById } from "@/lib/db/project-artifact-store";
