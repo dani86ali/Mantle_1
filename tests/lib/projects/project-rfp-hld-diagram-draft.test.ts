@@ -308,6 +308,23 @@ describe("createRfpHldDiagramDraft - precondition gates", () => {
     expect(mockCreateArtifact).not.toHaveBeenCalled();
   });
 
+  for (const status of ["rejected", "failed", "stale"] as const) {
+    it(`fails precondition (review_unavailable) and writes nothing when the matching review is ${status}`, async () => {
+      mockGetArtifactById.mockImplementation(
+        artifactsById({
+          [MODEL_ID]: modelArtifact(),
+          [BUNDLE_ID]: bundleArtifact(),
+          [REVIEW_ID]: reviewArtifact({ status: status as ProjectArtifact["status"] }),
+        })
+      );
+
+      const result = await createRfpHldDiagramDraft(baseInput());
+
+      expect(result).toEqual({ status: "precondition_failed", code: "review_unavailable" });
+      expect(mockCreateArtifact).not.toHaveBeenCalled();
+    });
+  }
+
   it("fails precondition (source_ids_mismatch) and writes nothing when the review source ids do not match", async () => {
     mockGetArtifactById.mockImplementation(
       artifactsById({

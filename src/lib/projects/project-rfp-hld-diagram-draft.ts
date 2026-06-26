@@ -57,6 +57,16 @@ const SOURCE_BUNDLE_TYPE: ProjectArtifactType = "hld_source_bundle";
 const REVIEW_TYPE: ProjectArtifactType = "hld_design_model_review";
 const DIAGRAM_TYPE: ProjectArtifactType = "hld_diagram";
 
+/**
+ * Active advisory-review status boundary, mirroring the Stage 6F readiness gate
+ * exactly ("generated" | "needs_review" | "approved"). Declared locally rather
+ * than imported so this service depends on no Stage 6F private internals. A
+ * referenced `hld_design_model_review` whose status falls outside this set
+ * (rejected / failed / stale / any other inactive status) must fail closed.
+ */
+const ACTIVE_REVIEW_STATUSES: ReadonlySet<ProjectArtifactStatus> =
+  new Set<ProjectArtifactStatus>(["generated", "needs_review", "approved"]);
+
 const DEFAULT_DIAGRAM_TYPE: RfpHldDiagramDraftDiagramType = "topology";
 const DIAGRAM_TITLE = "HLD Topology Diagram Draft";
 const DIAGRAM_BUNDLE_REF_ID = "diagram-source-bundle";
@@ -208,12 +218,13 @@ function isApprovedTypeOnStage(
   );
 }
 
-function isReviewOnStage(artifact: ProjectArtifact | null, projectId: string): boolean {
+function isActiveReviewOnStage(artifact: ProjectArtifact | null, projectId: string): boolean {
   return (
     artifact !== null &&
     artifact.projectId === projectId &&
     artifact.type === REVIEW_TYPE &&
-    artifact.stageId === HLD_STAGE
+    artifact.stageId === HLD_STAGE &&
+    ACTIVE_REVIEW_STATUSES.has(artifact.status)
   );
 }
 
@@ -398,7 +409,7 @@ export async function createRfpHldDiagramDraft(
     return { status: "precondition_failed", code: "source_bundle_unavailable" };
   }
   const review = await getProjectArtifactById(tenantId, projectId, reviewId);
-  if (!isReviewOnStage(review, projectId)) {
+  if (!isActiveReviewOnStage(review, projectId)) {
     return { status: "precondition_failed", code: "review_unavailable" };
   }
 
