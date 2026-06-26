@@ -7167,6 +7167,319 @@ describe("ProjectRfpEvidencePage - Stage 6G-A HLD diagram draft surface", () => 
   });
 });
 
+describe("ProjectRfpEvidencePage - Stage 6H-A HLD document model surface", () => {
+  // Final document-output / review / proposal POST routes the internal
+  // document-model surface must never call. It may GET/POST only the internal
+  // /rfp/hld-document-model draft list/create route.
+  const FINAL_DOC_MODEL_ROUTES = [
+    "/rfp/hld-document-model/review",
+    "/rfp/hld-document-model/download",
+    "/rfp/hld-document-model/upload",
+    "/rfp/hld-document-model/export",
+    "/rfp/hld-document-model/final",
+    "/rfp/hld-document-model/generate",
+    "/rfp/hld-document-model/render",
+    "/rfp/hld-document/review",
+    "/rfp/hld-document/download",
+    "/rfp/hld-document/upload",
+    "/rfp/hld-document/export",
+    "/rfp/hld-document/final",
+    "/rfp/hld-proposal",
+    "/rfp/hld-html",
+    "/rfp/drawio",
+    "/rfp/hld-export",
+  ];
+  function finalDocModelCalls(calls: FetchCall[]): FetchCall[] {
+    return calls.filter((c) =>
+      FINAL_DOC_MODEL_ROUTES.some((route) => c.url.includes(route))
+    );
+  }
+
+  function approvedDiagramList(): Record<string, unknown> {
+    return {
+      project: projectContext(),
+      artifactCount: 1,
+      artifacts: [hldDiagramListItem(HLD_DIAGRAM_ARTIFACT_ID, "approved")],
+    };
+  }
+
+  function docModelFetch(
+    readinessBody: Record<string, unknown>,
+    diagramListBody: Record<string, unknown> = hldDiagramListEmpty(),
+    docListBody: Record<string, unknown> = hldDocumentModelListEmpty(),
+    docDetailBody: Record<string, unknown> = hldDocumentModelDetailResponse(),
+    onCreate?: (init?: RequestInit) => Response
+  ): (url: string, init?: RequestInit) => Response {
+    return (url, init) => {
+      if (url === HLD_DOCUMENT_MODEL_LIST_URL) {
+        if (init?.method === "POST") {
+          return onCreate
+            ? onCreate(init)
+            : jsonResponse(
+                { artifact: { id: HLD_DOCUMENT_MODEL_ARTIFACT_ID } },
+                201
+              );
+        }
+        return jsonResponse(docListBody);
+      }
+      if (url === HLD_DOCUMENT_MODEL_DETAIL_URL) {
+        return jsonResponse(docDetailBody);
+      }
+      if (url === HLD_DIAGRAM_LIST_URL) return jsonResponse(diagramListBody);
+      if (url === HLD_GENERATION_READINESS_URL) {
+        return jsonResponse(readinessBody);
+      }
+      return jsonResponse({}, 200);
+    };
+  }
+
+  it("renders the document-model panel after the HLD diagram panel and hides the create button when Stage 6F readiness is blocked", async () => {
+    stubFetch(docModelFetch(hldGenerationReadinessBlocked()));
+    render(<ProjectRfpEvidencePage />);
+
+    const diagramPanel = await screen.findByTestId("hld-diagram-panel");
+    const docPanel = await screen.findByTestId("hld-document-model-panel");
+    // The document model is an internal stage that follows the diagram panel.
+    expect(
+      diagramPanel.compareDocumentPosition(docPanel) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    expect(
+      within(docPanel).getByTestId("hld-document-model-readiness")
+    ).toHaveTextContent("Blocked");
+    expect(
+      await screen.findByTestId("hld-document-model-blocked")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-document-model-create")).toBeNull();
+    expect(
+      await screen.findByTestId("hld-document-model-empty")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-document-model-list")).toBeNull();
+  });
+
+  it("hides the create button when Stage 6F readiness is ready but no approved hld_diagram exists", async () => {
+    stubFetch(
+      docModelFetch(hldGenerationReadinessReady(), hldDiagramListEmpty())
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-document-model-panel");
+    expect(
+      await screen.findByTestId("hld-document-model-blocked")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-document-model-create")).toBeNull();
+  });
+
+  it("shows the create button when Stage 6F readiness is ready and an approved hld_diagram exists", async () => {
+    stubFetch(
+      docModelFetch(hldGenerationReadinessReady(), approvedDiagramList())
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-document-model-panel");
+    const createBtn = await screen.findByTestId("hld-document-model-create");
+    expect(createBtn).not.toBeDisabled();
+    expect(createBtn.textContent ?? "").toContain("Create HLD document model");
+    expect(screen.queryByTestId("hld-document-model-blocked")).toBeNull();
+  });
+
+  it("creates a document model posting no body and no authority/source/payload field, refreshes the list, opens the new artifact drawer, fetches sanitized detail, and makes no final-output call", async () => {
+    const calls = stubFetch(
+      docModelFetch(hldGenerationReadinessReady(), approvedDiagramList())
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const createBtn = await screen.findByTestId("hld-document-model-create");
+    const listGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DOCUMENT_MODEL_LIST_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(createBtn);
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_DOCUMENT_MODEL_LIST_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) => c.url === HLD_DOCUMENT_MODEL_LIST_URL && c.init?.method === "POST"
+    );
+    const rawBody = post?.init?.body;
+    const bodyText =
+      rawBody === undefined || rawBody === null ? "" : String(rawBody);
+    // No body is sent; no tenant/project/user/source/status/payload/authority/
+    // SKU/pricing/catalog/config/provider field rides along.
+    expect(rawBody === undefined || rawBody === null || bodyText === "{}").toBe(
+      true
+    );
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "createdBy",
+      "userId",
+      "status",
+      "sourceArtifactIds",
+      "sourceHldDesignModelArtifactId",
+      "sourceHldDiagramArtifactId",
+      "payload",
+      "authority",
+      "sku",
+      "pricing",
+      "catalog",
+      "config",
+      "provider",
+    ]) {
+      expect(bodyText).not.toContain(forbidden);
+    }
+
+    // The list refreshes and the created artifact opens with sanitized detail.
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DOCUMENT_MODEL_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+    expect(
+      await screen.findByTestId("hld-document-model-create-success")
+    ).toBeInTheDocument();
+    await screen.findByTestId("hld-document-model-drawer-content");
+    expect(
+      calls.some(
+        (c) =>
+          c.url === HLD_DOCUMENT_MODEL_DETAIL_URL &&
+          (c.init?.method ?? "GET") === "GET"
+      )
+    ).toBe(true);
+
+    expect(finalDocModelCalls(calls)).toHaveLength(0);
+  });
+
+  it("renders needs_review, approved, and rejected document-model rows when present", async () => {
+    const multiList: Record<string, unknown> = {
+      project: projectContext(),
+      artifactCount: 3,
+      artifacts: [
+        hldDocumentModelListItem("art-doc-model-nr", "needs_review", 3),
+        hldDocumentModelListItem("art-doc-model-ap", "approved", 2),
+        hldDocumentModelListItem("art-doc-model-rj", "rejected", 1),
+      ],
+    };
+    stubFetch(
+      docModelFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        multiList
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-document-model-panel");
+    const list = await screen.findByTestId("hld-document-model-list");
+    expect(screen.getAllByTestId("hld-document-model-row")).toHaveLength(3);
+    const listText = list.textContent ?? "";
+    expect(listText).toMatch(/needs review/i);
+    expect(listText).toMatch(/approved/i);
+    expect(listText).toMatch(/rejected/i);
+  });
+
+  it("inspects a document model into the drawer with all structured sections and raw ids only inside the collapsed audit", async () => {
+    stubFetch(
+      docModelFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDocumentModelListResponse()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-document-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    const content = await screen.findByTestId(
+      "hld-document-model-drawer-content"
+    );
+    const sections: [string, string][] = [
+      ["hld-document-model-drawer-purpose", "HLD-DOCMODEL-PURPOSE-CANARY"],
+      ["hld-document-model-drawer-domains", "campus switching"],
+      ["hld-document-model-drawer-assumptions", "HLD-DOCMODEL-ASSUMPTION-CANARY"],
+      ["hld-document-model-drawer-design", "HLD-DOCMODEL-DESIGN-SECTION-CANARY"],
+      ["hld-document-model-drawer-topology", "HLD-DOCMODEL-TOPOLOGY-CANARY"],
+      ["hld-document-model-drawer-sites", "HLD-DOCMODEL-SITE-CANARY"],
+      ["hld-document-model-drawer-implementation", "HLD-DOCMODEL-IMPL-CANARY"],
+      ["hld-document-model-drawer-dependencies", "HLD-DOCMODEL-DEP-CANARY"],
+      ["hld-document-model-drawer-risks", "HLD-DOCMODEL-RISK-CANARY"],
+      ["hld-document-model-drawer-compliance", "HLD-DOCMODEL-COMPLIANCE-CANARY"],
+      ["hld-document-model-drawer-boq", "HLD-DOCMODEL-BOQ-CANARY"],
+      ["hld-document-model-drawer-diagrams", "HLD-DOCMODEL-DIAGRAM-REF-CANARY"],
+      ["hld-document-model-drawer-findings", "HLD-DOCMODEL-FINDING-CANARY"],
+    ];
+    for (const [testId, canary] of sections) {
+      expect(within(content).getByTestId(testId)).toHaveTextContent(canary);
+    }
+
+    // Raw artifact/source/diagram ids live ONLY in the collapsed audit.
+    const audit = content.querySelector(
+      "[data-testid='hld-document-model-drawer-audit']"
+    );
+    expect(audit).not.toBeNull();
+    expect((audit as HTMLElement).tagName).toBe("DETAILS");
+    expect((audit as HTMLElement).hasAttribute("open")).toBe(false);
+    expect(audit?.textContent ?? "").toContain(HLD_DOCUMENT_MODEL_ARTIFACT_ID);
+
+    const outside = content.cloneNode(true) as HTMLElement;
+    outside
+      .querySelector("[data-testid='hld-document-model-drawer-audit']")
+      ?.remove();
+    const outsideText = outside.textContent ?? "";
+    expect(outsideText).not.toContain(HLD_DOCUMENT_MODEL_ARTIFACT_ID);
+    expect(outsideText).not.toContain(HLD_DOC_MODEL_SOURCE_BUNDLE_ID);
+    expect(outsideText).not.toContain(HLD_DOC_MODEL_DESIGN_MODEL_ID);
+    expect(outsideText).not.toContain(HLD_DOC_MODEL_DIAGRAM_ID);
+  });
+
+  it("renders no raw JSON/pre dump and no document-model review/approval controls, and calls no document-model output route", async () => {
+    const calls = stubFetch(
+      docModelFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDocumentModelListResponse()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-document-model-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    const content = await screen.findByTestId(
+      "hld-document-model-drawer-content"
+    );
+    // No raw JSON/pre/blob dump in the drawer.
+    expect(content.querySelector("pre")).toBeNull();
+    // No review/approval controls on the internal document-model surface.
+    expect(screen.queryByTestId("hld-document-model-review")).toBeNull();
+    expect(screen.queryByTestId("hld-document-model-approve")).toBeNull();
+    expect(screen.queryByTestId("hld-document-model-reject")).toBeNull();
+    // No review/download/upload/export/final route is ever called.
+    expect(finalDocModelCalls(calls)).toHaveLength(0);
+  });
+});
+
 describe("ProjectRfpEvidencePage static guards", () => {
   const SRC_PATH = join(process.cwd(), "src/app/projects/[id]/rfp/page.tsx");
   const TEST_PATH = join(process.cwd(), "tests/ui/project-rfp-page.test.tsx");
@@ -7503,6 +7816,95 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "openai",
     ]) {
       expect(importLines.join("\n")).not.toContain(token);
+    }
+  });
+
+  it("wires the internal Stage 6H-A HLD document model route and panel but adds no document-output route, control, or server-service import", () => {
+    // The internal draft list/create route and the compact panel are wired.
+    expect(source).toContain("/rfp/hld-document-model");
+    expect(source).toContain("hld-document-model-panel");
+    // The bare future final /rfp/hld-document output route is forbidden, but the
+    // allowed internal /rfp/hld-document-model route (with the -model suffix) is
+    // not tripped by this matcher.
+    expect(FINAL_HLD_DOCUMENT_ROUTE_RE.test(source)).toBe(false);
+    // It is inspection/create only: no document-model output/review suffix and no
+    // final HLD document/diagram/html/draw.io/proposal/export route may appear.
+    for (const forbidden of [
+      "/rfp/hld-document-model/review",
+      "/rfp/hld-document-model/download",
+      "/rfp/hld-document-model/upload",
+      "/rfp/hld-document-model/export",
+      "/rfp/hld-document-model/final",
+      "/rfp/hld-document-model/generate",
+      "/rfp/hld-document-model/render",
+      "/rfp/hld-diagram/generate",
+      "/rfp/hld-diagram/download",
+      "/rfp/hld-diagram/upload",
+      "/rfp/hld-diagram/export",
+      "/rfp/hld-diagram/final",
+      "/rfp/hld-document/review",
+      "/rfp/hld-document/download",
+      "/rfp/hld-document/upload",
+      "/rfp/hld-document/export",
+      "/rfp/hld-document/final",
+      "/rfp/hld-proposal",
+      "/rfp/hld-html",
+      "/rfp/drawio",
+      "/rfp/hld-export",
+      "technical_proposal",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
+    // And it imports no document-model server service/store or provider SDK.
+    const importLines = source
+      .split("\n")
+      .filter((line) => line.trimStart().startsWith("import"));
+    for (const token of [
+      "project-rfp-hld-document-model-service",
+      "project-rfp-hld-document-model-inspection",
+      "project-rfp-hld-document-model",
+      "@/lib/db/",
+      "@/lib/ai",
+      "@/lib/llm",
+      "@anthropic-ai/sdk",
+      "openai",
+    ]) {
+      expect(importLines.join("\n")).not.toContain(token);
+    }
+  });
+
+  it("keeps the HLD document-model page section free of output-stage terms", () => {
+    // Extract every marked HLD-DOC-MODEL-COPY section (drawer + panel) and assert
+    // its added page comments and visible strings carry no output-stage vocab.
+    const sections = Array.from(
+      source.matchAll(
+        /HLD-DOC-MODEL-COPY-START([\s\S]*?)HLD-DOC-MODEL-COPY-END/g
+      )
+    ).map((match) => match[1]);
+    expect(sections.length).toBeGreaterThanOrEqual(2);
+    const forbiddenTerms = [
+      "final",
+      "render",
+      "rendered",
+      "download",
+      "upload",
+      "export",
+      "html",
+      "pdf",
+      "docx",
+      "svg",
+      "xml",
+      "mermaid",
+      "draw.io",
+      "technical proposal",
+      "proposal",
+      "customer deliverable",
+    ];
+    for (const section of sections) {
+      const lower = section.toLowerCase();
+      for (const term of forbiddenTerms) {
+        expect(lower).not.toContain(term);
+      }
     }
   });
 });
