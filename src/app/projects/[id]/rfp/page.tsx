@@ -1564,6 +1564,11 @@ const HLD_DIAGRAM_CREATE_SUCCESS =
   "HLD diagram draft created for engineer review.";
 const HLD_DIAGRAM_CREATE_ERROR = "Unable to create HLD diagram draft.";
 
+/** Exact UI copy for the Stage 6G-B HLD diagram draft review controls. */
+const HLD_DIAGRAM_APPROVE_SUCCESS = "HLD diagram draft approved.";
+const HLD_DIAGRAM_REJECT_SUCCESS = "HLD diagram draft changes requested.";
+const HLD_DIAGRAM_REVIEW_ERROR = "Unable to review HLD diagram draft.";
+
 /** Exact UI copy for the advisory deterministic design-model review surface. */
 const HLD_DESIGN_MODEL_REVIEW_LIST_ERROR =
   "Unable to load HLD design model reviews.";
@@ -3935,6 +3940,16 @@ export default function ProjectRfpEvidencePage() {
   const [hldDiagramCreateSuccess, setHldDiagramCreateSuccess] = useState<
     string | null
   >(null);
+  // Stage 6G-B compact engineer review of a needs_review diagram draft. The
+  // note is optional and only sent when nonblank; no authority body is carried.
+  const [hldDiagramReviewNote, setHldDiagramReviewNote] = useState("");
+  const [hldDiagramReviewPending, setHldDiagramReviewPending] = useState(false);
+  const [hldDiagramReviewError, setHldDiagramReviewError] = useState<
+    string | null
+  >(null);
+  const [hldDiagramReviewSuccess, setHldDiagramReviewSuccess] = useState<
+    string | null
+  >(null);
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -5661,6 +5676,71 @@ export default function ProjectRfpEvidencePage() {
     }
   }, [hldDiagramCreatePending, id, loadHldDiagramList, loadHldDiagramDetail]);
 
+  // Stage 6G-B engineer decision on a needs_review diagram draft. The body is
+  // exactly { decision } (or { decision, note } when the trimmed note is
+  // nonblank); no tenant/project/artifact/decidedBy/status/stage/type/source/
+  // payload/authority/pricing/SKU/catalog/config/provider/final-output field is
+  // ever sent. On success it updates the local artifact status, clears the note,
+  // shows compact success copy, and refreshes the list and selected detail. No
+  // server JSON, code, or message is ever echoed.
+  const submitHldDiagramReview = useCallback(
+    async (decision: "approve" | "reject"): Promise<void> => {
+      if (hldDiagramDetail === null || hldDiagramReviewPending) return;
+      const artifactId = hldDiagramDetail.artifact.id;
+      setHldDiagramReviewPending(true);
+      setHldDiagramReviewError(null);
+      setHldDiagramReviewSuccess(null);
+      try {
+        const note = hldDiagramReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-diagram/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              note === "" ? { decision } : { decision, note }
+            ),
+          }
+        );
+        if (!res.ok) {
+          setHldDiagramReviewError(HLD_DIAGRAM_REVIEW_ERROR);
+          return;
+        }
+        setHldDiagramDetail((prev) =>
+          prev === null
+            ? prev
+            : {
+                artifact: {
+                  ...prev.artifact,
+                  status: decision === "approve" ? "approved" : "rejected",
+                },
+                diagram: prev.diagram,
+              }
+        );
+        setHldDiagramReviewNote("");
+        setHldDiagramReviewSuccess(
+          decision === "approve"
+            ? HLD_DIAGRAM_APPROVE_SUCCESS
+            : HLD_DIAGRAM_REJECT_SUCCESS
+        );
+        void loadHldDiagramList();
+        void loadHldDiagramDetail(artifactId);
+      } catch {
+        setHldDiagramReviewError(HLD_DIAGRAM_REVIEW_ERROR);
+      } finally {
+        setHldDiagramReviewPending(false);
+      }
+    },
+    [
+      hldDiagramDetail,
+      hldDiagramReviewNote,
+      hldDiagramReviewPending,
+      id,
+      loadHldDiagramList,
+      loadHldDiagramDetail,
+    ]
+  );
+
   const submitHldDesignModelReview = useCallback(
     async (decision: "approved" | "rejected"): Promise<void> => {
       if (hldDesignModelDetail === null || hldDesignModelReviewPending) return;
@@ -6400,6 +6480,9 @@ export default function ProjectRfpEvidencePage() {
 
   function openHldDiagramDrawer(artifactId: string): void {
     setDrawer({ kind: "hld-diagram", activeId: artifactId });
+    setHldDiagramReviewNote("");
+    setHldDiagramReviewError(null);
+    setHldDiagramReviewSuccess(null);
     void loadHldDiagramDetail(artifactId);
   }
 
@@ -8518,6 +8601,87 @@ export default function ProjectRfpEvidencePage() {
             <p className="mt-1 text-xs text-text-tertiary">None</p>
           )}
         </div>
+        {artifact.status === "needs_review" && (
+          <div data-testid="hld-diagram-review" className={SUBTLE_CARD}>
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Review note (optional)
+              <textarea
+                data-testid="hld-diagram-review-note"
+                value={hldDiagramReviewNote}
+                disabled={hldDiagramReviewPending}
+                onChange={(e) => setHldDiagramReviewNote(e.target.value)}
+                rows={2}
+                className={FIELD}
+              />
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid="hld-diagram-approve"
+                disabled={hldDiagramReviewPending}
+                onClick={() => void submitHldDiagramReview("approve")}
+                className={ACTION_BTN}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="hld-diagram-reject"
+                disabled={hldDiagramReviewPending}
+                onClick={() => void submitHldDiagramReview("reject")}
+                className={PLAIN_BTN}
+              >
+                Request changes
+              </button>
+            </div>
+            {hldDiagramReviewError && (
+              <p data-testid="hld-diagram-review-error" className={`mt-2 ${ERROR_BOX}`}>
+                {hldDiagramReviewError}
+              </p>
+            )}
+            {hldDiagramReviewSuccess && (
+              <p
+                data-testid="hld-diagram-review-success"
+                className="mt-2 text-xs text-emerald-300"
+              >
+                {hldDiagramReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        {artifact.status === "approved" && (
+          <div
+            data-testid="hld-diagram-review-approved"
+            className={`${SUBTLE_CARD} text-xs text-emerald-300`}
+          >
+            This HLD diagram draft is approved. It remains read-only here.
+            {hldDiagramReviewSuccess && (
+              <p
+                data-testid="hld-diagram-review-success"
+                className="mt-1 text-emerald-300"
+              >
+                {hldDiagramReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        {artifact.status === "rejected" && (
+          <div
+            data-testid="hld-diagram-review-rejected"
+            className={`${SUBTLE_CARD} text-xs text-text-secondary`}
+          >
+            Changes were requested on this HLD diagram draft. It remains
+            read-only here.
+            {hldDiagramReviewSuccess && (
+              <p
+                data-testid="hld-diagram-review-success"
+                className="mt-1 text-text-secondary"
+              >
+                {hldDiagramReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
         <TechnicalDetails
           testId="hld-diagram-drawer-audit"
           label="Technical details (artifact, source, model, and node/link/zone IDs)"

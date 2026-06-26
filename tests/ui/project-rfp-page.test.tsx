@@ -70,6 +70,7 @@ const HLD_GENERATION_READINESS_URL = `/api/projects/${PROJECT_ID}/rfp/hld-genera
 const HLD_DIAGRAM_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-diagram`;
 const HLD_DIAGRAM_ARTIFACT_ID = "art-hld-diagram-1";
 const HLD_DIAGRAM_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DIAGRAM_ARTIFACT_ID}/hld-diagram`;
+const HLD_DIAGRAM_REVIEW_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DIAGRAM_ARTIFACT_ID}/hld-diagram/review`;
 const HLD_INTAKE_FIELD_IDS = [
   "existing_network_context",
   "target_topology_intent",
@@ -6587,9 +6588,13 @@ describe("ProjectRfpEvidencePage - Stage 6G-A HLD diagram draft surface", () => 
     readinessBody: Record<string, unknown>,
     listBody: Record<string, unknown> = hldDiagramListEmpty(),
     detailBody: Record<string, unknown> = hldDiagramDetailResponse(),
-    onCreate?: (init?: RequestInit) => Response
+    onCreate?: (init?: RequestInit) => Response,
+    onReview?: (init?: RequestInit) => Response
   ): (url: string, init?: RequestInit) => Response {
     return (url, init) => {
+      if (url === HLD_DIAGRAM_REVIEW_URL && init?.method === "POST") {
+        return onReview ? onReview(init) : jsonResponse({ ok: true }, 200);
+      }
       if (url === HLD_DIAGRAM_LIST_URL) {
         if (init?.method === "POST") {
           return onCreate
@@ -6742,6 +6747,211 @@ describe("ProjectRfpEvidencePage - Stage 6G-A HLD diagram draft surface", () => 
     expect(outsideText).not.toContain("node-core-1");
     expect(outsideText).not.toContain("link-uplink-1");
     expect(outsideText).not.toContain("zone-core-1");
+    // The needs_review review controls also keep raw ids out of the primary view.
+    const review = content.querySelector("[data-testid='hld-diagram-review']");
+    expect(review).not.toBeNull();
+    const reviewText = (review as HTMLElement).textContent ?? "";
+    expect(reviewText).not.toContain(HLD_DESIGN_MODEL_ARTIFACT_ID);
+    expect(reviewText).not.toContain(HLD_DIAGRAM_SOURCE_BUNDLE_ID);
+    expect(reviewText).not.toContain(HLD_DIAGRAM_REVIEW_ID);
+    expect(reviewText).not.toContain(HLD_DIAGRAM_ARTIFACT_ID);
+    expect(reviewText).not.toContain("node-core-1");
+    expect(reviewText).not.toContain("link-uplink-1");
+    expect(reviewText).not.toContain("zone-core-1");
+  });
+
+  it("exposes approve/request-changes controls for a needs_review diagram draft", async () => {
+    stubFetch(
+      diagramFetch(hldGenerationReadinessReady(), hldDiagramListResponse())
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-diagram-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    await screen.findByTestId("hld-diagram-drawer-content");
+    expect(screen.getByTestId("hld-diagram-review")).toBeInTheDocument();
+    expect(screen.getByTestId("hld-diagram-review-note")).toBeInTheDocument();
+    expect(screen.getByTestId("hld-diagram-approve")).toBeInTheDocument();
+    expect(screen.getByTestId("hld-diagram-reject")).toBeInTheDocument();
+  });
+
+  it("approves a draft posting exactly { decision: approve }, refreshes list and detail, shows compact success, and makes no final-output POST", async () => {
+    const calls = stubFetch(
+      diagramFetch(hldGenerationReadinessReady(), hldDiagramListResponse())
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-diagram-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-diagram-drawer-content");
+
+    const listGetsBefore = calls.filter(
+      (c) => c.url === HLD_DIAGRAM_LIST_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+    const detailGetsBefore = calls.filter(
+      (c) => c.url === HLD_DIAGRAM_DETAIL_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-diagram-approve"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) => c.url === HLD_DIAGRAM_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) => c.url === HLD_DIAGRAM_REVIEW_URL && c.init?.method === "POST"
+    );
+    const bodyText = String(post?.init?.body ?? "");
+    expect(JSON.parse(bodyText)).toEqual({ decision: "approve" });
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "artifactId",
+      "decidedBy",
+      "status",
+      "stage",
+      "type",
+      "sourceArtifactIds",
+      "payload",
+      "note",
+    ]) {
+      expect(bodyText).not.toContain(forbidden);
+    }
+
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DIAGRAM_LIST_URL && (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+    expect(
+      calls.filter(
+        (c) =>
+          c.url === HLD_DIAGRAM_DETAIL_URL && (c.init?.method ?? "GET") === "GET"
+      ).length
+    ).toBeGreaterThan(detailGetsBefore);
+    expect(
+      await screen.findByTestId("hld-diagram-review-success")
+    ).toBeInTheDocument();
+    expect(finalDiagramPosts(calls)).toHaveLength(0);
+  });
+
+  it("requests changes with a note posting exactly { decision: reject, note }, refreshes list and detail, shows compact success, and makes no final-output POST", async () => {
+    const calls = stubFetch(
+      diagramFetch(hldGenerationReadinessReady(), hldDiagramListResponse())
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-diagram-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-diagram-drawer-content");
+
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("hld-diagram-review-note"), {
+        target: { value: "  please relabel the core zone  " },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-diagram-reject"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) => c.url === HLD_DIAGRAM_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) => c.url === HLD_DIAGRAM_REVIEW_URL && c.init?.method === "POST"
+    );
+    const bodyText = String(post?.init?.body ?? "");
+    expect(JSON.parse(bodyText)).toEqual({
+      decision: "reject",
+      note: "please relabel the core zone",
+    });
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "artifactId",
+      "decidedBy",
+      "status",
+      "stage",
+      "type",
+      "sourceArtifactIds",
+      "payload",
+    ]) {
+      expect(bodyText).not.toContain(forbidden);
+    }
+
+    expect(
+      await screen.findByTestId("hld-diagram-review-success")
+    ).toBeInTheDocument();
+    expect(finalDiagramPosts(calls)).toHaveLength(0);
+  });
+
+  it("shows an approved draft read-only with no approve/request-changes buttons", async () => {
+    stubFetch(
+      diagramFetch(
+        hldGenerationReadinessReady(),
+        hldDiagramListResponse(),
+        hldDiagramDetailResponse(HLD_DIAGRAM_ARTIFACT_ID, "approved")
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-diagram-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    await screen.findByTestId("hld-diagram-drawer-content");
+    expect(
+      screen.getByTestId("hld-diagram-review-approved")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-diagram-review")).toBeNull();
+    expect(screen.queryByTestId("hld-diagram-approve")).toBeNull();
+    expect(screen.queryByTestId("hld-diagram-reject")).toBeNull();
+  });
+
+  it("shows a rejected/requested-changes draft read-only with no approve/request-changes buttons", async () => {
+    stubFetch(
+      diagramFetch(
+        hldGenerationReadinessReady(),
+        hldDiagramListResponse(),
+        hldDiagramDetailResponse(HLD_DIAGRAM_ARTIFACT_ID, "rejected")
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-diagram-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    await screen.findByTestId("hld-diagram-drawer-content");
+    expect(
+      screen.getByTestId("hld-diagram-review-rejected")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-diagram-review")).toBeNull();
+    expect(screen.queryByTestId("hld-diagram-approve")).toBeNull();
+    expect(screen.queryByTestId("hld-diagram-reject")).toBeNull();
   });
 });
 
@@ -7003,6 +7213,46 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "project-rfp-hld-diagram-inspection",
       "@/lib/db/",
       "@anthropic-ai/sdk",
+    ]) {
+      expect(importLines.join("\n")).not.toContain(token);
+    }
+  });
+
+  it("wires the internal Stage 6G-B HLD diagram review route and controls but adds no final HLD output route or server-service import", () => {
+    // The internal review route segment and the compact review controls are wired.
+    expect(source).toContain("/hld-diagram/review");
+    expect(source).toContain("hld-diagram-review");
+    expect(source).toContain("hld-diagram-review-note");
+    expect(source).toContain("hld-diagram-approve");
+    expect(source).toContain("hld-diagram-reject");
+    // Review is decision-only: no final HLD output route may appear in the source.
+    for (const forbidden of [
+      "/rfp/hld-diagram/generate",
+      "/rfp/hld-diagram/download",
+      "/rfp/hld-diagram/upload",
+      "/rfp/hld-diagram/export",
+      "/rfp/hld-diagram/final",
+      "/rfp/hld-document",
+      "/rfp/hld-proposal",
+      "/rfp/hld-html",
+      "/rfp/drawio",
+      "/rfp/hld-export",
+      "technical_proposal",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
+    // And it imports no diagram review server service/store or provider SDK.
+    const importLines = source
+      .split("\n")
+      .filter((line) => line.trimStart().startsWith("import"));
+    for (const token of [
+      "project-rfp-hld-diagram-review",
+      "project-rfp-hld-diagram",
+      "@/lib/db/",
+      "@/lib/ai",
+      "@/lib/llm",
+      "@anthropic-ai/sdk",
+      "openai",
     ]) {
       expect(importLines.join("\n")).not.toContain(token);
     }
