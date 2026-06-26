@@ -307,17 +307,12 @@ describe("POST /api/projects/[id]/rfp/hld-document-model - body acceptance", () 
     expect(mockCreateDraft).toHaveBeenCalledTimes(1);
   });
 
-  it("accepts a body whose stream cannot be read and still calls the service", async () => {
+  it("rejects an unreadable body stream with 400 before the service is called", async () => {
     const res = await POST(reqUnreadable(), PARAMS);
 
-    expect(res.status).toBe(201);
-    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
-    const arg = mockCreateDraft.mock.calls[0][0] as Record<string, unknown>;
-    expect(Object.keys(arg).sort()).toEqual([
-      "createdBy",
-      "projectId",
-      "tenantId",
-    ]);
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("invalid_rfp_hld_document_model_request");
+    expect(mockCreateDraft).not.toHaveBeenCalled();
   });
 
   it("rejects a non-empty malformed JSON body with 400 before the service is called", async () => {

@@ -46,7 +46,7 @@ async function isAcceptableEmptyBody(request: NextRequest): Promise<boolean> {
   try {
     text = await request.text();
   } catch {
-    return true;
+    return false;
   }
   if (text.trim() === "") return true;
   let body: unknown;
