@@ -114,19 +114,31 @@ const CREATE_OK = {
   payloadSummary: PAYLOAD_SUMMARY,
 };
 
-function req(body: unknown = {}): NextRequest {
+// The route reads the raw body via request.text() and parses it itself. The json
+// mock is wired to reject so any accidental request.json() call would fail loudly.
+function reqText(text: string): NextRequest {
   return {
     headers: { get: () => null },
-    json: vi.fn(() => Promise.resolve(body)),
+    text: vi.fn(() => Promise.resolve(text)),
+    json: vi.fn(() =>
+      Promise.reject(new Error("route must not call request.json"))
+    ),
     formData: vi.fn(() => Promise.resolve(new FormData())),
   } as unknown as NextRequest;
 }
 
-function reqUnparseable(): NextRequest {
+function req(body: unknown = {}): NextRequest {
+  return reqText(JSON.stringify(body));
+}
+
+function reqUnreadable(): NextRequest {
   return {
     headers: { get: () => null },
+    text: vi.fn(() =>
+      Promise.reject(new TypeError("body stream already read"))
+    ),
     json: vi.fn(() =>
-      Promise.reject(new SyntaxError("Unexpected end of JSON input"))
+      Promise.reject(new Error("route must not call request.json"))
     ),
     formData: vi.fn(() => Promise.resolve(new FormData())),
   } as unknown as NextRequest;
@@ -152,6 +164,7 @@ describe("GET /api/projects/[id]/rfp/hld-document-model - auth", () => {
     expect(res).toBe(unauth);
     expect(res.status).toBe(401);
     expect(mockLoadList).not.toHaveBeenCalled();
+    expect(request.text).not.toHaveBeenCalled();
     expect(request.json).not.toHaveBeenCalled();
     expect(request.formData).not.toHaveBeenCalled();
   });
@@ -167,6 +180,7 @@ describe("GET /api/projects/[id]/rfp/hld-document-model - authority", () => {
     const res = await GET(request, PARAMS);
 
     expect(res.status).toBe(200);
+    expect(request.text).not.toHaveBeenCalled();
     expect(request.json).not.toHaveBeenCalled();
     expect(request.formData).not.toHaveBeenCalled();
     expect(mockLoadList).toHaveBeenCalledTimes(1);
@@ -246,18 +260,19 @@ describe("POST /api/projects/[id]/rfp/hld-document-model - auth", () => {
     expect(res).toBe(unauth);
     expect(res.status).toBe(401);
     expect(mockCreateDraft).not.toHaveBeenCalled();
-    expect(request.json).not.toHaveBeenCalled();
+    expect(request.text).not.toHaveBeenCalled();
   });
 });
 
 describe("POST /api/projects/[id]/rfp/hld-document-model - body acceptance", () => {
-  it("accepts an empty plain object and calls the service with only session authority", async () => {
-    const request = req({});
+  it("accepts the empty JSON object {} and calls the service with only session authority", async () => {
+    const request = reqText("{}");
 
     const res = await POST(request, PARAMS);
 
     expect(res.status).toBe(201);
     expect(request.formData).not.toHaveBeenCalled();
+    expect(request.json).not.toHaveBeenCalled();
     expect(mockCreateDraft).toHaveBeenCalledTimes(1);
     const arg = mockCreateDraft.mock.calls[0][0] as Record<string, unknown>;
     expect(Object.keys(arg).sort()).toEqual([
@@ -270,8 +285,8 @@ describe("POST /api/projects/[id]/rfp/hld-document-model - body acceptance", () 
     expect(arg.createdBy).toBe(SESSION.userId);
   });
 
-  it("accepts an absent/unparseable body and still calls the service with only session authority", async () => {
-    const request = reqUnparseable();
+  it("accepts an absent/empty body and calls the service with only session authority", async () => {
+    const request = reqText("");
 
     const res = await POST(request, PARAMS);
 
@@ -283,6 +298,34 @@ describe("POST /api/projects/[id]/rfp/hld-document-model - body acceptance", () 
       "projectId",
       "tenantId",
     ]);
+  });
+
+  it("accepts a whitespace-only body", async () => {
+    const res = await POST(reqText("  \n\t  "), PARAMS);
+
+    expect(res.status).toBe(201);
+    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a body whose stream cannot be read and still calls the service", async () => {
+    const res = await POST(reqUnreadable(), PARAMS);
+
+    expect(res.status).toBe(201);
+    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
+    const arg = mockCreateDraft.mock.calls[0][0] as Record<string, unknown>;
+    expect(Object.keys(arg).sort()).toEqual([
+      "createdBy",
+      "projectId",
+      "tenantId",
+    ]);
+  });
+
+  it("rejects a non-empty malformed JSON body with 400 before the service is called", async () => {
+    const res = await POST(reqText('{"unterminated":'), PARAMS);
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("invalid_rfp_hld_document_model_request");
+    expect(mockCreateDraft).not.toHaveBeenCalled();
   });
 
   it("rejects a non-empty object body (no client field carries authority) with 400 before the service is called", async () => {

@@ -11,11 +11,12 @@
  * POST - compile ONE internal needs_review hld_document_model draft from the
  * already-approved upstream Project authorities. session.tenantId is the only
  * tenant authority, session.userId is the only createdBy authority, and the route
- * param id is the only project authority. The body must be absent, unparseable, or
- * an empty plain object; any other parsed JSON value (null, array, string, number,
- * boolean, or non-empty object) is rejected with 400
- * invalid_rfp_hld_document_model_request before the service is called. No client
- * source ids, payload, status, createdBy, or authority field is ever accepted.
+ * param id is the only project authority. The body must be absent, empty,
+ * whitespace-only, or the empty JSON object {}; any non-empty malformed body and any
+ * parsed non-empty/non-object value (null, array, string, number, boolean, or
+ * non-empty object) is rejected with 400 invalid_rfp_hld_document_model_request
+ * before the service is called. No client source ids, payload, status, createdBy, or
+ * authority field is ever accepted.
  * Result maps to HTTP: not_found -> 404 project_not_found, wrong_mode -> 409
  * wrong_project_mode, readiness_blocked -> 409 hld_document_model_not_ready (with
  * nextAction), precondition_failed -> 409 hld_document_model_precondition_failed
@@ -34,18 +35,26 @@ import { loadRfpHldDocumentModelList } from "@/lib/projects/project-rfp-hld-docu
 import { createRfpHldDocumentModelDraft } from "@/lib/projects/project-rfp-hld-document-model-draft";
 
 /**
- * Accept only an absent/unparseable body or an empty plain object. Every parsed
- * JSON value that is not an empty plain object (null, arrays, strings, numbers,
- * booleans, non-empty objects) is rejected so no client field can carry authority.
+ * Accept only a truly absent/empty/whitespace-only body or the empty JSON object
+ * {}. The raw text is read once: blank text is allowed; non-blank text that is not
+ * valid JSON is rejected; and any parsed value other than an empty plain object
+ * (null, arrays, strings, numbers, booleans, non-empty objects) is rejected so no
+ * client field can carry authority.
  */
 async function isAcceptableEmptyBody(request: NextRequest): Promise<boolean> {
-  let body: unknown;
+  let text: string;
   try {
-    body = await request.json();
+    text = await request.text();
   } catch {
     return true;
   }
-  if (body === undefined) return true;
+  if (text.trim() === "") return true;
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return false;
+  }
   return (
     typeof body === "object" &&
     body !== null &&
