@@ -6861,6 +6861,13 @@ describe("ProjectRfpEvidencePage - Stage 6G-A HLD diagram draft surface", () => 
     });
     await screen.findByTestId("hld-diagram-drawer-content");
 
+    const listGetsBefore = calls.filter(
+      (c) => c.url === HLD_DIAGRAM_LIST_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+    const detailGetsBefore = calls.filter(
+      (c) => c.url === HLD_DIAGRAM_DETAIL_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+
     await act(async () => {
       fireEvent.change(screen.getByTestId("hld-diagram-review-note"), {
         target: { value: "  please relabel the core zone  " },
@@ -6900,6 +6907,20 @@ describe("ProjectRfpEvidencePage - Stage 6G-A HLD diagram draft surface", () => 
       expect(bodyText).not.toContain(forbidden);
     }
 
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DIAGRAM_LIST_URL && (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+    expect(
+      calls.filter(
+        (c) =>
+          c.url === HLD_DIAGRAM_DETAIL_URL && (c.init?.method ?? "GET") === "GET"
+      ).length
+    ).toBeGreaterThan(detailGetsBefore);
     expect(
       await screen.findByTestId("hld-diagram-review-success")
     ).toBeInTheDocument();

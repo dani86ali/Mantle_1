@@ -5678,11 +5678,7 @@ export default function ProjectRfpEvidencePage() {
 
   // Stage 6G-B engineer decision on a needs_review diagram draft. The body is
   // exactly { decision } (or { decision, note } when the trimmed note is
-  // nonblank); no tenant/project/artifact/decidedBy/status/stage/type/source/
-  // payload/authority/pricing/SKU/catalog/config/provider/final-output field is
-  // ever sent. On success it updates the local artifact status, clears the note,
-  // shows compact success copy, and refreshes the list and selected detail. No
-  // server JSON, code, or message is ever echoed.
+  // nonblank). On success it refreshes the list and selected detail.
   const submitHldDiagramReview = useCallback(
     async (decision: "approve" | "reject"): Promise<void> => {
       if (hldDiagramDetail === null || hldDiagramReviewPending) return;
