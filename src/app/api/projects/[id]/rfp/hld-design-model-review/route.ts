@@ -8,34 +8,49 @@
  * project_not_found, wrong_mode -> 409 wrong_project_mode (with the lean project
  * summary), ok -> 200 with { project, artifactCount, artifacts }.
  *
- * POST - create exactly ONE advisory deterministic `hld_design_model_review` over
- * a named candidate `hld_design_model`. session.tenantId is the only tenant
- * authority, session.userId is the only reviewedBy authority, and the route param
- * id is the only project authority. The JSON body is parsed ONLY for the
- * non-empty string `sourceHldDesignModelArtifactId`; any other supplied field
- * (tenantId/projectId/artifactId/reviewedBy/status/payload/source arrays/decision/
- * scope/SKU/pricing/config/catalog) is ignored entirely. Result maps to HTTP:
+ * POST - create exactly ONE advisory OpenAI internal BOMATIC quality review (an
+ * `hld_design_model_review`) over a named candidate `hld_design_model`. This is
+ * NOT a deterministic review: it wraps the CANDIDATE findings of the configured
+ * OpenAI advisory review executor through the Stage 6H-0H-A service boundary. The
+ * OpenAI review is advisory and a mandatory internal gate only - it never approves
+ * or finalizes the model, always precedes the human engineer gate, and carries no
+ * SKU/pricing/catalog/configuration/final-design authority. session.tenantId is
+ * the only tenant authority, session.userId is the only reviewedBy authority, and
+ * the route param id is the only project authority. The JSON body is parsed ONLY
+ * for the non-empty string `sourceHldDesignModelArtifactId`; any other supplied
+ * field (tenantId/projectId/artifactId/reviewedBy/executor/status/payload/provider/
+ * model/source arrays/decision/scope/SKU/pricing/config/catalog) is ignored
+ * entirely. The executor is always the one returned by the configured factory,
+ * which is the safe null seam in this stage (no live provider call), so the
+ * default behavior is a stable 503 unavailable. Result maps to HTTP:
  * invalid body -> 400 invalid_rfp_hld_design_model_review_create_request,
  * not_found -> 404 project_not_found, wrong_mode -> 409 wrong_project_mode,
  * artifact_not_found -> 404 hld_design_model_artifact_not_found,
  * artifact_not_hld_design_model -> 409 artifact_not_hld_design_model (with artifact),
  * artifact_not_reviewable -> 409 hld_design_model_artifact_not_reviewable (with
- * artifact), source_bundle_unavailable -> 409
- * hld_design_model_review_source_bundle_unavailable (with blockerCode),
- * invalid_review_payload -> 409 hld_design_model_review_payload_invalid (with
- * errors; nothing was written), ok -> 201 with
- * { artifact, recommendation, findingCount, findingCountsBySeverity }.
+ * artifact), invalid_hld_design_model_payload -> 409
+ * hld_design_model_payload_invalid (with artifact), stale_hld_design_model_payload
+ * -> 409 hld_design_model_openai_review_source_stale (with staleCode and only the
+ * optional messages/errors arrays supplied by the service), unavailable -> 503
+ * hld_design_model_openai_review_unavailable, review_failed -> 502
+ * hld_design_model_openai_review_failed, invalid_candidate_output -> 409
+ * hld_design_model_openai_review_candidate_invalid (with deterministic errors),
+ * ok -> 201 with { artifact, recommendation, findingCount, findingCountsBySeverity }.
  *
  * This route is a transport adapter only: it never touches the DB or any store,
- * reads no raw RFP files or storage paths, parses no documents, prices nothing,
- * resolves no SKU or configuration, approves nothing, and calls no AI or catalog.
+ * reads no raw RFP files or storage paths, parses no documents, reads no env,
+ * imports no provider SDK, prices nothing, resolves no SKU or configuration,
+ * approves or finalizes nothing, and calls no catalog or legacy runtime AI module.
  * Imports only Next.js server primitives, requireAuth, the read-only inspection
- * service, and the deterministic-review service.
+ * service, and the OpenAI advisory review service (create + configured executor).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/middleware/auth";
 import { loadRfpHldDesignModelReviewList } from "@/lib/projects/project-rfp-hld-design-model-review-inspection";
-import { createRfpHldDesignModelDeterministicReview } from "@/lib/projects/project-rfp-hld-design-model-review-deterministic";
+import {
+  createRfpHldDesignModelOpenAiReview,
+  getConfiguredRfpHldDesignModelOpenAiReviewExecutor,
+} from "@/lib/projects/project-rfp-hld-design-model-openai-review-service";
 
 export async function GET(
   request: NextRequest,
@@ -118,11 +133,12 @@ export async function POST(
   }
 
   try {
-    const result = await createRfpHldDesignModelDeterministicReview({
+    const result = await createRfpHldDesignModelOpenAiReview({
       tenantId: session.tenantId,
       projectId: params.id,
       artifactId: sourceHldDesignModelArtifactId,
       reviewedBy: session.userId,
+      executor: getConfiguredRfpHldDesignModelOpenAiReviewExecutor(),
     });
 
     if (result.status === "not_found") {
@@ -170,21 +186,51 @@ export async function POST(
         { status: 409 }
       );
     }
-    if (result.status === "source_bundle_unavailable") {
+    if (result.status === "invalid_hld_design_model_payload") {
       return NextResponse.json(
         {
-          code: "hld_design_model_review_source_bundle_unavailable",
-          error: "No approved HLD source bundle could be resolved to review against.",
-          blockerCode: result.code,
+          code: "hld_design_model_payload_invalid",
+          error: "The persisted HLD design model payload is invalid.",
+          artifact: result.artifact,
         },
         { status: 409 }
       );
     }
-    if (result.status === "invalid_review_payload") {
+    if (result.status === "stale_hld_design_model_payload") {
       return NextResponse.json(
         {
-          code: "hld_design_model_review_payload_invalid",
-          error: "The deterministic HLD design model review payload is invalid.",
+          code: "hld_design_model_openai_review_source_stale",
+          error: "The HLD design model is no longer current with its approved source.",
+          staleCode: result.staleCode,
+          ...(result.messages !== undefined ? { messages: result.messages } : {}),
+          ...(result.errors !== undefined ? { errors: result.errors } : {}),
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "unavailable") {
+      return NextResponse.json(
+        {
+          code: "hld_design_model_openai_review_unavailable",
+          error: "OpenAI advisory HLD design model review is not available.",
+        },
+        { status: 503 }
+      );
+    }
+    if (result.status === "review_failed") {
+      return NextResponse.json(
+        {
+          code: "hld_design_model_openai_review_failed",
+          error: "The OpenAI advisory HLD design model review failed.",
+        },
+        { status: 502 }
+      );
+    }
+    if (result.status === "invalid_candidate_output") {
+      return NextResponse.json(
+        {
+          code: "hld_design_model_openai_review_candidate_invalid",
+          error: "The OpenAI advisory HLD design model review candidate is invalid.",
           errors: result.errors,
         },
         { status: 409 }
