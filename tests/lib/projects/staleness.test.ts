@@ -32,6 +32,7 @@ const ALL_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_design_model_review",
   "hld_design_model_rebuild_request",
   "hld_diagram",
+  "hld_diagram_output",
   "hld_document_model",
   "hld_document",
   "design_knowledge_pack",
@@ -126,10 +127,15 @@ describe("getDirectDownstreamArtifactTypes", () => {
       "hld_diagram",
       "hld_document_model",
     ]);
-    // The reviewed diagram feeds the structured document model, which feeds the
-    // future rendered document.
+    // The reviewed diagram feeds the structured document model and the internal
+    // diagram-output model (Stage 6I-A).
     expect(getDirectDownstreamArtifactTypes("hld_diagram")).toEqual([
       "hld_document_model",
+      "hld_diagram_output",
+    ]);
+    // The internal diagram-output model bridges the diagram toward the document.
+    expect(getDirectDownstreamArtifactTypes("hld_diagram_output")).toEqual([
+      "hld_document",
     ]);
     expect(getDirectDownstreamArtifactTypes("hld_document_model")).toEqual([
       "hld_document",
@@ -152,13 +158,15 @@ describe("getDirectDownstreamArtifactTypes", () => {
   });
 
   it("hld_diagram now feeds the structured document model and its downstream chain", () => {
-    // hld_diagram is no longer a leaf: it feeds hld_document_model, which feeds the
-    // future hld_document and on to the proposal/export.
+    // hld_diagram is no longer a leaf: it feeds hld_document_model and the internal
+    // hld_diagram_output, which both flow to hld_document and on to proposal/export.
     expect(getDirectDownstreamArtifactTypes("hld_diagram")).toEqual([
       "hld_document_model",
+      "hld_diagram_output",
     ]);
     expect(getTransitiveDownstreamArtifactTypes("hld_diagram")).toEqual([
       "hld_document_model",
+      "hld_diagram_output",
       "hld_document",
       "technical_proposal",
       "export_package",
@@ -199,6 +207,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_design_model_review",
       "hld_diagram",
       "hld_document_model",
+      "hld_diagram_output",
       "hld_document",
     ]);
   });
@@ -215,6 +224,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_design_model_review",
       "hld_diagram",
       "hld_document_model",
+      "hld_diagram_output",
       "hld_document",
     ]);
   });
@@ -249,6 +259,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_design_model_review",
       "hld_diagram",
       "hld_document_model",
+      "hld_diagram_output",
       "hld_document",
     ]);
   });
@@ -267,6 +278,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_design_model_review",
       "hld_diagram",
       "hld_document_model",
+      "hld_diagram_output",
       "hld_document",
     ]);
     expect(getTransitiveDownstreamArtifactTypes("evidence_package")).toEqual([
@@ -281,6 +293,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_design_model_review",
       "hld_diagram",
       "hld_document_model",
+      "hld_diagram_output",
       "hld_document",
     ]);
   });
@@ -295,6 +308,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_design_model_review",
       "hld_diagram",
       "hld_document_model",
+      "hld_diagram_output",
       "hld_document",
       "technical_proposal",
       "export_package",
@@ -307,6 +321,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_design_model_review",
       "hld_diagram",
       "hld_document_model",
+      "hld_diagram_output",
       "hld_document",
       "technical_proposal",
       "export_package",
@@ -316,6 +331,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
       "hld_design_model_review",
       "hld_diagram",
       "hld_document_model",
+      "hld_diagram_output",
       "hld_document",
       "technical_proposal",
       "export_package",
@@ -325,6 +341,7 @@ describe("getTransitiveDownstreamArtifactTypes", () => {
     ).toEqual([
       "hld_diagram",
       "hld_document_model",
+      "hld_diagram_output",
       "hld_document",
       "technical_proposal",
       "export_package",
@@ -1106,6 +1123,7 @@ describe("hld_intake_questionnaire staleness edges (Stage 6H-0B)", () => {
       "hld_design_model_review",
       "hld_diagram",
       "hld_document_model",
+      "hld_diagram_output",
       "hld_document",
       "technical_proposal",
       "export_package",
@@ -1240,5 +1258,99 @@ describe("hld_intake_questionnaire staleness edges (Stage 6H-0B)", () => {
       artifacts: [changed],
     });
     expect(plan).toEqual([]);
+  });
+});
+
+describe("hld_diagram_output staleness edges (Stage 6I-A)", () => {
+  it("hld_diagram directly feeds hld_document_model and hld_diagram_output", () => {
+    expect(getDirectDownstreamArtifactTypes("hld_diagram")).toEqual([
+      "hld_document_model",
+      "hld_diagram_output",
+    ]);
+  });
+
+  it("hld_diagram_output directly feeds only hld_document, never the proposal", () => {
+    expect(getDirectDownstreamArtifactTypes("hld_diagram_output")).toEqual([
+      "hld_document",
+    ]);
+    // It is not final authority and never feeds technical_proposal directly.
+    expect(
+      getDirectDownstreamArtifactTypes("hld_diagram_output")
+    ).not.toContain("technical_proposal");
+  });
+
+  it("hld_diagram_output transitively reaches document/proposal/export only through hld_document", () => {
+    expect(getTransitiveDownstreamArtifactTypes("hld_diagram_output")).toEqual([
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+  });
+
+  it("is downstream of the diagram but not the reverse; nothing but hld_diagram feeds it", () => {
+    expect(isArtifactTypeDownstreamOf("hld_diagram", "hld_diagram_output")).toBe(true);
+    expect(isArtifactTypeDownstreamOf("hld_diagram_output", "hld_diagram")).toBe(false);
+    // The document model is a sibling lane, not upstream of the diagram output.
+    expect(
+      isArtifactTypeDownstreamOf("hld_document_model", "hld_diagram_output")
+    ).toBe(false);
+    let feeders = 0;
+    for (const type of ALL_ARTIFACT_TYPES) {
+      if (getDirectDownstreamArtifactTypes(type).includes("hld_diagram_output")) {
+        feeders++;
+        expect(type).toBe("hld_diagram");
+      }
+    }
+    expect(feeders).toBe(1);
+  });
+
+  it("a change to hld_diagram marks the diagram output and the document/proposal chain stale", () => {
+    const changed = artifact({ id: "hdg-1", type: "hld_diagram", version: 1 });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hdo", type: "hld_diagram_output", version: 1 }),
+        artifact({ id: "hdmdl", type: "hld_document_model", version: 1 }),
+        artifact({ id: "hdoc", type: "hld_document", version: 1 }),
+        artifact({ id: "tp", type: "technical_proposal", version: 1 }),
+        artifact({ id: "exp", type: "export_package", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "hld_document_model",
+      "hld_diagram_output",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(plan.every((u) => u.nextStatus === "stale")).toBe(true);
+  });
+
+  it("a change to hld_diagram_output marks the final document and proposal chain stale but not the diagram", () => {
+    const changed = artifact({
+      id: "hdo-1",
+      type: "hld_diagram_output",
+      version: 1,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hdoc", type: "hld_document", version: 1 }),
+        artifact({ id: "tp", type: "technical_proposal", version: 1 }),
+        artifact({ id: "exp", type: "export_package", version: 1 }),
+        // Upstream of the diagram output; never planned.
+        artifact({ id: "hdg", type: "hld_diagram", version: 1 }),
+        artifact({ id: "hdmdl", type: "hld_document_model", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(plan.map((u) => u.type)).not.toContain("hld_diagram");
+    expect(plan.map((u) => u.type)).not.toContain("hld_document_model");
   });
 });

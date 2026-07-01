@@ -41,10 +41,17 @@ import type {
  * feeds hld_document_model, which feeds the future rendered hld_document, and an
  * approved hld_document can feed technical_proposal. A model change stales its
  * advisory review; a review change stales the diagram and the document model
- * without marking the model stale; a diagram change stales the document model;
- * and a document-model change stales the future hld_document. hld_document stays
+ * without marking the model stale; a diagram change stales the document model and
+ * the internal hld_diagram_output; and a document-model change stales the future
+ * hld_document. hld_document stays
  * a future rendered-output contract - only its staleness edges are declared
  * here, no generation behavior.
+ *
+ * Stage 6I-A: hld_diagram_output is the internal structured layout/output model
+ * derived from an approved hld_diagram. The diagram feeds it directly, and it in
+ * turn feeds hld_document via a staleness edge (alongside the existing
+ * hld_document_model -> hld_document edge). It is never final authority and never
+ * feeds technical_proposal directly.
  *
  * Stage 6H-0B: hld_intake_questionnaire is a candidate / review-only question set
  * whose only downstream is hld_intake, so a changed questionnaire marks the latest
@@ -82,7 +89,8 @@ const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   // Request metadata only - not design authority and never an upstream of any
   // generated output, so it is a leaf with no downstream edges.
   hld_design_model_rebuild_request: [],
-  hld_diagram: ["hld_document_model"],
+  hld_diagram: ["hld_document_model", "hld_diagram_output"],
+  hld_diagram_output: ["hld_document"],
   hld_document_model: ["hld_document"],
   hld_document: ["technical_proposal"],
   technical_proposal: ["export_package"],

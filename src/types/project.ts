@@ -93,6 +93,16 @@ export type ProjectArtifactStatus =
  * domain readiness helper are defined in a separate prompt. It feeds
  * `hld_readiness_snapshot` via a direct staleness edge.
  *
+ * `hld_diagram_output` (Stage 6I-A) is an INTERNAL, structured layout/output
+ * model derived from an approved `hld_diagram` - a reviewable bridge toward later
+ * draw.io-compatible generation. It stores zones/nodes/links geometry and
+ * advisory findings ONLY; it is NOT draw.io XML, SVG, Mermaid, HTML, a rendered
+ * output, a download/upload, a final HLD document, customer authority, or design
+ * authority. It sits between `hld_diagram` and `hld_document_model` on the HLD
+ * stage and feeds `hld_document` via a staleness edge, never `technical_proposal`
+ * directly. Its pure contract/validator lives in
+ * src/lib/projects/project-rfp-hld-diagram-output.ts.
+ *
  * `hld_intake_questionnaire` (Stage 6H-0B) is a CANDIDATE / review-only set of
  * design-intake questions (question text, rationale, answer type, and provenance
  * references) an engineer reviews before answering the approved `hld_intake`. It
@@ -120,6 +130,7 @@ export type ProjectArtifactType =
   | "hld_design_model_review"
   | "hld_design_model_rebuild_request"
   | "hld_diagram"
+  | "hld_diagram_output"
   | "hld_document_model"
   | "hld_document"
   | "design_knowledge_pack"

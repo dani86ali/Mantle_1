@@ -69,6 +69,7 @@ describe("getArtifactTypesForStage", () => {
       "hld_design_model_review",
       "hld_design_model_rebuild_request",
       "hld_diagram",
+      "hld_diagram_output",
       "hld_document_model",
       "hld_document",
       "design_knowledge_pack",
@@ -103,6 +104,7 @@ describe("isArtifactTypeAllowedForStage", () => {
       "hld_design_model_review",
       "hld_design_model_rebuild_request",
       "hld_diagram",
+      "hld_diagram_output",
       "hld_document_model",
       "hld_document",
       "design_knowledge_pack",
@@ -462,6 +464,7 @@ describe("Stage 6 is contract-only: no HLD generation behavior", () => {
       "hld_design_model",
       "hld_design_model_review",
       "hld_diagram",
+      "hld_diagram_output",
       "hld_document_model",
       "hld_document",
     ] as const) {

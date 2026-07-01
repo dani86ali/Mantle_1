@@ -27,6 +27,7 @@ const VALID_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_design_model_review",
   "hld_design_model_rebuild_request",
   "hld_diagram",
+  "hld_diagram_output",
   "hld_document_model",
   "hld_document",
   "design_knowledge_pack",
@@ -43,6 +44,7 @@ const STAGE_6_HLD_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "hld_design_model",
   "hld_design_model_review",
   "hld_diagram",
+  "hld_diagram_output",
   "hld_document_model",
   "hld_document",
 ];
@@ -234,6 +236,7 @@ describe("artifact metadata", () => {
       "hld_design_model_review",
       "hld_design_model_rebuild_request",
       "hld_diagram",
+      "hld_diagram_output",
       "hld_document_model",
       "hld_document",
       "design_knowledge_pack",
@@ -280,6 +283,27 @@ describe("artifact metadata", () => {
       (d) => d.stageId !== "hld_design_delta_review"
     )) {
       expect(def.artifactTypes).not.toContain("hld_intake_questionnaire");
+    }
+  });
+
+  it("hld_diagram_output sits between hld_diagram and hld_document_model (Stage 6I-A)", () => {
+    expect(VALID_ARTIFACT_TYPES).toContain("hld_diagram_output");
+    const hld = PROJECT_STAGE_DEFINITIONS.find(
+      (d) => d.stageId === "hld_design_delta_review"
+    );
+    const types = hld?.artifactTypes ?? [];
+    expect(types).toContain("hld_diagram_output");
+    expect(types.indexOf("hld_diagram_output")).toBe(
+      types.indexOf("hld_diagram") + 1
+    );
+    expect(types.indexOf("hld_diagram_output")).toBe(
+      types.indexOf("hld_document_model") - 1
+    );
+    // Nowhere else.
+    for (const def of PROJECT_STAGE_DEFINITIONS.filter(
+      (d) => d.stageId !== "hld_design_delta_review"
+    )) {
+      expect(def.artifactTypes).not.toContain("hld_diagram_output");
     }
   });
 
