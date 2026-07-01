@@ -4,7 +4,11 @@ import { describe, it, expect } from "vitest";
 import {
   RFP_HLD_DOCUMENT_PAYLOAD_KIND,
   RFP_HLD_DOCUMENT_SOURCE_MODE,
+  RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED,
+  RFP_HLD_DOCUMENT_SOURCE_MODE_MANUAL,
   RFP_HLD_DOCUMENT_AUTHORITY_KIND,
+  RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED,
+  RFP_HLD_DOCUMENT_AUTHORITY_KIND_MANUAL,
   RFP_HLD_DOCUMENT_AUTHORITY_STATUS,
   validateRfpHldDocumentPayload,
   isValidRfpHldDocumentPayload,
@@ -64,6 +68,76 @@ describe("validateRfpHldDocumentPayload - accepts a valid manual upload", () => 
         })
       )
     ).toBe(true);
+  });
+});
+
+describe("validateRfpHldDocumentPayload - generated + manual source modes", () => {
+  it("accepts a generated_drawio_output paired with se_approved_generated_hld", () => {
+    const result = validateRfpHldDocumentPayload(
+      validPayload({
+        sourceMode: RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED,
+        finalAuthority: {
+          authorityKind: RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED,
+          effectiveWhenArtifactStatus: RFP_HLD_DOCUMENT_AUTHORITY_STATUS,
+        },
+      })
+    );
+    expect(result).toEqual({ valid: true, errors: [] });
+  });
+
+  it("accepts a manual_drawio_upload paired with se_manual_drawio_upload", () => {
+    expect(
+      isValidRfpHldDocumentPayload(
+        validPayload({
+          sourceMode: RFP_HLD_DOCUMENT_SOURCE_MODE_MANUAL,
+          finalAuthority: {
+            authorityKind: RFP_HLD_DOCUMENT_AUTHORITY_KIND_MANUAL,
+            effectiveWhenArtifactStatus: RFP_HLD_DOCUMENT_AUTHORITY_STATUS,
+          },
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("rejects a mismatched sourceMode/authorityKind pair (both directions)", () => {
+    expect(
+      isValidRfpHldDocumentPayload(
+        validPayload({
+          sourceMode: RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED,
+          finalAuthority: {
+            authorityKind: RFP_HLD_DOCUMENT_AUTHORITY_KIND_MANUAL,
+            effectiveWhenArtifactStatus: RFP_HLD_DOCUMENT_AUTHORITY_STATUS,
+          },
+        })
+      )
+    ).toBe(false);
+    expect(
+      isValidRfpHldDocumentPayload(
+        validPayload({
+          sourceMode: RFP_HLD_DOCUMENT_SOURCE_MODE_MANUAL,
+          finalAuthority: {
+            authorityKind: RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED,
+            effectiveWhenArtifactStatus: RFP_HLD_DOCUMENT_AUTHORITY_STATUS,
+          },
+        })
+      )
+    ).toBe(false);
+  });
+
+  it("rejects an unknown sourceMode or authorityKind", () => {
+    expect(
+      isValidRfpHldDocumentPayload(validPayload({ sourceMode: "ai_render" as never }))
+    ).toBe(false);
+    expect(
+      isValidRfpHldDocumentPayload(
+        validPayload({
+          finalAuthority: {
+            authorityKind: "ai_generated" as never,
+            effectiveWhenArtifactStatus: RFP_HLD_DOCUMENT_AUTHORITY_STATUS,
+          },
+        })
+      )
+    ).toBe(false);
   });
 });
 

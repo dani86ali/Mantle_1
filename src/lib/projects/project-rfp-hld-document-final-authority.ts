@@ -1,23 +1,27 @@
 /**
- * Tenant-scoped deterministic FINAL HLD document authority selector (Stage 6H-0I-B).
+ * Tenant-scoped deterministic FINAL HLD document authority selector (Stage 6H-0I-B / G3).
  *
- * Read-only lane that makes an approved SE MANUAL draw.io `hld_document` upload
- * discoverable as the active FINAL HLD authority. A manual upload becomes
+ * Read-only lane that makes an approved final `hld_document` discoverable as the active
+ * FINAL HLD authority through EITHER of the two human-approved paths: an SE-approved
+ * generated draw.io output or an SE manual draw.io upload. A document becomes
  * runtime/customer HLD authority ONLY once its `hld_document` artifact is human
- * approved (Stage 6H-0I-A); this service selects the newest such approved upload and
- * re-proves it, without generating, exporting, downloading, or closing HLD.
+ * approved (Stage 6H-0I-A); this service selects and re-proves it, without generating,
+ * exporting, downloading, or closing HLD.
  *
  * Considers only `hld_document` artifacts on the `hld_design_delta_review` stage with
- * status `approved`. It selects the newest deterministically (highest artifact
- * version, then latest createdAt) and re-validates it through the shared source-chain
- * evaluator so the persisted payload still holds and the approved
- * bundle/model/diagram/document-model chain still resolves. It NEVER falls back to
- * `hld_document_model`, `hld_diagram`, AI output, or raw source files: only an
- * approved final `hld_document` can be authority.
+ * status `approved`. Precedence: an approved manual upload ALWAYS supersedes an
+ * approved generated document; only when no approved manual upload exists does the
+ * newest approved generated document win. The selected document (newest by version,
+ * then createdAt, within the winning lane) is re-validated through the shared
+ * source-chain evaluator so the persisted payload still holds and the approved
+ * bundle/model/diagram/document-model chain still resolves. A selected manual upload
+ * that fails re-validation returns stale and does NOT fall back to a generated
+ * document. It NEVER falls back to `hld_document_model`, `hld_diagram`, AI output, or
+ * raw source files: only an approved final `hld_document` can be authority.
  *
  * When no approved final document exists it returns a fail-closed `not_finalized`
- * result, distinguishing a manual upload still pending review from no final HLD
- * document at all. When the newest approved document fails payload/source-chain
+ * result, distinguishing a manual upload or generated document still pending review
+ * from no final HLD document at all. When the selected approved document fails payload/source-chain
  * re-validation it returns a fail-closed `stale_final_authority` result - it does not
  * throw for ordinary invalid/stale state. Public summaries are lean and never carry
  * the drawio XML; only the internal `ok` result carries the full validated payload
@@ -34,7 +38,10 @@ import {
   evaluateRfpHldDocumentSourceChain,
   type RfpHldDocumentStaleCode,
 } from "@/lib/projects/project-rfp-hld-document-source-chain";
-import type { RfpHldDocumentPayload } from "@/lib/projects/project-rfp-hld-document";
+import {
+  RFP_HLD_DOCUMENT_SOURCE_MODE_MANUAL,
+  type RfpHldDocumentPayload,
+} from "@/lib/projects/project-rfp-hld-document";
 import type {
   Project,
   ProjectArtifact,
@@ -45,8 +52,24 @@ import type {
 const DOCUMENT_TYPE: ProjectArtifactType = "hld_document";
 const HLD_STAGE: ProjectStageId = "hld_design_delta_review";
 
-/** The only recognised final-authority state: an approved SE manual draw.io upload. */
-export const RFP_HLD_FINAL_AUTHORITY_STATUS = "approved_manual_drawio_upload" as const;
+/** Final-authority state for an approved SE-approved generated HLD document. */
+export const RFP_HLD_FINAL_AUTHORITY_STATUS_GENERATED =
+  "approved_generated_hld_document" as const;
+
+/** Final-authority state for an approved SE manual draw.io upload. */
+export const RFP_HLD_FINAL_AUTHORITY_STATUS_MANUAL =
+  "approved_manual_drawio_upload" as const;
+
+/**
+ * Backward-compatible alias. The manual upload was the original single final state;
+ * this keeps existing consumers stable while the generated path is added.
+ */
+export const RFP_HLD_FINAL_AUTHORITY_STATUS = RFP_HLD_FINAL_AUTHORITY_STATUS_MANUAL;
+
+/** The two recognised final-authority states, one per approved source mode. */
+export type RfpHldFinalAuthorityStatus =
+  | typeof RFP_HLD_FINAL_AUTHORITY_STATUS_GENERATED
+  | typeof RFP_HLD_FINAL_AUTHORITY_STATUS_MANUAL;
 
 // ---------------------------------------------------------------------------
 // Result + summary shapes (lean, serializable, never carry a payload body / tenant)
@@ -97,7 +120,8 @@ export interface RfpHldFinalAuthorityPayloadSummary {
 /** Stable blocker when no approved final HLD document is available yet. */
 export type RfpHldFinalAuthorityNotFinalizedCode =
   | "no_final_hld_document"
-  | "manual_upload_pending_review";
+  | "manual_upload_pending_review"
+  | "generated_hld_document_pending_review";
 
 /** Stable blocker when an approved final document fails re-validation. */
 export type RfpHldFinalAuthorityStaleCode =
@@ -130,7 +154,7 @@ export type SelectRfpHldFinalAuthorityResult =
       authority: {
         artifact: RfpHldFinalAuthorityArtifactSummary;
         payloadSummary: RfpHldFinalAuthorityPayloadSummary;
-        finalAuthorityStatus: typeof RFP_HLD_FINAL_AUTHORITY_STATUS;
+        finalAuthorityStatus: RfpHldFinalAuthorityStatus;
       };
       /** Full validated payload (drawio XML included) - internal, never routed. */
       payload: RfpHldDocumentPayload;
@@ -199,6 +223,27 @@ function selectNewest(artifacts: ProjectArtifact[]): ProjectArtifact {
   });
 }
 
+/** Read the persisted sourceMode without trusting the payload shape. */
+function readSourceMode(artifact: ProjectArtifact): string | null {
+  const payload = artifact.payload as Record<string, unknown> | null;
+  const mode = payload && typeof payload === "object" ? payload.sourceMode : undefined;
+  return typeof mode === "string" ? mode : null;
+}
+
+/** A manual draw.io upload document (by persisted sourceMode). */
+function isManualUpload(artifact: ProjectArtifact): boolean {
+  return readSourceMode(artifact) === RFP_HLD_DOCUMENT_SOURCE_MODE_MANUAL;
+}
+
+/** Map a validated payload's source mode to its final-authority status literal. */
+function finalAuthorityStatusForPayload(
+  payload: RfpHldDocumentPayload
+): RfpHldFinalAuthorityStatus {
+  return payload.sourceMode === RFP_HLD_DOCUMENT_SOURCE_MODE_MANUAL
+    ? RFP_HLD_FINAL_AUTHORITY_STATUS_MANUAL
+    : RFP_HLD_FINAL_AUTHORITY_STATUS_GENERATED;
+}
+
 // ---------------------------------------------------------------------------
 // Public service
 // ---------------------------------------------------------------------------
@@ -233,10 +278,19 @@ export async function selectRfpHldFinalAuthority(
   if (approved.length === 0) {
     const pending = onStage.filter((a) => isArtifactReviewable(a));
     if (pending.length > 0) {
+      const pendingManual = pending.filter(isManualUpload);
+      if (pendingManual.length > 0) {
+        return {
+          status: "not_finalized",
+          project: toProjectSummary(project),
+          blockerCode: "manual_upload_pending_review",
+          latestArtifact: toArtifactSummary(selectNewest(pendingManual)),
+        };
+      }
       return {
         status: "not_finalized",
         project: toProjectSummary(project),
-        blockerCode: "manual_upload_pending_review",
+        blockerCode: "generated_hld_document_pending_review",
         latestArtifact: toArtifactSummary(selectNewest(pending)),
       };
     }
@@ -247,7 +301,13 @@ export async function selectRfpHldFinalAuthority(
     };
   }
 
-  const selected = selectNewest(approved);
+  // Authority precedence: an approved manual upload always supersedes an approved
+  // generated document. Only when no approved manual upload exists does the newest
+  // approved generated document become the final authority. When a manual upload is
+  // selected but fails re-validation we return stale and do NOT fall back.
+  const approvedManual = approved.filter(isManualUpload);
+  const pool = approvedManual.length > 0 ? approvedManual : approved;
+  const selected = selectNewest(pool);
   const outcome = await evaluateRfpHldDocumentSourceChain(tenantId, projectId, selected);
   if (outcome.kind === "invalid_payload") {
     return {
@@ -272,7 +332,7 @@ export async function selectRfpHldFinalAuthority(
     authority: {
       artifact: toArtifactSummary(selected),
       payloadSummary: toPayloadSummary(outcome.payload),
-      finalAuthorityStatus: RFP_HLD_FINAL_AUTHORITY_STATUS,
+      finalAuthorityStatus: finalAuthorityStatusForPayload(outcome.payload),
     },
     payload: outcome.payload,
   };

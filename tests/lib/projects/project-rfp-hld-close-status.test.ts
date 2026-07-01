@@ -11,12 +11,14 @@ const { mockSelectAuthority } = vi.hoisted(() => ({
 
 vi.mock("@/lib/projects/project-rfp-hld-document-final-authority", () => ({
   selectRfpHldFinalAuthority: mockSelectAuthority,
+  RFP_HLD_FINAL_AUTHORITY_STATUS_MANUAL: "approved_manual_drawio_upload",
 }));
 
 import {
   getRfpHldCloseStatus,
   RFP_HLD_CLOSE_STATUS,
-  RFP_HLD_CLOSE_KIND,
+  RFP_HLD_CLOSE_KIND_GENERATED,
+  RFP_HLD_CLOSE_KIND_MANUAL,
 } from "@/lib/projects/project-rfp-hld-close-status";
 
 const TENANT = "22222222-2222-2222-2222-222222222222";
@@ -100,10 +102,27 @@ describe("getRfpHldCloseStatus - closed", () => {
     if (res.status !== "closed") return;
     expect(res.closeStatus).toBe(RFP_HLD_CLOSE_STATUS);
     expect(res.closeStatus).toBe("hld_closed_on_final_authority");
-    expect(res.closeKind).toBe(RFP_HLD_CLOSE_KIND);
+    // A manual final authority maps to the manual close kind.
+    expect(res.closeKind).toBe(RFP_HLD_CLOSE_KIND_MANUAL);
+    expect(res.closeKind).toBe("approved_manual_drawio_upload_final");
     expect(res.closedAt).toBe(ARTIFACT_SUMMARY.updatedAt);
     expect(res.project).toEqual(PROJECT_SUMMARY);
     expect(res.finalAuthority).toEqual(AUTHORITY);
+  });
+
+  it("maps an approved GENERATED final authority to the generated close kind", async () => {
+    mockSelectAuthority.mockResolvedValueOnce({
+      ...OK_RESULT,
+      authority: {
+        ...AUTHORITY,
+        payloadSummary: { ...PAYLOAD_SUMMARY, sourceMode: "generated_drawio_output" },
+        finalAuthorityStatus: "approved_generated_hld_document",
+      },
+    });
+    const res = await getRfpHldCloseStatus({ tenantId: TENANT, projectId: PROJECT });
+    if (res.status !== "closed") throw new Error("expected closed");
+    expect(res.closeKind).toBe(RFP_HLD_CLOSE_KIND_GENERATED);
+    expect(res.closeKind).toBe("approved_generated_hld_document_final");
   });
 
   it("never exposes the selector payload or draw.io XML in a closed result", async () => {

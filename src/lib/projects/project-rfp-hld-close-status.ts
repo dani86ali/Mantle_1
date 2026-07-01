@@ -2,11 +2,12 @@
  * Read-only deterministic HLD CLOSE-STATUS gate (Stage 6J-A).
  *
  * Makes the HLD close state explicit for later TP handoff, WITHOUT starting any TP
- * work. It derives close status solely from {@link selectRfpHldFinalAuthority}: the
- * approved SE MANUAL draw.io `hld_document` authority is the ONLY basis for a closed
- * HLD. It NEVER falls back to `hld_document_model`, `hld_diagram`, an HLD design model,
- * AI output, or raw files, and human approval / manual final upload remains the
- * runtime/customer authority.
+ * work. It derives close status solely from {@link selectRfpHldFinalAuthority}: an
+ * approved final `hld_document` authority - either an SE-approved generated HLD
+ * document OR an SE manual draw.io upload - is the ONLY basis for a closed HLD, and
+ * the close kind distinguishes the two. It NEVER falls back to `hld_document_model`,
+ * `hld_diagram`, an HLD design model, AI output, or raw files, and human approval
+ * remains the runtime/customer authority.
  *
  * This gate generates, regenerates, approves, exports, downloads, or closes nothing;
  * creates no artifact/approval; calls no provider/AI; reads no raw source file; and
@@ -21,19 +22,30 @@
  */
 import {
   selectRfpHldFinalAuthority,
+  RFP_HLD_FINAL_AUTHORITY_STATUS_MANUAL,
   type RfpHldFinalAuthorityProjectSummary,
   type RfpHldFinalAuthorityArtifactSummary,
   type RfpHldFinalAuthorityPayloadSummary,
   type RfpHldFinalAuthorityNotFinalizedCode,
   type RfpHldFinalAuthorityStaleCode,
-  type RFP_HLD_FINAL_AUTHORITY_STATUS,
+  type RfpHldFinalAuthorityStatus,
 } from "@/lib/projects/project-rfp-hld-document-final-authority";
 
 /** Stable close-status string once an approved final HLD authority exists. */
 export const RFP_HLD_CLOSE_STATUS = "hld_closed_on_final_authority" as const;
 
-/** Stable close-kind: the only recognised basis is an approved manual draw.io upload. */
-export const RFP_HLD_CLOSE_KIND = "approved_manual_drawio_upload_final" as const;
+/** Close-kind for a closed HLD backed by an SE-approved generated HLD document. */
+export const RFP_HLD_CLOSE_KIND_GENERATED =
+  "approved_generated_hld_document_final" as const;
+
+/** Close-kind for a closed HLD backed by an approved SE manual draw.io upload. */
+export const RFP_HLD_CLOSE_KIND_MANUAL =
+  "approved_manual_drawio_upload_final" as const;
+
+/** The two recognised close kinds, one per approved final-authority path. */
+export type RfpHldCloseKind =
+  | typeof RFP_HLD_CLOSE_KIND_GENERATED
+  | typeof RFP_HLD_CLOSE_KIND_MANUAL;
 
 export interface GetRfpHldCloseStatusInput {
   tenantId: string;
@@ -44,7 +56,7 @@ export interface GetRfpHldCloseStatusInput {
 export interface RfpHldCloseFinalAuthoritySummary {
   artifact: RfpHldFinalAuthorityArtifactSummary;
   payloadSummary: RfpHldFinalAuthorityPayloadSummary;
-  finalAuthorityStatus: typeof RFP_HLD_FINAL_AUTHORITY_STATUS;
+  finalAuthorityStatus: RfpHldFinalAuthorityStatus;
 }
 
 export type GetRfpHldCloseStatusResult =
@@ -68,7 +80,7 @@ export type GetRfpHldCloseStatusResult =
       status: "closed";
       project: RfpHldFinalAuthorityProjectSummary;
       closeStatus: typeof RFP_HLD_CLOSE_STATUS;
-      closeKind: typeof RFP_HLD_CLOSE_KIND;
+      closeKind: RfpHldCloseKind;
       /** Derived from the selected final-authority artifact updatedAt. */
       closedAt: string;
       /** Sanitized authority summary; NEVER the full payload / draw.io body. */
@@ -116,11 +128,16 @@ export async function getRfpHldCloseStatus(
     };
   }
 
+  const closeKind: RfpHldCloseKind =
+    result.authority.finalAuthorityStatus === RFP_HLD_FINAL_AUTHORITY_STATUS_MANUAL
+      ? RFP_HLD_CLOSE_KIND_MANUAL
+      : RFP_HLD_CLOSE_KIND_GENERATED;
+
   return {
     status: "closed",
     project: result.project,
     closeStatus: RFP_HLD_CLOSE_STATUS,
-    closeKind: RFP_HLD_CLOSE_KIND,
+    closeKind,
     closedAt: result.authority.artifact.updatedAt,
     finalAuthority: result.authority,
   };

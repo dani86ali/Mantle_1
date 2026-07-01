@@ -5,8 +5,10 @@
  * AFTER their own project-existence / RFP-mode checks and BEFORE any expensive
  * readiness/executor work, artifact creation, or rebuild-request retirement. It
  * asks the Stage 6H-0I-B selector whether an approved, source-valid FINAL HLD
- * document authority already exists; if so, callers must stop and write nothing so
- * an approved final HLD is never silently regenerated.
+ * document authority already exists - either an SE-approved generated HLD document or
+ * an SE manual draw.io upload; if so, callers must stop and write nothing so an
+ * approved final HLD is never silently regenerated (in particular, never over an
+ * approved manual upload).
  *
  * It blocks ONLY when the selector returns `status: "ok"` (an approved, re-proved
  * final `hld_document`). It deliberately does NOT block on `not_finalized`,

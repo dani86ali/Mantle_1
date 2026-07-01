@@ -1,10 +1,11 @@
 /**
- * Read-only FINAL HLD document authority DOWNLOAD service (Stage 6H-0I-D).
+ * Read-only FINAL HLD document authority DOWNLOAD service (Stage 6H-0I-D / G3).
  *
- * Serves the approved SE MANUAL draw.io XML body as a downloadable attachment ONLY
- * once {@link selectRfpHldFinalAuthority} reports `status: "ok"` - i.e. the newest
- * approved `hld_document` upload re-proves against its persisted payload and source
- * chain. This is authority CONSUMPTION only: it generates, regenerates, approves,
+ * Serves the approved final draw.io XML body as a downloadable attachment ONLY once
+ * {@link selectRfpHldFinalAuthority} reports `status: "ok"` - i.e. the selected
+ * approved `hld_document` (an SE-approved generated output or an SE manual upload)
+ * re-proves against its persisted payload and source chain. This is authority
+ * CONSUMPTION only: it generates, regenerates, approves,
  * closes, or exports nothing; creates no artifact/approval; calls no provider/AI;
  * reads no raw source file; and makes no pricing/SKU/catalog/configuration decision.
  *
@@ -27,7 +28,7 @@ import {
   type RfpHldFinalAuthorityPayloadSummary,
   type RfpHldFinalAuthorityNotFinalizedCode,
   type RfpHldFinalAuthorityStaleCode,
-  type RFP_HLD_FINAL_AUTHORITY_STATUS,
+  type RfpHldFinalAuthorityStatus,
 } from "@/lib/projects/project-rfp-hld-document-final-authority";
 
 /** Stable draw.io / mxfile MIME for the served final-HLD XML body. */
@@ -45,7 +46,7 @@ export interface LoadProjectRfpHldDocumentDownloadInput {
 export interface RfpHldDocumentDownloadAuthoritySummary {
   artifact: RfpHldFinalAuthorityArtifactSummary;
   payloadSummary: RfpHldFinalAuthorityPayloadSummary;
-  finalAuthorityStatus: typeof RFP_HLD_FINAL_AUTHORITY_STATUS;
+  finalAuthorityStatus: RfpHldFinalAuthorityStatus;
 }
 
 export type LoadProjectRfpHldDocumentDownloadResult =

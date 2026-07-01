@@ -1,27 +1,29 @@
 /**
- * Tenant-scoped deterministic RFP HLD DOCUMENT MANUAL UPLOAD service (Stage 6H-0I-A).
+ * Tenant-scoped deterministic RFP HLD GENERATED FINAL DOCUMENT service (Stage G3).
  *
  * Records exactly ONE reviewable (`needs_review`) FINAL `hld_document` artifact on the
- * existing `hld_design_delta_review` stage from a SE MANUAL draw.io upload. The client
- * (via an authenticated route/session) supplies only the approved source
- * `hld_document_model` artifact id, a title, the uploaded file name, the draw.io XML,
- * and an optional short note; tenant/project/createdBy come from the session alone.
+ * existing `hld_design_delta_review` stage as an SE-approvable GENERATED draw.io output.
+ * The client (via an authenticated route/session) supplies ONLY the approved source
+ * `hld_document_model` artifact id; tenant/project/createdBy come from the session alone,
+ * and the draw.io XML, source ids, versions, status, title, file name, and authority are
+ * all derived deterministically here - never caller supplied.
  *
- * The flow is fail-closed: verify the project within its tenant, gate rfp mode, load
- * the source `hld_document_model` and require it is the approved internal document
- * model on the HLD stage with a still-valid payload whose row + payload source ids
- * equal [bundle, model, diagram]; then re-load the bundle, design model, and diagram
- * it names and require they are still approved HLD-stage artifacts of the expected
- * types whose obvious row/source/version ties still hold. Only then build the
- * `rfp_hld_document` payload, HARD-GATE it with the Stage 6H-0I-A contract validator
- * BEFORE any write, and persist exactly one artifact. The upload response returns lean
- * summaries only and NEVER the draw.io XML, an upstream payload body, or the tenant id.
+ * The flow is fail-closed: verify the project within its tenant, gate rfp mode, consult
+ * the shared final-authority REGENERATION GUARD (so an already-approved final HLD - a
+ * generated document OR a manual upload - is never silently regenerated), then re-prove
+ * the SAME approved source chain the manual-upload lane uses (approved document model
+ * whose row/payload source ids equal [bundle, model, diagram], plus the approved bundle,
+ * design model, diagram, and active review with all obvious ties/versions). Only then
+ * build a deterministic draw.io mxfile from the approved diagram payload, HARD-GATE the
+ * `rfp_hld_document` payload with the Stage 6H-0I-A contract validator BEFORE any write,
+ * and persist exactly one artifact. The response returns lean summaries only and NEVER
+ * the draw.io XML, an upstream payload body, or the tenant id.
  *
- * This service reads only Project state through the project/artifact stores. It reads
- * NO raw RFP/PDF/DOCX/XLSX file, storage path, evidence/file store, or parser;
- * constructs NO provider adapter and imports NO provider/AI SDK; makes NO
- * pricing/SKU/catalog/configuration decision; and approves nothing - human approval is
- * the only path to runtime/customer HLD authority.
+ * This service reads only Project state through the project/artifact stores and the
+ * read-only regeneration guard. It reads NO raw RFP/PDF/DOCX/XLSX file, storage path,
+ * evidence/file store, or parser; constructs NO provider adapter and imports NO
+ * provider/AI SDK; makes NO pricing/SKU/catalog/configuration decision; and approves
+ * nothing - human approval is the only path to runtime/customer HLD authority.
  */
 import { getProjectById } from "@/lib/db/project-store";
 import {
@@ -42,15 +44,19 @@ import {
   type RfpHldDiagramDraftPayload,
 } from "@/lib/projects/project-rfp-hld-diagram";
 import {
-  RFP_HLD_DOCUMENT_AUTHORITY_KIND,
+  RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED,
   RFP_HLD_DOCUMENT_AUTHORITY_STATUS,
   RFP_HLD_DOCUMENT_PAYLOAD_KIND,
-  RFP_HLD_DOCUMENT_SOURCE_MODE,
+  RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED,
   validateRfpHldDocumentPayload,
   type RfpHldDocumentAuthorityKind,
   type RfpHldDocumentPayload,
   type RfpHldDocumentSourceMode,
 } from "@/lib/projects/project-rfp-hld-document";
+import {
+  evaluateRfpHldFinalAuthorityRegenerationGuard,
+  type RfpHldFinalAuthorityRegenerationSummary,
+} from "@/lib/projects/project-rfp-hld-final-authority-regeneration-guard";
 import type {
   Project,
   ProjectArtifact,
@@ -69,11 +75,15 @@ const DOCUMENT_TYPE: ProjectArtifactType = "hld_document";
 const ACTIVE_REVIEW_STATUSES: ReadonlySet<ProjectArtifactStatus> =
   new Set<ProjectArtifactStatus>(["generated", "needs_review", "approved"]);
 
+/** Deterministic, server-derived title + file name for a generated final HLD document. */
+const GENERATED_TITLE = "Final HLD (Generated)";
+const GENERATED_FILE_NAME = "hld-generated.drawio";
+
 // ---------------------------------------------------------------------------
 // Result + summary shapes (lean, serializable, never carry a payload body / tenant)
 // ---------------------------------------------------------------------------
 
-export interface RfpHldDocumentUploadProjectSummary {
+export interface RfpHldGeneratedProjectSummary {
   id: string;
   name: string;
   customerName?: string;
@@ -82,7 +92,7 @@ export interface RfpHldDocumentUploadProjectSummary {
   updatedAt: string;
 }
 
-export interface RfpHldDocumentUploadArtifactSummary {
+export interface RfpHldGeneratedArtifactSummary {
   id: string;
   projectId: string;
   stageId: ProjectStageId;
@@ -96,7 +106,7 @@ export interface RfpHldDocumentUploadArtifactSummary {
 }
 
 /** Lean payload summary. It NEVER carries the draw.io XML body. */
-export interface RfpHldDocumentUploadPayloadSummary {
+export interface RfpHldGeneratedPayloadSummary {
   payloadKind: typeof RFP_HLD_DOCUMENT_PAYLOAD_KIND;
   sourceMode: RfpHldDocumentSourceMode;
   title: string;
@@ -115,7 +125,7 @@ export interface RfpHldDocumentUploadPayloadSummary {
   sourceDocumentModelVersion: number;
 }
 
-export type RfpHldDocumentUploadPreconditionCode =
+export type RfpHldGeneratedPreconditionCode =
   | "document_model_unavailable"
   | "document_model_invalid"
   | "document_model_source_ids_mismatch"
@@ -128,29 +138,29 @@ export type RfpHldDocumentUploadPreconditionCode =
   | "source_review_unavailable"
   | "source_chain_mismatch";
 
-export interface CreateRfpHldDocumentManualUploadInput {
+export interface CreateRfpHldDocumentGeneratedInput {
   tenantId: string;
   projectId: string;
   createdBy: string;
   /** The approved source `hld_document_model` artifact id (client-provided). */
   documentModelArtifactId: string;
-  title: string;
-  uploadedFileName: string;
-  drawioXml: string;
-  note?: string;
   /** Optional fixed timestamp for deterministic callers/tests; defaults to now. */
   createdAt?: Date;
 }
 
-export type CreateRfpHldDocumentManualUploadResult =
+export type CreateRfpHldDocumentGeneratedResult =
   | { status: "not_found" }
-  | { status: "wrong_mode"; project: RfpHldDocumentUploadProjectSummary }
-  | { status: "precondition_failed"; code: RfpHldDocumentUploadPreconditionCode }
+  | { status: "wrong_mode"; project: RfpHldGeneratedProjectSummary }
+  | {
+      status: "final_hld_already_approved";
+      finalAuthority: RfpHldFinalAuthorityRegenerationSummary;
+    }
+  | { status: "precondition_failed"; code: RfpHldGeneratedPreconditionCode }
   | { status: "invalid_payload"; errors: string[] }
   | {
       status: "ok";
-      artifact: RfpHldDocumentUploadArtifactSummary;
-      payloadSummary: RfpHldDocumentUploadPayloadSummary;
+      artifact: RfpHldGeneratedArtifactSummary;
+      payloadSummary: RfpHldGeneratedPayloadSummary;
     };
 
 // ---------------------------------------------------------------------------
@@ -165,7 +175,7 @@ function sameOrdered(a: readonly unknown[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-function toProjectSummary(project: Project): RfpHldDocumentUploadProjectSummary {
+function toProjectSummary(project: Project): RfpHldGeneratedProjectSummary {
   return {
     id: project.id,
     name: project.name,
@@ -176,7 +186,7 @@ function toProjectSummary(project: Project): RfpHldDocumentUploadProjectSummary 
   };
 }
 
-function toArtifactSummary(artifact: ProjectArtifact): RfpHldDocumentUploadArtifactSummary {
+function toArtifactSummary(artifact: ProjectArtifact): RfpHldGeneratedArtifactSummary {
   return {
     id: artifact.id,
     projectId: artifact.projectId,
@@ -191,7 +201,7 @@ function toArtifactSummary(artifact: ProjectArtifact): RfpHldDocumentUploadArtif
   };
 }
 
-function toPayloadSummary(p: RfpHldDocumentPayload): RfpHldDocumentUploadPayloadSummary {
+function toPayloadSummary(p: RfpHldDocumentPayload): RfpHldGeneratedPayloadSummary {
   return {
     payloadKind: p.payloadKind,
     sourceMode: p.sourceMode,
@@ -239,29 +249,79 @@ function isActiveReviewOnStage(
   );
 }
 
+/** Escape a label for safe inclusion inside double-quoted XML attribute values. */
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Build a deterministic, well-formed draw.io mxfile from the approved diagram payload
+ * ONLY. Node cell ids are positional (`n0`, `n1`, ...) so arbitrary payload ids never
+ * reach an attribute; every label is escaped. It carries no scripts, entities, or
+ * pricing/SKU/catalog/config data - just the reviewed topology as an mxGraphModel.
+ */
+function buildDrawioXml(diagram: RfpHldDiagramDraftPayload): string {
+  const nodeIndex = new Map<string, number>();
+  diagram.nodes.forEach((n, i) => nodeIndex.set(n.id, i));
+
+  const cells: string[] = [];
+  diagram.nodes.forEach((n, i) => {
+    const x = 40 + (i % 4) * 200;
+    const y = 40 + Math.floor(i / 4) * 140;
+    cells.push(
+      `<mxCell id="n${i}" value="${escapeXml(n.label)}" vertex="1" parent="1">` +
+        `<mxGeometry x="${x}" y="${y}" width="160" height="60" as="geometry"/></mxCell>`
+    );
+  });
+  diagram.links.forEach((l, i) => {
+    const from = nodeIndex.get(l.fromNodeId);
+    const to = nodeIndex.get(l.toNodeId);
+    if (from === undefined || to === undefined) return;
+    const value = l.label !== undefined ? ` value="${escapeXml(l.label)}"` : "";
+    cells.push(
+      `<mxCell id="e${i}"${value} edge="1" parent="1" source="n${from}" target="n${to}">` +
+        `<mxGeometry relative="1" as="geometry"/></mxCell>`
+    );
+  });
+
+  return (
+    `<mxfile host="bomatic">` +
+    `<diagram id="hld-topology" name="${escapeXml(GENERATED_TITLE)}">` +
+    `<mxGraphModel><root>` +
+    `<mxCell id="0"/><mxCell id="1" parent="0"/>` +
+    cells.join("") +
+    `</root></mxGraphModel></diagram></mxfile>`
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Public service
 // ---------------------------------------------------------------------------
 
 /**
  * Create exactly ONE final `needs_review` `hld_document` artifact on the
- * `hld_design_delta_review` stage from a SE manual draw.io upload, tenant-scoped,
- * only after every gate passes. Throws on blank projectId, createdBy, or
- * documentModelArtifactId before any store call. Returns explicit result statuses
- * for not_found, wrong_mode, precondition_failed (writing nothing), invalid_payload
- * (writing nothing), and ok. Never approves anything; human approval is the only path
- * to runtime/customer HLD authority.
+ * `hld_design_delta_review` stage as a deterministically GENERATED draw.io output,
+ * tenant-scoped, only after every gate passes. Throws on blank projectId, createdBy, or
+ * documentModelArtifactId before any store call. Returns explicit result statuses for
+ * not_found, wrong_mode, final_hld_already_approved (writing nothing), precondition_failed
+ * (writing nothing), invalid_payload (writing nothing), and ok. Never approves anything;
+ * human approval is the only path to runtime/customer HLD authority, and an approved
+ * manual upload is never regenerated over.
  */
-export async function createRfpHldDocumentManualUpload(
-  input: CreateRfpHldDocumentManualUploadInput
-): Promise<CreateRfpHldDocumentManualUploadResult> {
+export async function createRfpHldDocumentGenerated(
+  input: CreateRfpHldDocumentGeneratedInput
+): Promise<CreateRfpHldDocumentGeneratedResult> {
   const projectId = str(input.projectId).trim();
   const createdBy = str(input.createdBy).trim();
   const documentModelArtifactId = str(input.documentModelArtifactId).trim();
-  if (projectId === "") throw new Error("HLD document manual upload requires a projectId.");
-  if (createdBy === "") throw new Error("HLD document manual upload requires a createdBy.");
+  if (projectId === "") throw new Error("Generated HLD document requires a projectId.");
+  if (createdBy === "") throw new Error("Generated HLD document requires a createdBy.");
   if (documentModelArtifactId === "") {
-    throw new Error("HLD document manual upload requires a documentModelArtifactId.");
+    throw new Error("Generated HLD document requires a documentModelArtifactId.");
   }
 
   const { tenantId } = input;
@@ -270,6 +330,13 @@ export async function createRfpHldDocumentManualUpload(
   if (project === null) return { status: "not_found" };
   if (project.mode !== "rfp") {
     return { status: "wrong_mode", project: toProjectSummary(project) };
+  }
+
+  // Never silently regenerate over an already-approved final HLD authority (generated
+  // OR manual). The read-only guard blocks ONLY on a source-valid approved final doc.
+  const guard = await evaluateRfpHldFinalAuthorityRegenerationGuard({ tenantId, projectId });
+  if (guard.blocked) {
+    return { status: "final_hld_already_approved", finalAuthority: guard.finalAuthority };
   }
 
   // --- Source document model: approved internal doc model on the HLD stage ---
@@ -353,17 +420,17 @@ export async function createRfpHldDocumentManualUpload(
     return { status: "precondition_failed", code: "source_chain_mismatch" };
   }
 
-  // Build the final manual-upload payload from the SE-provided body + coarse ids.
+  // Build the generated final payload from the approved diagram + coarse ids.
   const createdAt = (input.createdAt ?? new Date()).toISOString();
   const documentModelId = documentModelArtifact.id;
   const payload: RfpHldDocumentPayload = {
     payloadKind: RFP_HLD_DOCUMENT_PAYLOAD_KIND,
-    sourceMode: RFP_HLD_DOCUMENT_SOURCE_MODE,
+    sourceMode: RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED,
     createdAt,
     createdBy,
-    title: str(input.title),
-    uploadedFileName: str(input.uploadedFileName),
-    drawioXml: str(input.drawioXml),
+    title: GENERATED_TITLE,
+    uploadedFileName: GENERATED_FILE_NAME,
+    drawioXml: buildDrawioXml(diagramPayload),
     sourceArtifactIds: [bundleId, modelId, diagramId, documentModelId],
     sourceHldSourceBundleArtifactId: bundleId,
     sourceHldDesignModelArtifactId: modelId,
@@ -374,14 +441,13 @@ export async function createRfpHldDocumentManualUpload(
     sourceDiagramVersion: diagramArtifact.version,
     sourceDocumentModelVersion: documentModelArtifact.version,
     finalAuthority: {
-      authorityKind: RFP_HLD_DOCUMENT_AUTHORITY_KIND,
+      authorityKind: RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED,
       effectiveWhenArtifactStatus: RFP_HLD_DOCUMENT_AUTHORITY_STATUS,
     },
     supersedesArtifactIds: [diagramId, documentModelId],
-    ...(str(input.note).trim() !== "" ? { note: str(input.note).trim() } : {}),
   };
 
-  // HARD GATE: the manual upload must validate before any persistence.
+  // HARD GATE: the generated document must validate before any persistence.
   const validation = validateRfpHldDocumentPayload(payload);
   if (!validation.valid) {
     return { status: "invalid_payload", errors: [...validation.errors] };

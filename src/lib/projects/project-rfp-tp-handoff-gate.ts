@@ -4,10 +4,11 @@
  * Decides whether technical-proposal (TP) work may begin, WITHOUT starting any TP
  * work. TP handoff is a stretch gate that opens ONLY once the HLD is closed: the sole
  * ready path is a closed HLD reported by {@link getRfpHldCloseStatus}, which itself
- * derives close state from the approved final SE manual draw.io `hld_document`
- * authority. Every non-closed upstream HLD state - draft, pending SE review, pending
- * manual upload, stale final authority, or an AI/provider-blocked upstream - keeps this
- * gate blocked, because only the closed close-status result maps to ready.
+ * derives close state from an approved final `hld_document` authority - either an
+ * SE-approved generated HLD document or an SE manual draw.io upload. Every non-closed
+ * upstream HLD state - draft, pending SE review, pending generated/manual document,
+ * stale final authority, or an AI/provider-blocked upstream - keeps this gate blocked,
+ * because only the closed close-status result maps to ready.
  *
  * This gate generates no TP/proposal content, creates no technical_proposal artifact or
  * approval, inspects no pricing/commercial authority, and starts no TP generation. It
@@ -25,7 +26,7 @@
 import {
   getRfpHldCloseStatus,
   RFP_HLD_CLOSE_STATUS,
-  RFP_HLD_CLOSE_KIND,
+  type RfpHldCloseKind,
   type GetRfpHldCloseStatusResult,
 } from "@/lib/projects/project-rfp-hld-close-status";
 
@@ -68,7 +69,7 @@ export interface GetRfpTpHandoffGateInput {
 /** Sanitized closed-HLD summary. NEVER the HLD payload / draw.io body. */
 export interface RfpTpHandoffHldCloseSummary {
   closeStatus: typeof RFP_HLD_CLOSE_STATUS;
-  closeKind: typeof RFP_HLD_CLOSE_KIND;
+  closeKind: RfpHldCloseKind;
   closedAt: string;
   finalAuthority: RfpTpHandoffHldCloseFinalAuthority;
 }

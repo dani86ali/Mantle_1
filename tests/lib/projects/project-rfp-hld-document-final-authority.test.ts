@@ -62,6 +62,18 @@ function validPayload(): Record<string, unknown> {
   };
 }
 
+function genPayload(): Record<string, unknown> {
+  return {
+    ...validPayload(),
+    sourceMode: "generated_drawio_output",
+    uploadedFileName: "hld-generated.drawio",
+    finalAuthority: {
+      authorityKind: "se_approved_generated_hld",
+      effectiveWhenArtifactStatus: "approved",
+    },
+  };
+}
+
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: PROJECT,
@@ -94,6 +106,14 @@ function docArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact 
     updatedAt: CREATED_DATE,
     ...overrides,
   };
+}
+
+function genDocArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
+  return docArtifact({
+    id: "hdoc-gen-1",
+    payload: genPayload() as unknown as Record<string, unknown>,
+    ...overrides,
+  });
 }
 
 function select(): Promise<SelectRfpHldFinalAuthorityResult> {
@@ -223,6 +243,58 @@ describe("selectRfpHldFinalAuthority - ok selection + hygiene", () => {
     if (result.status !== "ok") throw new Error("unreachable");
     expect(JSON.stringify(result.authority)).not.toContain(TENANT);
     expect(JSON.stringify(result.project)).not.toContain(TENANT);
+  });
+});
+
+describe("selectRfpHldFinalAuthority - generated vs manual precedence", () => {
+  it("selects an approved generated document when no approved manual upload exists", async () => {
+    mockListByType.mockResolvedValueOnce([genDocArtifact({ version: 2 })]);
+    mockEvaluateChain.mockResolvedValueOnce({ kind: "valid", payload: genPayload() });
+    const result = await select();
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.authority.artifact.id).toBe("hdoc-gen-1");
+    expect(result.authority.payloadSummary.sourceMode).toBe("generated_drawio_output");
+    expect(result.authority.finalAuthorityStatus).toBe("approved_generated_hld_document");
+  });
+
+  it("lets an approved manual upload supersede a newer approved generated document", async () => {
+    const generated = genDocArtifact({ id: "hdoc-gen-9", version: 9 });
+    const manual = docArtifact({ id: "hdoc-manual-1", version: 1 });
+    mockListByType.mockResolvedValueOnce([generated, manual]);
+    const result = await select();
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    // The (older) manual upload wins over the newer generated document.
+    expect(result.authority.artifact.id).toBe("hdoc-manual-1");
+    expect(result.authority.finalAuthorityStatus).toBe("approved_manual_drawio_upload");
+    expect(mockEvaluateChain).toHaveBeenCalledTimes(1);
+    expect(mockEvaluateChain).toHaveBeenCalledWith(TENANT, PROJECT, manual);
+  });
+
+  it("does not fall back to a generated document when the manual upload is stale", async () => {
+    const generated = genDocArtifact({ id: "hdoc-gen-9", version: 9 });
+    const manual = docArtifact({ id: "hdoc-manual-1", version: 1 });
+    mockListByType.mockResolvedValueOnce([generated, manual]);
+    mockEvaluateChain.mockResolvedValueOnce({ kind: "invalid_payload" });
+    const result = await select();
+    expect(result.status).toBe("stale_final_authority");
+    if (result.status !== "stale_final_authority") throw new Error("unreachable");
+    expect(result.artifact.id).toBe("hdoc-manual-1");
+    // No second evaluation: the selector never falls back off the manual lane.
+    expect(mockEvaluateChain).toHaveBeenCalledTimes(1);
+  });
+
+  it("distinguishes a pending generated document from a pending manual upload", async () => {
+    mockListByType.mockResolvedValueOnce([
+      genDocArtifact({ id: "hdoc-gen-pending", status: "needs_review", version: 1 }),
+    ]);
+    const result = await select();
+    expect(result.status).toBe("not_finalized");
+    if (result.status !== "not_finalized") throw new Error("unreachable");
+    expect(result.blockerCode).toBe("generated_hld_document_pending_review");
+    expect(result.latestArtifact?.id).toBe("hdoc-gen-pending");
+    expect(mockEvaluateChain).not.toHaveBeenCalled();
   });
 });
 

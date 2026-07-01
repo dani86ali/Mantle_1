@@ -1,13 +1,17 @@
 /**
- * Pure, deterministic RFP HLD DOCUMENT contract (Stage 6H-0I-A).
+ * Pure, deterministic RFP HLD DOCUMENT contract (Stage 6H-0I-A / G3).
  *
  * Persisted shape + fail-closed validator for the FINAL rendered/reviewable
- * `hld_document` artifact's `rfp_hld_document` payload. This lane records a SE
- * MANUAL draw.io upload: an engineer-authored final HLD topology drawing plus its
- * source-chain proof, supersession record, and audit metadata. It is distinct from
- * the internal, structured `hld_document_model`. The uploaded draw.io XML is the
- * only rendered body the payload carries, and it lives ONLY in the dedicated
- * `drawioXml` field.
+ * `hld_document` artifact's `rfp_hld_document` payload. This lane records a final
+ * HLD topology drawing through ONE of two human-approved authority paths, plus its
+ * source-chain proof, supersession record, and audit metadata:
+ *   - `generated_drawio_output` -> `se_approved_generated_hld`: an SE-approved
+ *     generated draw.io output built deterministically from the approved diagram.
+ *   - `manual_drawio_upload` -> `se_manual_drawio_upload`: an SE manual draw.io
+ *     upload that supersedes the previously generated output.
+ * Both are distinct from the internal, structured `hld_document_model`. The draw.io
+ * XML is the only rendered body the payload carries, and it lives ONLY in the
+ * dedicated `drawioXml` field.
  *
  * The artifact becomes runtime/customer HLD authority ONLY through the normal human
  * approval record (see `finalAuthority.effectiveWhenArtifactStatus`). The payload
@@ -24,28 +28,52 @@
 
 export const RFP_HLD_DOCUMENT_PAYLOAD_KIND = "rfp_hld_document" as const;
 
-/** The only supported authoring mode for this slice: a SE manual draw.io upload. */
-export const RFP_HLD_DOCUMENT_SOURCE_MODE = "manual_drawio_upload" as const;
+/** SE-approved generated draw.io output source mode. */
+export const RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED = "generated_drawio_output" as const;
 
-/** The only recognised final-authority kind: a SE manual draw.io upload. */
-export const RFP_HLD_DOCUMENT_AUTHORITY_KIND = "se_manual_drawio_upload" as const;
+/** SE manual draw.io upload source mode. */
+export const RFP_HLD_DOCUMENT_SOURCE_MODE_MANUAL = "manual_drawio_upload" as const;
+
+/** Final-authority kind for an SE-approved generated HLD/draw.io output. */
+export const RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED = "se_approved_generated_hld" as const;
+
+/** Final-authority kind for an SE manual draw.io upload. */
+export const RFP_HLD_DOCUMENT_AUTHORITY_KIND_MANUAL = "se_manual_drawio_upload" as const;
+
+/**
+ * Backward-compatible aliases. The manual upload was the original single mode; these
+ * keep existing manual-upload callers stable while the generated path is added.
+ */
+export const RFP_HLD_DOCUMENT_SOURCE_MODE = RFP_HLD_DOCUMENT_SOURCE_MODE_MANUAL;
+export const RFP_HLD_DOCUMENT_AUTHORITY_KIND = RFP_HLD_DOCUMENT_AUTHORITY_KIND_MANUAL;
 
 /** Authority takes effect only once the artifact itself is human-approved. */
 export const RFP_HLD_DOCUMENT_AUTHORITY_STATUS = "approved" as const;
 
+/** The two supported source modes for a final HLD document. */
+export type RfpHldDocumentSourceMode =
+  | typeof RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED
+  | typeof RFP_HLD_DOCUMENT_SOURCE_MODE_MANUAL;
+
+/** The two recognised final-authority kinds. */
+export type RfpHldDocumentAuthorityKind =
+  | typeof RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED
+  | typeof RFP_HLD_DOCUMENT_AUTHORITY_KIND_MANUAL;
+
 /**
- * Manual final-authority declaration. It is a promise about WHEN the upload
- * becomes authority (on approval), not the authority itself. The nested object is
- * closed: only these two keys, each pinned to its single legal value.
+ * Final-authority declaration. It is a promise about WHEN the document becomes
+ * authority (on approval), not the authority itself. The nested object is closed:
+ * only these two keys; `authorityKind` must be one of the two recognised kinds and
+ * must match the payload's `sourceMode` (validated in the pairing check).
  */
 export interface RfpHldDocumentFinalAuthority {
-  authorityKind: typeof RFP_HLD_DOCUMENT_AUTHORITY_KIND;
+  authorityKind: RfpHldDocumentAuthorityKind;
   effectiveWhenArtifactStatus: typeof RFP_HLD_DOCUMENT_AUTHORITY_STATUS;
 }
 
 export interface RfpHldDocumentPayload {
   payloadKind: typeof RFP_HLD_DOCUMENT_PAYLOAD_KIND;
-  sourceMode: typeof RFP_HLD_DOCUMENT_SOURCE_MODE;
+  sourceMode: RfpHldDocumentSourceMode;
   createdAt: string;
   createdBy: string;
   title: string;
@@ -262,15 +290,45 @@ function isWellFormedXml(xml: string): boolean {
   return stack.length === 0 && rootsClosed === 1;
 }
 
-function validateFinalAuthority(errors: string[], raw: unknown): void {
+/** The legal (sourceMode -> authorityKind) pairs. */
+const AUTHORITY_KIND_FOR_MODE: Readonly<Record<string, string>> = {
+  [RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED]: RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED,
+  [RFP_HLD_DOCUMENT_SOURCE_MODE_MANUAL]: RFP_HLD_DOCUMENT_AUTHORITY_KIND_MANUAL,
+};
+
+const VALID_SOURCE_MODES: ReadonlySet<string> = new Set([
+  RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED,
+  RFP_HLD_DOCUMENT_SOURCE_MODE_MANUAL,
+]);
+
+const VALID_AUTHORITY_KINDS: ReadonlySet<string> = new Set([
+  RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED,
+  RFP_HLD_DOCUMENT_AUTHORITY_KIND_MANUAL,
+]);
+
+/**
+ * Validate the closed finalAuthority object and require the authorityKind to be one
+ * of the two recognised kinds, effective on approval, and MATCHING the payload's
+ * sourceMode: generated_drawio_output -> se_approved_generated_hld and
+ * manual_drawio_upload -> se_manual_drawio_upload.
+ */
+function validateFinalAuthority(errors: string[], raw: unknown, sourceMode: unknown): void {
   const o = asObject(raw);
   if (!o) { errors.push("finalAuthority: must be an object"); return; }
   checkKeys(errors, "finalAuthority", o, FINAL_AUTHORITY_REQUIRED);
-  if (o.authorityKind !== RFP_HLD_DOCUMENT_AUTHORITY_KIND) {
-    errors.push("finalAuthority: authorityKind must be se_manual_drawio_upload");
+  if (typeof o.authorityKind !== "string" || !VALID_AUTHORITY_KINDS.has(o.authorityKind)) {
+    errors.push(
+      "finalAuthority: authorityKind must be se_approved_generated_hld or se_manual_drawio_upload"
+    );
   }
   if (o.effectiveWhenArtifactStatus !== RFP_HLD_DOCUMENT_AUTHORITY_STATUS) {
     errors.push("finalAuthority: effectiveWhenArtifactStatus must be approved");
+  }
+  if (typeof sourceMode === "string" && VALID_SOURCE_MODES.has(sourceMode)) {
+    const expectedKind = AUTHORITY_KIND_FOR_MODE[sourceMode];
+    if (o.authorityKind !== expectedKind) {
+      errors.push("finalAuthority: authorityKind does not match sourceMode");
+    }
   }
 }
 
@@ -286,8 +344,8 @@ function validateFinalAuthority(errors: string[], raw: unknown): void {
  * createdBy/title, a draw.io uploadedFileName, a bounded well-formed single-root
  * `<mxfile>` drawioXml with no unsafe construct, four nonblank distinct source ids
  * whose ordered list is exactly [bundle, model, diagram, documentModel], positive
- * integer versions for all four, a closed finalAuthority pinned to a manual upload
- * effective on approval, a supersedesArtifactIds set drawn from the four source ids
+ * integer versions for all four, a closed finalAuthority whose authorityKind matches
+ * the sourceMode and is effective on approval, a supersedesArtifactIds set drawn from the four source ids
  * that includes at least the diagram and document-model ids, no markup outside
  * drawioXml, and no pricing/SKU/catalog/config/raw/provider/prompt key or
  * certification claim anywhere.
@@ -307,7 +365,7 @@ export function validateRfpHldDocumentPayload(
   if (root.payloadKind !== RFP_HLD_DOCUMENT_PAYLOAD_KIND) {
     errors.push("payload: wrong payloadKind");
   }
-  if (root.sourceMode !== RFP_HLD_DOCUMENT_SOURCE_MODE) {
+  if (typeof root.sourceMode !== "string" || !VALID_SOURCE_MODES.has(root.sourceMode)) {
     errors.push("payload: wrong sourceMode");
   }
   if (!isIsoUtc(root.createdAt)) errors.push("payload: createdAt is not ISO UTC");
@@ -361,7 +419,7 @@ export function validateRfpHldDocumentPayload(
     }
   }
 
-  validateFinalAuthority(errors, root.finalAuthority);
+  validateFinalAuthority(errors, root.finalAuthority, root.sourceMode);
 
   if (!Array.isArray(root.supersedesArtifactIds)) {
     errors.push("supersedesArtifactIds: must be an array");
