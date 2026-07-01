@@ -452,7 +452,10 @@ export async function createRfpHldDesignModelRebuildRequest(
           maxRedoAttempts: 1 as const,
           sourceHldSourceBundleArtifactId: forced.sourceHldSourceBundleArtifactId,
         }
-      : {}),
+      : // Human/SE-directed request: mark it engineer-sourced and carry NO OpenAI
+        // redo-policy fields. The contract's <=250-word engineer instruction cap is
+        // hard-gated below before any persistence.
+        { requestSource: "engineer" as const }),
   };
 
   // HARD GATE: the bounded request payload must validate before any persistence.

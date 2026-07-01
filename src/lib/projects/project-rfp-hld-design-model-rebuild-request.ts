@@ -70,6 +70,14 @@ export interface RfpHldDesignModelRebuildRequestPayload {
 const REASON_MAX = 600;
 const INSTRUCTIONS_MAX = 1200;
 
+/**
+ * Word cap for the freeform SE instruction text on an ENGINEER (human/SE-directed)
+ * request. Deterministic whitespace-token count; no AI/provider call. Applies
+ * only when requestSource is "engineer" - historical payloads with no requestSource
+ * stay bound by the char limit alone and are never retroactively failed for length.
+ */
+const INSTRUCTIONS_ENGINEER_WORD_MAX = 250;
+
 const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 
 const TOP_LEVEL_REQUIRED: readonly string[] = [
@@ -183,6 +191,12 @@ function isIsoUtc(v: unknown): v is string {
   return typeof v === "string" && ISO_UTC_RE.test(v) && Number.isFinite(Date.parse(v));
 }
 
+/** Deterministic whitespace-token word count (no AI/provider call). */
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  return trimmed === "" ? 0 : trimmed.split(/\s+/).length;
+}
+
 /** Recursively reject forbidden object keys anywhere in the payload. */
 function scanForbiddenKeys(errors: string[], label: string, value: unknown): void {
   if (Array.isArray(value)) {
@@ -240,6 +254,16 @@ function validateRedoPolicy(errors: string[], root: Record<string, unknown>): vo
   if (source === "engineer") {
     if (presentPolicy.length > 0) {
       errors.push("payload: requestSource engineer must not carry redo-policy fields");
+    }
+    // The freeform SE instruction text is capped at <=250 whitespace-token words on
+    // the engineer path. The char/nonblank bounds still apply via validateBoundedText.
+    if (
+      isNonBlank(root.instructions) &&
+      countWords(root.instructions) > INSTRUCTIONS_ENGINEER_WORD_MAX
+    ) {
+      errors.push(
+        `instructions: requestSource engineer exceeds ${INSTRUCTIONS_ENGINEER_WORD_MAX} words`
+      );
     }
     return;
   }

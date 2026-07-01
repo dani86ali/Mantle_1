@@ -300,6 +300,36 @@ describe("validateRfpHldDesignModelRebuildRequestPayload - OpenAI redo policy", 
   });
 });
 
+describe("validateRfpHldDesignModelRebuildRequestPayload - engineer word cap", () => {
+  // 251 short whitespace tokens: over the 250-word cap but well under 1200 chars.
+  const OVER_250_WORDS = "fix ".repeat(251).trim();
+  const AT_250_WORDS = "fix ".repeat(250).trim();
+
+  it("accepts engineer instructions at <=250 words with no policy fields", () => {
+    const p = { ...mutable(), requestSource: "engineer", instructions: AT_250_WORDS };
+    const result = validateRfpHldDesignModelRebuildRequestPayload(p);
+    expect(result.errors).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects engineer instructions over 250 words", () => {
+    const p = { ...mutable(), requestSource: "engineer", instructions: OVER_250_WORDS };
+    const result = validateRfpHldDesignModelRebuildRequestPayload(p);
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => e.includes("engineer exceeds 250 words"))
+    ).toBe(true);
+  });
+
+  it("keeps a historical payload (no requestSource) valid over 250 words within char limit", () => {
+    const p = { ...mutable(), instructions: OVER_250_WORDS };
+    expect(OVER_250_WORDS.length).toBeLessThanOrEqual(1200);
+    const result = validateRfpHldDesignModelRebuildRequestPayload(p);
+    expect(result.errors).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+});
+
 describe("project-rfp-hld-design-model-rebuild-request - source purity", () => {
   const SRC_PATH = join(
     process.cwd(),

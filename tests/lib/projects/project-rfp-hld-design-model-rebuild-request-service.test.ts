@@ -374,13 +374,32 @@ describe("createRfpHldDesignModelRebuildRequest - OpenAI-forced initial redo", (
     expect((await createRfpHldDesignModelRebuildRequest(input())).status).toBe("ok");
   });
 
-  it("keeps the non-OpenAI engineer path free of policy metadata", async () => {
+  it("marks the non-OpenAI path requestSource engineer with no OpenAI policy metadata", async () => {
     wireArtifacts(makeModel(), makeReview());
     const result = await createRfpHldDesignModelRebuildRequest(input());
     expect(result.status).toBe("ok");
     const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
-    expect("requestSource" in payload).toBe(false);
-    expect("redoPhase" in payload).toBe(false);
+    expect(payload.requestSource).toBe("engineer");
+    for (const key of [
+      "redoPhase",
+      "redoAttempt",
+      "maxRedoAttempts",
+      "sourceHldSourceBundleArtifactId",
+    ]) {
+      expect(key in payload, key).toBe(false);
+    }
+  });
+
+  it("rejects >250-word engineer instructions before persistence", async () => {
+    wireArtifacts(makeModel(), makeReview());
+    const result = await createRfpHldDesignModelRebuildRequest(
+      input({ instructions: "fix ".repeat(251).trim() })
+    );
+    expect(result.status).toBe("invalid_request_payload");
+    if (result.status === "invalid_request_payload") {
+      expect(result.errors.some((e) => e.includes("engineer exceeds 250 words"))).toBe(true);
+    }
+    expect(createMock).not.toHaveBeenCalled();
   });
 });
 
@@ -449,6 +468,31 @@ describe("listRfpHldDesignModelRebuildRequests", () => {
     }
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain("openai-gate");
+    expect(serialized).not.toContain("Redraft from the same approved source artifacts only.");
+  });
+
+  it("surfaces requestSource engineer without leaking body text", async () => {
+    const engineerRequest: ProjectArtifact = {
+      ...makeActiveRequest(),
+      id: "req-engineer",
+      payload: { ...makeActiveRequest().payload, requestSource: "engineer" },
+    };
+    listMock.mockResolvedValue([engineerRequest]);
+    const result = await listRfpHldDesignModelRebuildRequests(LIST_INPUT);
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") {
+      expect(result.artifacts[0].payloadSummary).toEqual({
+        payloadKind: RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND,
+        sourceHldDesignModelArtifactId: MODEL_ID,
+        sourceReviewArtifactId: REVIEW_ID,
+        requestedAt: "2026-06-23T00:00:00.000Z",
+        status: "active",
+        requestSource: "engineer",
+      });
+    }
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("eng-prev");
+    expect(serialized).not.toContain("Earlier review findings need a redraft.");
     expect(serialized).not.toContain("Redraft from the same approved source artifacts only.");
   });
 
