@@ -4,22 +4,31 @@
  * and BOMATIC_POST_STAGE4_HLD_IMPLEMENTATION_PLAN.md (Stage 6 HLD readiness).
  *
  * Persists ONE reviewable `hld_intake` artifact (status `needs_review`) on the
- * existing `hld_design_delta_review` stage from human-provided engineer design
- * context. This is HLD readiness FOUNDATION, not HLD generation: the intake is an
- * INPUT authority (like `input_package`), captured against a fixed local field
- * catalog so HLD work later consumes structured answers, never raw RFP documents.
+ * existing `hld_design_delta_review` stage from either a manual engineer override
+ * or an SE-reviewed `hld_intake_questionnaire`. This is HLD readiness FOUNDATION,
+ * not HLD generation: later HLD work consumes structured answers, never raw RFP
+ * documents.
  *
- * AUTHORITY BOUNDARY: the answers are engineer-authored context, so the created
- * artifact carries EMPTY sourceFileIds/sourceArtifactIds - it is derived from no
- * raw RFP file and no upstream artifact payload. This service runs no AI and makes
- * no SKU/pricing/catalog/validation/configuration/design decision: it only trims,
- * validates against the local catalog, and writes. It imports exactly the project
- * store, the artifact store, and the canonical project types - no file/evidence
- * store, no fs/path, no pricing/SKU/catalog/config authority, no AI/provider, no
- * route or UI module.
+ * AUTHORITY BOUNDARY: manual_override intake records a required human reason and
+ * no source artifacts; questionnaire_assisted intake records the exact source
+ * questionnaire artifact id and SE review audit block. This service runs no AI and
+ * makes no SKU/pricing/catalog/validation/configuration/design decision: it only
+ * trims, validates the closed contracts, and writes. It imports project/artifact
+ * stores, the questionnaire contract, and canonical project types - no
+ * file/evidence store, no fs/path, no pricing/SKU/catalog/config authority, no
+ * AI/provider, no route or UI module.
  */
 import { getProjectById } from "@/lib/db/project-store";
-import { createProjectArtifactVersion } from "@/lib/db/project-artifact-store";
+import {
+  createProjectArtifactVersion,
+  getProjectArtifactById,
+} from "@/lib/db/project-artifact-store";
+import {
+  RFP_HLD_INTAKE_QUESTIONNAIRE_PAYLOAD_KIND,
+  validateRfpHldIntakeQuestionnairePayload,
+  type RfpHldIntakeQuestionnaireAnswerType,
+  type RfpHldIntakeQuestionnairePayload,
+} from "@/lib/projects/project-rfp-hld-intake-questionnaire";
 import type {
   Project,
   ProjectArtifact,
@@ -69,9 +78,9 @@ const FIELD_IDS: ReadonlySet<string> = new Set(
 
 /**
  * How the intake answers were sourced. `manual_override` records engineer-entered
- * answers with a required human reason; `questionnaire_assisted` (represented for
- * the corrected HLD chain, creation flow is Stage 6H-0E-B) records answers derived
- * from an approved questionnaire artifact.
+ * answers with a required human reason; `questionnaire_assisted` records answers
+ * derived from a validated source questionnaire plus SE-reviewed question
+ * decisions.
  */
 export type RfpHldIntakeSourceMode = "questionnaire_assisted" | "manual_override";
 
@@ -87,13 +96,87 @@ export interface RfpHldIntakeAnswerInput {
   label?: string;
 }
 
-/** Normalized, persisted answer. `value` is retained only when status=answered. */
+/**
+ * Normalized, persisted answer. `value` is retained only when status=answered.
+ * `fieldId` is a catalog field id for manual_override intake, or the reviewed
+ * questionnaire question id for questionnaire_assisted intake (hence `string`).
+ */
 export interface RfpHldIntakeAnswer {
-  fieldId: RfpHldIntakeFieldId;
+  fieldId: string;
   label: string;
   status: RfpHldIntakeAnswerStatus;
   value?: string;
   notes?: string;
+}
+
+/** Allowed SE review dispositions for one source questionnaire question. */
+export type RfpHldIntakeReviewAction =
+  | "accepted"
+  | "edited"
+  | "added"
+  | "removed"
+  | "waived";
+
+/**
+ * One SE-reviewed question decision (request input). Active actions
+ * (accepted/edited/added) require a unique positive `order`; non-added actions
+ * must carry a `sourceQuestionId` from the source questionnaire; `waived`
+ * requires a nonblank `waiverReason`.
+ */
+export interface RfpHldIntakeReviewedQuestionInput {
+  questionId: string;
+  action: RfpHldIntakeReviewAction;
+  sourceQuestionId?: string;
+  order?: number;
+  questionText: string;
+  whyAsked: string;
+  answerType: RfpHldIntakeQuestionnaireAnswerType;
+  required: boolean;
+  sourceRefIds: string[];
+  allowedOptions?: string[];
+  waiverReason?: string;
+}
+
+/** One engineer answer (request input) keyed by the reviewed question id. */
+export interface RfpHldIntakeQuestionAnswerInput {
+  questionId: string;
+  status: RfpHldIntakeAnswerStatus;
+  value?: string;
+  notes?: string;
+}
+
+/** Normalized, persisted reviewed-question record (audit provenance only). */
+export interface RfpHldIntakeReviewedQuestion {
+  questionId: string;
+  action: RfpHldIntakeReviewAction;
+  sourceQuestionId?: string;
+  order?: number;
+  questionText: string;
+  whyAsked: string;
+  answerType: RfpHldIntakeQuestionnaireAnswerType;
+  required: boolean;
+  sourceRefIds: string[];
+  allowedOptions?: string[];
+  waiverReason?: string;
+}
+
+/** Per-action tally of the reviewed question set. */
+export interface RfpHldIntakeQuestionnaireReviewCounts {
+  accepted: number;
+  edited: number;
+  added: number;
+  removed: number;
+  waived: number;
+  active: number;
+}
+
+/** Persisted audit block recording the SE review of the source questionnaire. */
+export interface RfpHldIntakeQuestionnaireReview {
+  sourceQuestionnaireArtifactId: string;
+  sourceQuestionnaireVersion: number;
+  questionnairePayloadKind: string;
+  reviewedQuestions: RfpHldIntakeReviewedQuestion[];
+  counts: RfpHldIntakeQuestionnaireReviewCounts;
 }
 
 /** Per-status answer tally carried on the payload and the result summary. */
@@ -122,10 +205,11 @@ export type RfpHldIntakeManualOverridePayload = RfpHldIntakePayloadBase & {
   sourceQuestionnaireArtifactId?: never;
 };
 
-/** Questionnaire-assisted intake source contract; creation arrives in Stage 6H-0E-B. */
+/** Questionnaire-assisted intake source contract (Stage 6H-0E-B). */
 export type RfpHldIntakeQuestionnaireAssistedPayload = RfpHldIntakePayloadBase & {
   sourceMode: "questionnaire_assisted";
   sourceQuestionnaireArtifactId: string;
+  questionnaireReview: RfpHldIntakeQuestionnaireReview;
   manualOverrideReason?: never;
 };
 
@@ -151,6 +235,21 @@ export interface CreateRfpHldIntakeDraftInput {
    * nonblank. Questionnaire-assisted creation arrives in Stage 6H-0E-B.
    */
   manualOverrideReason: string;
+  /** Optional fixed timestamp for deterministic tests; defaults to now. */
+  createdAt?: Date;
+}
+
+/** Input for {@link createRfpHldIntakeFromQuestionnaireDraft}. */
+export interface CreateRfpHldIntakeFromQuestionnaireDraftInput {
+  tenantId: string;
+  projectId: string;
+  createdBy: string;
+  /** The exact source `hld_intake_questionnaire` artifact under review. */
+  sourceQuestionnaireArtifactId: string;
+  /** SE review decisions over the source questions (candidate review input). */
+  reviewedQuestions: readonly RfpHldIntakeReviewedQuestionInput[];
+  /** Engineer answers, one per active reviewed question. */
+  answers: readonly RfpHldIntakeQuestionAnswerInput[];
   /** Optional fixed timestamp for deterministic tests; defaults to now. */
   createdAt?: Date;
 }
@@ -185,15 +284,33 @@ export interface RfpHldIntakePayloadSummary {
   createdBy: string;
   createdAt: string;
   sourceMode: RfpHldIntakeSourceMode;
+  /** Present only for questionnaire_assisted intake. */
+  sourceQuestionnaireArtifactId?: string;
   answerCount: number;
   statusCounts: RfpHldIntakeStatusCounts;
-  fieldIds: RfpHldIntakeFieldId[];
+  fieldIds: string[];
 }
 
 /** Discriminated result of {@link createRfpHldIntakeDraft}. */
 export type CreateRfpHldIntakeDraftResult =
   | { status: "not_found" }
   | { status: "wrong_mode"; project: RfpHldIntakeProjectSummary }
+  | {
+      status: "ok";
+      artifact: RfpHldIntakeArtifactSummary;
+      payloadSummary: RfpHldIntakePayloadSummary;
+    };
+
+/** Discriminated result of {@link createRfpHldIntakeFromQuestionnaireDraft}. */
+export type CreateRfpHldIntakeFromQuestionnaireDraftResult =
+  | { status: "not_found" }
+  | { status: "wrong_mode"; project: RfpHldIntakeProjectSummary }
+  /** The named source questionnaire artifact does not exist for this project. */
+  | { status: "source_not_found" }
+  /** Wrong type/stage, or a source status outside needs_review/approved. */
+  | { status: "source_not_usable" }
+  /** The source questionnaire payload fails the questionnaire contract. */
+  | { status: "invalid_source_payload" }
   | {
       status: "ok";
       artifact: RfpHldIntakeArtifactSummary;
@@ -343,6 +460,9 @@ function toPayloadSummary(payload: RfpHldIntakePayload): RfpHldIntakePayloadSumm
     createdBy: payload.createdBy,
     createdAt: payload.createdAt,
     sourceMode: payload.sourceMode,
+    ...(payload.sourceMode === "questionnaire_assisted"
+      ? { sourceQuestionnaireArtifactId: payload.sourceQuestionnaireArtifactId }
+      : {}),
     answerCount: payload.answerCount,
     statusCounts: { ...payload.statusCounts },
     fieldIds: payload.answers.map((answer) => answer.fieldId),
@@ -402,6 +522,407 @@ export async function createRfpHldIntakeDraft(
     payload,
     sourceFileIds: [],
     sourceArtifactIds: [],
+  });
+
+  return {
+    status: "ok",
+    artifact: toArtifactSummary(artifact),
+    payloadSummary: toPayloadSummary(payload),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Questionnaire-assisted intake (Stage 6H-0E-B)
+// ---------------------------------------------------------------------------
+
+const HLD_INTAKE_QUESTIONNAIRE_TYPE: ProjectArtifactType =
+  "hld_intake_questionnaire";
+const HLD_INTAKE_STAGE: ProjectStageId = "hld_design_delta_review";
+/** A source questionnaire is usable input only in these reviewable statuses. */
+const USABLE_SOURCE_STATUSES: ReadonlySet<string> = new Set([
+  "needs_review",
+  "approved",
+]);
+
+const REVIEW_ACTIONS: ReadonlySet<string> = new Set([
+  "accepted",
+  "edited",
+  "added",
+  "removed",
+  "waived",
+]);
+/** accepted/edited/added produce an active question that requires an answer. */
+const ACTIVE_REVIEW_ACTIONS: ReadonlySet<string> = new Set([
+  "accepted",
+  "edited",
+  "added",
+]);
+const QUESTIONNAIRE_ANSWER_TYPES: ReadonlySet<string> = new Set([
+  "free_text",
+  "single_select",
+  "multi_select",
+  "boolean",
+  "number",
+]);
+const SELECT_ANSWER_TYPES: ReadonlySet<string> = new Set([
+  "single_select",
+  "multi_select",
+]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key) &&
+    record[key] !== undefined;
+}
+
+/** Validate a required array of unique nonblank trimmed strings. */
+function normalizeStringArray(
+  raw: unknown,
+  label: string,
+  allowEmpty: boolean
+): string[] {
+  if (!Array.isArray(raw)) fail(`${label} must be an array.`);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const trimmed = asTrimmed(item);
+    if (trimmed === "") fail(`${label} entries must be nonblank strings.`);
+    if (seen.has(trimmed)) fail(`${label} entries must be unique.`);
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  if (!allowEmpty && out.length === 0) fail(`${label} must not be empty.`);
+  return out;
+}
+
+/**
+ * Deterministically validate and normalize the SE review decisions against the
+ * source question id set. Throws (via {@link fail}) before any write on any
+ * malformed decision, duplicate/unknown/missing source id, or coverage gap.
+ */
+function normalizeReviewedQuestions(
+  raw: unknown,
+  sourceQuestionIds: ReadonlySet<string>
+): {
+  reviewed: RfpHldIntakeReviewedQuestion[];
+  counts: RfpHldIntakeQuestionnaireReviewCounts;
+} {
+  if (!Array.isArray(raw)) fail("reviewedQuestions must be an array.");
+  if (raw.length === 0) fail("reviewedQuestions must not be empty.");
+
+  const seenQuestionIds = new Set<string>();
+  const seenSourceIds = new Set<string>();
+  const activeOrders = new Set<number>();
+  const counts: RfpHldIntakeQuestionnaireReviewCounts = {
+    accepted: 0,
+    edited: 0,
+    added: 0,
+    removed: 0,
+    waived: 0,
+    active: 0,
+  };
+  const reviewed: RfpHldIntakeReviewedQuestion[] = [];
+
+  for (const rawItem of raw) {
+    if (!isPlainObject(rawItem)) {
+      fail("Each reviewed question must be an object.");
+    }
+    const record = rawItem;
+
+    const questionId = asTrimmed(record.questionId);
+    if (questionId === "") fail("Reviewed question requires a questionId.");
+    if (seenQuestionIds.has(questionId)) {
+      fail(`Duplicate reviewed questionId: ${questionId}.`);
+    }
+    seenQuestionIds.add(questionId);
+
+    const action = record.action;
+    if (typeof action !== "string" || !REVIEW_ACTIONS.has(action)) {
+      fail(`Invalid review action for question: ${questionId}.`);
+    }
+    const reviewAction = action as RfpHldIntakeReviewAction;
+
+    const questionText = asTrimmed(record.questionText);
+    if (questionText === "") {
+      fail(`Reviewed question requires questionText: ${questionId}.`);
+    }
+    const whyAsked = asTrimmed(record.whyAsked);
+    if (whyAsked === "") {
+      fail(`Reviewed question requires whyAsked: ${questionId}.`);
+    }
+
+    const answerType = record.answerType;
+    if (
+      typeof answerType !== "string" ||
+      !QUESTIONNAIRE_ANSWER_TYPES.has(answerType)
+    ) {
+      fail(`Invalid answerType for reviewed question: ${questionId}.`);
+    }
+    const required = record.required;
+    if (typeof required !== "boolean") {
+      fail(`Reviewed question requires a boolean required: ${questionId}.`);
+    }
+
+    const isAdded = reviewAction === "added";
+    let sourceQuestionId: string | undefined;
+    if (isAdded) {
+      if (hasOwn(record, "sourceQuestionId")) {
+        fail(`Added reviewed question must not carry a sourceQuestionId: ${questionId}.`);
+      }
+    } else {
+      sourceQuestionId = asTrimmed(record.sourceQuestionId);
+      if (sourceQuestionId === "") {
+        fail(`Reviewed question requires a sourceQuestionId: ${questionId}.`);
+      }
+      if (!sourceQuestionIds.has(sourceQuestionId)) {
+        fail(`Unknown sourceQuestionId: ${sourceQuestionId}.`);
+      }
+      if (seenSourceIds.has(sourceQuestionId)) {
+        fail(`Duplicate sourceQuestionId review: ${sourceQuestionId}.`);
+      }
+      seenSourceIds.add(sourceQuestionId);
+    }
+
+    // Non-added questions require nonempty provenance; added may be empty.
+    const sourceRefIds = normalizeStringArray(
+      record.sourceRefIds,
+      `Reviewed question ${questionId} sourceRefIds`,
+      isAdded
+    );
+
+    const isSelect = SELECT_ANSWER_TYPES.has(answerType);
+    let allowedOptions: string[] | undefined;
+    if (isSelect) {
+      allowedOptions = normalizeStringArray(
+        record.allowedOptions,
+        `Reviewed question ${questionId} allowedOptions`,
+        false
+      );
+    } else if (hasOwn(record, "allowedOptions")) {
+      fail(`allowedOptions is only valid for select answer types: ${questionId}.`);
+    }
+
+    const isActive = ACTIVE_REVIEW_ACTIONS.has(reviewAction);
+    let order: number | undefined;
+    let waiverReason: string | undefined;
+    if (isActive) {
+      const rawOrder = record.order;
+      if (
+        typeof rawOrder !== "number" ||
+        !Number.isInteger(rawOrder) ||
+        rawOrder < 1
+      ) {
+        fail(`Active reviewed question requires a positive integer order: ${questionId}.`);
+      }
+      if (activeOrders.has(rawOrder)) {
+        fail(`Duplicate reviewed question order: ${rawOrder}.`);
+      }
+      activeOrders.add(rawOrder);
+      order = rawOrder;
+      if (hasOwn(record, "waiverReason")) {
+        fail(`Only waived questions may carry a waiverReason: ${questionId}.`);
+      }
+    } else {
+      if (hasOwn(record, "order")) {
+        fail(`Removed/waived questions must not carry an order: ${questionId}.`);
+      }
+      if (reviewAction === "waived") {
+        waiverReason = asTrimmed(record.waiverReason);
+        if (waiverReason === "") {
+          fail(`Waived question requires a waiverReason: ${questionId}.`);
+        }
+      } else if (hasOwn(record, "waiverReason")) {
+        fail(`Only waived questions may carry a waiverReason: ${questionId}.`);
+      }
+    }
+
+    counts[reviewAction] += 1;
+    if (isActive) counts.active += 1;
+
+    reviewed.push({
+      questionId,
+      action: reviewAction,
+      ...(sourceQuestionId !== undefined ? { sourceQuestionId } : {}),
+      ...(order !== undefined ? { order } : {}),
+      questionText,
+      whyAsked,
+      answerType: answerType as RfpHldIntakeQuestionnaireAnswerType,
+      required,
+      sourceRefIds,
+      ...(allowedOptions !== undefined ? { allowedOptions } : {}),
+      ...(waiverReason !== undefined ? { waiverReason } : {}),
+    });
+  }
+
+  // Every original source question must be represented exactly once.
+  if (seenSourceIds.size !== sourceQuestionIds.size) {
+    fail("Every source question must be reviewed exactly once.");
+  }
+  if (counts.active === 0) {
+    fail("Questionnaire-assisted HLD intake requires at least one active reviewed question.");
+  }
+
+  return { reviewed, counts };
+}
+
+/**
+ * Validate and normalize the engineer answers: exactly one per active reviewed
+ * question, keyed by the reviewed question id, and no answer for a removed/waived
+ * question. Persisted answers reuse the catalog answer shape (`fieldId` = the
+ * reviewed question id, `label` = the reviewed question text).
+ */
+function normalizeQuestionnaireAnswers(
+  raw: unknown,
+  activeQuestions: readonly RfpHldIntakeReviewedQuestion[]
+): RfpHldIntakeAnswer[] {
+  if (!Array.isArray(raw)) fail("answers must be an array.");
+  const activeById = new Map(activeQuestions.map((q) => [q.questionId, q]));
+  const byQuestionId = new Map<string, Record<string, unknown>>();
+
+  for (const rawItem of raw) {
+    if (!isPlainObject(rawItem)) fail("Each answer must be an object.");
+    const record = rawItem;
+    const questionId = asTrimmed(record.questionId);
+    if (questionId === "") fail("Answer requires a questionId.");
+    if (!activeById.has(questionId)) {
+      fail(`Answer for an unknown or inactive question: ${questionId}.`);
+    }
+    if (byQuestionId.has(questionId)) {
+      fail(`Duplicate answer for question: ${questionId}.`);
+    }
+    byQuestionId.set(questionId, record);
+  }
+
+  return activeQuestions.map((question) => {
+    const record = byQuestionId.get(question.questionId);
+    if (record === undefined) {
+      fail(`Missing answer for active question: ${question.questionId}.`);
+    }
+    return normalizeQuestionAnswer(question, record);
+  });
+}
+
+/** Normalize one questionnaire answer; drops values for unknown/not_applicable. */
+function normalizeQuestionAnswer(
+  question: RfpHldIntakeReviewedQuestion,
+  record: Record<string, unknown>
+): RfpHldIntakeAnswer {
+  const status = record.status;
+  if (status !== "answered" && status !== "unknown" && status !== "not_applicable") {
+    fail(`Invalid answer status for question: ${question.questionId}.`);
+  }
+  const answer: RfpHldIntakeAnswer = {
+    fieldId: question.questionId,
+    label: question.questionText,
+    status,
+  };
+  if (status === "answered") {
+    const value = asTrimmed(record.value);
+    if (value === "") {
+      fail(`Answered question requires a value: ${question.questionId}.`);
+    }
+    answer.value = value;
+  }
+  const notes = asTrimmed(record.notes);
+  if (notes !== "") answer.notes = notes;
+  return answer;
+}
+
+/**
+ * Create ONE `needs_review` `hld_intake` artifact from a validated source
+ * `hld_intake_questionnaire`, SE-reviewed question decisions, and engineer
+ * answers. The source questionnaire is CANDIDATE review input, not authority: the
+ * created intake is still `needs_review` and only becomes readiness input
+ * authority when the existing HLD intake approval route approves it. The service
+ * stamps `sourceMode: "questionnaire_assisted"` itself; a caller can never supply
+ * it. Gates in order: project existence/rfp mode, exact source artifact
+ * existence, source type/stage/status, source payload validity; then it validates
+ * the review decisions and answers deterministically BEFORE the single write. The
+ * created artifact carries sourceArtifactIds exactly `[sourceQuestionnaireArtifactId]`.
+ */
+export async function createRfpHldIntakeFromQuestionnaireDraft(
+  input: CreateRfpHldIntakeFromQuestionnaireDraftInput
+): Promise<CreateRfpHldIntakeFromQuestionnaireDraftResult> {
+  const projectId = asTrimmed(input.projectId);
+  const createdBy = asTrimmed(input.createdBy);
+  const sourceQuestionnaireArtifactId = asTrimmed(
+    input.sourceQuestionnaireArtifactId
+  );
+  if (projectId === "") fail("HLD intake requires a projectId.");
+  if (createdBy === "") fail("HLD intake requires a createdBy.");
+  if (sourceQuestionnaireArtifactId === "") {
+    fail("Questionnaire-assisted HLD intake requires a sourceQuestionnaireArtifactId.");
+  }
+
+  const project = await getProjectById(input.tenantId, projectId);
+  if (project === null) return { status: "not_found" };
+  if (project.mode !== "rfp") {
+    return { status: "wrong_mode", project: toProjectSummary(project) };
+  }
+
+  const source = await getProjectArtifactById(
+    input.tenantId,
+    projectId,
+    sourceQuestionnaireArtifactId
+  );
+  if (source === null) return { status: "source_not_found" };
+  if (
+    source.type !== HLD_INTAKE_QUESTIONNAIRE_TYPE ||
+    source.stageId !== HLD_INTAKE_STAGE ||
+    !USABLE_SOURCE_STATUSES.has(source.status)
+  ) {
+    return { status: "source_not_usable" };
+  }
+  if (!validateRfpHldIntakeQuestionnairePayload(source.payload).valid) {
+    return { status: "invalid_source_payload" };
+  }
+
+  const sourcePayload = source.payload as unknown as RfpHldIntakeQuestionnairePayload;
+  const sourceQuestionIds = new Set(
+    sourcePayload.questions.map((question) => question.questionId)
+  );
+
+  // Request-derived validation (throws RfpHldIntakeValidationError -> 400).
+  const { reviewed, counts } = normalizeReviewedQuestions(
+    input.reviewedQuestions,
+    sourceQuestionIds
+  );
+  const activeQuestions = reviewed
+    .filter((question) => ACTIVE_REVIEW_ACTIONS.has(question.action))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const answers = normalizeQuestionnaireAnswers(input.answers, activeQuestions);
+
+  const createdAt = (input.createdAt ?? new Date()).toISOString();
+  const payload: RfpHldIntakeQuestionnaireAssistedPayload = {
+    payloadKind: RFP_HLD_INTAKE_PAYLOAD_KIND,
+    createdBy,
+    createdAt,
+    sourceMode: "questionnaire_assisted",
+    sourceQuestionnaireArtifactId,
+    questionnaireReview: {
+      sourceQuestionnaireArtifactId,
+      sourceQuestionnaireVersion: source.version,
+      questionnairePayloadKind: RFP_HLD_INTAKE_QUESTIONNAIRE_PAYLOAD_KIND,
+      reviewedQuestions: reviewed,
+      counts,
+    },
+    answers,
+    answerCount: answers.length,
+    statusCounts: countStatuses(answers),
+  };
+
+  const artifact = await createProjectArtifactVersion({
+    projectId,
+    tenantId: input.tenantId,
+    stageId: "hld_design_delta_review",
+    type: "hld_intake",
+    status: "needs_review",
+    payload,
+    sourceFileIds: [],
+    sourceArtifactIds: [sourceQuestionnaireArtifactId],
   });
 
   return {

@@ -307,11 +307,26 @@ describe("loadRfpHldIntakeDetail - sanitized detail", () => {
     }
   });
 
-  it("surfaces the questionnaire source mode without an override reason", async () => {
+  it("surfaces the questionnaire source id and a lean review summary without an override reason", async () => {
+    const questionnaireReview = {
+      sourceQuestionnaireArtifactId: "art-questionnaire-1",
+      sourceQuestionnaireVersion: 3,
+      questionnairePayloadKind: "rfp_hld_intake_questionnaire",
+      reviewedQuestions: [
+        { questionId: "sq-1", action: "accepted", sourceQuestionId: "sq-1", order: 1, questionText: "Existing core?", whyAsked: "context", answerType: "free_text", required: true, sourceRefIds: ["ref-1"] },
+        { questionId: "sq-2", action: "edited", sourceQuestionId: "sq-2", order: 2, questionText: "Redundancy?", whyAsked: "resiliency", answerType: "free_text", required: false, sourceRefIds: ["ref-2"] },
+        { questionId: "sq-3", action: "removed", sourceQuestionId: "sq-3", questionText: "Rack?", whyAsked: "physical", answerType: "free_text", required: false, sourceRefIds: ["ref-3"] },
+        { questionId: "sq-4", action: "waived", sourceQuestionId: "sq-4", questionText: "Legacy?", whyAsked: "migration", answerType: "free_text", required: false, sourceRefIds: ["ref-4"], waiverReason: "Out of scope." },
+        { questionId: "added-1", action: "added", order: 3, questionText: "SDA?", whyAsked: "added", answerType: "boolean", required: false, sourceRefIds: [] },
+      ],
+      counts: { accepted: 1, edited: 1, added: 1, removed: 1, waived: 1, active: 3 },
+    };
     mockGetArtifactById.mockResolvedValue(
       makeArtifact({
         payload: makePayload({
           sourceMode: "questionnaire_assisted",
+          sourceQuestionnaireArtifactId: "art-questionnaire-1",
+          questionnaireReview,
           manualOverrideReason: OVERRIDE_REASON,
         }),
       })
@@ -326,9 +341,27 @@ describe("loadRfpHldIntakeDetail - sanitized detail", () => {
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.intake.sourceMode).toBe("questionnaire_assisted");
+    expect(result.intake.sourceQuestionnaireArtifactId).toBe("art-questionnaire-1");
     // The override reason belongs only to manual_override; drop it here.
     expect("manualOverrideReason" in result.intake).toBe(false);
     expect(JSON.stringify(result.intake)).not.toContain(OVERRIDE_REASON);
+
+    // Lean review summary: recomputed counts, no reviewed question text duplicated.
+    const summary = result.intake.questionnaireReview;
+    expect(summary).toBeDefined();
+    if (summary === undefined) throw new Error("unreachable");
+    expect(summary.reviewedQuestionCount).toBe(5);
+    expect(summary.counts).toEqual({
+      accepted: 1,
+      edited: 1,
+      added: 1,
+      removed: 1,
+      waived: 1,
+      active: 3,
+    });
+    expect(summary.sourceQuestionnaireArtifactId).toBe("art-questionnaire-1");
+    // The full reviewed question text is not surfaced in the lean summary.
+    expect(JSON.stringify(summary)).not.toContain("Existing core?");
   });
 });
 

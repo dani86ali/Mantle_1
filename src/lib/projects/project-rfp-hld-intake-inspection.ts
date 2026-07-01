@@ -116,6 +116,27 @@ export interface RfpHldIntakeInspectionAnswer {
   notes?: string;
 }
 
+/** Per-action tally of the reviewed question set (counts only, no full text). */
+export interface RfpHldIntakeInspectionReviewCounts {
+  accepted: number;
+  edited: number;
+  added: number;
+  removed: number;
+  waived: number;
+  active: number;
+}
+
+/**
+ * Lean questionnaire-review summary for detail: provenance + counts only, never
+ * the reviewed question text or a duplicate of the engineer answers.
+ */
+export interface RfpHldIntakeInspectionQuestionnaireReview {
+  sourceQuestionnaireArtifactId?: string;
+  questionnairePayloadKind?: string;
+  reviewedQuestionCount: number;
+  counts: RfpHldIntakeInspectionReviewCounts;
+}
+
 export interface RfpHldIntakeInspectionDetailPayload {
   payloadKind: string;
   createdBy: string;
@@ -124,6 +145,10 @@ export interface RfpHldIntakeInspectionDetailPayload {
   sourceMode?: RfpHldIntakeSourceMode;
   /** The human override reason; surfaced only for manual_override intake. */
   manualOverrideReason?: string;
+  /** The source questionnaire id; surfaced only for questionnaire_assisted intake. */
+  sourceQuestionnaireArtifactId?: string;
+  /** Lean review summary; surfaced only for questionnaire_assisted intake. */
+  questionnaireReview?: RfpHldIntakeInspectionQuestionnaireReview;
   answerCount: number;
   statusCounts: RfpHldIntakeStatusCounts;
   answers: RfpHldIntakeInspectionAnswer[];
@@ -278,6 +303,57 @@ function toAnswer(entry: unknown): RfpHldIntakeInspectionAnswer {
   };
 }
 
+const REVIEW_ACTIONS: readonly string[] = [
+  "accepted",
+  "edited",
+  "added",
+  "removed",
+  "waived",
+];
+const ACTIVE_REVIEW_ACTIONS: ReadonlySet<string> = new Set([
+  "accepted",
+  "edited",
+  "added",
+]);
+
+/**
+ * Build a lean review summary from the persisted questionnaireReview block:
+ * counts are recomputed from the reviewed decisions (never trusting a stored
+ * tally) and no reviewed question text is surfaced. Returns undefined when the
+ * block is absent or malformed.
+ */
+function toQuestionnaireReviewSummary(
+  payload: Record<string, unknown>
+): RfpHldIntakeInspectionQuestionnaireReview | undefined {
+  const review = payload.questionnaireReview;
+  if (!isPlainRecord(review)) return undefined;
+  const reviewed = review.reviewedQuestions;
+  const questions = Array.isArray(reviewed) ? reviewed : [];
+  const counts: RfpHldIntakeInspectionReviewCounts = {
+    accepted: 0,
+    edited: 0,
+    added: 0,
+    removed: 0,
+    waived: 0,
+    active: 0,
+  };
+  for (const entry of questions) {
+    if (!isPlainRecord(entry)) continue;
+    const action = entry.action;
+    if (typeof action !== "string" || !REVIEW_ACTIONS.includes(action)) continue;
+    counts[action as keyof RfpHldIntakeInspectionReviewCounts] += 1;
+    if (ACTIVE_REVIEW_ACTIONS.has(action)) counts.active += 1;
+  }
+  const sourceId = asNonblankString(review.sourceQuestionnaireArtifactId);
+  const kind = asNonblankString(review.questionnairePayloadKind);
+  return {
+    ...(sourceId !== undefined ? { sourceQuestionnaireArtifactId: sourceId } : {}),
+    ...(kind !== undefined ? { questionnairePayloadKind: kind } : {}),
+    reviewedQuestionCount: questions.length,
+    counts,
+  };
+}
+
 export async function loadRfpHldIntakeList(
   input: LoadRfpHldIntakeListInput
 ): Promise<LoadRfpHldIntakeListResult> {
@@ -359,6 +435,16 @@ export async function loadRfpHldIntakeDetail(
     sourceMode === "manual_override"
       ? asNonblankString(payload.manualOverrideReason)
       : undefined;
+  // The questionnaire source id and lean review summary are surfaced only for the
+  // questionnaire_assisted mode they belong to.
+  const sourceQuestionnaireArtifactId =
+    sourceMode === "questionnaire_assisted"
+      ? asNonblankString(payload.sourceQuestionnaireArtifactId)
+      : undefined;
+  const questionnaireReview =
+    sourceMode === "questionnaire_assisted"
+      ? toQuestionnaireReviewSummary(payload)
+      : undefined;
   return {
     status: "ok",
     project: toProjectSummary(project),
@@ -369,6 +455,10 @@ export async function loadRfpHldIntakeDetail(
       createdAt: asString(payload.createdAt),
       ...(sourceMode !== undefined ? { sourceMode } : {}),
       ...(manualOverrideReason !== undefined ? { manualOverrideReason } : {}),
+      ...(sourceQuestionnaireArtifactId !== undefined
+        ? { sourceQuestionnaireArtifactId }
+        : {}),
+      ...(questionnaireReview !== undefined ? { questionnaireReview } : {}),
       answerCount: sanitized.length,
       statusCounts: tallyStatusCounts(answers),
       answers: sanitized,

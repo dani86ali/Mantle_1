@@ -105,6 +105,59 @@ function makeNormalizedPayload(
   return payload;
 }
 
+const Q_SOURCE_ID = "art-questionnaire-1";
+
+type ReviewRecord = Record<string, unknown>;
+
+// A normalized persisted questionnaire_assisted payload: the shape the creation
+// contract emits, with the audit block and answers keyed to active questions.
+function makeQuestionnairePayload(
+  mutate: (
+    review: ReviewRecord,
+    answers: AnswerRecord[],
+    payload: Record<string, unknown>
+  ) => void = () => {}
+): Record<string, unknown> {
+  const reviewedQuestions: ReviewRecord[] = [
+    { questionId: "sq-1", action: "accepted", sourceQuestionId: "sq-1", order: 1, questionText: "Existing core?", whyAsked: "context", answerType: "free_text", required: true, sourceRefIds: ["ref-1"] },
+    { questionId: "sq-2", action: "edited", sourceQuestionId: "sq-2", order: 2, questionText: "Redundancy tier?", whyAsked: "resiliency", answerType: "single_select", required: false, sourceRefIds: ["ref-2"], allowedOptions: ["dual", "single"] },
+    { questionId: "sq-3", action: "removed", sourceQuestionId: "sq-3", questionText: "Rack space?", whyAsked: "physical", answerType: "free_text", required: false, sourceRefIds: ["ref-3"] },
+    { questionId: "sq-4", action: "waived", sourceQuestionId: "sq-4", questionText: "Legacy VLANs?", whyAsked: "migration", answerType: "free_text", required: false, sourceRefIds: ["ref-4"], waiverReason: "Out of scope for this bid." },
+    { questionId: "added-1", action: "added", order: 3, questionText: "New SDA fabric?", whyAsked: "engineer added", answerType: "boolean", required: false, sourceRefIds: [] },
+  ];
+  const review: ReviewRecord = {
+    sourceQuestionnaireArtifactId: Q_SOURCE_ID,
+    sourceQuestionnaireVersion: 3,
+    questionnairePayloadKind: "rfp_hld_intake_questionnaire",
+    reviewedQuestions,
+    counts: { accepted: 1, edited: 1, added: 1, removed: 1, waived: 1, active: 3 },
+  };
+  const answers: AnswerRecord[] = [
+    { fieldId: "sq-1", label: "Existing core?", status: "answered", value: ANSWER_SENTINEL },
+    { fieldId: "sq-2", label: "Redundancy tier?", status: "unknown", notes: "needs follow-up" },
+    { fieldId: "added-1", label: "New SDA fabric?", status: "not_applicable" },
+  ];
+  const payload: Record<string, unknown> = {
+    payloadKind: "rfp_hld_intake",
+    createdBy: "engineer-1",
+    createdAt: "2026-06-20T09:15:00.000Z",
+    sourceMode: "questionnaire_assisted",
+    sourceQuestionnaireArtifactId: Q_SOURCE_ID,
+    questionnaireReview: review,
+    answers,
+    answerCount: answers.length,
+    statusCounts: { answered: 1, unknown: 1, not_applicable: 1 },
+  };
+  mutate(review, answers, payload);
+  return payload;
+}
+
+function makeQuestionnaireArtifact(
+  payload: Record<string, unknown>
+): ProjectArtifact {
+  return makeArtifact({ payload, sourceArtifactIds: [Q_SOURCE_ID] });
+}
+
 function makeArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
   return {
     id: ARTIFACT,
@@ -306,17 +359,47 @@ describe("reviewRfpHldIntakeArtifact - approval payload re-validation", () => {
   });
 
   it("approves a well-formed questionnaire_assisted payload", async () => {
-    const payload = makeNormalizedPayload((_, p) => {
-      p.sourceMode = "questionnaire_assisted";
-      delete p.manualOverrideReason;
-      p.sourceQuestionnaireArtifactId = "art-questionnaire-1";
-    });
-    mockGetArtifactById.mockResolvedValue(makeArtifact({ payload }));
+    mockGetArtifactById.mockResolvedValue(
+      makeQuestionnaireArtifact(makeQuestionnairePayload())
+    );
 
     const result = await review();
 
     expect(result.status).toBe("ok");
     expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks tampered/inconsistent questionnaire_assisted payloads without approving", async () => {
+    const tampered: Array<[string, ProjectArtifact]> = [
+      ["sourceArtifactIds not matching the source id", makeArtifact({ payload: makeQuestionnairePayload(), sourceArtifactIds: [] })],
+      ["sourceArtifactIds carrying an extra id", makeArtifact({ payload: makeQuestionnairePayload(), sourceArtifactIds: [Q_SOURCE_ID, "extra"] })],
+      ["missing questionnaireReview", makeQuestionnaireArtifact(makeQuestionnairePayload((_, __, p) => { delete p.questionnaireReview; }))],
+      ["carrying a manualOverrideReason", makeQuestionnaireArtifact(makeQuestionnairePayload((_, __, p) => { p.manualOverrideReason = "x"; }))],
+      ["extra review key", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { r.injected = true; }))],
+      ["review source id mismatch", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { r.sourceQuestionnaireArtifactId = "other"; }))],
+      ["questionnaire payload kind mismatch", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { r.questionnairePayloadKind = "wrong_kind"; }))],
+      ["questionnaire source version invalid", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { r.sourceQuestionnaireVersion = 0; }))],
+      ["counts mismatch", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { (r.counts as Record<string, number>).accepted = 5; }))],
+      ["extra reviewed-question key", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { (r.reviewedQuestions as ReviewRecord[])[0].injected = "x"; }))],
+      ["added carrying a sourceQuestionId", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { (r.reviewedQuestions as ReviewRecord[])[4].sourceQuestionId = "sq-1"; }))],
+      ["active question missing order", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { delete (r.reviewedQuestions as ReviewRecord[])[0].order; }))],
+      ["waived missing waiverReason", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { delete (r.reviewedQuestions as ReviewRecord[])[3].waiverReason; }))],
+      ["select missing allowedOptions", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { delete (r.reviewedQuestions as ReviewRecord[])[1].allowedOptions; }))],
+      ["answer for a removed question", makeQuestionnaireArtifact(makeQuestionnairePayload((_, a) => { a.push({ fieldId: "sq-3", label: "Rack space?", status: "answered", value: "x" }); }))],
+      ["answer label mismatch", makeQuestionnaireArtifact(makeQuestionnairePayload((_, a) => { a[0].label = "WRONG LABEL"; }))],
+      ["duplicate answer", makeQuestionnaireArtifact(makeQuestionnairePayload((_, a) => { a.push({ fieldId: "sq-1", label: "Existing core?", status: "answered", value: "again" }); }))],
+      ["answerCount mismatch", makeQuestionnaireArtifact(makeQuestionnairePayload((_, __, p) => { p.answerCount = 9; }))],
+      ["statusCounts mismatch", makeQuestionnaireArtifact(makeQuestionnairePayload((_, __, p) => { p.statusCounts = { answered: 3, unknown: 0, not_applicable: 0 }; }))],
+    ];
+    for (const [, artifact] of tampered) {
+      mockCreateApproval.mockClear();
+      mockGetArtifactById.mockResolvedValue(artifact);
+
+      const result = await review();
+
+      expect(result.status).toBe("invalid_hld_intake_payload");
+      expect(mockCreateApproval).not.toHaveBeenCalled();
+    }
   });
 
   it("blocks every non-normalized or tampered payload as invalid_hld_intake_payload without approving", async () => {
