@@ -150,25 +150,84 @@ describe("buildRfpHldDesignModelOpenAiReviewRequest", () => {
     }
   });
 
-  it("mirrors optional DKP content and intake answers when present", () => {
+  it("mirrors optional DKP content and intake answers through explicit whitelists", () => {
     const request = buildRfpHldDesignModelOpenAiReviewRequest(
       reviewInput({}, {
-        designKnowledgePackContents: [{ domain: "campus_switching", title: "Pack" }],
+        designKnowledgePackContents: [
+          {
+            domain: "campus_switching",
+            title: "Pack",
+            sectionCounts: {
+              designPrinciples: 1,
+              topologyGuidance: 0,
+              constraints: 0,
+              assumptions: 0,
+              exclusions: 0,
+              validationNotes: 0,
+              smuggledSectionCount: 999,
+            },
+            smuggledContentKey: "LEAK_CONTENT",
+          },
+        ],
         hldIntakeAnswers: {
           sourceHldIntakeArtifactId: "hint-1",
           sourceHldIntakeVersion: 1,
           sourceMode: "manual_override",
-          answers: [],
-          answerCount: 0,
-          statusCounts: { answered: 0, unknown: 0, not_applicable: 0 },
+          answers: [
+            {
+              fieldId: "f-1",
+              label: "Field one",
+              status: "answered",
+              value: "yes",
+              smuggledAnswerKey: "LEAK_ANSWER",
+            },
+          ],
+          answerCount: 1,
+          statusCounts: {
+            answered: 1,
+            unknown: 0,
+            not_applicable: 0,
+            smuggledStatusCount: 999,
+          },
+          smuggledIntakeKey: "LEAK_INTAKE",
         },
       })
     );
     const user = JSON.parse(request.user);
     expect(user.sourceBundle.designKnowledgePackContents).toEqual([
-      { domain: "campus_switching", title: "Pack" },
+      {
+        domain: "campus_switching",
+        title: "Pack",
+        sectionCounts: {
+          designPrinciples: 1,
+          topologyGuidance: 0,
+          constraints: 0,
+          assumptions: 0,
+          exclusions: 0,
+          validationNotes: 0,
+        },
+      },
     ]);
-    expect(user.sourceBundle.hldIntakeAnswers.sourceHldIntakeArtifactId).toBe("hint-1");
+    expect(user.sourceBundle.hldIntakeAnswers).toEqual({
+      sourceHldIntakeArtifactId: "hint-1",
+      sourceHldIntakeVersion: 1,
+      sourceMode: "manual_override",
+      answers: [{ fieldId: "f-1", label: "Field one", status: "answered", value: "yes" }],
+      answerCount: 1,
+      statusCounts: { answered: 1, unknown: 0, not_applicable: 0 },
+    });
+    for (const forbidden of [
+      "smuggledContentKey",
+      "LEAK_CONTENT",
+      "smuggledSectionCount",
+      "smuggledAnswerKey",
+      "LEAK_ANSWER",
+      "smuggledStatusCount",
+      "smuggledIntakeKey",
+      "LEAK_INTAKE",
+    ]) {
+      expect(request.user, forbidden).not.toContain(forbidden);
+    }
   });
 
   it("does not alias the input payloads", () => {

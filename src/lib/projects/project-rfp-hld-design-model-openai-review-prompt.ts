@@ -16,9 +16,12 @@
  * source file ids, no tenant identity, no pricing/SKU/catalog/configuration
  * decision, and no smuggled extra field.
  *
- * Imports EXACTLY the review-input contract from the executor boundary.
+ * Imports only type contracts needed for the closed review input and the
+ * whitelisted DKP/intake-answer projections.
  */
 import type { RfpHldDesignModelOpenAiReviewInput } from "@/lib/projects/project-rfp-hld-design-model-openai-review-executor";
+import type { RfpHldApprovedDesignKnowledgeContent } from "@/lib/projects/project-rfp-hld-design-knowledge-content";
+import type { RfpHldSourceBundleIntakeAnswers } from "@/lib/projects/project-rfp-hld-source-bundle";
 
 /**
  * Fixed system instruction for the OpenAI review adapter. Frames every run as
@@ -98,6 +101,127 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/** Plain (non-array) object view, or null. */
+function asObject(v: unknown): Record<string, unknown> | null {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null;
+}
+
+/** Canonical scalar keys of an approved design-knowledge content block, in order. */
+const DKP_CONTENT_SCALAR_KEYS: readonly string[] = [
+  "contentKind",
+  "artifactId",
+  "artifactType",
+  "stageId",
+  "status",
+  "version",
+  "payloadKind",
+  "domain",
+  "title",
+  "source",
+];
+
+/** Canonical list-section keys of an approved design-knowledge content block. */
+const DKP_CONTENT_SECTION_KEYS: readonly string[] = [
+  "designPrinciples",
+  "topologyGuidance",
+  "constraints",
+  "assumptions",
+  "exclusions",
+  "validationNotes",
+];
+
+/** Canonical intake status-count keys, in order. */
+const INTAKE_STATUS_COUNT_KEYS: readonly string[] = [
+  "answered",
+  "unknown",
+  "not_applicable",
+];
+
+/** Project only the six canonical section counts; drop any smuggled key. */
+function projectSectionCounts(counts: Record<string, unknown>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const key of DKP_CONTENT_SECTION_KEYS) {
+    if (typeof counts[key] === "number") out[key] = counts[key] as number;
+  }
+  return out;
+}
+
+/**
+ * Project one approved design-knowledge content block through an explicit
+ * whitelist in canonical key order. Copies no extra key from the block; list
+ * sections and section counts are re-projected, never whole-cloned.
+ */
+function projectDesignKnowledgeContent(
+  content: RfpHldApprovedDesignKnowledgeContent
+): RfpHldApprovedDesignKnowledgeContent {
+  const src = content as unknown as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of DKP_CONTENT_SCALAR_KEYS) {
+    if (src[key] !== undefined) out[key] = src[key];
+  }
+  for (const key of DKP_CONTENT_SECTION_KEYS) {
+    if (Array.isArray(src[key])) out[key] = (src[key] as unknown[]).slice();
+  }
+  if (src.entryCount !== undefined) out.entryCount = src.entryCount;
+  const counts = asObject(src.sectionCounts);
+  if (counts) out.sectionCounts = projectSectionCounts(counts);
+  return out as unknown as RfpHldApprovedDesignKnowledgeContent;
+}
+
+/** Project the whitelisted DKP content array; drop any extra key per block. */
+function projectDesignKnowledgePackContents(
+  contents: readonly RfpHldApprovedDesignKnowledgeContent[]
+): RfpHldApprovedDesignKnowledgeContent[] {
+  return contents.map(projectDesignKnowledgeContent);
+}
+
+/** Project one intake answer through its explicit whitelist; drop extras. */
+function projectIntakeAnswer(answer: unknown): Record<string, unknown> {
+  const a = asObject(answer) ?? {};
+  const out: Record<string, unknown> = {};
+  if (a.fieldId !== undefined) out.fieldId = a.fieldId;
+  if (a.label !== undefined) out.label = a.label;
+  if (a.status !== undefined) out.status = a.status;
+  if (a.value !== undefined) out.value = a.value;
+  if (a.notes !== undefined) out.notes = a.notes;
+  return out;
+}
+
+/** Project only the three canonical intake status counts; drop any extra key. */
+function projectStatusCounts(counts: Record<string, unknown>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const key of INTAKE_STATUS_COUNT_KEYS) {
+    if (typeof counts[key] === "number") out[key] = counts[key] as number;
+  }
+  return out;
+}
+
+/**
+ * Project the sanitized HLD intake answers section through an explicit whitelist
+ * in canonical key order. Copies no extra key from the section, its answer
+ * objects, or its status counts; never whole-clones any of them.
+ */
+function projectHldIntakeAnswers(
+  section: RfpHldSourceBundleIntakeAnswers
+): RfpHldSourceBundleIntakeAnswers {
+  const src = section as unknown as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  if (src.sourceHldIntakeArtifactId !== undefined) {
+    out.sourceHldIntakeArtifactId = src.sourceHldIntakeArtifactId;
+  }
+  if (src.sourceHldIntakeVersion !== undefined) {
+    out.sourceHldIntakeVersion = src.sourceHldIntakeVersion;
+  }
+  if (src.sourceMode !== undefined) out.sourceMode = src.sourceMode;
+  if (Array.isArray(src.answers)) out.answers = (src.answers as unknown[]).map(projectIntakeAnswer);
+  if (src.answerCount !== undefined) out.answerCount = src.answerCount;
+  const counts = asObject(src.statusCounts);
+  if (counts) out.statusCounts = projectStatusCounts(counts);
+  return out as unknown as RfpHldSourceBundleIntakeAnswers;
+}
+
 /**
  * Serialize the review-input bundle into a provider-neutral { system, user }
  * request. The `user` string is JSON.stringify of an explicitly key-ordered
@@ -143,10 +267,14 @@ export function buildRfpHldDesignModelOpenAiReviewRequest(
       version: ref.version,
     })),
     ...(bundle.designKnowledgePackContents !== undefined
-      ? { designKnowledgePackContents: cloneJson(bundle.designKnowledgePackContents) }
+      ? {
+          designKnowledgePackContents: projectDesignKnowledgePackContents(
+            bundle.designKnowledgePackContents
+          ),
+        }
       : {}),
     ...(bundle.hldIntakeAnswers !== undefined
-      ? { hldIntakeAnswers: cloneJson(bundle.hldIntakeAnswers) }
+      ? { hldIntakeAnswers: projectHldIntakeAnswers(bundle.hldIntakeAnswers) }
       : {}),
   };
 
