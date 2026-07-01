@@ -100,6 +100,12 @@ export interface RfpHldDesignModelRebuildRequestPayloadSummary {
   sourceReviewArtifactId: string;
   requestedAt: string;
   status: RfpHldDesignModelRebuildRequestStatus;
+  /** Optional OpenAI-forced redo-policy metadata, surfaced only when present. */
+  requestSource?: RfpHldDesignModelRebuildRequestPayload["requestSource"];
+  redoPhase?: RfpHldDesignModelRebuildRequestPayload["redoPhase"];
+  redoAttempt?: number;
+  maxRedoAttempts?: RfpHldDesignModelRebuildRequestPayload["maxRedoAttempts"];
+  sourceHldSourceBundleArtifactId?: string;
 }
 
 /** A listed executable-active request: the artifact summary plus lean provenance. */
@@ -129,6 +135,12 @@ export type CreateRfpHldDesignModelRebuildRequestResult =
       status: "active_request_exists";
       artifact: RfpHldDesignModelRebuildRequestArtifactSummary;
     }
+  | {
+      status: "redo_limit_exhausted";
+      phase: "initial_openai_gate";
+      maxRedoAttempts: 1;
+      attemptCount: number;
+    }
   | { status: "invalid_request_payload"; errors: string[] }
   | {
       status: "ok";
@@ -155,6 +167,66 @@ export type ListRfpHldDesignModelRebuildRequestsResult =
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
+}
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * The bounded OpenAI-forced redo directive carried by a blocking `ai_advisory`
+ * review, or null when the review does not force a redo. A review forces an initial
+ * OpenAI redo when it is `ai_advisory`, carries at least one `blocking` finding, and
+ * carries valid boundedRebuildInstructions plus a source-bundle id to key the
+ * budget. The summary/instructions become the persisted authority; caller-supplied
+ * reason/instructions are transport text only on this path.
+ */
+function readOpenAiForcedRedo(reviewPayload: unknown): {
+  sourceHldSourceBundleArtifactId: string;
+  reason: string;
+  instructions: string;
+} | null {
+  const p = asRecord(reviewPayload);
+  if (!p) return null;
+  const reviewer = asRecord(p.reviewer);
+  if (!reviewer || reviewer.type !== "ai_advisory") return null;
+  const findings = Array.isArray(p.findings) ? p.findings : [];
+  const hasBlocking = findings.some((f) => asRecord(f)?.severity === "blocking");
+  if (!hasBlocking) return null;
+  const bri = asRecord(p.boundedRebuildInstructions);
+  if (!bri) return null;
+  const reason = str(bri.summary).trim();
+  const instructions = str(bri.instructions).trim();
+  if (reason === "" || instructions === "") return null;
+  const bundleId = str(p.sourceHldSourceBundleArtifactId).trim();
+  if (bundleId === "") return null;
+  return { sourceHldSourceBundleArtifactId: bundleId, reason, instructions };
+}
+
+/**
+ * Count prior valid `initial_openai_gate` OpenAI-forced requests for the SAME source
+ * bundle whose row is not rejected. A rejected redo does not consume the budget; any
+ * other non-rejected row (open, retired, or approved) does. This bounds the initial
+ * OpenAI gate to at most one forced Claude rebuild per source bundle.
+ */
+function countInitialOpenAiRequests(
+  artifacts: readonly ProjectArtifact[],
+  bundleId: string
+): number {
+  let count = 0;
+  for (const a of artifacts) {
+    if (a.type !== REQUEST_TYPE) continue;
+    if (a.status === "rejected") continue;
+    if (!validateRfpHldDesignModelRebuildRequestPayload(a.payload).valid) continue;
+    const p = a.payload;
+    if (p.requestSource !== "openai_advisory") continue;
+    if (p.redoPhase !== "initial_openai_gate") continue;
+    if (str(p.sourceHldSourceBundleArtifactId) !== bundleId) continue;
+    count += 1;
+  }
+  return count;
 }
 
 function toProjectSummary(
@@ -269,6 +341,17 @@ function toListedArtifactSummary(
       sourceReviewArtifactId: payload.sourceReviewArtifactId,
       requestedAt: payload.requestedAt,
       status: payload.status,
+      // Optional OpenAI-forced redo-policy metadata: surfaced only when present, so
+      // a historical/engineer request keeps an identical lean summary.
+      ...(payload.requestSource !== undefined ? { requestSource: payload.requestSource } : {}),
+      ...(payload.redoPhase !== undefined ? { redoPhase: payload.redoPhase } : {}),
+      ...(payload.redoAttempt !== undefined ? { redoAttempt: payload.redoAttempt } : {}),
+      ...(payload.maxRedoAttempts !== undefined
+        ? { maxRedoAttempts: payload.maxRedoAttempts }
+        : {}),
+      ...(payload.sourceHldSourceBundleArtifactId !== undefined
+        ? { sourceHldSourceBundleArtifactId: payload.sourceHldSourceBundleArtifactId }
+        : {}),
     },
   };
 }
@@ -319,11 +402,35 @@ export async function createRfpHldDesignModelRebuildRequest(
     return { status: "invalid_review" };
   }
 
-  // At most one active rebuild request per source model.
+  // A blocking ai_advisory review with valid bounded instructions forces an initial
+  // OpenAI redo: the review's bounded summary/instructions and source bundle become
+  // the persisted authority, and caller-supplied reason/instructions are ignored.
+  const forced = readOpenAiForcedRedo(review!.payload);
+
   const artifacts = await listProjectArtifacts(tenantId, projectId);
+
+  // At most one active rebuild request per source model. Preserve this existing
+  // duplicate-request behavior before applying any OpenAI-forced redo budget result.
   const active = findActiveRequest(artifacts, modelId);
   if (active !== null) {
     return { status: "active_request_exists", artifact: toArtifactSummary(active) };
+  }
+
+  // Initial OpenAI-forced budget: at most one non-rejected forced redo per source
+  // bundle. Once exhausted, write nothing and let the approval gate proceed.
+  if (forced !== null) {
+    const attemptCount = countInitialOpenAiRequests(
+      artifacts,
+      forced.sourceHldSourceBundleArtifactId
+    );
+    if (attemptCount >= 1) {
+      return {
+        status: "redo_limit_exhausted",
+        phase: "initial_openai_gate",
+        maxRedoAttempts: 1,
+        attemptCount,
+      };
+    }
   }
 
   const requestedAt = (input.requestedAt ?? new Date()).toISOString();
@@ -334,9 +441,18 @@ export async function createRfpHldDesignModelRebuildRequest(
     sourceReviewArtifactId: reviewId,
     requestedBy,
     requestedAt,
-    reason,
-    instructions,
+    reason: forced !== null ? forced.reason : reason,
+    instructions: forced !== null ? forced.instructions : instructions,
     status: "active",
+    ...(forced !== null
+      ? {
+          requestSource: "openai_advisory" as const,
+          redoPhase: "initial_openai_gate" as const,
+          redoAttempt: 1,
+          maxRedoAttempts: 1 as const,
+          sourceHldSourceBundleArtifactId: forced.sourceHldSourceBundleArtifactId,
+        }
+      : {}),
   };
 
   // HARD GATE: the bounded request payload must validate before any persistence.

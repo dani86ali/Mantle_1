@@ -141,6 +141,19 @@ export async function POST(
         { status: 409 }
       );
     }
+    if (result.status === "redo_limit_exhausted") {
+      return NextResponse.json(
+        {
+          code: "hld_design_model_rebuild_request_redo_limit_exhausted",
+          error:
+            "The initial OpenAI-forced redo budget for this design model is exhausted.",
+          phase: result.phase,
+          maxRedoAttempts: result.maxRedoAttempts,
+          attemptCount: result.attemptCount,
+        },
+        { status: 409 }
+      );
+    }
     if (result.status === "invalid_request_payload") {
       return NextResponse.json(
         {

@@ -264,6 +264,126 @@ describe("createRfpHldDesignModelRebuildRequest - gates", () => {
   });
 });
 
+const BUNDLE_ID = "bundle-1";
+const BOUNDED_SUMMARY = "Redraft to resolve the blocking source-alignment findings.";
+const BOUNDED_INSTRUCTIONS =
+  "Redraft from the same approved source artifacts. Fix only the listed blocking " +
+  "findings. Do not add scope.";
+
+/** A blocking ai_advisory review that forces an initial OpenAI redo. */
+function makeBlockingAiReview(): ProjectArtifact {
+  return makeReview(MODEL_ID, {
+    payload: {
+      sourceHldDesignModelArtifactId: MODEL_ID,
+      sourceHldSourceBundleArtifactId: BUNDLE_ID,
+      reviewer: { type: "ai_advisory" },
+      findings: [
+        { id: "f-1", severity: "blocking", category: "source_mismatch", message: "x" },
+      ],
+      recommendation: "rebuild_recommended",
+      boundedRebuildInstructions: {
+        summary: BOUNDED_SUMMARY,
+        instructions: BOUNDED_INSTRUCTIONS,
+      },
+    },
+  });
+}
+
+/** A prior, valid, non-rejected initial OpenAI-forced request for BUNDLE_ID. */
+function makeOpenAiRequest(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
+  return {
+    id: "req-openai-prev",
+    projectId: PROJECT,
+    stageId: "hld_design_delta_review",
+    type: "hld_design_model_rebuild_request",
+    status: "needs_review",
+    version: 1,
+    payload: {
+      payloadKind: RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND,
+      sourceArtifactIds: [MODEL_ID, REVIEW_ID],
+      sourceHldDesignModelArtifactId: MODEL_ID,
+      sourceReviewArtifactId: REVIEW_ID,
+      requestedBy: "openai-gate",
+      requestedAt: "2026-06-23T00:00:00.000Z",
+      reason: "Redraft to resolve the blocking findings.",
+      instructions: "Redraft from the same approved source artifacts only.",
+      status: "active",
+      requestSource: "openai_advisory",
+      redoPhase: "initial_openai_gate",
+      redoAttempt: 1,
+      maxRedoAttempts: 1,
+      sourceHldSourceBundleArtifactId: BUNDLE_ID,
+    },
+    sourceFileIds: [],
+    sourceArtifactIds: [MODEL_ID, REVIEW_ID],
+    createdAt: TS,
+    updatedAt: TS,
+    ...overrides,
+  };
+}
+
+describe("createRfpHldDesignModelRebuildRequest - OpenAI-forced initial redo", () => {
+  it("writes OpenAI policy metadata and persists the review's bounded text, not caller text", async () => {
+    wireArtifacts(makeModel(), makeBlockingAiReview());
+    const result = await createRfpHldDesignModelRebuildRequest(
+      input({
+        reason: "caller transport reason that must be ignored",
+        instructions: "caller transport instructions that must be ignored",
+      })
+    );
+    expect(result.status).toBe("ok");
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.requestSource).toBe("openai_advisory");
+    expect(payload.redoPhase).toBe("initial_openai_gate");
+    expect(payload.redoAttempt).toBe(1);
+    expect(payload.maxRedoAttempts).toBe(1);
+    expect(payload.sourceHldSourceBundleArtifactId).toBe(BUNDLE_ID);
+    expect(payload.reason).toBe(BOUNDED_SUMMARY);
+    expect(payload.instructions).toBe(BOUNDED_INSTRUCTIONS);
+    expect(JSON.stringify(payload)).not.toContain("caller transport");
+  });
+
+  it("returns redo_limit_exhausted and writes nothing on a second forced request", async () => {
+    wireArtifacts(makeModel(), makeBlockingAiReview());
+    listMock.mockResolvedValue([makeOpenAiRequest({ status: "stale" })]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("redo_limit_exhausted");
+    if (result.status === "redo_limit_exhausted") {
+      expect(result.phase).toBe("initial_openai_gate");
+      expect(result.maxRedoAttempts).toBe(1);
+      expect(result.attemptCount).toBe(1);
+    }
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("returns active_request_exists before redo_limit_exhausted when a request is active", async () => {
+    wireArtifacts(makeModel(), makeBlockingAiReview());
+    listMock.mockResolvedValue([makeOpenAiRequest()]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("active_request_exists");
+    if (result.status === "active_request_exists") {
+      expect(result.artifact.id).toBe("req-openai-prev");
+    }
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("does not count a rejected prior forced request against the budget", async () => {
+    wireArtifacts(makeModel(), makeBlockingAiReview());
+    listMock.mockResolvedValue([makeOpenAiRequest({ status: "rejected" })]);
+    expect((await createRfpHldDesignModelRebuildRequest(input())).status).toBe("ok");
+  });
+
+  it("keeps the non-OpenAI engineer path free of policy metadata", async () => {
+    wireArtifacts(makeModel(), makeReview());
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("ok");
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect("requestSource" in payload).toBe(false);
+    expect("redoPhase" in payload).toBe(false);
+  });
+});
+
 describe("listRfpHldDesignModelRebuildRequests", () => {
   const LIST_INPUT = { tenantId: TENANT, projectId: PROJECT };
 
@@ -307,6 +427,29 @@ describe("listRfpHldDesignModelRebuildRequests", () => {
     }
     // Discovery only: it never re-loads the source model/review per request.
     expect(getArtifactMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces optional policy metadata in the listed summary without leaking body text", async () => {
+    listMock.mockResolvedValue([makeOpenAiRequest()]);
+    const result = await listRfpHldDesignModelRebuildRequests(LIST_INPUT);
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") {
+      expect(result.artifacts[0].payloadSummary).toEqual({
+        payloadKind: RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND,
+        sourceHldDesignModelArtifactId: MODEL_ID,
+        sourceReviewArtifactId: REVIEW_ID,
+        requestedAt: "2026-06-23T00:00:00.000Z",
+        status: "active",
+        requestSource: "openai_advisory",
+        redoPhase: "initial_openai_gate",
+        redoAttempt: 1,
+        maxRedoAttempts: 1,
+        sourceHldSourceBundleArtifactId: BUNDLE_ID,
+      });
+    }
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("openai-gate");
+    expect(serialized).not.toContain("Redraft from the same approved source artifacts only.");
   });
 
   it("omits invalid, malformed, retired, wrong-type, wrong-stage, and non-executable requests", async () => {

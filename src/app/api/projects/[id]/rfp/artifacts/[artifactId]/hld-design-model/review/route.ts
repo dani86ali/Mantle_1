@@ -168,7 +168,7 @@ export async function POST(
         {
           code: "hld_design_model_review_required",
           error:
-            "A current deterministic HLD design model review is required before approval.",
+            "A current OpenAI advisory HLD design model review is required before approval.",
           artifact: result.artifact,
         },
         { status: 409 }

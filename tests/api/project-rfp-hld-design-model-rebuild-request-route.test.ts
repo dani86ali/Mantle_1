@@ -217,6 +217,22 @@ describe("POST hld-design-model-rebuild-request - result mapping", () => {
     expect(body.artifact).toEqual(ARTIFACT_SUMMARY);
   });
 
+  it("maps redo_limit_exhausted to 409 with phase, maxRedoAttempts, and attemptCount", async () => {
+    mockCreate.mockResolvedValue({
+      status: "redo_limit_exhausted",
+      phase: "initial_openai_gate",
+      maxRedoAttempts: 1,
+      attemptCount: 1,
+    });
+    const res = await POST(req(), PARAMS);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("hld_design_model_rebuild_request_redo_limit_exhausted");
+    expect(body.phase).toBe("initial_openai_gate");
+    expect(body.maxRedoAttempts).toBe(1);
+    expect(body.attemptCount).toBe(1);
+  });
+
   it("maps invalid_request_payload to 409 with errors", async () => {
     mockCreate.mockResolvedValue({
       status: "invalid_request_payload",

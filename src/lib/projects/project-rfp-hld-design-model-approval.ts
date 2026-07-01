@@ -38,10 +38,11 @@
  * This service runs no AI and makes no SKU/pricing/catalog/configuration/design
  * decision; configuration authority stays the approved upstream artifacts. It
  * imports exactly the project/artifact/approval stores, the pure approval helper,
- * the Stage 6C contract, the pure Stage 6C readiness helper, the Stage 6E-B review
- * contract, and canonical project types - no fs/path, no raw-document reader, no
- * AI/provider, no pricing/SKU/catalog/config service, no route or UI. Summaries are
- * lean and serializable (ISO dates, copied arrays, no payload body, no tenantId).
+ * the Stage 6C contract, the pure Stage 6C readiness helper, the rebuild-request
+ * contract used for redo budget metadata, the Stage 6E-B review contract, and
+ * canonical project types - no fs/path, no raw-document reader, no AI/provider,
+ * no pricing/SKU/catalog/config service, no route or UI. Summaries are lean and
+ * serializable (ISO dates, copied arrays, no payload body, no tenantId).
  */
 import { getProjectById } from "@/lib/db/project-store";
 import {
@@ -55,6 +56,10 @@ import {
   getRfpHldDesignModelReadinessReport,
   validateRfpHldDesignModelSourceCompatibility,
 } from "@/lib/projects/project-rfp-hld-design-model-readiness";
+import {
+  validateRfpHldDesignModelRebuildRequestPayload,
+  type RfpHldDesignModelRebuildRequestPayload,
+} from "@/lib/projects/project-rfp-hld-design-model-rebuild-request";
 import {
   validateRfpHldDesignModelReviewPayload,
   type RfpHldDesignModelReviewPayload,
@@ -71,6 +76,12 @@ import type {
 const DESIGN_MODEL_TYPE: ProjectArtifact["type"] = "hld_design_model";
 const DESIGN_MODEL_STAGE: ProjectArtifact["stageId"] = "hld_design_delta_review";
 const DESIGN_MODEL_REVIEW_TYPE: ProjectArtifact["type"] = "hld_design_model_review";
+const DESIGN_MODEL_REBUILD_REQUEST_TYPE: ProjectArtifact["type"] =
+  "hld_design_model_rebuild_request";
+
+/** Rebuild-request row statuses that are still open/consumable for the pair check. */
+const OPEN_REBUILD_REQUEST_STATUSES: ReadonlySet<ProjectArtifactStatus> =
+  new Set<ProjectArtifactStatus>(["generated", "needs_review"]);
 
 /**
  * Review artifact statuses that may still gate an approval. Retired statuses
@@ -174,6 +185,56 @@ export type ReviewRfpHldDesignModelArtifactResult =
       stageStatus: ProjectStageStatus;
       artifact: RfpHldDesignModelReviewArtifactSummary;
     };
+
+/**
+ * Count valid, non-rejected `initial_openai_gate` OpenAI-forced rebuild requests for the
+ * SAME source bundle. A rejected redo does not consume the budget; any other
+ * non-rejected row does. A count >= 1 means the bounded initial OpenAI-forced redo
+ * has already been spent for this source bundle. Malformed historical rows never
+ * consume the budget.
+ */
+function countInitialOpenAiRedos(
+  artifacts: readonly ProjectArtifact[],
+  bundleId: string
+): number {
+  let count = 0;
+  for (const a of artifacts) {
+    if (a.type !== DESIGN_MODEL_REBUILD_REQUEST_TYPE) continue;
+    if (a.status === "rejected") continue;
+    if (!validateRfpHldDesignModelRebuildRequestPayload(a.payload).valid) continue;
+    const p = a.payload as unknown as RfpHldDesignModelRebuildRequestPayload;
+    if (p.requestSource !== "openai_advisory") continue;
+    if (p.redoPhase !== "initial_openai_gate") continue;
+    if (p.sourceHldSourceBundleArtifactId !== bundleId) continue;
+    count += 1;
+  }
+  return count;
+}
+
+/**
+ * True when an OpenAI-forced initial rebuild request is still open for this EXACT
+ * current model/review pair. Such a valid active request means the forced redo is
+ * in flight, so the blocking review must keep blocking rather than let approval proceed.
+ */
+function hasOpenOpenAiRedoForPair(
+  artifacts: readonly ProjectArtifact[],
+  modelId: string,
+  reviewId: string
+): boolean {
+  for (const a of artifacts) {
+    if (a.type !== DESIGN_MODEL_REBUILD_REQUEST_TYPE) continue;
+    if (!OPEN_REBUILD_REQUEST_STATUSES.has(a.status)) continue;
+    if (!validateRfpHldDesignModelRebuildRequestPayload(a.payload).valid) continue;
+    const p = a.payload as unknown as RfpHldDesignModelRebuildRequestPayload;
+    if (p.status !== "active") continue;
+    if (p.requestSource !== "openai_advisory") continue;
+    if (p.redoPhase !== "initial_openai_gate") continue;
+    if (p.sourceHldDesignModelArtifactId !== modelId) continue;
+    if (p.sourceReviewArtifactId !== reviewId) continue;
+    return true;
+  }
+  return false;
+}
 
 function toProjectSummary(project: Project): RfpHldDesignModelReviewProjectSummary {
   return {
@@ -420,16 +481,27 @@ function evaluateReviewGate(
   }
 
   if (findingCounts.blocking > 0) {
-    return {
-      status: "blocking_hld_design_model_review_findings",
-      artifact: toArtifactSummary(model),
-      reviewArtifact: toArtifactSummary(latest),
-      recommendation: payload.recommendation,
-      findingCounts,
-    };
+    // A blocking OpenAI review keeps blocking while the initial OpenAI-forced redo is
+    // still available, or while a forced redo for this exact model/review pair is
+    // still open. Once the initial budget is exhausted for this source bundle and no
+    // forced redo is open for the pair, approval may proceed to SE review with the
+    // remaining findings still visible through the existing review artifacts.
+    const budgetExhausted = countInitialOpenAiRedos(artifacts, sourceBundle.id) >= 1;
+    const activeForPair = hasOpenOpenAiRedoForPair(artifacts, model.id, latest.id);
+    const mayProceedWithRemainingFindings = budgetExhausted && !activeForPair;
+    if (!mayProceedWithRemainingFindings) {
+      return {
+        status: "blocking_hld_design_model_review_findings",
+        artifact: toArtifactSummary(model),
+        reviewArtifact: toArtifactSummary(latest),
+        recommendation: payload.recommendation,
+        findingCounts,
+      };
+    }
   }
 
-  // Current, valid, no blocking findings: advisory warnings/suggestions proceed.
+  // Current, valid, no blocking findings (or the initial OpenAI-forced redo budget is
+  // exhausted with no open forced redo): advisory findings proceed to engineer review.
   return null;
 }
 

@@ -193,6 +193,113 @@ describe("validateRfpHldDesignModelRebuildRequestPayload - leakage + authority",
   });
 });
 
+describe("validateRfpHldDesignModelRebuildRequestPayload - OpenAI redo policy", () => {
+  const BUNDLE_ID = "hsb-1";
+
+  function openAiPayload(): Record<string, unknown> {
+    return {
+      ...mutable(),
+      requestSource: "openai_advisory",
+      redoPhase: "initial_openai_gate",
+      redoAttempt: 1,
+      maxRedoAttempts: 1,
+      sourceHldSourceBundleArtifactId: BUNDLE_ID,
+    };
+  }
+
+  it("keeps a historical payload (no policy fields) valid", () => {
+    expect(validateRfpHldDesignModelRebuildRequestPayload(validPayload()).valid).toBe(true);
+  });
+
+  it("accepts requestSource engineer only without any policy fields", () => {
+    const engineer = { ...mutable(), requestSource: "engineer" };
+    expect(validateRfpHldDesignModelRebuildRequestPayload(engineer).valid).toBe(true);
+
+    const engineerWithPolicy = { ...openAiPayload(), requestSource: "engineer" };
+    expect(validateRfpHldDesignModelRebuildRequestPayload(engineerWithPolicy).valid).toBe(false);
+  });
+
+  it("accepts valid openai_advisory initial_openai_gate metadata", () => {
+    const result = validateRfpHldDesignModelRebuildRequestPayload(openAiPayload());
+    expect(result.errors).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects openai_advisory missing any of the four policy fields", () => {
+    for (const key of [
+      "redoPhase",
+      "redoAttempt",
+      "maxRedoAttempts",
+      "sourceHldSourceBundleArtifactId",
+    ]) {
+      const p = openAiPayload();
+      delete p[key];
+      expect(validateRfpHldDesignModelRebuildRequestPayload(p).valid, key).toBe(false);
+    }
+  });
+
+  it("rejects policy fields present without openai_advisory requestSource", () => {
+    const p = openAiPayload();
+    delete p.requestSource;
+    expect(validateRfpHldDesignModelRebuildRequestPayload(p).valid).toBe(false);
+  });
+
+  it("rejects an invalid requestSource or redoPhase", () => {
+    const badSource = { ...openAiPayload(), requestSource: "robot" };
+    expect(validateRfpHldDesignModelRebuildRequestPayload(badSource).valid).toBe(false);
+    const badPhase = { ...openAiPayload(), redoPhase: "mystery_gate" };
+    expect(validateRfpHldDesignModelRebuildRequestPayload(badPhase).valid).toBe(false);
+  });
+
+  it("rejects a blank source bundle id", () => {
+    const p = { ...openAiPayload(), sourceHldSourceBundleArtifactId: "   " };
+    expect(validateRfpHldDesignModelRebuildRequestPayload(p).valid).toBe(false);
+  });
+
+  it("enforces initial_openai_gate max=1 attempt=1", () => {
+    const wrongMax = { ...openAiPayload(), maxRedoAttempts: 2 };
+    expect(validateRfpHldDesignModelRebuildRequestPayload(wrongMax).valid).toBe(false);
+    const wrongAttempt = { ...openAiPayload(), redoAttempt: 2 };
+    expect(validateRfpHldDesignModelRebuildRequestPayload(wrongAttempt).valid).toBe(false);
+  });
+
+  it("rejects a non-integer or out-of-range redoAttempt", () => {
+    const nonInt = { ...openAiPayload(), redoAttempt: 1.5 };
+    expect(validateRfpHldDesignModelRebuildRequestPayload(nonInt).valid).toBe(false);
+    const zero = { ...openAiPayload(), redoAttempt: 0 };
+    expect(validateRfpHldDesignModelRebuildRequestPayload(zero).valid).toBe(false);
+  });
+
+  it("accepts future se_directed_openai_gate attempts 1 and 2 with max 2", () => {
+    for (const attempt of [1, 2]) {
+      const p = {
+        ...openAiPayload(),
+        redoPhase: "se_directed_openai_gate",
+        maxRedoAttempts: 2,
+        redoAttempt: attempt,
+      };
+      expect(validateRfpHldDesignModelRebuildRequestPayload(p).valid, `attempt ${attempt}`).toBe(true);
+    }
+  });
+
+  it("rejects se_directed_openai_gate with max 1 or attempt 3", () => {
+    const wrongMax = {
+      ...openAiPayload(),
+      redoPhase: "se_directed_openai_gate",
+      maxRedoAttempts: 1,
+      redoAttempt: 1,
+    };
+    expect(validateRfpHldDesignModelRebuildRequestPayload(wrongMax).valid).toBe(false);
+    const attempt3 = {
+      ...openAiPayload(),
+      redoPhase: "se_directed_openai_gate",
+      maxRedoAttempts: 2,
+      redoAttempt: 3,
+    };
+    expect(validateRfpHldDesignModelRebuildRequestPayload(attempt3).valid).toBe(false);
+  });
+});
+
 describe("project-rfp-hld-design-model-rebuild-request - source purity", () => {
   const SRC_PATH = join(
     process.cwd(),

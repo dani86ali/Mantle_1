@@ -53,6 +53,7 @@ import {
   RFP_HLD_DESIGN_MODEL_REVIEW_PAYLOAD_KIND,
   type RfpHldDesignModelReviewPayload,
 } from "@/lib/projects/project-rfp-hld-design-model-review";
+import { RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND } from "@/lib/projects/project-rfp-hld-design-model-rebuild-request";
 
 const TENANT = "44444444-4444-4444-4444-444444444444";
 const PROJECT = "proj-1";
@@ -305,6 +306,51 @@ function setArtifactRows(model: ProjectArtifact | null, bundle: ProjectArtifact 
     if (id === BUNDLE_ID) return bundle;
     return null;
   });
+}
+
+/** An OpenAI-forced initial rebuild request for the current model/review/bundle. */
+function makeOpenAiRedoRequest(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
+  return {
+    id: "rebuild-1",
+    projectId: PROJECT,
+    stageId: "hld_design_delta_review",
+    type: "hld_design_model_rebuild_request",
+    status: "needs_review",
+    version: 1,
+    payload: {
+      payloadKind: RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND,
+      sourceArtifactIds: [MODEL_ID, REVIEW_ID],
+      requestedBy: "openai-gate",
+      requestedAt: CREATED_AT,
+      reason: "Redraft to resolve the blocking findings.",
+      instructions: "Redraft from the same approved source artifacts only.",
+      status: "active",
+      requestSource: "openai_advisory",
+      redoPhase: "initial_openai_gate",
+      redoAttempt: 1,
+      maxRedoAttempts: 1,
+      sourceHldSourceBundleArtifactId: BUNDLE_ID,
+      sourceHldDesignModelArtifactId: MODEL_ID,
+      sourceReviewArtifactId: REVIEW_ID,
+    },
+    sourceFileIds: [],
+    sourceArtifactIds: [MODEL_ID, REVIEW_ID],
+    createdAt: CREATED_DATE,
+    updatedAt: CREATED_DATE,
+    ...overrides,
+  };
+}
+
+/** The base live snapshot for the initial OpenAI-forced redo budget tests. */
+function blockingReviewSnapshot(...extra: ProjectArtifact[]): ProjectArtifact[] {
+  return [
+    validBundleArtifact(),
+    validModelArtifact(),
+    validReviewArtifact({
+      payload: blockingReviewPayload() as unknown as Record<string, unknown>,
+    }),
+    ...extra,
+  ];
 }
 
 function makeCreated(decision: ProjectApproval["decision"] = "approved") {
@@ -693,6 +739,73 @@ describe("reviewRfpHldDesignModelArtifact - advisory review gate", () => {
   });
 });
 
+describe("reviewRfpHldDesignModelArtifact - initial OpenAI-forced redo budget", () => {
+  it("still blocks a blocking OpenAI review with no prior OpenAI-forced initial redo", async () => {
+    mockListProjectArtifacts.mockResolvedValue(blockingReviewSnapshot());
+    const result = await review();
+    expect(result.status).toBe("blocking_hld_design_model_review_findings");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("still blocks while an open OpenAI-forced request exists for the current model/review", async () => {
+    mockListProjectArtifacts.mockResolvedValue(
+      blockingReviewSnapshot(makeOpenAiRedoRequest({ status: "needs_review" }))
+    );
+    const result = await review();
+    expect(result.status).toBe("blocking_hld_design_model_review_findings");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("allows approval once the initial budget is exhausted with no open forced request", async () => {
+    mockListProjectArtifacts.mockResolvedValue(
+      blockingReviewSnapshot(makeOpenAiRedoRequest({ status: "stale" }))
+    );
+    const result = await review();
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not count a rejected forced request toward the exhausted budget", async () => {
+    mockListProjectArtifacts.mockResolvedValue(
+      blockingReviewSnapshot(makeOpenAiRedoRequest({ status: "rejected" }))
+    );
+    const result = await review();
+    expect(result.status).toBe("blocking_hld_design_model_review_findings");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("does not count a malformed forced request toward the exhausted budget", async () => {
+    mockListProjectArtifacts.mockResolvedValue(
+      blockingReviewSnapshot(
+        makeOpenAiRedoRequest({
+          status: "stale",
+          payload: {
+            requestSource: "openai_advisory",
+            redoPhase: "initial_openai_gate",
+            sourceHldSourceBundleArtifactId: BUNDLE_ID,
+          },
+        })
+      )
+    );
+    const result = await review();
+    expect(result.status).toBe("blocking_hld_design_model_review_findings");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("still requires an OpenAI advisory review; a deterministic review is insufficient", async () => {
+    const payload = validReviewPayload({ reviewer: { type: "deterministic" } });
+    mockListProjectArtifacts.mockResolvedValue([
+      validBundleArtifact(),
+      validModelArtifact(),
+      validReviewArtifact({ payload: payload as unknown as Record<string, unknown> }),
+      makeOpenAiRedoRequest({ status: "stale" }),
+    ]);
+    const result = await review();
+    expect(result.status).toBe("hld_design_model_review_required");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+});
+
 describe("reviewRfpHldDesignModelArtifact - result hygiene", () => {
   it("ok result returns lean summaries without leaking the payload body or tenantId", async () => {
     const payload = validDesignModelPayload();
@@ -758,6 +871,7 @@ describe("module purity (static source check)", () => {
       "@/lib/projects/approvals",
       "@/lib/projects/project-rfp-hld-design-model",
       "@/lib/projects/project-rfp-hld-design-model-readiness",
+      "@/lib/projects/project-rfp-hld-design-model-rebuild-request",
       "@/lib/projects/project-rfp-hld-design-model-review",
       "@/types/project",
     ]);

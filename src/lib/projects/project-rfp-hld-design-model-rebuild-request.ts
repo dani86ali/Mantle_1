@@ -25,7 +25,27 @@ export const RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND =
 /** The single active lifecycle value carried in the payload itself. */
 export type RfpHldDesignModelRebuildRequestStatus = "active";
 
-/** The persisted bounded rebuild-request payload. Closed at every object level. */
+/** Who originated the request: a human engineer, or the OpenAI advisory gate. */
+export type RfpHldDesignModelRebuildRequestSource = "engineer" | "openai_advisory";
+
+/**
+ * The redo phase this OpenAI-forced request belongs to. `initial_openai_gate` is
+ * the bounded, at-most-one initial redo (Stage 6H-0H-C). `se_directed_openai_gate`
+ * is a future SE-directed phase - the contract carries closed room for it now, but
+ * no service creates one yet.
+ */
+export type RfpHldDesignModelRebuildRequestRedoPhase =
+  | "initial_openai_gate"
+  | "se_directed_openai_gate";
+
+/**
+ * The persisted bounded rebuild-request payload. Closed at every object level.
+ *
+ * The optional redo-policy metadata records a CLOSED OpenAI-forced redo policy:
+ * either all of it is present (requestSource "openai_advisory") or none of it is
+ * (a historical or engineer request). It is provenance/budget METADATA only - it
+ * carries no provider/model/prompt/pricing/catalog/configuration authority.
+ */
 export interface RfpHldDesignModelRebuildRequestPayload {
   payloadKind: typeof RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND;
   sourceArtifactIds: string[];
@@ -36,6 +56,11 @@ export interface RfpHldDesignModelRebuildRequestPayload {
   reason: string;
   instructions: string;
   status: RfpHldDesignModelRebuildRequestStatus;
+  requestSource?: RfpHldDesignModelRebuildRequestSource;
+  redoPhase?: RfpHldDesignModelRebuildRequestRedoPhase;
+  redoAttempt?: number;
+  maxRedoAttempts?: 1 | 2;
+  sourceHldSourceBundleArtifactId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +82,29 @@ const TOP_LEVEL_REQUIRED: readonly string[] = [
   "reason",
   "instructions",
   "status",
+];
+
+/** Optional OpenAI-forced redo-policy metadata (all-or-nothing; see validator). */
+const TOP_LEVEL_OPTIONAL: readonly string[] = [
+  "requestSource",
+  "redoPhase",
+  "redoAttempt",
+  "maxRedoAttempts",
+  "sourceHldSourceBundleArtifactId",
+];
+
+const REQUEST_SOURCES: ReadonlySet<string> = new Set(["engineer", "openai_advisory"]);
+const REDO_PHASES: ReadonlySet<string> = new Set([
+  "initial_openai_gate",
+  "se_directed_openai_gate",
+]);
+
+/** The four redo-policy fields required together for an openai_advisory request. */
+const REDO_POLICY_KEYS: readonly string[] = [
+  "redoPhase",
+  "redoAttempt",
+  "maxRedoAttempts",
+  "sourceHldSourceBundleArtifactId",
 ];
 
 /**
@@ -173,6 +221,74 @@ function authorizesNewScope(text: string): boolean {
   return SCOPE_EXPANSION_RE.test(text) && !SCOPE_NEGATION_RE.test(text);
 }
 
+/**
+ * Validate the optional OpenAI-forced redo-policy metadata as a CLOSED unit.
+ * Historical/engineer requests carry none of it; an openai_advisory request must
+ * carry all four redo-policy fields with phase-consistent attempt budgets.
+ */
+function validateRedoPolicy(errors: string[], root: Record<string, unknown>): void {
+  const hasSource = "requestSource" in root && root.requestSource !== undefined;
+  const source = root.requestSource;
+  const presentPolicy = REDO_POLICY_KEYS.filter(
+    (k) => k in root && root[k] !== undefined
+  );
+
+  if (hasSource && !REQUEST_SOURCES.has(source as string)) {
+    errors.push("payload: invalid requestSource");
+  }
+
+  if (source === "engineer") {
+    if (presentPolicy.length > 0) {
+      errors.push("payload: requestSource engineer must not carry redo-policy fields");
+    }
+    return;
+  }
+
+  if (source !== "openai_advisory") {
+    // Historical or unset: no redo-policy fields are allowed to appear alone.
+    if (presentPolicy.length > 0) {
+      errors.push("payload: redo-policy fields require requestSource openai_advisory");
+    }
+    return;
+  }
+
+  // requestSource === "openai_advisory": all four redo-policy fields are required.
+  if (presentPolicy.length !== REDO_POLICY_KEYS.length) {
+    errors.push("payload: requestSource openai_advisory requires all redo-policy fields");
+  }
+
+  const phase = root.redoPhase;
+  const validPhase = typeof phase === "string" && REDO_PHASES.has(phase);
+  if (!validPhase) errors.push("payload: invalid redoPhase");
+
+  const maxAttempts = root.maxRedoAttempts;
+  const validMax = maxAttempts === 1 || maxAttempts === 2;
+  if (!validMax) errors.push("payload: maxRedoAttempts must be 1 or 2");
+
+  const attempt = root.redoAttempt;
+  const validAttempt = typeof attempt === "number" && Number.isInteger(attempt);
+  if (!validAttempt) errors.push("payload: redoAttempt must be an integer");
+
+  if (validAttempt && validMax && (attempt < 1 || attempt > (maxAttempts as number))) {
+    errors.push("payload: redoAttempt out of range for maxRedoAttempts");
+  }
+
+  if (validPhase && phase === "initial_openai_gate") {
+    if (maxAttempts !== 1) errors.push("payload: initial_openai_gate requires maxRedoAttempts 1");
+    if (attempt !== 1) errors.push("payload: initial_openai_gate requires redoAttempt 1");
+  }
+  if (validPhase && phase === "se_directed_openai_gate") {
+    if (maxAttempts !== 2) errors.push("payload: se_directed_openai_gate requires maxRedoAttempts 2");
+    if (!(attempt === 1 || attempt === 2)) {
+      errors.push("payload: se_directed_openai_gate requires redoAttempt 1 or 2");
+    }
+  }
+
+  if (!isNonBlank(root.sourceHldSourceBundleArtifactId)) {
+    errors.push("payload: blank sourceHldSourceBundleArtifactId");
+  }
+}
+
 function validateBoundedText(
   errors: string[], field: string, value: unknown, max: number
 ): void {
@@ -207,7 +323,9 @@ export function validateRfpHldDesignModelRebuildRequestPayload(
 
   // Closed top-level shape: no unexpected keys, all required keys present.
   for (const k of Object.keys(root)) {
-    if (!TOP_LEVEL_REQUIRED.includes(k)) errors.push(`payload: unexpected key "${k}"`);
+    if (!TOP_LEVEL_REQUIRED.includes(k) && !TOP_LEVEL_OPTIONAL.includes(k)) {
+      errors.push(`payload: unexpected key "${k}"`);
+    }
   }
   for (const k of TOP_LEVEL_REQUIRED) {
     if (!(k in root)) errors.push(`payload: missing key "${k}"`);
@@ -247,6 +365,8 @@ export function validateRfpHldDesignModelRebuildRequestPayload(
   validateBoundedText(errors, "instructions", root.instructions, INSTRUCTIONS_MAX);
 
   if (root.status !== "active") errors.push("payload: status must be active");
+
+  validateRedoPolicy(errors, root);
 
   return { valid: errors.length === 0, errors };
 }

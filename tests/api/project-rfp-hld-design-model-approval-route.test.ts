@@ -328,6 +328,8 @@ describe("POST .../hld-design-model/review - result mapping", () => {
     const body = await res.json();
     expect(body.code).toBe("hld_design_model_review_required");
     expect(body.artifact).toEqual(ARTIFACT_SUMMARY);
+    expect(body.error).toContain("OpenAI advisory");
+    expect(body.error).not.toContain("deterministic");
   });
 
   it("maps invalid_hld_design_model_review_payload to 409 with both summaries and errors", async () => {
