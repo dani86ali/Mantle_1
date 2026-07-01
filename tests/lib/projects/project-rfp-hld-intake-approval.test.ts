@@ -95,6 +95,8 @@ function makeNormalizedPayload(
     payloadKind: "rfp_hld_intake",
     createdBy: "engineer-1",
     createdAt: "2026-06-20T09:15:00.000Z",
+    sourceMode: "manual_override",
+    manualOverrideReason: "Questionnaire not yet available; entered manually.",
     answers,
     answerCount: answers.length,
     statusCounts: { answered: answers.length - 2, unknown: 1, not_applicable: 1 },
@@ -290,11 +292,26 @@ describe("reviewRfpHldIntakeArtifact - approval payload re-validation", () => {
       projectId: PROJECT,
       createdBy: "engineer-1",
       answers,
+      manualOverrideReason: "Manual override for this bid.",
       createdAt: new Date("2026-06-20T09:15:00.000Z"),
     });
     expect(captured).toBeDefined();
 
     mockGetArtifactById.mockResolvedValue(makeArtifact({ payload: captured }));
+
+    const result = await review();
+
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("approves a well-formed questionnaire_assisted payload", async () => {
+    const payload = makeNormalizedPayload((_, p) => {
+      p.sourceMode = "questionnaire_assisted";
+      delete p.manualOverrideReason;
+      p.sourceQuestionnaireArtifactId = "art-questionnaire-1";
+    });
+    mockGetArtifactById.mockResolvedValue(makeArtifact({ payload }));
 
     const result = await review();
 
@@ -312,6 +329,25 @@ describe("reviewRfpHldIntakeArtifact - approval payload re-validation", () => {
       ["mismatched answerCount", makeNormalizedPayload((_, p) => { p.answerCount = 8; })],
       ["mismatched statusCounts", makeNormalizedPayload((_, p) => {
         p.statusCounts = { answered: 1, unknown: 1, not_applicable: 1 };
+      })],
+      ["missing sourceMode", makeNormalizedPayload((_, p) => { delete p.sourceMode; })],
+      ["unknown sourceMode", makeNormalizedPayload((_, p) => { p.sourceMode = "auto_magic"; })],
+      ["manual_override missing reason", makeNormalizedPayload((_, p) => {
+        delete p.manualOverrideReason;
+      })],
+      ["manual_override blank reason", makeNormalizedPayload((_, p) => {
+        p.manualOverrideReason = "   ";
+      })],
+      ["manual_override carrying a questionnaire source", makeNormalizedPayload((_, p) => {
+        p.sourceQuestionnaireArtifactId = "art-questionnaire-1";
+      })],
+      ["questionnaire_assisted missing questionnaire source", makeNormalizedPayload((_, p) => {
+        p.sourceMode = "questionnaire_assisted";
+        delete p.manualOverrideReason;
+      })],
+      ["questionnaire_assisted carrying an override reason", makeNormalizedPayload((_, p) => {
+        p.sourceMode = "questionnaire_assisted";
+        p.sourceQuestionnaireArtifactId = "art-questionnaire-1";
       })],
       ["extra top-level key", makeNormalizedPayload((_, p) => { p.tenantId = TENANT; })],
       ["extra answer key", makeNormalizedPayload((a) => { a[0].injected = "x"; })],

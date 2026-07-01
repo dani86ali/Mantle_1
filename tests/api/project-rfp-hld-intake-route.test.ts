@@ -85,6 +85,7 @@ const PAYLOAD_SUMMARY = {
   payloadKind: "rfp_hld_intake",
   createdBy: SESSION.userId,
   createdAt: "2026-06-20T12:00:00.000Z",
+  sourceMode: "manual_override",
   answerCount: 9,
   statusCounts: { answered: 7, unknown: 1, not_applicable: 1 },
   fieldIds: [
@@ -129,10 +130,12 @@ const VALID_ANSWERS = [
   { fieldId: "diagram_notes", status: "unknown" },
 ];
 
+const OVERRIDE_REASON = "Questionnaire not yet available; entered manually.";
+
 function createBody(
   overrides: Record<string, unknown> = {}
 ): Record<string, unknown> {
-  return { answers: VALID_ANSWERS, ...overrides };
+  return { answers: VALID_ANSWERS, manualOverrideReason: OVERRIDE_REASON, ...overrides };
 }
 
 function req(
@@ -280,13 +283,17 @@ describe("POST /api/projects/[id]/rfp/hld-intake - body validation", () => {
       "string-body",
       42,
       true,
-      // A bare array body is invalid: the body must be an object { answers }.
+      // A bare array body is invalid: the body must be an object with answers and reason.
       VALID_ANSWERS,
       [],
       {},
       { answers: "not-an-array" },
       { answers: null },
       { notAnswers: VALID_ANSWERS },
+      // answers present but the required manualOverrideReason is missing/blank/non-string.
+      { answers: VALID_ANSWERS },
+      { answers: VALID_ANSWERS, manualOverrideReason: "   " },
+      { answers: VALID_ANSWERS, manualOverrideReason: 42 },
     ];
     for (const body of badBodies) {
       mockCreateDraft.mockClear();
@@ -299,7 +306,7 @@ describe("POST /api/projects/[id]/rfp/hld-intake - body validation", () => {
 });
 
 describe("POST /api/projects/[id]/rfp/hld-intake - authority", () => {
-  it("passes only session tenant/user, the route project id, and answers; decoy authority fields never reach the service", async () => {
+  it("passes only session tenant/user, the route project id, answers, and the override reason; decoy authority fields (including sourceMode) never reach the service", async () => {
     const body = createBody({
       tenantId: "attacker-tenant",
       projectId: "attacker-project",
@@ -310,6 +317,9 @@ describe("POST /api/projects/[id]/rfp/hld-intake - authority", () => {
       payload: { hack: true },
       price: 999,
       sku: "ATTACKER-SKU",
+      // A caller-supplied sourceMode is NEVER trusted as authority.
+      sourceMode: "questionnaire_assisted",
+      sourceQuestionnaireArtifactId: "attacker-questionnaire",
     });
 
     await POST(req(body), PARAMS);
@@ -319,6 +329,7 @@ describe("POST /api/projects/[id]/rfp/hld-intake - authority", () => {
     expect(Object.keys(arg).sort()).toEqual([
       "answers",
       "createdBy",
+      "manualOverrideReason",
       "projectId",
       "tenantId",
     ]);
@@ -326,6 +337,7 @@ describe("POST /api/projects/[id]/rfp/hld-intake - authority", () => {
     expect(arg.projectId).toBe(PROJECT);
     expect(arg.createdBy).toBe(SESSION.userId);
     expect(arg.answers).toEqual(VALID_ANSWERS);
+    expect(arg.manualOverrideReason).toBe(OVERRIDE_REASON);
 
     expect(arg.tenantId).not.toBe("attacker-tenant");
     expect(arg.projectId).not.toBe("attacker-project");
@@ -337,6 +349,8 @@ describe("POST /api/projects/[id]/rfp/hld-intake - authority", () => {
       "payload",
       "price",
       "sku",
+      "sourceMode",
+      "sourceQuestionnaireArtifactId",
     ]) {
       expect(leaked in arg).toBe(false);
     }

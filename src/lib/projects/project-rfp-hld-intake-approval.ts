@@ -45,6 +45,9 @@ const ALLOWED_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
   "payloadKind",
   "createdBy",
   "createdAt",
+  "sourceMode",
+  "manualOverrideReason",
+  "sourceQuestionnaireArtifactId",
   "answers",
   "answerCount",
   "statusCounts",
@@ -172,6 +175,19 @@ function isPersistedHldIntakePayloadValid(payload: unknown): boolean {
     if (!ALLOWED_PAYLOAD_KEYS.has(key)) return false;
   }
   if (payload.payloadKind !== RFP_HLD_INTAKE_PAYLOAD_KIND) return false;
+
+  // Source-mode contract: the approved intake must record how it was sourced, and
+  // the matching source field must be present with no cross-mode field leaking in.
+  const sourceMode = payload.sourceMode;
+  if (sourceMode === "manual_override") {
+    if (!isNonblankString(payload.manualOverrideReason)) return false;
+    if ("sourceQuestionnaireArtifactId" in payload) return false;
+  } else if (sourceMode === "questionnaire_assisted") {
+    if (!isNonblankString(payload.sourceQuestionnaireArtifactId)) return false;
+    if ("manualOverrideReason" in payload) return false;
+  } else {
+    return false;
+  }
 
   const answers = payload.answers;
   if (!Array.isArray(answers)) return false;

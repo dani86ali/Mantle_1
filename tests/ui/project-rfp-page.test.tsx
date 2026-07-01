@@ -1112,6 +1112,8 @@ function hldIntakeDetailResponse(
     },
     intake: {
       payloadKind: "hld_intake",
+      sourceMode: "manual_override",
+      manualOverrideReason: "HLD-INTAKE-OVERRIDE-REASON-CANARY",
       answers: [
         {
           fieldId: "existing_network_context",
@@ -4751,7 +4753,7 @@ describe("ProjectRfpEvidencePage - Stage 6.2 HLD intake surface", () => {
     }
   }
 
-  it("renders the compact intake panel and creates a draft with exactly { answers }", async () => {
+  it("renders the compact intake panel and creates a draft with answers and an override reason", async () => {
     const calls = stubFetch();
     render(<ProjectRfpEvidencePage />);
 
@@ -4769,6 +4771,13 @@ describe("ProjectRfpEvidencePage - Stage 6.2 HLD intake surface", () => {
       screen.getByTestId("hld-intake-value-existing_network_context"),
       { target: { value: "Existing core is a Cisco spine-leaf fabric." } }
     );
+    // The manual override reason is required before the create action is enabled.
+    expect(
+      (screen.getByTestId("hld-intake-create") as HTMLButtonElement).disabled
+    ).toBe(true);
+    fireEvent.change(screen.getByTestId("hld-intake-override-reason"), {
+      target: { value: "  Questionnaire not yet available; entered manually.  " },
+    });
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("hld-intake-create"));
@@ -4780,9 +4789,14 @@ describe("ProjectRfpEvidencePage - Stage 6.2 HLD intake surface", () => {
       ).toBe(true);
     });
     const body = lastBody(calls, HLD_INTAKE_LIST_URL);
-    expect(Object.keys(body)).toEqual(["answers"]);
+    expect(Object.keys(body).sort()).toEqual(["answers", "manualOverrideReason"]);
     const answers = body.answers as Record<string, unknown>[];
     expect(answers).toHaveLength(9);
+    // The override reason rides along, trimmed; sourceMode is never caller-set.
+    expect(body.manualOverrideReason).toBe(
+      "Questionnaire not yet available; entered manually."
+    );
+    expect(body).not.toHaveProperty("sourceMode");
     // No tenant/project/user/artifact/status-of-artifact field rides along.
     expect(body).not.toHaveProperty("tenantId");
     expect(body).not.toHaveProperty("projectId");
@@ -4812,6 +4826,9 @@ describe("ProjectRfpEvidencePage - Stage 6.2 HLD intake surface", () => {
     // Not-applicable field (no value sent).
     fireEvent.change(screen.getByTestId("hld-intake-status-diagram_notes"), {
       target: { value: "not_applicable" },
+    });
+    fireEvent.change(screen.getByTestId("hld-intake-override-reason"), {
+      target: { value: "Manual override for this bid." },
     });
 
     await act(async () => {
@@ -4855,6 +4872,15 @@ describe("ProjectRfpEvidencePage - Stage 6.2 HLD intake surface", () => {
     const content = await screen.findByTestId("hld-intake-drawer-content");
     expect(content).toHaveTextContent("HLD-INTAKE-ANSWER-CANARY");
     expect(content).toHaveTextContent("HLD-INTAKE-NOTE-CANARY");
+    // Source mode and the manual override reason are surfaced in the drawer.
+    expect(
+      content.querySelector("[data-testid='hld-intake-drawer-source-mode']")
+        ?.textContent ?? ""
+    ).toContain("manual override");
+    expect(
+      content.querySelector("[data-testid='hld-intake-drawer-override-reason']")
+        ?.textContent ?? ""
+    ).toContain("HLD-INTAKE-OVERRIDE-REASON-CANARY");
 
     // The raw artifact id stays inside the collapsed technical details only.
     const audit = content.querySelector("[data-testid='hld-intake-drawer-audit']");

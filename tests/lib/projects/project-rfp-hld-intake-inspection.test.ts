@@ -38,6 +38,7 @@ const TS2 = new Date("2026-06-02T11:30:00.000Z");
 
 const ANSWER_VALUE = "ANSWER-VALUE-SENTINEL";
 const NOTES = "NOTES-SENTINEL";
+const OVERRIDE_REASON = "OVERRIDE-REASON-SENTINEL";
 const STORAGE = "/secret/storage/path";
 const RAW = "RAW-DOCUMENT-BODY-SENTINEL";
 const SOURCE = "/secret/source/path";
@@ -89,6 +90,8 @@ function makePayload(
     payloadKind: "rfp_hld_intake",
     createdBy: "engineer-1",
     createdAt: "2026-06-20T09:15:00.000Z",
+    sourceMode: "manual_override",
+    manualOverrideReason: OVERRIDE_REASON,
     answers,
     answerCount: answers.length,
     statusCounts: { answered: answers.length - 2, unknown: 1, not_applicable: 1 },
@@ -171,14 +174,17 @@ describe("loadRfpHldIntakeList - lean summaries", () => {
       payloadKind: "rfp_hld_intake",
       createdBy: "engineer-1",
       createdAt: "2026-06-20T09:15:00.000Z",
+      sourceMode: "manual_override",
       answerCount: FIELD_IDS.length,
       statusCounts: { answered: FIELD_IDS.length - 2, unknown: 1, not_applicable: 1 },
       fieldIds: FIELD_IDS,
     });
     expect("answers" in summary).toBe(false);
+    // The override reason is detail-only provenance; it must not ride the list.
+    expect("manualOverrideReason" in summary).toBe(false);
 
     const json = JSON.stringify(result);
-    for (const leak of [ANSWER_VALUE, NOTES, STORAGE, RAW, SOURCE, TENANT]) {
+    for (const leak of [ANSWER_VALUE, NOTES, OVERRIDE_REASON, STORAGE, RAW, SOURCE, TENANT]) {
       expect(json).not.toContain(leak);
     }
   });
@@ -282,6 +288,9 @@ describe("loadRfpHldIntakeDetail - sanitized detail", () => {
     expect("value" in result.intake.answers[1]).toBe(false);
     expect(result.intake.answers[2].status).toBe("not_applicable");
 
+    expect(result.intake.sourceMode).toBe("manual_override");
+    expect(result.intake.manualOverrideReason).toBe(OVERRIDE_REASON);
+
     expect(result.intake.answerCount).toBe(FIELD_IDS.length);
     expect(result.intake.statusCounts).toEqual({
       answered: FIELD_IDS.length - 2,
@@ -296,6 +305,30 @@ describe("loadRfpHldIntakeDetail - sanitized detail", () => {
     for (const leak of [STORAGE, RAW, SOURCE, TENANT]) {
       expect(json).not.toContain(leak);
     }
+  });
+
+  it("surfaces the questionnaire source mode without an override reason", async () => {
+    mockGetArtifactById.mockResolvedValue(
+      makeArtifact({
+        payload: makePayload({
+          sourceMode: "questionnaire_assisted",
+          manualOverrideReason: OVERRIDE_REASON,
+        }),
+      })
+    );
+
+    const result = await loadRfpHldIntakeDetail({
+      tenantId: TENANT,
+      projectId: PROJECT,
+      artifactId: ARTIFACT,
+    });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.intake.sourceMode).toBe("questionnaire_assisted");
+    // The override reason belongs only to manual_override; drop it here.
+    expect("manualOverrideReason" in result.intake).toBe(false);
+    expect(JSON.stringify(result.intake)).not.toContain(OVERRIDE_REASON);
   });
 });
 

@@ -11,10 +11,12 @@
  * POST - create ONE reviewable hld_intake draft from engineer-authored intake
  * answers. session.tenantId is the only tenant authority, session.userId is the
  * only createdBy authority, and the route param id is the only project id. The
- * request body supplies ONLY { answers }; any caller-supplied tenantId/
- * projectId/createdBy/createdAt/status/artifact-id/authority/pricing/SKU/config
- * field is ignored. A missing/malformed body (not a JSON object carrying an
- * answers array) yields 400 invalid_rfp_hld_intake_request; a known semantic
+ * request body supplies ONLY { answers, manualOverrideReason }; any caller-
+ * supplied sourceMode/tenantId/projectId/createdBy/createdAt/status/artifact-id/
+ * authority/pricing/SKU/config field is ignored. This manual endpoint is the sole
+ * authority for the recorded manual_override sourceMode. A missing/malformed body
+ * (not a JSON object carrying an answers array and a nonblank manualOverrideReason)
+ * yields 400 invalid_rfp_hld_intake_request; a known semantic
  * answer validation failure raised by the service is also mapped to 400
  * invalid_rfp_hld_intake_request (never a 500). Result maps to HTTP: not_found ->
  * 404, wrong_mode -> 409, ok -> 201 with { artifact, payloadSummary }; an
@@ -36,13 +38,14 @@ import {
 
 interface ParsedCreateBody {
   answers: RfpHldIntakeAnswerInput[];
+  manualOverrideReason: string;
 }
 
 function invalidRequest(): NextResponse {
   return NextResponse.json(
     {
       code: "invalid_rfp_hld_intake_request",
-      error: "answers array is required.",
+      error: "answers array and manualOverrideReason are required.",
     },
     { status: 400 }
   );
@@ -50,16 +53,24 @@ function invalidRequest(): NextResponse {
 
 /**
  * Validate the request body to the minimal create shape, or null when invalid.
- * Reads ONLY answers (an array); the service validates answer semantics. No
- * tenant/project/createdBy/status/authority field is ever read from the body.
+ * Reads ONLY answers (an array) and manualOverrideReason (a nonblank string); the
+ * service validates answer semantics and re-trims the reason. A caller-supplied
+ * sourceMode is NEVER read - this manual endpoint is the sole authority for the
+ * mode. No tenant/project/createdBy/status/authority field is read from the body.
  */
 function parseCreateBody(body: unknown): ParsedCreateBody | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return null;
   }
-  const { answers } = body as Record<string, unknown>;
+  const { answers, manualOverrideReason } = body as Record<string, unknown>;
   if (!Array.isArray(answers)) return null;
-  return { answers: answers as RfpHldIntakeAnswerInput[] };
+  if (typeof manualOverrideReason !== "string" || manualOverrideReason.trim() === "") {
+    return null;
+  }
+  return {
+    answers: answers as RfpHldIntakeAnswerInput[],
+    manualOverrideReason,
+  };
 }
 
 export async function GET(
@@ -133,6 +144,7 @@ export async function POST(
       projectId: params.id,
       createdBy: session.userId,
       answers: parsed.answers,
+      manualOverrideReason: parsed.manualOverrideReason,
     });
 
     if (result.status === "not_found") {

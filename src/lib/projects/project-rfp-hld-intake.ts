@@ -67,6 +67,14 @@ const FIELD_IDS: ReadonlySet<string> = new Set(
   RFP_HLD_INTAKE_FIELDS.map((field) => field.fieldId)
 );
 
+/**
+ * How the intake answers were sourced. `manual_override` records engineer-entered
+ * answers with a required human reason; `questionnaire_assisted` (represented for
+ * the corrected HLD chain, creation flow is Stage 6H-0E-B) records answers derived
+ * from an approved questionnaire artifact.
+ */
+export type RfpHldIntakeSourceMode = "questionnaire_assisted" | "manual_override";
+
 /** Allowed answer dispositions for one intake field. */
 export type RfpHldIntakeAnswerStatus = "answered" | "unknown" | "not_applicable";
 
@@ -98,13 +106,7 @@ export interface RfpHldIntakeStatusCounts {
 /** Stable discriminator for the persisted `hld_intake` payload. */
 export const RFP_HLD_INTAKE_PAYLOAD_KIND = "rfp_hld_intake" as const;
 
-/**
- * The persisted `hld_intake` payload (full answers live here, not in the result).
- * Exported for type-only consumers (inspection/approval); it is an object type
- * alias (not an interface) so it stays assignable to Record<string, unknown> for
- * the artifact store's payload parameter.
- */
-export type RfpHldIntakePayload = {
+type RfpHldIntakePayloadBase = {
   payloadKind: typeof RFP_HLD_INTAKE_PAYLOAD_KIND;
   createdBy: string;
   createdAt: string;
@@ -113,12 +115,42 @@ export type RfpHldIntakePayload = {
   statusCounts: RfpHldIntakeStatusCounts;
 };
 
+/** Manual override intake source contract. */
+export type RfpHldIntakeManualOverridePayload = RfpHldIntakePayloadBase & {
+  sourceMode: "manual_override";
+  manualOverrideReason: string;
+  sourceQuestionnaireArtifactId?: never;
+};
+
+/** Questionnaire-assisted intake source contract; creation arrives in Stage 6H-0E-B. */
+export type RfpHldIntakeQuestionnaireAssistedPayload = RfpHldIntakePayloadBase & {
+  sourceMode: "questionnaire_assisted";
+  sourceQuestionnaireArtifactId: string;
+  manualOverrideReason?: never;
+};
+
+/**
+ * The persisted `hld_intake` payload (full answers live here, not in the result).
+ * Exported for type-only consumers (inspection/approval); it is an object type
+ * alias (not an interface) so it stays assignable to Record<string, unknown> for
+ * the artifact store's payload parameter.
+ */
+export type RfpHldIntakePayload =
+  | RfpHldIntakeManualOverridePayload
+  | RfpHldIntakeQuestionnaireAssistedPayload;
+
 /** Input for {@link createRfpHldIntakeDraft}. */
 export interface CreateRfpHldIntakeDraftInput {
   tenantId: string;
   projectId: string;
   createdBy: string;
   answers: readonly RfpHldIntakeAnswerInput[];
+  /**
+   * Required human reason for the manual override intake path. This sub-stage
+   * only produces manual_override intake; the reason is trimmed and must be
+   * nonblank. Questionnaire-assisted creation arrives in Stage 6H-0E-B.
+   */
+  manualOverrideReason: string;
   /** Optional fixed timestamp for deterministic tests; defaults to now. */
   createdAt?: Date;
 }
@@ -152,6 +184,7 @@ export interface RfpHldIntakePayloadSummary {
   payloadKind: typeof RFP_HLD_INTAKE_PAYLOAD_KIND;
   createdBy: string;
   createdAt: string;
+  sourceMode: RfpHldIntakeSourceMode;
   answerCount: number;
   statusCounts: RfpHldIntakeStatusCounts;
   fieldIds: RfpHldIntakeFieldId[];
@@ -309,6 +342,7 @@ function toPayloadSummary(payload: RfpHldIntakePayload): RfpHldIntakePayloadSumm
     payloadKind: payload.payloadKind,
     createdBy: payload.createdBy,
     createdAt: payload.createdAt,
+    sourceMode: payload.sourceMode,
     answerCount: payload.answerCount,
     statusCounts: { ...payload.statusCounts },
     fieldIds: payload.answers.map((answer) => answer.fieldId),
@@ -331,6 +365,13 @@ export async function createRfpHldIntakeDraft(
   if (projectId === "") fail("HLD intake requires a projectId.");
   if (createdBy === "") fail("HLD intake requires a createdBy.");
 
+  // Manual override intake requires an explicit, nonblank human reason. Validated
+  // before any store call, alongside the other request-derived scalar checks.
+  const manualOverrideReason = asTrimmed(input.manualOverrideReason);
+  if (manualOverrideReason === "") {
+    fail("HLD intake manual override requires a manualOverrideReason.");
+  }
+
   // Validate the catalog answer set before touching any store.
   const answers = normalizeAnswers(input.answers);
 
@@ -345,6 +386,8 @@ export async function createRfpHldIntakeDraft(
     payloadKind: RFP_HLD_INTAKE_PAYLOAD_KIND,
     createdBy,
     createdAt,
+    sourceMode: "manual_override",
+    manualOverrideReason,
     answers,
     answerCount: answers.length,
     statusCounts: countStatuses(answers),

@@ -27,6 +27,7 @@ const TENANT = "11111111-1111-1111-1111-111111111111";
 const PROJECT = "proj-1";
 const CREATED_BY = "engineer-1";
 const ARTIFACT_ID = "art-hld-intake-1";
+const OVERRIDE_REASON = "Questionnaire not yet available; entered manually.";
 
 const TS1 = new Date("2026-06-01T10:00:00.000Z");
 const TS2 = new Date("2026-06-02T11:30:00.000Z");
@@ -109,6 +110,7 @@ function input(overrides: Partial<CreateRfpHldIntakeDraftInput> = {}): CreateRfp
     projectId: PROJECT,
     createdBy: CREATED_BY,
     answers: makeAnswers(),
+    manualOverrideReason: OVERRIDE_REASON,
     createdAt: FIXED_CREATED,
     ...overrides,
   };
@@ -129,6 +131,24 @@ describe("createRfpHldIntakeDraft - validation before any store call", () => {
 
   it("rejects a blank createdBy before touching the stores", async () => {
     await expect(createRfpHldIntakeDraft(input({ createdBy: "  " }))).rejects.toThrow();
+    expect(getProjectMock).not.toHaveBeenCalled();
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a blank manualOverrideReason before touching the stores", async () => {
+    await expect(
+      createRfpHldIntakeDraft(input({ manualOverrideReason: "   " }))
+    ).rejects.toThrow();
+    expect(getProjectMock).not.toHaveBeenCalled();
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing manualOverrideReason before touching the stores", async () => {
+    const bad = {
+      ...input(),
+      manualOverrideReason: undefined,
+    } as unknown as CreateRfpHldIntakeDraftInput;
+    await expect(createRfpHldIntakeDraft(bad)).rejects.toThrow();
     expect(getProjectMock).not.toHaveBeenCalled();
     expect(createMock).not.toHaveBeenCalled();
   });
@@ -239,6 +259,15 @@ describe("createRfpHldIntakeDraft - artifact creation", () => {
     expect("filePath" in arg).toBe(false);
   });
 
+  it("records manual_override with the trimmed reason and no questionnaire source", async () => {
+    await createRfpHldIntakeDraft(input({ manualOverrideReason: "  padded reason  " }));
+
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.sourceMode).toBe("manual_override");
+    expect(payload.manualOverrideReason).toBe("padded reason");
+    expect("sourceQuestionnaireArtifactId" in payload).toBe(false);
+  });
+
   it("verifies the project before the write", async () => {
     await createRfpHldIntakeDraft(input());
 
@@ -254,6 +283,9 @@ describe("createRfpHldIntakeDraft - artifact creation", () => {
     expect(payload.payloadKind).toBe("rfp_hld_intake");
     expect(payload.createdBy).toBe(CREATED_BY);
     expect(payload.createdAt).toBe(FIXED_CREATED.toISOString());
+    expect(payload.sourceMode).toBe("manual_override");
+    expect(payload.manualOverrideReason).toBe(OVERRIDE_REASON);
+    expect("sourceQuestionnaireArtifactId" in payload).toBe(false);
     expect(payload.answerCount).toBe(FIELD_IDS.length);
     expect(payload.statusCounts).toEqual({
       answered: FIELD_IDS.length - 2,
@@ -317,6 +349,7 @@ describe("createRfpHldIntakeDraft - ok result summaries", () => {
       payloadKind: "rfp_hld_intake",
       createdBy: CREATED_BY,
       createdAt: FIXED_CREATED.toISOString(),
+      sourceMode: "manual_override",
       answerCount: FIELD_IDS.length,
       statusCounts: { answered: FIELD_IDS.length - 2, unknown: 1, not_applicable: 1 },
       fieldIds: FIELD_IDS,

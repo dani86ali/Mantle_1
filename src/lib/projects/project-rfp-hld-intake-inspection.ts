@@ -21,6 +21,7 @@ import type { Project, ProjectArtifact } from "@/types/project";
 import {
   RFP_HLD_INTAKE_PAYLOAD_KIND,
   type RfpHldIntakeAnswerStatus,
+  type RfpHldIntakeSourceMode,
   type RfpHldIntakeStatusCounts,
 } from "@/lib/projects/project-rfp-hld-intake";
 
@@ -33,6 +34,19 @@ const HLD_INTAKE_ANSWER_STATUSES: readonly RfpHldIntakeAnswerStatus[] = [
   "unknown",
   "not_applicable",
 ];
+
+const HLD_INTAKE_SOURCE_MODES: readonly RfpHldIntakeSourceMode[] = [
+  "questionnaire_assisted",
+  "manual_override",
+];
+
+/** Whitelist the persisted sourceMode; a malformed/missing value drops to undefined. */
+function asSourceMode(value: unknown): RfpHldIntakeSourceMode | undefined {
+  return typeof value === "string" &&
+    (HLD_INTAKE_SOURCE_MODES as readonly string[]).includes(value)
+    ? (value as RfpHldIntakeSourceMode)
+    : undefined;
+}
 
 export interface RfpHldIntakeInspectionProjectSummary {
   id: string;
@@ -61,6 +75,8 @@ export interface RfpHldIntakeInspectionPayloadSummary {
   payloadKind: string;
   createdBy: string;
   createdAt: string;
+  /** How the intake was sourced; omitted when the stored value is malformed. */
+  sourceMode?: RfpHldIntakeSourceMode;
   answerCount: number;
   statusCounts: RfpHldIntakeStatusCounts;
   fieldIds: string[];
@@ -104,6 +120,10 @@ export interface RfpHldIntakeInspectionDetailPayload {
   payloadKind: string;
   createdBy: string;
   createdAt: string;
+  /** How the intake was sourced; omitted when the stored value is malformed. */
+  sourceMode?: RfpHldIntakeSourceMode;
+  /** The human override reason; surfaced only for manual_override intake. */
+  manualOverrideReason?: string;
   answerCount: number;
   statusCounts: RfpHldIntakeStatusCounts;
   answers: RfpHldIntakeInspectionAnswer[];
@@ -218,10 +238,12 @@ function toPayloadSummary(
 ): RfpHldIntakeInspectionPayloadSummary {
   const record = toRecord(payload);
   const answers = record.answers;
+  const sourceMode = asSourceMode(record.sourceMode);
   return {
     payloadKind: asString(record.payloadKind),
     createdBy: asString(record.createdBy),
     createdAt: asString(record.createdAt),
+    ...(sourceMode !== undefined ? { sourceMode } : {}),
     answerCount: Array.isArray(answers) ? answers.length : 0,
     statusCounts: tallyStatusCounts(answers),
     fieldIds: toFieldIds(answers),
@@ -330,6 +352,13 @@ export async function loadRfpHldIntakeDetail(
   }
 
   const sanitized = answers.map((entry) => toAnswer(entry));
+  const sourceMode = asSourceMode(payload.sourceMode);
+  // The override reason is engineer-authored provenance; surfaced only for the
+  // manual_override mode it belongs to, and only when a nonblank string.
+  const manualOverrideReason =
+    sourceMode === "manual_override"
+      ? asNonblankString(payload.manualOverrideReason)
+      : undefined;
   return {
     status: "ok",
     project: toProjectSummary(project),
@@ -338,6 +367,8 @@ export async function loadRfpHldIntakeDetail(
       payloadKind: RFP_HLD_INTAKE_PAYLOAD_KIND,
       createdBy: asString(payload.createdBy),
       createdAt: asString(payload.createdAt),
+      ...(sourceMode !== undefined ? { sourceMode } : {}),
+      ...(manualOverrideReason !== undefined ? { manualOverrideReason } : {}),
       answerCount: sanitized.length,
       statusCounts: tallyStatusCounts(answers),
       answers: sanitized,

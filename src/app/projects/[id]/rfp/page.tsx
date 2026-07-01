@@ -498,6 +498,7 @@ interface HldIntakeListItem {
   version: number;
   payloadSummary?: {
     payloadKind?: string;
+    sourceMode?: string;
     answeredCount?: number;
     fieldCount?: number;
   };
@@ -530,6 +531,8 @@ interface HldIntakeDetailResponse {
   };
   intake?: {
     payloadKind?: string;
+    sourceMode?: string;
+    manualOverrideReason?: string;
     answers?: HldIntakeAnswer[];
     sourceArtifactIds?: string[];
   };
@@ -3940,6 +3943,7 @@ export default function ProjectRfpEvidencePage() {
   const [hldIntakeDetailError, setHldIntakeDetailError] = useState<string | null>(null);
 
   const [hldIntakeDraft, setHldIntakeDraft] = useState<HldIntakeDraft>(initialHldIntakeDraft);
+  const [hldIntakeOverrideReason, setHldIntakeOverrideReason] = useState("");
   const [hldIntakeCreatePending, setHldIntakeCreatePending] = useState(false);
   const [hldIntakeCreateError, setHldIntakeCreateError] = useState<string | null>(null);
   const [hldIntakeCreateSuccess, setHldIntakeCreateSuccess] = useState<string | null>(null);
@@ -5602,6 +5606,8 @@ export default function ProjectRfpEvidencePage() {
 
   const submitHldIntakeCreate = useCallback(async (): Promise<void> => {
     if (hldIntakeCreatePending) return;
+    const manualOverrideReason = hldIntakeOverrideReason.trim();
+    if (manualOverrideReason === "") return;
     setHldIntakeCreatePending(true);
     setHldIntakeCreateError(null);
     setHldIntakeCreateSuccess(null);
@@ -5610,13 +5616,14 @@ export default function ProjectRfpEvidencePage() {
       const res = await fetch(`/api/projects/${id}/rfp/hld-intake`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers }),
+        body: JSON.stringify({ answers, manualOverrideReason }),
       });
       if (!res.ok) {
         setHldIntakeCreateError(HLD_INTAKE_CREATE_ERROR);
         return;
       }
       setHldIntakeDraft(initialHldIntakeDraft());
+      setHldIntakeOverrideReason("");
       setHldIntakeCreateSuccess(HLD_INTAKE_CREATE_SUCCESS);
       void loadHldIntakeList();
       void loadHldReadinessList();
@@ -5629,6 +5636,7 @@ export default function ProjectRfpEvidencePage() {
   }, [
     hldIntakeCreatePending,
     hldIntakeDraft,
+    hldIntakeOverrideReason,
     id,
     loadHldGenerationReadiness,
     loadHldIntakeList,
@@ -7899,7 +7907,25 @@ export default function ProjectRfpEvidencePage() {
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={artifact.status} />
             <span className="text-xs text-text-secondary">Version {artifact.version}</span>
+            {intake.sourceMode !== undefined && (
+              <span
+                data-testid="hld-intake-drawer-source-mode"
+                className="text-xs text-text-secondary"
+              >
+                Source mode: {humanizeToken(intake.sourceMode)}
+              </span>
+            )}
           </div>
+          {intake.sourceMode === "manual_override" &&
+            intake.manualOverrideReason !== undefined &&
+            intake.manualOverrideReason !== "" && (
+              <p
+                data-testid="hld-intake-drawer-override-reason"
+                className="mt-1 text-xs text-text-secondary"
+              >
+                Manual override reason: {intake.manualOverrideReason}
+              </p>
+            )}
         </div>
         <div className={SUBTLE_CARD}>
           <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
@@ -10539,6 +10565,11 @@ export default function ProjectRfpEvidencePage() {
                         <div className="mt-1 flex items-center gap-2">
                           <StatusBadge status={item.status} />
                           <span className="text-xs text-text-secondary">v{item.version}</span>
+                          {item.payloadSummary?.sourceMode !== undefined && (
+                            <span className="text-xs text-text-secondary">
+                              {humanizeToken(item.payloadSummary.sourceMode)}
+                            </span>
+                          )}
                           <button
                             type="button"
                             data-testid={testId}
@@ -10627,12 +10658,26 @@ export default function ProjectRfpEvidencePage() {
                     })}
                   </tbody>
                 </table>
+                <label className="flex flex-col text-xs text-text-tertiary">
+                  Manual override reason
+                  <textarea
+                    data-testid="hld-intake-override-reason"
+                    value={hldIntakeOverrideReason}
+                    disabled={hldIntakeCreatePending}
+                    onChange={(e) => setHldIntakeOverrideReason(e.target.value)}
+                    rows={2}
+                    placeholder="Why these answers are entered as a manual override"
+                    className={`${FIELD} w-full`}
+                  />
+                </label>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     data-testid="hld-intake-create"
                     disabled={
-                      hldIntakeCreatePending || !hldIntakeDraftComplete(hldIntakeDraft)
+                      hldIntakeCreatePending ||
+                      !hldIntakeDraftComplete(hldIntakeDraft) ||
+                      hldIntakeOverrideReason.trim() === ""
                     }
                     onClick={() => void submitHldIntakeCreate()}
                     className={ACTION_BTN}
