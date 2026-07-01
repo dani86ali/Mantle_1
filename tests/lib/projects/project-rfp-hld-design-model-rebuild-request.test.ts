@@ -270,7 +270,7 @@ describe("validateRfpHldDesignModelRebuildRequestPayload - OpenAI redo policy", 
     expect(validateRfpHldDesignModelRebuildRequestPayload(zero).valid).toBe(false);
   });
 
-  it("accepts future se_directed_openai_gate attempts 1 and 2 with max 2", () => {
+  it("accepts se_directed_openai_gate attempts 1 and 2 with max 2", () => {
     for (const attempt of [1, 2]) {
       const p = {
         ...openAiPayload(),

@@ -146,7 +146,7 @@ export async function POST(
         {
           code: "hld_design_model_rebuild_request_redo_limit_exhausted",
           error:
-            "The initial OpenAI-forced redo budget for this design model is exhausted.",
+            "The OpenAI-forced redo budget for this design model is exhausted.",
           phase: result.phase,
           maxRedoAttempts: result.maxRedoAttempts,
           attemptCount: result.attemptCount,

@@ -30,6 +30,7 @@ import {
   RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND,
   validateRfpHldDesignModelRebuildRequestPayload,
   type RfpHldDesignModelRebuildRequestPayload,
+  type RfpHldDesignModelRebuildRequestRedoPhase,
   type RfpHldDesignModelRebuildRequestStatus,
 } from "@/lib/projects/project-rfp-hld-design-model-rebuild-request";
 import type {
@@ -137,8 +138,8 @@ export type CreateRfpHldDesignModelRebuildRequestResult =
     }
   | {
       status: "redo_limit_exhausted";
-      phase: "initial_openai_gate";
-      maxRedoAttempts: 1;
+      phase: RfpHldDesignModelRebuildRequestRedoPhase;
+      maxRedoAttempts: 1 | 2;
       attemptCount: number;
     }
   | { status: "invalid_request_payload"; errors: string[] }
@@ -206,14 +207,15 @@ function readOpenAiForcedRedo(reviewPayload: unknown): {
 }
 
 /**
- * Count prior valid `initial_openai_gate` OpenAI-forced requests for the SAME source
- * bundle whose row is not rejected. A rejected redo does not consume the budget; any
- * other non-rejected row (open, retired, or approved) does. This bounds the initial
- * OpenAI gate to at most one forced Claude rebuild per source bundle.
+ * Count prior valid OpenAI-forced requests in the given redo phase for the SAME
+ * source bundle whose row is not rejected. A rejected redo does not consume the
+ * budget; any other non-rejected valid row (open, retired, or approved) does.
+ * Malformed request payloads never consume the budget.
  */
-function countInitialOpenAiRequests(
+function countOpenAiRequestsForPhase(
   artifacts: readonly ProjectArtifact[],
-  bundleId: string
+  bundleId: string,
+  phase: RfpHldDesignModelRebuildRequestRedoPhase
 ): number {
   let count = 0;
   for (const a of artifacts) {
@@ -222,11 +224,51 @@ function countInitialOpenAiRequests(
     if (!validateRfpHldDesignModelRebuildRequestPayload(a.payload).valid) continue;
     const p = a.payload;
     if (p.requestSource !== "openai_advisory") continue;
-    if (p.redoPhase !== "initial_openai_gate") continue;
+    if (p.redoPhase !== phase) continue;
     if (str(p.sourceHldSourceBundleArtifactId) !== bundleId) continue;
     count += 1;
   }
   return count;
+}
+
+/**
+ * True if the valid `hld_design_model_review` named by `reviewId` ties to the SAME
+ * source bundle. Resolves the review over the already-loaded artifacts (no store
+ * read) and re-validates its payload before trusting the bundle id.
+ */
+function reviewTiesToBundle(
+  artifacts: readonly ProjectArtifact[],
+  reviewId: string,
+  bundleId: string
+): boolean {
+  if (reviewId === "" || bundleId === "") return false;
+  const review = artifacts.find((a) => a.id === reviewId && a.type === REVIEW_TYPE);
+  if (review === undefined) return false;
+  if (!validateRfpHldDesignModelReviewPayload(review.payload).valid) return false;
+  return str(review.payload.sourceHldSourceBundleArtifactId) === bundleId;
+}
+
+/**
+ * True if the source bundle is in the post-SE phase: at least one valid, non-rejected
+ * `hld_design_model_rebuild_request` with `requestSource: "engineer"` exists whose
+ * source review ties to the SAME source bundle. This is the corrected budget switch
+ * from the at-most-one initial OpenAI gate to the up-to-two post-SE OpenAI gate.
+ */
+function hasPostSeEngineerMarker(
+  artifacts: readonly ProjectArtifact[],
+  bundleId: string
+): boolean {
+  for (const a of artifacts) {
+    if (a.type !== REQUEST_TYPE) continue;
+    if (a.status === "rejected") continue;
+    if (!validateRfpHldDesignModelRebuildRequestPayload(a.payload).valid) continue;
+    const p = a.payload;
+    if (p.requestSource !== "engineer") continue;
+    if (reviewTiesToBundle(artifacts, str(p.sourceReviewArtifactId), bundleId)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function toProjectSummary(
@@ -402,9 +444,9 @@ export async function createRfpHldDesignModelRebuildRequest(
     return { status: "invalid_review" };
   }
 
-  // A blocking ai_advisory review with valid bounded instructions forces an initial
-  // OpenAI redo: the review's bounded summary/instructions and source bundle become
-  // the persisted authority, and caller-supplied reason/instructions are ignored.
+  // A blocking ai_advisory review with valid bounded instructions forces an OpenAI
+  // redo: the review's bounded summary/instructions and source bundle become the
+  // persisted authority, and caller-supplied reason/instructions are ignored.
   const forced = readOpenAiForcedRedo(review!.payload);
 
   const artifacts = await listProjectArtifacts(tenantId, projectId);
@@ -416,21 +458,40 @@ export async function createRfpHldDesignModelRebuildRequest(
     return { status: "active_request_exists", artifact: toArtifactSummary(active) };
   }
 
-  // Initial OpenAI-forced budget: at most one non-rejected forced redo per source
-  // bundle. Once exhausted, write nothing and let the approval gate proceed.
+  // OpenAI-forced redo budget (Stage 6H-0H-E). Before an SE-directed engineer redo
+  // request has occurred for this source bundle, the initial OpenAI gate allows at
+  // most one forced Claude redo. Once such an engineer marker exists, the post-SE
+  // OpenAI gate allows up to two more. A rejected/malformed prior forced request does
+  // not consume the budget. Once the selected phase budget is exhausted, write
+  // nothing and let the approval gate proceed with remaining findings still visible.
+  let forcedPolicy:
+    | Pick<
+        RfpHldDesignModelRebuildRequestPayload,
+        | "requestSource"
+        | "redoPhase"
+        | "redoAttempt"
+        | "maxRedoAttempts"
+        | "sourceHldSourceBundleArtifactId"
+      >
+    | null = null;
   if (forced !== null) {
-    const attemptCount = countInitialOpenAiRequests(
-      artifacts,
-      forced.sourceHldSourceBundleArtifactId
-    );
-    if (attemptCount >= 1) {
-      return {
-        status: "redo_limit_exhausted",
-        phase: "initial_openai_gate",
-        maxRedoAttempts: 1,
-        attemptCount,
-      };
+    const bundleId = forced.sourceHldSourceBundleArtifactId;
+    const postSe = hasPostSeEngineerMarker(artifacts, bundleId);
+    const phase: RfpHldDesignModelRebuildRequestRedoPhase = postSe
+      ? "se_directed_openai_gate"
+      : "initial_openai_gate";
+    const maxRedoAttempts: 1 | 2 = postSe ? 2 : 1;
+    const attemptCount = countOpenAiRequestsForPhase(artifacts, bundleId, phase);
+    if (attemptCount >= maxRedoAttempts) {
+      return { status: "redo_limit_exhausted", phase, maxRedoAttempts, attemptCount };
     }
+    forcedPolicy = {
+      requestSource: "openai_advisory",
+      redoPhase: phase,
+      redoAttempt: attemptCount + 1,
+      maxRedoAttempts,
+      sourceHldSourceBundleArtifactId: bundleId,
+    };
   }
 
   const requestedAt = (input.requestedAt ?? new Date()).toISOString();
@@ -444,14 +505,8 @@ export async function createRfpHldDesignModelRebuildRequest(
     reason: forced !== null ? forced.reason : reason,
     instructions: forced !== null ? forced.instructions : instructions,
     status: "active",
-    ...(forced !== null
-      ? {
-          requestSource: "openai_advisory" as const,
-          redoPhase: "initial_openai_gate" as const,
-          redoAttempt: 1,
-          maxRedoAttempts: 1 as const,
-          sourceHldSourceBundleArtifactId: forced.sourceHldSourceBundleArtifactId,
-        }
+    ...(forcedPolicy !== null
+      ? forcedPolicy
       : // Human/SE-directed request: mark it engineer-sourced and carry NO OpenAI
         // redo-policy fields. The contract's <=250-word engineer instruction cap is
         // hard-gated below before any persistence.

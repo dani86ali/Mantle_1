@@ -31,8 +31,9 @@ export type RfpHldDesignModelRebuildRequestSource = "engineer" | "openai_advisor
 /**
  * The redo phase this OpenAI-forced request belongs to. `initial_openai_gate` is
  * the bounded, at-most-one initial redo (Stage 6H-0H-C). `se_directed_openai_gate`
- * is a future SE-directed phase - the contract carries closed room for it now, but
- * no service creates one yet.
+ * is the post-SE-directed phase (Stage 6H-0H-E): after an SE-directed engineer redo
+ * request has occurred for the same source bundle, OpenAI may force up to two more
+ * Claude redos.
  */
 export type RfpHldDesignModelRebuildRequestRedoPhase =
   | "initial_openai_gate"

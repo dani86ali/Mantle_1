@@ -59,6 +59,7 @@ import {
 import {
   validateRfpHldDesignModelRebuildRequestPayload,
   type RfpHldDesignModelRebuildRequestPayload,
+  type RfpHldDesignModelRebuildRequestRedoPhase,
 } from "@/lib/projects/project-rfp-hld-design-model-rebuild-request";
 import {
   validateRfpHldDesignModelReviewPayload,
@@ -187,15 +188,14 @@ export type ReviewRfpHldDesignModelArtifactResult =
     };
 
 /**
- * Count valid, non-rejected `initial_openai_gate` OpenAI-forced rebuild requests for the
- * SAME source bundle. A rejected redo does not consume the budget; any other
- * non-rejected row does. A count >= 1 means the bounded initial OpenAI-forced redo
- * has already been spent for this source bundle. Malformed historical rows never
- * consume the budget.
+ * Count valid, non-rejected OpenAI-forced rebuild requests in the given redo phase
+ * for the SAME source bundle. A rejected redo does not consume the budget; any other
+ * non-rejected valid row does. Malformed historical rows never consume the budget.
  */
-function countInitialOpenAiRedos(
+function countOpenAiRedosForPhase(
   artifacts: readonly ProjectArtifact[],
-  bundleId: string
+  bundleId: string,
+  phase: RfpHldDesignModelRebuildRequestRedoPhase
 ): number {
   let count = 0;
   for (const a of artifacts) {
@@ -204,7 +204,7 @@ function countInitialOpenAiRedos(
     if (!validateRfpHldDesignModelRebuildRequestPayload(a.payload).valid) continue;
     const p = a.payload as unknown as RfpHldDesignModelRebuildRequestPayload;
     if (p.requestSource !== "openai_advisory") continue;
-    if (p.redoPhase !== "initial_openai_gate") continue;
+    if (p.redoPhase !== phase) continue;
     if (p.sourceHldSourceBundleArtifactId !== bundleId) continue;
     count += 1;
   }
@@ -212,14 +212,15 @@ function countInitialOpenAiRedos(
 }
 
 /**
- * True when an OpenAI-forced initial rebuild request is still open for this EXACT
- * current model/review pair. Such a valid active request means the forced redo is
- * in flight, so the blocking review must keep blocking rather than let approval proceed.
+ * True when an OpenAI-forced rebuild request in the given phase is still open for this
+ * EXACT current model/review pair. Such a valid active request means the forced redo
+ * is in flight, so the blocking review must keep blocking rather than let approval proceed.
  */
 function hasOpenOpenAiRedoForPair(
   artifacts: readonly ProjectArtifact[],
   modelId: string,
-  reviewId: string
+  reviewId: string,
+  phase: RfpHldDesignModelRebuildRequestRedoPhase
 ): boolean {
   for (const a of artifacts) {
     if (a.type !== DESIGN_MODEL_REBUILD_REQUEST_TYPE) continue;
@@ -228,10 +229,53 @@ function hasOpenOpenAiRedoForPair(
     const p = a.payload as unknown as RfpHldDesignModelRebuildRequestPayload;
     if (p.status !== "active") continue;
     if (p.requestSource !== "openai_advisory") continue;
-    if (p.redoPhase !== "initial_openai_gate") continue;
+    if (p.redoPhase !== phase) continue;
     if (p.sourceHldDesignModelArtifactId !== modelId) continue;
     if (p.sourceReviewArtifactId !== reviewId) continue;
     return true;
+  }
+  return false;
+}
+
+/**
+ * True if the valid `hld_design_model_review` named by `reviewId` ties to the SAME
+ * source bundle. Resolves the review over the already-loaded artifacts snapshot and
+ * re-validates its payload before trusting the bundle id.
+ */
+function reviewTiesToBundle(
+  artifacts: readonly ProjectArtifact[],
+  reviewId: string,
+  bundleId: string
+): boolean {
+  if (reviewId === "" || bundleId === "") return false;
+  const review = artifacts.find(
+    (a) => a.id === reviewId && a.type === DESIGN_MODEL_REVIEW_TYPE
+  );
+  if (review === undefined) return false;
+  if (!validateRfpHldDesignModelReviewPayload(review.payload).valid) return false;
+  const p = review.payload as unknown as RfpHldDesignModelReviewPayload;
+  return p.sourceHldSourceBundleArtifactId === bundleId;
+}
+
+/**
+ * True if the source bundle is in the post-SE phase: at least one valid, non-rejected
+ * `hld_design_model_rebuild_request` with `requestSource: "engineer"` exists whose
+ * source review ties to the SAME source bundle. This selects the up-to-two post-SE
+ * OpenAI gate over the at-most-one initial OpenAI gate.
+ */
+function hasPostSeEngineerMarker(
+  artifacts: readonly ProjectArtifact[],
+  bundleId: string
+): boolean {
+  for (const a of artifacts) {
+    if (a.type !== DESIGN_MODEL_REBUILD_REQUEST_TYPE) continue;
+    if (a.status === "rejected") continue;
+    if (!validateRfpHldDesignModelRebuildRequestPayload(a.payload).valid) continue;
+    const p = a.payload as unknown as RfpHldDesignModelRebuildRequestPayload;
+    if (p.requestSource !== "engineer") continue;
+    if (reviewTiesToBundle(artifacts, p.sourceReviewArtifactId ?? "", bundleId)) {
+      return true;
+    }
   }
   return false;
 }
@@ -481,13 +525,22 @@ function evaluateReviewGate(
   }
 
   if (findingCounts.blocking > 0) {
-    // A blocking OpenAI review keeps blocking while the initial OpenAI-forced redo is
-    // still available, or while a forced redo for this exact model/review pair is
-    // still open. Once the initial budget is exhausted for this source bundle and no
-    // forced redo is open for the pair, approval may proceed to SE review with the
-    // remaining findings still visible through the existing review artifacts.
-    const budgetExhausted = countInitialOpenAiRedos(artifacts, sourceBundle.id) >= 1;
-    const activeForPair = hasOpenOpenAiRedoForPair(artifacts, model.id, latest.id);
+    // A blocking OpenAI review keeps blocking while the selected-phase OpenAI-forced
+    // redo budget is still available, or while a forced redo for this exact
+    // model/review pair is still open in that phase. The phase is the post-SE gate
+    // (up to two redos) once an SE-directed engineer redo request has occurred for
+    // this source bundle, otherwise the initial gate (one redo). Once the selected
+    // budget is exhausted for this source bundle and no forced redo is open for the
+    // pair, approval may proceed to SE review with the remaining findings still
+    // visible through the existing review artifacts.
+    const postSe = hasPostSeEngineerMarker(artifacts, sourceBundle.id);
+    const phase: RfpHldDesignModelRebuildRequestRedoPhase = postSe
+      ? "se_directed_openai_gate"
+      : "initial_openai_gate";
+    const maxRedos = postSe ? 2 : 1;
+    const budgetExhausted =
+      countOpenAiRedosForPhase(artifacts, sourceBundle.id, phase) >= maxRedos;
+    const activeForPair = hasOpenOpenAiRedoForPair(artifacts, model.id, latest.id, phase);
     const mayProceedWithRemainingFindings = budgetExhausted && !activeForPair;
     if (!mayProceedWithRemainingFindings) {
       return {

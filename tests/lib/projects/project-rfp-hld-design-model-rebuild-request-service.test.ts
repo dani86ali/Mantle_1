@@ -403,6 +403,128 @@ describe("createRfpHldDesignModelRebuildRequest - OpenAI-forced initial redo", (
   });
 });
 
+/** A review row (id REVIEW_ID) tying to the given source bundle, for marker lookup. */
+function makeBundleReview(bundleId = BUNDLE_ID): ProjectArtifact {
+  return makeReview(MODEL_ID, {
+    payload: {
+      sourceHldDesignModelArtifactId: MODEL_ID,
+      sourceHldSourceBundleArtifactId: bundleId,
+    },
+  });
+}
+
+/** A valid, non-rejected engineer (SE-directed) marker referencing REVIEW_ID. */
+function makeEngineerMarker(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
+  return {
+    ...makeActiveRequest(),
+    id: "req-engineer-marker",
+    status: "stale", // retired row: does not trip the active-duplicate check.
+    payload: { ...makeActiveRequest().payload, requestSource: "engineer" },
+    ...overrides,
+  };
+}
+
+/** A prior valid se-directed OpenAI-forced request (attempt 1/max 2) for BUNDLE_ID. */
+function makeSeDirectedOpenAiRequest(
+  overrides: Partial<ProjectArtifact> = {}
+): ProjectArtifact {
+  return makeOpenAiRequest({
+    id: "req-openai-se-1",
+    status: "stale",
+    payload: {
+      ...(makeOpenAiRequest().payload as Record<string, unknown>),
+      redoPhase: "se_directed_openai_gate",
+      redoAttempt: 1,
+      maxRedoAttempts: 2,
+    },
+    ...overrides,
+  });
+}
+
+describe("createRfpHldDesignModelRebuildRequest - post-SE OpenAI-forced redo", () => {
+  it("creates the first post-SE request as se_directed attempt 1/max 2 when an engineer marker ties to the bundle", async () => {
+    wireArtifacts(makeModel(), makeBlockingAiReview());
+    listMock.mockResolvedValue([makeBundleReview(), makeEngineerMarker()]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("ok");
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.requestSource).toBe("openai_advisory");
+    expect(payload.redoPhase).toBe("se_directed_openai_gate");
+    expect(payload.redoAttempt).toBe(1);
+    expect(payload.maxRedoAttempts).toBe(2);
+    expect(payload.sourceHldSourceBundleArtifactId).toBe(BUNDLE_ID);
+  });
+
+  it("creates the second post-SE request as attempt 2/max 2 after one prior se-directed request", async () => {
+    wireArtifacts(makeModel(), makeBlockingAiReview());
+    listMock.mockResolvedValue([
+      makeBundleReview(),
+      makeEngineerMarker(),
+      makeSeDirectedOpenAiRequest(),
+    ]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("ok");
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.redoPhase).toBe("se_directed_openai_gate");
+    expect(payload.redoAttempt).toBe(2);
+    expect(payload.maxRedoAttempts).toBe(2);
+  });
+
+  it("returns redo_limit_exhausted se_directed max 2 attemptCount 2 after two se-directed requests", async () => {
+    wireArtifacts(makeModel(), makeBlockingAiReview());
+    listMock.mockResolvedValue([
+      makeBundleReview(),
+      makeEngineerMarker(),
+      makeSeDirectedOpenAiRequest({ id: "req-openai-se-1" }),
+      makeSeDirectedOpenAiRequest({ id: "req-openai-se-2" }),
+    ]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("redo_limit_exhausted");
+    if (result.status === "redo_limit_exhausted") {
+      expect(result.phase).toBe("se_directed_openai_gate");
+      expect(result.maxRedoAttempts).toBe(2);
+      expect(result.attemptCount).toBe(2);
+    }
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("does not count rejected or malformed se-directed requests against the post-SE budget", async () => {
+    wireArtifacts(makeModel(), makeBlockingAiReview());
+    listMock.mockResolvedValue([
+      makeBundleReview(),
+      makeEngineerMarker(),
+      makeSeDirectedOpenAiRequest({ id: "req-openai-se-rej", status: "rejected" }),
+      {
+        ...makeSeDirectedOpenAiRequest({ id: "req-openai-se-bad" }),
+        payload: {
+          requestSource: "openai_advisory",
+          redoPhase: "se_directed_openai_gate",
+          sourceHldSourceBundleArtifactId: BUNDLE_ID,
+        },
+      },
+    ]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("ok");
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.redoPhase).toBe("se_directed_openai_gate");
+    expect(payload.redoAttempt).toBe(1);
+  });
+
+  it("stays in the initial phase when the engineer marker ties to a different source bundle", async () => {
+    wireArtifacts(makeModel(), makeBlockingAiReview());
+    listMock.mockResolvedValue([
+      makeBundleReview("other-bundle"),
+      makeEngineerMarker(),
+    ]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("ok");
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.redoPhase).toBe("initial_openai_gate");
+    expect(payload.redoAttempt).toBe(1);
+    expect(payload.maxRedoAttempts).toBe(1);
+  });
+});
+
 describe("listRfpHldDesignModelRebuildRequests", () => {
   const LIST_INPUT = { tenantId: TENANT, projectId: PROJECT };
 

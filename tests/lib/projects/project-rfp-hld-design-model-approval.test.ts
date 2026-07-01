@@ -806,6 +806,148 @@ describe("reviewRfpHldDesignModelArtifact - initial OpenAI-forced redo budget", 
   });
 });
 
+/** A valid, non-rejected engineer (SE-directed) marker referencing the current review. */
+function makeEngineerMarker(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
+  return {
+    id: "eng-marker-1",
+    projectId: PROJECT,
+    stageId: "hld_design_delta_review",
+    type: "hld_design_model_rebuild_request",
+    status: "stale",
+    version: 1,
+    payload: {
+      payloadKind: RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND,
+      sourceArtifactIds: [MODEL_ID, REVIEW_ID],
+      sourceHldDesignModelArtifactId: MODEL_ID,
+      sourceReviewArtifactId: REVIEW_ID,
+      requestedBy: "se-engineer",
+      requestedAt: CREATED_AT,
+      reason: "SE directed a redraft to resolve the earlier findings.",
+      instructions: "Redraft from the same approved source artifacts only.",
+      status: "active",
+      requestSource: "engineer",
+    },
+    sourceFileIds: [],
+    sourceArtifactIds: [MODEL_ID, REVIEW_ID],
+    createdAt: CREATED_DATE,
+    updatedAt: CREATED_DATE,
+    ...overrides,
+  };
+}
+
+/** A se-directed OpenAI-forced request (attempt 1/max 2) for the current pair/bundle. */
+function makeSeDirectedRedoRequest(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
+  return makeOpenAiRedoRequest({
+    id: "rebuild-se-1",
+    status: "stale",
+    payload: {
+      ...(makeOpenAiRedoRequest().payload as Record<string, unknown>),
+      redoPhase: "se_directed_openai_gate",
+      redoAttempt: 1,
+      maxRedoAttempts: 2,
+    },
+    ...overrides,
+  });
+}
+
+describe("reviewRfpHldDesignModelArtifact - post-SE OpenAI-forced redo budget", () => {
+  it("blocks after an SE marker with zero consumed se-directed forced redos", async () => {
+    mockListProjectArtifacts.mockResolvedValue(blockingReviewSnapshot(makeEngineerMarker()));
+    const result = await review();
+    expect(result.status).toBe("blocking_hld_design_model_review_findings");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("blocks after an SE marker with one consumed se-directed forced redo", async () => {
+    mockListProjectArtifacts.mockResolvedValue(
+      blockingReviewSnapshot(makeEngineerMarker(), makeSeDirectedRedoRequest({ status: "stale" }))
+    );
+    const result = await review();
+    expect(result.status).toBe("blocking_hld_design_model_review_findings");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("blocks while a se-directed forced request is open for the exact model/review even at budget", async () => {
+    mockListProjectArtifacts.mockResolvedValue(
+      blockingReviewSnapshot(
+        makeEngineerMarker(),
+        makeSeDirectedRedoRequest({ id: "rebuild-se-open", status: "needs_review" }),
+        makeSeDirectedRedoRequest({ id: "rebuild-se-stale", status: "stale" })
+      )
+    );
+    const result = await review();
+    expect(result.status).toBe("blocking_hld_design_model_review_findings");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("allows approval after two consumed se-directed redos with no open exact-pair request", async () => {
+    mockListProjectArtifacts.mockResolvedValue(
+      blockingReviewSnapshot(
+        makeEngineerMarker(),
+        makeSeDirectedRedoRequest({ id: "rebuild-se-1", status: "stale" }),
+        makeSeDirectedRedoRequest({ id: "rebuild-se-2", status: "stale" })
+      )
+    );
+    const result = await review();
+    expect(result.status).toBe("ok");
+    expect(mockCreateApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores rejected and malformed se-directed forced rows for exhaustion", async () => {
+    mockListProjectArtifacts.mockResolvedValue(
+      blockingReviewSnapshot(
+        makeEngineerMarker(),
+        makeSeDirectedRedoRequest({ id: "rebuild-se-rej", status: "rejected" }),
+        makeSeDirectedRedoRequest({
+          id: "rebuild-se-bad",
+          status: "stale",
+          payload: {
+            requestSource: "openai_advisory",
+            redoPhase: "se_directed_openai_gate",
+            sourceHldSourceBundleArtifactId: BUNDLE_ID,
+          },
+        })
+      )
+    );
+    const result = await review();
+    expect(result.status).toBe("blocking_hld_design_model_review_findings");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("does not switch to the post-SE phase when the engineer marker ties to a different bundle", async () => {
+    // The engineer marker points at a review of a PRIOR model that ties to a different
+    // bundle, so the initial (one-redo) phase applies: two stale se-directed rows do
+    // not clear the initial budget without a matching post-SE engineer marker. The
+    // prior-model review is not a candidate review of the current model.
+    const otherBundleReview = validReviewArtifact({
+      id: "hrev-prior",
+      payload: validReviewPayload({
+        sourceArtifactIds: ["prev-model", "other-bundle"],
+        sourceHldDesignModelArtifactId: "prev-model",
+        sourceHldSourceBundleArtifactId: "other-bundle",
+      }) as unknown as Record<string, unknown>,
+      sourceArtifactIds: ["prev-model", "other-bundle"],
+    });
+    mockListProjectArtifacts.mockResolvedValue(
+      blockingReviewSnapshot(
+        otherBundleReview,
+        makeEngineerMarker({
+          payload: {
+            ...(makeEngineerMarker().payload as Record<string, unknown>),
+            sourceArtifactIds: [MODEL_ID, "hrev-prior"],
+            sourceReviewArtifactId: "hrev-prior",
+          },
+        }),
+        makeSeDirectedRedoRequest({ id: "rebuild-se-1", status: "stale" }),
+        makeSeDirectedRedoRequest({ id: "rebuild-se-2", status: "stale" })
+      )
+    );
+    const result = await review();
+    expect(result.status).toBe("blocking_hld_design_model_review_findings");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+});
+
 describe("reviewRfpHldDesignModelArtifact - result hygiene", () => {
   it("ok result returns lean summaries without leaking the payload body or tenantId", async () => {
     const payload = validDesignModelPayload();
