@@ -18,9 +18,11 @@
  * deterministic errors and NEVER echoes the raw provider output. It asserts no
  * design, pricing, SKU, catalog, configuration, or AI authority.
  *
- * The configured factory is a safe null seam: this stage makes NO live OpenAI env,
- * package, or model decision. It imports EXACTLY the drafting-input type and the
- * persisted questionnaire contract - never a provider SDK - and reads no env.
+ * The configured factory is the single environment-reading wiring seam: it reads
+ * ONLY the approved OpenAI env vars and wires the fetch-based Responses client into
+ * the OpenAI adapter factory when OPENAI_API_KEY is nonblank, else returns null. It
+ * imports no provider SDK and makes no network call while constructing; the
+ * drafting/validation core below still reads no env and makes no provider call.
  */
 import type { RfpHldIntakeQuestionnaireDraftingInput } from "@/lib/projects/project-rfp-hld-intake-questionnaire-drafting-input";
 import {
@@ -28,6 +30,8 @@ import {
   validateRfpHldIntakeQuestionnairePayload,
   type RfpHldIntakeQuestionnairePayload,
 } from "@/lib/projects/project-rfp-hld-intake-questionnaire";
+import { createOpenAiRfpHldIntakeQuestionnaireDraftingExecutor } from "@/lib/projects/project-rfp-hld-intake-questionnaire-drafting-openai";
+import { createOpenAiResponsesClient } from "@/lib/projects/project-rfp-openai-responses-client";
 
 /**
  * Everything the injected executor receives: exactly the transient drafting-input
@@ -74,9 +78,7 @@ function asObject(v: unknown): Record<string, unknown> | null {
 /**
  * Pull the single `questions` value out of the raw provider output. Fail-closed:
  * the output must be a plain object whose ONLY top-level key is `questions`; any
- * other shape (non-object, missing key, or extra keys such as answers, a raw
- * provider response, an AI-supplied validation, or a pricing/SKU/catalog/config
- * decision) is a deterministic rejection that never echoes the output body.
+ * other shape is a deterministic rejection that never echoes the output body.
  */
 function extractCandidateQuestions(
   raw: unknown
@@ -108,9 +110,8 @@ function extractCandidateQuestions(
  *   only; the raw provider output is never echoed.
  * - Otherwise -> `drafted` with the fully wrapped, validated questionnaire.
  *
- * This boundary alone stamps the embedded validation self-assessment. It performs
- * no pricing/SKU/catalog/configuration decision, no persistence, no DB/store/file
- * access, no raw source reread, no route/UI work, and no provider/network call.
+ * This boundary alone stamps the embedded validation self-assessment and performs
+ * no persistence, DB/store/file access, raw reread, route/UI, or provider call.
  */
 export async function draftRfpHldIntakeQuestionnaireCandidate(
   input: DraftRfpHldIntakeQuestionnaireCandidateInput
@@ -158,15 +159,44 @@ export async function draftRfpHldIntakeQuestionnaireCandidate(
   };
 }
 
+/** Default OpenAI model when no scoped override is configured. */
+const DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
+
+/** A scoped max-output override; positive integers only, else undefined. */
+function parsePositiveIntOverride(raw: string | undefined): number | undefined {
+  if (typeof raw !== "string" || raw.trim() === "") return undefined;
+  const n = Number(raw.trim());
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
 /**
- * The configured drafting executor for this stage: intentionally always null.
- *
- * Stage 6H-0D deliberately makes NO live OpenAI env, package, or model decision:
- * there is no provider wiring seam here yet. This function reads no environment,
- * constructs no adapter, and returns null so callers treat HLD intake-question
- * candidate drafting as unavailable until a later explicit env/package/config
- * decision wires a real executor in.
+ * The configured drafting executor, or null while OPENAI_API_KEY is missing or
+ * blank. Single env-reading wiring seam: reads ONLY OPENAI_API_KEY, the scoped
+ * model override, and the scoped max-output override. When the key is nonblank it
+ * constructs the fetch-based Responses client and wires it into the OpenAI adapter
+ * factory (model override applied only when nonblank/trimmed, max-output only when
+ * it parses to a positive integer, else the defaults stand). It never invokes the
+ * executor or makes a network call while constructing. Callers treat null as "HLD
+ * intake-question candidate drafting unavailable".
  */
-export function getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor(): null {
-  return null;
+export function getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor(): RfpHldIntakeQuestionnaireDraftingExecutor | null {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (typeof apiKey !== "string" || apiKey.trim() === "") return null;
+
+  const modelOverride =
+    process.env.BOMATIC_RFP_HLD_INTAKE_QUESTIONNAIRE_OPENAI_MODEL;
+  const model =
+    typeof modelOverride === "string" && modelOverride.trim() !== ""
+      ? modelOverride.trim()
+      : DEFAULT_OPENAI_MODEL;
+  const maxOutputTokens = parsePositiveIntOverride(
+    process.env.BOMATIC_RFP_HLD_INTAKE_QUESTIONNAIRE_OPENAI_MAX_OUTPUT_TOKENS
+  );
+
+  const client = createOpenAiResponsesClient({ apiKey: apiKey.trim() });
+  return createOpenAiRfpHldIntakeQuestionnaireDraftingExecutor({
+    model,
+    client,
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+  });
 }

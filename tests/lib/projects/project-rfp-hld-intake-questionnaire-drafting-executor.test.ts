@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 
 import {
   draftRfpHldIntakeQuestionnaireCandidate,
@@ -221,8 +221,129 @@ describe("draftRfpHldIntakeQuestionnaireCandidate - executor failure", () => {
 });
 
 describe("getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor", () => {
-  it("returns null (this stage makes no live OpenAI decision)", () => {
+  const API_KEY_ENV = "OPENAI_API_KEY";
+  const MODEL_ENV = "BOMATIC_RFP_HLD_INTAKE_QUESTIONNAIRE_OPENAI_MODEL";
+  const MAX_ENV = "BOMATIC_RFP_HLD_INTAKE_QUESTIONNAIRE_OPENAI_MAX_OUTPUT_TOKENS";
+  const TOUCHED = [API_KEY_ENV, MODEL_ENV, MAX_ENV];
+  let saved: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    saved = {};
+    for (const key of TOUCHED) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    for (const key of TOUCHED) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  // Stub the global fetch so the wired executor can be exercised offline. The
+  // captured request body proves which model/max-output the factory wired in.
+  function stubFetch(): { calls: Array<{ url: string; body: string }> } {
+    const calls: Array<{ url: string; body: string }> = [];
+    const fake = vi.fn(async (url: string, init: { body: string }) => {
+      calls.push({ url, body: init.body });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ output_text: '{"questions":[]}' }),
+      };
+    });
+    vi.stubGlobal("fetch", fake);
+    return { calls };
+  }
+
+  it("returns null when OPENAI_API_KEY is missing", () => {
     expect(getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor()).toBeNull();
+  });
+
+  it("returns null when OPENAI_API_KEY is blank", () => {
+    process.env[API_KEY_ENV] = "   ";
+    expect(getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor()).toBeNull();
+  });
+
+  it("returns a function without making a network call while constructing", () => {
+    process.env[API_KEY_ENV] = "sk-live-key";
+    const fetchSpy = vi.fn(() => {
+      throw new Error("network must not be reached during construction");
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    const executor = getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor();
+    expect(typeof executor).toBe("function");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not mutate env", () => {
+    process.env[API_KEY_ENV] = "sk-live-key";
+    process.env[MODEL_ENV] = "  custom-model  ";
+    const before = JSON.stringify({
+      a: process.env[API_KEY_ENV],
+      m: process.env[MODEL_ENV],
+      x: process.env[MAX_ENV],
+    });
+    getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor();
+    const after = JSON.stringify({
+      a: process.env[API_KEY_ENV],
+      m: process.env[MODEL_ENV],
+      x: process.env[MAX_ENV],
+    });
+    expect(after).toBe(before);
+  });
+
+  it("trims and uses the scoped model override", async () => {
+    process.env[API_KEY_ENV] = "sk-live-key";
+    process.env[MODEL_ENV] = "  custom-intake-model  ";
+    const { calls } = stubFetch();
+    const executor = getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor();
+    if (executor === null) throw new Error("expected an executor");
+    await executor({ draftingInput: makeInput() });
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0].body).model).toBe("custom-intake-model");
+  });
+
+  it("uses the default intake model when the scoped override is absent or blank", async () => {
+    process.env[API_KEY_ENV] = "sk-live-key";
+
+    const absent = stubFetch();
+    const absentExecutor = getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor();
+    if (absentExecutor === null) throw new Error("expected an executor");
+    await absentExecutor({ draftingInput: makeInput() });
+    expect(JSON.parse(absent.calls[0].body).model).toBe("gpt-5.4-mini");
+
+    vi.unstubAllGlobals();
+    process.env[MODEL_ENV] = "   ";
+    const blank = stubFetch();
+    const blankExecutor = getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor();
+    if (blankExecutor === null) throw new Error("expected an executor");
+    await blankExecutor({ draftingInput: makeInput() });
+    expect(JSON.parse(blank.calls[0].body).model).toBe("gpt-5.4-mini");
+  });
+
+  it("applies the max-output override only for a positive integer", async () => {
+    process.env[API_KEY_ENV] = "sk-live-key";
+
+    process.env[MAX_ENV] = "2048";
+    const positive = stubFetch();
+    const okExecutor = getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor();
+    if (okExecutor === null) throw new Error("expected an executor");
+    await okExecutor({ draftingInput: makeInput() });
+    expect(JSON.parse(positive.calls[0].body).max_output_tokens).toBe(2048);
+
+    for (const bad of ["-5", "0", "1.5", "abc", "  "]) {
+      vi.unstubAllGlobals();
+      process.env[MAX_ENV] = bad;
+      const rejected = stubFetch();
+      const executor = getConfiguredRfpHldIntakeQuestionnaireDraftingExecutor();
+      if (executor === null) throw new Error("expected an executor");
+      await executor({ draftingInput: makeInput() });
+      expect("max_output_tokens" in JSON.parse(rejected.calls[0].body)).toBe(false);
+    }
   });
 });
 
@@ -237,27 +358,34 @@ describe("HLD intake-question drafting executor boundary purity (static source c
   );
   const source = readFileSync(SOURCE_PATH, "utf8");
 
-  it("imports exactly the drafting-input type and the persisted questionnaire contract", () => {
-    const importLines = source
-      .split("\n")
-      .filter((line) => /^\s*import\b/.test(line));
-    expect(importLines).toHaveLength(2);
-    expect(importLines[0]).toMatch(/^import type \{/);
-    expect(importLines[1]).toMatch(/^import \{/);
+  it("imports exactly the drafting-input type, the questionnaire contract, and the OpenAI wiring", () => {
     const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
     expect(froms).toEqual([
       "@/lib/projects/project-rfp-hld-intake-questionnaire-drafting-input",
       "@/lib/projects/project-rfp-hld-intake-questionnaire",
+      "@/lib/projects/project-rfp-hld-intake-questionnaire-drafting-openai",
+      "@/lib/projects/project-rfp-openai-responses-client",
     ]);
   });
 
-  it("imports no provider SDK, store, raw-document, route, or UI module and reads no env", () => {
+  it("reads only the approved OpenAI env vars", () => {
+    const envRefs = Array.from(
+      source.matchAll(/process\.env\.([A-Z0-9_]+)/g),
+      (m) => m[1]
+    );
+    expect(envRefs.sort()).toEqual([
+      "BOMATIC_RFP_HLD_INTAKE_QUESTIONNAIRE_OPENAI_MAX_OUTPUT_TOKENS",
+      "BOMATIC_RFP_HLD_INTAKE_QUESTIONNAIRE_OPENAI_MODEL",
+      "OPENAI_API_KEY",
+    ]);
+  });
+
+  it("imports no provider SDK, store, raw-document, route, or UI module and calls no fetch directly", () => {
     for (const forbidden of [
       "@anthropic-ai",
       "@google/generative-ai",
       'from "openai',
       "langchain",
-      "process.env",
       "fetch(",
       "require(",
       'from "@/lib/ai',

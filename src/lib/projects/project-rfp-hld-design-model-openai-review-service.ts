@@ -21,11 +21,13 @@
  * serializable summaries are returned - never the model body, the review body, or
  * the tenant id.
  *
- * The configured factory is a safe null seam: this stage makes NO live OpenAI env,
- * package, or model decision. It reads only Project state through the
- * project/artifact stores, constructs NO provider adapter, imports NO provider SDK,
- * reads NO raw RFP/PDF/DOCX/XLSX file, and makes NO pricing/SKU/catalog/config
- * decision. It adds no route, UI, approval-gate, or final-output behavior.
+ * The configured factory is the single environment-reading wiring seam. It reads
+ * ONLY the approved OpenAI env vars, constructs the minimal fetch-based Responses
+ * client, and wires it into the OpenAI review adapter factory when OPENAI_API_KEY
+ * is nonblank; otherwise it returns null. It imports NO provider SDK, reads NO raw
+ * RFP/PDF/DOCX/XLSX file, makes NO network call while constructing, and makes NO
+ * pricing/SKU/catalog/config decision. It adds no route, UI, approval-gate, or
+ * final-output behavior. The review core above still reads no env.
  */
 import { getProjectById } from "@/lib/db/project-store";
 import {
@@ -54,6 +56,8 @@ import {
   reviewRfpHldDesignModelOpenAiCandidate,
   type RfpHldDesignModelOpenAiReviewExecutor,
 } from "@/lib/projects/project-rfp-hld-design-model-openai-review-executor";
+import { createOpenAiRfpHldDesignModelReviewExecutor } from "@/lib/projects/project-rfp-hld-design-model-openai-review-openai";
+import { createOpenAiResponsesClient } from "@/lib/projects/project-rfp-openai-responses-client";
 import type {
   Project,
   ProjectArtifact,
@@ -385,16 +389,46 @@ export async function createRfpHldDesignModelOpenAiReview(
   };
 }
 
+/** Default OpenAI model when no scoped override is configured. */
+const DEFAULT_OPENAI_MODEL = "gpt-5.5";
+
+/** Parse a scoped max-output override; positive integers only, else undefined. */
+function parsePositiveIntOverride(raw: string | undefined): number | undefined {
+  if (typeof raw !== "string" || raw.trim() === "") return undefined;
+  const parsed = Number(raw.trim());
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 /**
- * The configured OpenAI advisory review executor for this stage: intentionally
- * always null.
- *
- * Stage 6H-0H-A deliberately makes NO live OpenAI env, package, or model decision:
- * there is no provider wiring seam here yet. This function reads no environment,
- * constructs no adapter, and returns null so callers treat OpenAI advisory HLD
- * quality review as unavailable until a later explicit env/package/config decision
- * wires a real executor in.
+ * The configured OpenAI advisory review executor, or null while OPENAI_API_KEY is
+ * missing or blank. This is the single environment-reading wiring seam: it reads
+ * ONLY OPENAI_API_KEY, BOMATIC_RFP_HLD_DESIGN_MODEL_REVIEW_OPENAI_MODEL, and
+ * BOMATIC_RFP_HLD_DESIGN_MODEL_REVIEW_OPENAI_MAX_OUTPUT_TOKENS. When the key is
+ * nonblank it constructs the minimal fetch-based Responses client and wires it
+ * into the OpenAI review adapter factory; the model override is applied only when
+ * nonblank (trimmed) and the max-output override only when it parses to a positive
+ * integer, otherwise the defaults stand. It never invokes the executor, makes no
+ * network call while constructing, and does no store/file/route/UI work. Callers
+ * must treat null as "OpenAI advisory HLD quality review unavailable".
  */
-export function getConfiguredRfpHldDesignModelOpenAiReviewExecutor(): null {
-  return null;
+export function getConfiguredRfpHldDesignModelOpenAiReviewExecutor(): RfpHldDesignModelOpenAiReviewExecutor | null {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (typeof apiKey !== "string" || apiKey.trim() === "") return null;
+
+  const modelOverride =
+    process.env.BOMATIC_RFP_HLD_DESIGN_MODEL_REVIEW_OPENAI_MODEL;
+  const model =
+    typeof modelOverride === "string" && modelOverride.trim() !== ""
+      ? modelOverride.trim()
+      : DEFAULT_OPENAI_MODEL;
+  const maxOutputTokens = parsePositiveIntOverride(
+    process.env.BOMATIC_RFP_HLD_DESIGN_MODEL_REVIEW_OPENAI_MAX_OUTPUT_TOKENS
+  );
+
+  const client = createOpenAiResponsesClient({ apiKey: apiKey.trim() });
+  return createOpenAiRfpHldDesignModelReviewExecutor({
+    model,
+    client,
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+  });
 }

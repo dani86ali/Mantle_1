@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { afterEach, describe, it, expect, beforeEach, vi } from "vitest";
 import type { Project, ProjectArtifact, ProjectArtifactStatus } from "@/types/project";
 
 // Mock the store boundaries only. The Stage 6C contract validator, the pure
@@ -410,9 +410,137 @@ describe("createRfpHldDesignModelOpenAiReview - success", () => {
   });
 });
 
-describe("createRfpHldDesignModelOpenAiReview - configured factory", () => {
-  it("returns null so the review stays unavailable until wired", () => {
+describe("getConfiguredRfpHldDesignModelOpenAiReviewExecutor", () => {
+  const API_KEY_ENV = "OPENAI_API_KEY";
+  const MODEL_ENV = "BOMATIC_RFP_HLD_DESIGN_MODEL_REVIEW_OPENAI_MODEL";
+  const MAX_ENV = "BOMATIC_RFP_HLD_DESIGN_MODEL_REVIEW_OPENAI_MAX_OUTPUT_TOKENS";
+  const TOUCHED = [API_KEY_ENV, MODEL_ENV, MAX_ENV];
+  let saved: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    saved = {};
+    for (const key of TOUCHED) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    for (const key of TOUCHED) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  function reviewExecutorInput() {
+    return {
+      reviewInput: {
+        model: { id: MODEL_ID, version: 1, payload: validDesignModelPayload() },
+        sourceBundle: { id: BUNDLE_ID, version: 1, payload: validBundlePayload() },
+        reviewedBy: REVIEWER,
+        reviewedAt: REVIEWED_AT.toISOString(),
+      },
+    };
+  }
+
+  // Stub the global fetch so the wired executor can be exercised offline.
+  function stubFetch(): { calls: Array<{ url: string; body: string }> } {
+    const calls: Array<{ url: string; body: string }> = [];
+    const fake = vi.fn(async (url: string, init: { body: string }) => {
+      calls.push({ url, body: init.body });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ output_text: '{"findings":[]}' }),
+      };
+    });
+    vi.stubGlobal("fetch", fake);
+    return { calls };
+  }
+
+  it("returns null when OPENAI_API_KEY is missing or blank", () => {
     expect(getConfiguredRfpHldDesignModelOpenAiReviewExecutor()).toBeNull();
+    process.env[API_KEY_ENV] = "   ";
+    expect(getConfiguredRfpHldDesignModelOpenAiReviewExecutor()).toBeNull();
+  });
+
+  it("returns a function without making a network call while constructing", () => {
+    process.env[API_KEY_ENV] = "sk-live-key";
+    const fetchSpy = vi.fn(() => {
+      throw new Error("network must not be reached during construction");
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    const executor = getConfiguredRfpHldDesignModelOpenAiReviewExecutor();
+    expect(typeof executor).toBe("function");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not mutate env", () => {
+    process.env[API_KEY_ENV] = "sk-live-key";
+    process.env[MODEL_ENV] = "  custom-model  ";
+    const before = JSON.stringify({
+      a: process.env[API_KEY_ENV],
+      m: process.env[MODEL_ENV],
+      x: process.env[MAX_ENV],
+    });
+    getConfiguredRfpHldDesignModelOpenAiReviewExecutor();
+    const after = JSON.stringify({
+      a: process.env[API_KEY_ENV],
+      m: process.env[MODEL_ENV],
+      x: process.env[MAX_ENV],
+    });
+    expect(after).toBe(before);
+  });
+
+  it("trims and uses the scoped model override", async () => {
+    process.env[API_KEY_ENV] = "sk-live-key";
+    process.env[MODEL_ENV] = "  custom-review-model  ";
+    const { calls } = stubFetch();
+    const executor = getConfiguredRfpHldDesignModelOpenAiReviewExecutor();
+    if (executor === null) throw new Error("expected an executor");
+    await executor(reviewExecutorInput());
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0].body).model).toBe("custom-review-model");
+  });
+
+  it("uses the default review model when the scoped override is absent or blank", async () => {
+    process.env[API_KEY_ENV] = "sk-live-key";
+
+    const absent = stubFetch();
+    const absentExecutor = getConfiguredRfpHldDesignModelOpenAiReviewExecutor();
+    if (absentExecutor === null) throw new Error("expected an executor");
+    await absentExecutor(reviewExecutorInput());
+    expect(JSON.parse(absent.calls[0].body).model).toBe("gpt-5.5");
+
+    vi.unstubAllGlobals();
+    process.env[MODEL_ENV] = "   ";
+    const blank = stubFetch();
+    const blankExecutor = getConfiguredRfpHldDesignModelOpenAiReviewExecutor();
+    if (blankExecutor === null) throw new Error("expected an executor");
+    await blankExecutor(reviewExecutorInput());
+    expect(JSON.parse(blank.calls[0].body).model).toBe("gpt-5.5");
+  });
+
+  it("applies the max-output override only for a positive integer", async () => {
+    process.env[API_KEY_ENV] = "sk-live-key";
+
+    process.env[MAX_ENV] = "512";
+    const positive = stubFetch();
+    const okExecutor = getConfiguredRfpHldDesignModelOpenAiReviewExecutor();
+    if (okExecutor === null) throw new Error("expected an executor");
+    await okExecutor(reviewExecutorInput());
+    expect(JSON.parse(positive.calls[0].body).max_output_tokens).toBe(512);
+
+    for (const bad of ["-5", "0", "2.5", "xyz", "  "]) {
+      vi.unstubAllGlobals();
+      process.env[MAX_ENV] = bad;
+      const rejected = stubFetch();
+      const executor = getConfiguredRfpHldDesignModelOpenAiReviewExecutor();
+      if (executor === null) throw new Error("expected an executor");
+      await executor(reviewExecutorInput());
+      expect("max_output_tokens" in JSON.parse(rejected.calls[0].body)).toBe(false);
+    }
   });
 });
 
@@ -423,18 +551,29 @@ describe("module purity (static source check)", () => {
   );
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports no provider SDK, fs/path, raw reader, or env", () => {
+  it("imports no provider SDK, fs/path, or raw reader", () => {
     for (const forbidden of [
       'from "openai"',
       "@anthropic-ai",
       "node:fs",
       "node:path",
-      "process.env",
       "project-file-store",
       "project-evidence-store",
     ]) {
       expect(source, `forbidden: ${forbidden}`).not.toContain(forbidden);
     }
+  });
+
+  it("reads only the approved OpenAI env vars", () => {
+    const envRefs = Array.from(
+      source.matchAll(/process\.env\.([A-Z0-9_]+)/g),
+      (m) => m[1]
+    );
+    expect(envRefs.sort()).toEqual([
+      "BOMATIC_RFP_HLD_DESIGN_MODEL_REVIEW_OPENAI_MAX_OUTPUT_TOKENS",
+      "BOMATIC_RFP_HLD_DESIGN_MODEL_REVIEW_OPENAI_MODEL",
+      "OPENAI_API_KEY",
+    ]);
   });
 
   it("keeps the source and test ASCII-only", () => {
