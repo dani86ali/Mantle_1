@@ -48,6 +48,10 @@ import {
   type RfpHldSourceBundlePayload,
   type RfpHldSourceBundleStatementEntry,
 } from "@/lib/projects/project-rfp-hld-source-bundle";
+import {
+  selectRfpHldApprovedDesignKnowledgeContent,
+  type RfpHldApprovedDesignKnowledgeContent,
+} from "@/lib/projects/project-rfp-hld-design-knowledge-content";
 import type {
   Project,
   ProjectArtifact,
@@ -290,6 +294,28 @@ export function buildRfpHldSourceBundleDraft(
     (d) => !claimed.has(d.domain)
   ).map((d) => d.domain);
 
+  // Compact approved design-knowledge content per covered domain, proven back to
+  // its approved design_knowledge_pack. Fail closed (never silently drop content)
+  // if a referenced approved pack cannot produce valid compact content.
+  const designKnowledgePackContents: RfpHldApprovedDesignKnowledgeContent[] = [];
+  for (const pack of domain.knowledgePackSummaries) {
+    const packArtifact = byId(artifacts, projectId, pack.artifactId);
+    if (packArtifact === undefined) {
+      return {
+        status: "invalid_payload",
+        errors: [`Approved design knowledge pack ${pack.artifactId} could not be resolved for content selection.`],
+      };
+    }
+    const selected = selectRfpHldApprovedDesignKnowledgeContent(packArtifact);
+    if (selected.status !== "ok") {
+      return {
+        status: "invalid_payload",
+        errors: selected.errors.map((e) => `design knowledge pack ${pack.artifactId}: ${e}`),
+      };
+    }
+    designKnowledgePackContents.push(selected.content);
+  }
+
   // 6. Resolve the remaining required authority artifacts.
   const evidence = byId(artifacts, projectId, readiness.sourceEvidencePackageArtifactId);
   const requirements = byId(artifacts, projectId, readiness.sourceRequirementsBaselineArtifactId);
@@ -350,6 +376,7 @@ export function buildRfpHldSourceBundleDraft(
       ),
     },
     designKnowledgePackRefs,
+    designKnowledgePackContents,
     coveredDomains,
     missingDomains: [],
     excludedDomains,

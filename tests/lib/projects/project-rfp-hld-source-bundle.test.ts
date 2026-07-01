@@ -8,6 +8,7 @@ import {
   isValidRfpHldSourceBundlePayload,
   type RfpHldSourceBundlePayload,
 } from "@/lib/projects/project-rfp-hld-source-bundle";
+import { RFP_HLD_APPROVED_DESIGN_KNOWLEDGE_CONTENT_KIND } from "@/lib/projects/project-rfp-hld-design-knowledge-content";
 
 const CREATED_AT = "2026-06-23T00:00:00.000Z";
 
@@ -250,6 +251,103 @@ describe("validateRfpHldSourceBundlePayload - knowledge packs & domains", () => 
   });
 });
 
+/** A valid approved-DKP content block bijective with the campus pack ref. */
+function contentBlock(): Record<string, unknown> {
+  return {
+    contentKind: RFP_HLD_APPROVED_DESIGN_KNOWLEDGE_CONTENT_KIND,
+    artifactId: "dkp-1",
+    artifactType: "design_knowledge_pack",
+    stageId: "hld_design_delta_review",
+    status: "approved",
+    version: 1,
+    payloadKind: "rfp_hld_design_knowledge_pack",
+    domain: "campus_switching",
+    title: "Campus switching pack",
+    source: "manual_operator_entry",
+    designPrinciples: ["Collapsed core for the campus."],
+    topologyGuidance: [],
+    constraints: [],
+    assumptions: [],
+    exclusions: [],
+    validationNotes: [],
+    entryCount: 1,
+    sectionCounts: {
+      designPrinciples: 1, topologyGuidance: 0, constraints: 0,
+      assumptions: 0, exclusions: 0, validationNotes: 0,
+    },
+  };
+}
+
+/** validPayload() plus a matching approved-DKP content array. */
+function withContent(): Record<string, unknown> {
+  const p = mutable();
+  p.designKnowledgePackContents = [contentBlock()];
+  return p;
+}
+
+describe("validateRfpHldSourceBundlePayload - approved DKP content", () => {
+  it("accepts a bundle with valid content bijective with its pack refs", () => {
+    const result = validateRfpHldSourceBundlePayload(withContent());
+    expect(result.errors).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  it("accepts a historical bundle that omits the content field entirely", () => {
+    const p = mutable();
+    expect("designKnowledgePackContents" in p).toBe(false);
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(true);
+  });
+
+  it("rejects a non-array content field", () => {
+    const p = mutable();
+    p.designKnowledgePackContents = { dkp: "1" };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects content whose version does not match its reference", () => {
+    const p = withContent();
+    (p.designKnowledgePackContents as Record<string, unknown>[])[0].version = 2;
+    (p.designKnowledgePackContents as Record<string, unknown>[])[0].sectionCounts = {
+      designPrinciples: 1, topologyGuidance: 0, constraints: 0,
+      assumptions: 0, exclusions: 0, validationNotes: 0,
+    };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects content whose domain does not match its reference", () => {
+    const p = withContent();
+    (p.designKnowledgePackContents as Record<string, unknown>[])[0].domain = "wireless";
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects duplicate content blocks for the same pack", () => {
+    const p = withContent();
+    (p.designKnowledgePackContents as Record<string, unknown>[]).push(contentBlock());
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects a content block with no matching pack reference", () => {
+    const p = withContent();
+    const extra = contentBlock();
+    extra.artifactId = "dkp-ghost";
+    extra.domain = "wireless";
+    (p.designKnowledgePackContents as Record<string, unknown>[]).push(extra);
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects a pack reference that has no content block (empty content)", () => {
+    const p = mutable();
+    p.designKnowledgePackContents = [];
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects a malformed content object (smuggled extra key)", () => {
+    const p = withContent();
+    (p.designKnowledgePackContents as Record<string, unknown>[])[0].evil = "leak";
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+});
+
 describe("validateRfpHldSourceBundlePayload - source ids & lineage", () => {
   it("rejects duplicate referenced artifact ids across authorities", () => {
     const p = mutable();
@@ -345,10 +443,14 @@ describe("project-rfp-hld-source-bundle module purity", () => {
     .split("\n")
     .filter((l) => /^\s*import\b/.test(l) || /from\s+["']/.test(l));
 
-  it("imports only canonical project types and the HLD design-domain contract", () => {
+  it("imports only canonical project types and the HLD design-domain/content contracts", () => {
     const froms = Array.from(source.matchAll(/from\s+["']([^"']+)["']/g)).map((m) => m[1]);
     expect(froms.sort()).toEqual(
-      ["@/lib/projects/project-rfp-hld-domain-readiness", "@/types/project"].sort()
+      [
+        "@/lib/projects/project-rfp-hld-design-knowledge-content",
+        "@/lib/projects/project-rfp-hld-domain-readiness",
+        "@/types/project",
+      ].sort()
     );
   });
 

@@ -129,8 +129,15 @@ function normalArtifacts(): ProjectArtifact[] {
     mk("dkp-1", "design_knowledge_pack", "approved", {
       payload: {
         payloadKind: "rfp_hld_design_knowledge_pack",
+        source: "manual_operator_entry",
         domain: "campus_switching",
         title: "Campus switching pack",
+        designPrinciples: ["  Collapsed core for the campus.  ", ""],
+        topologyGuidance: ["Dual uplinks per access switch."],
+        constraints: [],
+        assumptions: [],
+        exclusions: [],
+        validationNotes: [],
       },
     }),
     mk("hrs-1", "hld_readiness_snapshot", "approved", {
@@ -275,6 +282,25 @@ describe("buildRfpHldSourceBundleDraft - happy path (normal configuration_expans
       { id: "assumption-resiliency_expectations", statement: "awaiting customer", sourceArtifactId: "hint-1" },
     ]);
     expect(payload.blockers).toEqual([]);
+
+    // Compact approved DKP content, source-proven and bijective with the ref.
+    const contents = payload.designKnowledgePackContents ?? [];
+    expect(contents).toHaveLength(1);
+    expect(contents[0]).toMatchObject({
+      contentKind: "rfp_hld_approved_design_knowledge_content",
+      artifactId: "dkp-1",
+      artifactType: "design_knowledge_pack",
+      stageId: "hld_design_delta_review",
+      status: "approved",
+      version: 1,
+      payloadKind: "rfp_hld_design_knowledge_pack",
+      domain: "campus_switching",
+      source: "manual_operator_entry",
+      entryCount: 2,
+    });
+    // Trimmed and blank-dropped by the pure content selector.
+    expect(contents[0].designPrinciples).toEqual(["Collapsed core for the campus."]);
+    expect(contents[0].topologyGuidance).toEqual(["Dual uplinks per access switch."]);
   });
 });
 
@@ -289,6 +315,7 @@ describe("buildRfpHldSourceBundleDraft - happy path (no-BoQ service-only excepti
     expect(validateRfpHldSourceBundlePayload(payload).errors).toEqual([]);
     expect(payload.coveredDomains).toEqual([]);
     expect(payload.designKnowledgePackRefs).toEqual([]);
+    expect(payload.designKnowledgePackContents).toEqual([]);
     expect(payload.authorities.configurationAuthority.sourceKind).toBe("no_boq_service_only_exception");
     expect(payload.authorities.configurationAuthority.payloadKind).toBe(
       "rfp_no_boq_service_only_exception"
@@ -395,6 +422,28 @@ describe("buildRfpHldSourceBundleDraft - domain knowledge", () => {
     if (result.status !== "blocked") throw new Error("unreachable");
     // readiness fails closed first on the missing pack.
     expect(["hld_readiness_not_ready", "missing_domain_knowledge_pack"]).toContain(result.code);
+  });
+});
+
+describe("buildRfpHldSourceBundleDraft - approved DKP content selection", () => {
+  it("fails invalid_payload (never silently drops) when a covered pack has no content", () => {
+    const artifacts = normalArtifacts().map((a) =>
+      a.type === "design_knowledge_pack"
+        ? {
+            ...a,
+            payload: {
+              payloadKind: "rfp_hld_design_knowledge_pack",
+              source: "manual_operator_entry",
+              domain: "campus_switching",
+              title: "Campus switching pack",
+            },
+          }
+        : a
+    );
+    const result = buildRfpHldSourceBundleDraft(pureInput(artifacts, [boqFile()]));
+    expect(result.status).toBe("invalid_payload");
+    if (result.status !== "invalid_payload") throw new Error("unreachable");
+    expect(result.errors.some((e) => e.includes("dkp-1") && e.includes("empty content"))).toBe(true);
   });
 });
 

@@ -25,6 +25,7 @@ import {
   type RfpHldSourceBundleDesignKnowledgePackReference,
   type RfpHldSourceBundleStatementEntry,
   type RfpHldSourceBundleFinding,
+  type RfpHldApprovedDesignKnowledgeContent,
 } from "@/lib/projects/project-rfp-hld-source-bundle";
 import { RFP_HLD_DESIGN_MODEL_PAYLOAD_KIND } from "@/lib/projects/project-rfp-hld-design-model";
 // Type-only (erased at runtime): the base bundle exposes an optional rebuild
@@ -92,6 +93,12 @@ export interface RfpHldDesignModelCandidateInputBundle {
   /** Approved authority references, copied from the source-bundle contract. */
   authorities: RfpHldSourceBundleAuthorities;
   designKnowledgePackRefs: RfpHldSourceBundleDesignKnowledgePackReference[];
+  /**
+   * Compact approved design-knowledge content copied from the source bundle, one
+   * block per covered domain. Optional for backward compatibility with historical
+   * source bundles (then an empty array); freshly assembled bundles carry content.
+   */
+  designKnowledgePackContents?: RfpHldApprovedDesignKnowledgeContent[];
   assumptions: RfpHldSourceBundleStatementEntry[];
   constraints: RfpHldSourceBundleStatementEntry[];
   warnings: RfpHldSourceBundleFinding[];
@@ -218,6 +225,8 @@ export function buildRfpHldDesignModelCandidateInput(
     excludedDomains: cloneJson(payload.excludedDomains),
     authorities: cloneJson(payload.authorities),
     designKnowledgePackRefs: cloneJson(payload.designKnowledgePackRefs),
+    // Fresh copy of approved DKP content; empty array for historical bundles.
+    designKnowledgePackContents: cloneJson(payload.designKnowledgePackContents ?? []),
     assumptions: cloneJson(payload.assumptions),
     constraints: cloneJson(payload.constraints),
     warnings: cloneJson(payload.warnings),

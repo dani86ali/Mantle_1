@@ -12,15 +12,27 @@
  * topology/scope/design authority and asserts no Cisco/CVD/AI certification.
  *
  * Contract-only: no assembler, no store, no fs/path, no route, no React, no AI,
- * no catalog/pricing/config service. It imports EXACTLY canonical project types
- * and the existing HLD design-domain definitions/types/constants - nothing else.
+ * no catalog/pricing/config service. It imports canonical project types plus the
+ * pure HLD design-domain/content contracts - nothing else.
  */
 import {
   RFP_HLD_DESIGN_DOMAIN_DEFINITIONS,
   RFP_HLD_DESIGN_KNOWLEDGE_PACK_PAYLOAD_KIND,
   type RfpHldDesignDomain,
 } from "@/lib/projects/project-rfp-hld-domain-readiness";
+import {
+  validateRfpHldApprovedDesignKnowledgeContentObject,
+  type RfpHldApprovedDesignKnowledgeContent,
+  type RfpHldApprovedDesignKnowledgeContentIdentity,
+} from "@/lib/projects/project-rfp-hld-design-knowledge-content";
 import type { ProjectArtifactType, ProjectStageId } from "@/types/project";
+
+/**
+ * Re-export the approved design-knowledge content shape so downstream HLD
+ * candidate-input / prompt contracts consume it from this bundle contract without
+ * importing the pure content helper directly.
+ */
+export type { RfpHldApprovedDesignKnowledgeContent };
 
 /** Stable discriminator for the persisted `hld_source_bundle` payload. */
 export const RFP_HLD_SOURCE_BUNDLE_PAYLOAD_KIND = "rfp_hld_source_bundle" as const;
@@ -120,6 +132,14 @@ export interface RfpHldSourceBundlePayload {
   lineage: RfpHldSourceBundleLineage;
   authorities: RfpHldSourceBundleAuthorities;
   designKnowledgePackRefs: RfpHldSourceBundleDesignKnowledgePackReference[];
+  /**
+   * Optional compact approved design-knowledge content, one block per covered
+   * design domain, each carrying source-chain proof back to an approved
+   * design_knowledge_pack. Optional for backward compatibility with historical
+   * bundles; when present it is fully validated and bijective with
+   * designKnowledgePackRefs. Newly assembled bundles always include it.
+   */
+  designKnowledgePackContents?: RfpHldApprovedDesignKnowledgeContent[];
   coveredDomains: RfpHldDesignDomain[];
   missingDomains: RfpHldDesignDomain[];
   excludedDomains: RfpHldDesignDomain[];
@@ -250,9 +270,9 @@ const PACK_REQUIRED: readonly string[] = [...REF_REQUIRED, "payloadKind", "domai
 
 function validatePackRef(
   errors: string[], label: string, raw: unknown
-): { id: string | null; domain: string | null } {
+): { id: string | null; domain: string | null; version: number | null } {
   const o = asObject(raw);
-  if (!o) { errors.push(`${label}: must be an object`); return { id: null, domain: null }; }
+  if (!o) { errors.push(`${label}: must be an object`); return { id: null, domain: null, version: null }; }
   checkKeys(errors, label, o, PACK_REQUIRED);
   if (!isNonBlank(o.artifactId)) errors.push(`${label}: blank artifactId`);
   if (o.artifactType !== "design_knowledge_pack") errors.push(`${label}: wrong artifactType`);
@@ -265,7 +285,62 @@ function validatePackRef(
   return {
     id: isNonBlank(o.artifactId) ? o.artifactId : null,
     domain: domainOk ? (o.domain as string) : null,
+    version: isVersion(o.version) ? o.version : null,
   };
+}
+
+/**
+ * Validate the optional `designKnowledgePackContents`: each block is a closed,
+ * source-proven content shape (via the pure content helper), blocks are unique by
+ * artifact id, and the set bijects with the knowledge-pack references on artifact
+ * id, version, payload kind, and domain. Fail-closed; never drops content silently.
+ */
+function validateDesignKnowledgePackContents(
+  errors: string[],
+  raw: unknown,
+  refIdentities: readonly RfpHldApprovedDesignKnowledgeContentIdentity[]
+): void {
+  if (!Array.isArray(raw)) {
+    errors.push("designKnowledgePackContents: must be an array");
+    return;
+  }
+  const identities: (RfpHldApprovedDesignKnowledgeContentIdentity | null)[] = [];
+  const seen = new Set<string>();
+  raw.forEach((item, i) => {
+    const { errors: itemErrors, identity } = validateRfpHldApprovedDesignKnowledgeContentObject(
+      `designKnowledgePackContents[${i}]`,
+      item
+    );
+    for (const e of itemErrors) errors.push(e);
+    identities.push(identity);
+    if (identity !== null) {
+      if (seen.has(identity.artifactId)) {
+        errors.push(`designKnowledgePackContents[${i}]: duplicate content block`);
+      }
+      seen.add(identity.artifactId);
+    }
+  });
+
+  const refById = new Map<string, RfpHldApprovedDesignKnowledgeContentIdentity>();
+  for (const ref of refIdentities) refById.set(ref.artifactId, ref);
+  const matched = new Set<string>();
+  for (const identity of identities) {
+    if (identity === null) continue;
+    const ref = refById.get(identity.artifactId);
+    if (ref === undefined) {
+      errors.push(`designKnowledgePackContents: content ${identity.artifactId} has no matching knowledge pack reference`);
+      continue;
+    }
+    if (ref.version !== identity.version || ref.payloadKind !== identity.payloadKind || ref.domain !== identity.domain) {
+      errors.push(`designKnowledgePackContents: content ${identity.artifactId} does not match its knowledge pack reference`);
+    }
+    matched.add(identity.artifactId);
+  }
+  for (const ref of refIdentities) {
+    if (!matched.has(ref.artifactId)) {
+      errors.push(`designKnowledgePackContents: knowledge pack reference ${ref.artifactId} has no approved content block`);
+    }
+  }
 }
 
 function validateEntry(errors: string[], label: string, raw: unknown): void {
@@ -335,7 +410,7 @@ export function validateRfpHldSourceBundlePayload(
   const root = asObject(payload);
   if (!root) return { valid: false, errors: ["payload: must be an object"] };
 
-  checkKeys(errors, "payload", root, TOP_LEVEL_KEYS);
+  checkKeys(errors, "payload", root, TOP_LEVEL_KEYS, ["designKnowledgePackContents"]);
   if (root.payloadKind !== RFP_HLD_SOURCE_BUNDLE_PAYLOAD_KIND) errors.push("payload: wrong payloadKind");
   if (!isNonBlank(root.createdBy)) errors.push("payload: blank createdBy");
   if (!isIsoUtc(root.createdAt)) errors.push("payload: createdAt is not ISO UTC");
@@ -358,17 +433,31 @@ export function validateRfpHldSourceBundlePayload(
   }
 
   const packDomains: string[] = [];
+  const packRefIdentities: RfpHldApprovedDesignKnowledgeContentIdentity[] = [];
   if (!Array.isArray(root.designKnowledgePackRefs)) {
     errors.push("designKnowledgePackRefs: must be an array");
   } else {
     root.designKnowledgePackRefs.forEach((ref, i) => {
-      const { id, domain } = validatePackRef(errors, `designKnowledgePackRefs[${i}]`, ref);
+      const { id, domain, version } = validatePackRef(errors, `designKnowledgePackRefs[${i}]`, ref);
       if (id !== null) referencedIds.push(id);
       if (domain !== null) packDomains.push(domain);
+      if (id !== null && domain !== null && version !== null) {
+        packRefIdentities.push({
+          artifactId: id,
+          version,
+          payloadKind: RFP_HLD_DESIGN_KNOWLEDGE_PACK_PAYLOAD_KIND,
+          domain,
+        });
+      }
     });
     if (new Set(packDomains).size !== packDomains.length) {
       errors.push("designKnowledgePackRefs: duplicate domain reference");
     }
+  }
+
+  // Optional approved DKP content: closed-shape + bijective with the pack refs.
+  if ("designKnowledgePackContents" in root && root.designKnowledgePackContents !== undefined) {
+    validateDesignKnowledgePackContents(errors, root.designKnowledgePackContents, packRefIdentities);
   }
 
   // Globally unique referenced artifact ids across all authorities + packs.

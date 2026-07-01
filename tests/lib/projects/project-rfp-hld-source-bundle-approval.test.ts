@@ -153,8 +153,15 @@ function normalArtifacts(): ProjectArtifact[] {
     mk("dkp-1", "design_knowledge_pack", "approved", {
       payload: {
         payloadKind: "rfp_hld_design_knowledge_pack",
+        source: "manual_operator_entry",
         domain: "campus_switching",
         title: "Campus switching pack",
+        designPrinciples: ["Collapsed core for the campus."],
+        topologyGuidance: ["Dual uplinks per access switch."],
+        constraints: [],
+        assumptions: [],
+        exclusions: [],
+        validationNotes: [],
       },
     }),
     mk("hrs-1", "hld_readiness_snapshot", "approved", {

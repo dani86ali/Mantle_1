@@ -11,6 +11,7 @@ import {
   buildRfpHldDesignModelCandidateInput,
   type BuildRfpHldDesignModelCandidateInputInput,
 } from "@/lib/projects/project-rfp-hld-design-model-candidate-input";
+import { RFP_HLD_APPROVED_DESIGN_KNOWLEDGE_CONTENT_KIND } from "@/lib/projects/project-rfp-hld-design-knowledge-content";
 import type { ProjectArtifact } from "@/types/project";
 
 const PROJECT_ID = "proj-1";
@@ -64,6 +65,23 @@ function validBundlePayload(): RfpHldSourceBundlePayload {
         artifactId: "dkp-1", artifactType: "design_knowledge_pack",
         stageId: "hld_design_delta_review", status: "approved", version: 1,
         payloadKind: "rfp_hld_design_knowledge_pack", domain: "campus_switching",
+      },
+    ],
+    designKnowledgePackContents: [
+      {
+        contentKind: RFP_HLD_APPROVED_DESIGN_KNOWLEDGE_CONTENT_KIND,
+        artifactId: "dkp-1", artifactType: "design_knowledge_pack",
+        stageId: "hld_design_delta_review", status: "approved", version: 1,
+        payloadKind: "rfp_hld_design_knowledge_pack", domain: "campus_switching",
+        title: "Campus switching pack",
+        source: "manual_operator_entry",
+        designPrinciples: ["Collapsed core for the campus."],
+        topologyGuidance: [], constraints: [], assumptions: [], exclusions: [], validationNotes: [],
+        entryCount: 1,
+        sectionCounts: {
+          designPrinciples: 1, topologyGuidance: 0, constraints: 0,
+          assumptions: 0, exclusions: 0, validationNotes: 0,
+        },
       },
     ],
     coveredDomains: ["campus_switching"],
@@ -150,6 +168,33 @@ describe("buildRfpHldDesignModelCandidateInput - happy path", () => {
     expect(b.assumptions[0].id).toBe("a1");
     expect(b.constraints[0].id).toBe("c1");
     expect(b.warnings[0].id).toBe("w1");
+  });
+
+  it("copies fresh approved DKP content from the source bundle", () => {
+    const input = validInput();
+    const payload = input.artifact.payload as unknown as RfpHldSourceBundlePayload;
+    const result = buildRfpHldDesignModelCandidateInput(input);
+    if (result.status !== "ok") throw new Error("expected ok");
+    const contents = result.bundle.designKnowledgePackContents ?? [];
+    expect(contents).toHaveLength(1);
+    expect(contents[0].artifactId).toBe("dkp-1");
+    expect(contents[0].domain).toBe("campus_switching");
+    expect(contents[0].designPrinciples).toEqual(["Collapsed core for the campus."]);
+    // Fresh, non-aliased copy; mutating the bundle must not reach the source.
+    expect(result.bundle.designKnowledgePackContents).not.toBe(payload.designKnowledgePackContents);
+    expect(contents[0]).not.toBe(payload.designKnowledgePackContents?.[0]);
+    contents[0].designPrinciples.push("mutated");
+    expect(payload.designKnowledgePackContents?.[0].designPrinciples).toEqual([
+      "Collapsed core for the campus.",
+    ]);
+  });
+
+  it("uses an empty content array for a historical source bundle that omits content", () => {
+    const artifact = validArtifact();
+    delete (artifact.payload as Record<string, unknown>).designKnowledgePackContents;
+    const result = buildRfpHldDesignModelCandidateInput(validInput({ artifact }));
+    if (result.status !== "ok") throw new Error("expected ok");
+    expect(result.bundle.designKnowledgePackContents).toEqual([]);
   });
 
   it("returns fresh copies, not aliases of the input payload", () => {

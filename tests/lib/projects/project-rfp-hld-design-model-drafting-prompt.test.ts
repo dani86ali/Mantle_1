@@ -16,6 +16,7 @@ import {
   RFP_HLD_DESIGN_MODEL_REBUILD_DRAFTING_INSTRUCTION,
 } from "@/lib/projects/project-rfp-hld-design-model-drafting-prompt";
 import type { RfpHldDesignModelRebuildDraftingContext } from "@/lib/projects/project-rfp-hld-design-model-rebuild-candidate-input";
+import { RFP_HLD_APPROVED_DESIGN_KNOWLEDGE_CONTENT_KIND } from "@/lib/projects/project-rfp-hld-design-knowledge-content";
 import type { ProjectArtifact } from "@/types/project";
 
 const PROJECT_ID = "proj-1";
@@ -67,6 +68,23 @@ function validBundlePayload(): RfpHldSourceBundlePayload {
         artifactId: "dkp-1", artifactType: "design_knowledge_pack",
         stageId: "hld_design_delta_review", status: "approved", version: 1,
         payloadKind: "rfp_hld_design_knowledge_pack", domain: "campus_switching",
+      },
+    ],
+    designKnowledgePackContents: [
+      {
+        contentKind: RFP_HLD_APPROVED_DESIGN_KNOWLEDGE_CONTENT_KIND,
+        artifactId: "dkp-1", artifactType: "design_knowledge_pack",
+        stageId: "hld_design_delta_review", status: "approved", version: 1,
+        payloadKind: "rfp_hld_design_knowledge_pack", domain: "campus_switching",
+        title: "Campus switching pack",
+        source: "manual_operator_entry",
+        designPrinciples: ["Collapsed core for the campus."],
+        topologyGuidance: [], constraints: [], assumptions: [], exclusions: [], validationNotes: [],
+        entryCount: 1,
+        sectionCounts: {
+          designPrinciples: 1, topologyGuidance: 0, constraints: 0,
+          assumptions: 0, exclusions: 0, validationNotes: 0,
+        },
       },
     ],
     coveredDomains: ["campus_switching"],
@@ -179,10 +197,32 @@ const WHITELIST_KEYS = [
   "excludedDomains",
   "authorities",
   "designKnowledgePackRefs",
+  "designKnowledgePackContents",
   "assumptions",
   "constraints",
   "warnings",
   "instructions",
+];
+
+const CONTENT_KEYS = [
+  "contentKind",
+  "artifactId",
+  "artifactType",
+  "stageId",
+  "status",
+  "version",
+  "payloadKind",
+  "domain",
+  "title",
+  "source",
+  "designPrinciples",
+  "topologyGuidance",
+  "constraints",
+  "assumptions",
+  "exclusions",
+  "validationNotes",
+  "entryCount",
+  "sectionCounts",
 ];
 
 describe("buildRfpHldDesignModelDraftingRequest - shape", () => {
@@ -240,6 +280,42 @@ describe("buildRfpHldDesignModelDraftingRequest - shape", () => {
         bad as unknown as RfpHldDesignModelCandidateInputBundle
       )
     ).toThrow();
+  });
+});
+
+describe("buildRfpHldDesignModelDraftingRequest - approved DKP content", () => {
+  it("serializes approved DKP content with its source-chain proof", () => {
+    const parsed = JSON.parse(buildRfpHldDesignModelDraftingRequest(validBundle()).user);
+    expect(Array.isArray(parsed.designKnowledgePackContents)).toBe(true);
+    expect(parsed.designKnowledgePackContents).toHaveLength(1);
+    const c = parsed.designKnowledgePackContents[0];
+    expect(c.contentKind).toBe(RFP_HLD_APPROVED_DESIGN_KNOWLEDGE_CONTENT_KIND);
+    expect(c.artifactId).toBe("dkp-1");
+    expect(c.domain).toBe("campus_switching");
+    expect(c.title).toBe("Campus switching pack");
+    expect(c.source).toBe("manual_operator_entry");
+    expect(c.designPrinciples).toEqual(["Collapsed core for the campus."]);
+    expect(c.entryCount).toBe(1);
+  });
+
+  it("whitelists exactly the content-block keys", () => {
+    const parsed = JSON.parse(buildRfpHldDesignModelDraftingRequest(validBundle()).user);
+    expect(Object.keys(parsed.designKnowledgePackContents[0]).sort()).toEqual(
+      CONTENT_KEYS.slice().sort()
+    );
+  });
+
+  it("does not serialize fields smuggled onto a content block", () => {
+    const bundle = validBundle();
+    const content = (bundle.designKnowledgePackContents ?? [])[0] as unknown as Record<string, unknown>;
+    content.rawDocumentBody = "RAW PACK BODY";
+    content.unitPrice = 999;
+    content.evil = "should-not-appear";
+    const req = buildRfpHldDesignModelDraftingRequest(bundle);
+    expect(req.user).not.toContain("RAW PACK BODY");
+    expect(req.user).not.toContain("rawDocumentBody");
+    expect(req.user).not.toContain("unitPrice");
+    expect(req.user).not.toContain("should-not-appear");
   });
 });
 

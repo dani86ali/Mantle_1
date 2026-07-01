@@ -7,11 +7,13 @@
  * read, NO env access, NO persistence, NO route/UI work. It wires NO provider here.
  *
  * The serialized user payload is a strict WHITELIST of already-approved
- * source-bundle-derived candidate input. It carries NO raw document bodies,
- * extracted evidence, file/storage paths, sourceFileIds, compiledArtifactIds,
- * tenantId, prices, catalog lookups, SKU/config decisions, or smuggled extra
- * fields. It introduces no runtime AI authority: any future drafting is
- * candidate-only, subordinate to deterministic validation and human approval.
+ * source-bundle-derived candidate input, including the approved design-knowledge
+ * content blocks (curated, engineer-approved guidance, per-field mirrored). It
+ * carries NO raw document bodies, extracted evidence, file/storage paths,
+ * sourceFileIds, compiledArtifactIds, tenantId, prices, catalog lookups,
+ * SKU/config decisions, or smuggled extra fields. It introduces no runtime AI
+ * authority: any future drafting is candidate-only, subordinate to deterministic
+ * validation and human approval.
  *
  * When (and only when) the bundle carries a rebuild context, an additional
  * explicit, whitelisted `rebuild` section is appended framing ONE bounded
@@ -53,6 +55,11 @@ export const RFP_HLD_DESIGN_MODEL_DRAFTING_SYSTEM_PROMPT: string = [
 type RfpHldDesignModelDraftingRebuildContext = NonNullable<
   RfpHldDesignModelCandidateInputBundle["rebuildContext"]
 >;
+
+/** One approved design-knowledge content block carried in the candidate input. */
+type RfpHldDesignModelDraftingKnowledgeContent = NonNullable<
+  RfpHldDesignModelCandidateInputBundle["designKnowledgePackContents"]
+>[number];
 
 /**
  * Fixed framing for a bounded rebuild correction pass. Provider-neutral; mirrors
@@ -109,6 +116,8 @@ export interface RfpHldDesignModelDraftingUserPayload {
   excludedDomains: RfpHldDesignModelCandidateInputBundle["excludedDomains"];
   authorities: RfpHldDesignModelCandidateInputBundle["authorities"];
   designKnowledgePackRefs: RfpHldDesignModelCandidateInputBundle["designKnowledgePackRefs"];
+  /** Approved DKP content, per-field whitelisted; empty array when none present. */
+  designKnowledgePackContents: RfpHldDesignModelDraftingKnowledgeContent[];
   assumptions: RfpHldDesignModelCandidateInputBundle["assumptions"];
   constraints: RfpHldDesignModelCandidateInputBundle["constraints"];
   warnings: RfpHldDesignModelCandidateInputBundle["warnings"];
@@ -164,6 +173,30 @@ export function buildRfpHldDesignModelDraftingRequest(
     excludedDomains: cloneJson(bundle.excludedDomains),
     authorities: cloneJson(bundle.authorities),
     designKnowledgePackRefs: cloneJson(bundle.designKnowledgePackRefs),
+    // Explicit per-field mirror (not a wholesale clone): any field smuggled onto a
+    // content block is structurally excluded, like the top-level and rebuild keys.
+    designKnowledgePackContents: (bundle.designKnowledgePackContents ?? []).map(
+      (content): RfpHldDesignModelDraftingKnowledgeContent => ({
+        contentKind: content.contentKind,
+        artifactId: content.artifactId,
+        artifactType: content.artifactType,
+        stageId: content.stageId,
+        status: content.status,
+        version: content.version,
+        payloadKind: content.payloadKind,
+        domain: content.domain,
+        title: content.title,
+        source: content.source,
+        designPrinciples: content.designPrinciples.slice(),
+        topologyGuidance: content.topologyGuidance.slice(),
+        constraints: content.constraints.slice(),
+        assumptions: content.assumptions.slice(),
+        exclusions: content.exclusions.slice(),
+        validationNotes: content.validationNotes.slice(),
+        entryCount: content.entryCount,
+        sectionCounts: { ...content.sectionCounts },
+      })
+    ),
     assumptions: cloneJson(bundle.assumptions),
     constraints: cloneJson(bundle.constraints),
     warnings: cloneJson(bundle.warnings),
