@@ -67,10 +67,14 @@ export type ProjectArtifactStatus =
  * `hld_diagram` its reviewed topology diagram. `hld_document_model` is the
  * internal, structured HLD document spine/model: a reviewable projection
  * compiled from the approved design model and diagram for review BEFORE any
- * final document is rendered; it carries NO rendered output. `hld_document`
- * stays RESERVED for a FUTURE final rendered/reviewable HLD document/package
- * and must NOT be overloaded with the structured `hld_document_model`. The
- * legacy `hld_design_delta` artifact is unchanged.
+ * final document is rendered; it carries NO rendered output. `hld_document` is
+ * the FINAL rendered/reviewable HLD document lane, distinct from the internal
+ * structured `hld_document_model`: in this slice a SE MANUAL draw.io upload
+ * (Stage 6H-0I-A) records the uploaded XML, source-chain proof, and
+ * supersession/audit metadata as an `rfp_hld_document` payload, becoming
+ * runtime/customer HLD authority only through the normal human approval record.
+ * It must NOT be overloaded with the structured `hld_document_model`. The legacy
+ * `hld_design_delta` artifact is unchanged.
  *
  * `hld_design_model_review` is advisory, reviewable quality metadata for a
  * candidate `hld_design_model`, produced by checking it against its approved
