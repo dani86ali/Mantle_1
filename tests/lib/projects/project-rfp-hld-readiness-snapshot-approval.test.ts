@@ -60,6 +60,7 @@ const TS1 = new Date("2026-06-10T08:00:00.000Z");
 const TS2 = new Date("2026-06-10T09:00:00.000Z");
 const DECIDED_AT = new Date("2026-06-23T10:00:00.000Z");
 const PAYLOAD_SENTINEL = "SECRET-PAYLOAD-VALUE";
+const MANUAL_OVERRIDE_REASON = "Engineer entered the intake manually.";
 
 // Source artifact ids that the snapshot will reference.
 const SRC_IDS = ["ev-1", "req-1", "comp-1", "cfg-1", "intake-1"];
@@ -115,6 +116,10 @@ function makeValidPayload(
     sourceComplianceMatrixArtifactId: "comp-1",
     sourceConfigurationArtifactId: "cfg-1",
     sourceHldIntakeArtifactId: "intake-1",
+    hldIntakeSource: {
+      sourceMode: "manual_override",
+      manualOverrideReason: MANUAL_OVERRIDE_REASON,
+    },
     coveredDomains: [],
     excludedDomains: ALL_DOMAINS.slice(),
     domainReadiness: {
@@ -302,6 +307,9 @@ describe("reviewRfpHldReadinessSnapshotArtifact - approval payload re-validation
         { payloadKind: "rfp_no_boq_service_only_exception" }
       ),
       makeUpstream("intake-1", "hld_intake", "hld_design_delta_review", "approved", {
+        payloadKind: "rfp_hld_intake",
+        sourceMode: "manual_override",
+        manualOverrideReason: MANUAL_OVERRIDE_REASON,
         answers: [],
       }),
     ];
@@ -365,6 +373,19 @@ describe("reviewRfpHldReadinessSnapshotArtifact - approval payload re-validation
       })],
       ["source field not in sourceArtifactIds", makeValidPayload((p) => {
         p.sourceEvidencePackageArtifactId = "not-in-list";
+      })],
+      ["missing hldIntakeSource", makeValidPayload((p) => {
+        delete p.hldIntakeSource;
+      })],
+      ["blank hldIntakeSource manualOverrideReason", makeValidPayload((p) => {
+        p.hldIntakeSource = { sourceMode: "manual_override", manualOverrideReason: " " };
+      })],
+      ["extra hldIntakeSource key", makeValidPayload((p) => {
+        p.hldIntakeSource = {
+          sourceMode: "manual_override",
+          manualOverrideReason: MANUAL_OVERRIDE_REASON,
+          sourceQuestionnaireArtifactId: "questionnaire-1",
+        };
       })],
       ["missingInputs non-empty", makeValidPayload((p) => {
         p.missingInputs = ["evidence_package"];

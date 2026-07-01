@@ -45,6 +45,7 @@ import {
   type RfpHldSourceBundleAuthorityReference,
   type RfpHldSourceBundleConfigurationAuthority,
   type RfpHldSourceBundleDesignKnowledgePackReference,
+  type RfpHldSourceBundleIntakeSource,
   type RfpHldSourceBundlePayload,
   type RfpHldSourceBundleStatementEntry,
 } from "@/lib/projects/project-rfp-hld-source-bundle";
@@ -142,10 +143,37 @@ function toAuthorityRef(
 }
 
 /**
+ * Compare a persisted snapshot `hldIntakeSource` against current readiness. Fail
+ * closed on any mismatch or when either side is missing/malformed.
+ */
+function sameIntakeSource(
+  recorded: unknown,
+  current: RfpHldReadinessReport["hldIntakeSource"]
+): boolean {
+  if (current === undefined) return false;
+  if (recorded === null || typeof recorded !== "object" || Array.isArray(recorded)) {
+    return false;
+  }
+  const r = recorded as Record<string, unknown>;
+  if (r.sourceMode !== current.sourceMode) return false;
+  if (current.sourceMode === "manual_override") {
+    if (Object.keys(r).sort().join("|") !== "manualOverrideReason|sourceMode") {
+      return false;
+    }
+    return r.manualOverrideReason === current.manualOverrideReason;
+  }
+  if (Object.keys(r).sort().join("|") !== "sourceMode|sourceQuestionnaireArtifactId") {
+    return false;
+  }
+  return r.sourceQuestionnaireArtifactId === current.sourceQuestionnaireArtifactId;
+}
+
+/**
  * Fail closed unless the approved readiness snapshot still proves the current
  * ready inputs: ready status, empty missingInputs, named source fields present,
- * its payload source ids equal current readiness, and the artifact row source ids
- * equal the persisted payload source ids. Returns an error message, or null.
+ * matching HLD intake source provenance, its payload source ids equal current
+ * readiness, and the artifact row source ids equal the persisted payload source
+ * ids. Returns an error message, or null.
  */
 function checkReadinessSnapshot(
   snapshot: ProjectArtifact,
@@ -174,6 +202,9 @@ function checkReadinessSnapshot(
     if (recorded !== current) {
       return "Readiness snapshot named sources no longer match the current ready inputs.";
     }
+  }
+  if (!sameIntakeSource(p.hldIntakeSource, readiness.hldIntakeSource)) {
+    return "Readiness snapshot HLD intake source provenance no longer matches the current ready inputs.";
   }
   const payloadIds = p.sourceArtifactIds;
   if (!Array.isArray(payloadIds) || !arraysEqual(payloadIds, readiness.sourceArtifactIds)) {
@@ -377,6 +408,11 @@ export function buildRfpHldSourceBundleDraft(
     },
     designKnowledgePackRefs,
     designKnowledgePackContents,
+    // Corrected approved-HLD-intake provenance (audit only). Guaranteed present at
+    // readiness, since a ready intake resolves a valid source; carried for audit.
+    ...(readiness.hldIntakeSource !== undefined
+      ? { hldIntakeSource: readiness.hldIntakeSource as RfpHldSourceBundleIntakeSource }
+      : {}),
     coveredDomains,
     missingDomains: [],
     excludedDomains,

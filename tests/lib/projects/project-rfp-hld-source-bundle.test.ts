@@ -348,6 +348,72 @@ describe("validateRfpHldSourceBundlePayload - approved DKP content", () => {
   });
 });
 
+describe("validateRfpHldSourceBundlePayload - optional hldIntakeSource", () => {
+  it("accepts a manual_override provenance object", () => {
+    const p = mutable();
+    p.hldIntakeSource = { sourceMode: "manual_override", manualOverrideReason: "Engineer entered manually." };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(true);
+  });
+
+  it("accepts a questionnaire_assisted provenance object", () => {
+    const p = mutable();
+    p.hldIntakeSource = { sourceMode: "questionnaire_assisted", sourceQuestionnaireArtifactId: "q-1" };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(true);
+  });
+
+  it("accepts a historical bundle that omits hldIntakeSource entirely", () => {
+    const p = mutable();
+    expect("hldIntakeSource" in p).toBe(false);
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(true);
+  });
+
+  it("rejects a manual_override with a blank reason", () => {
+    const p = mutable();
+    p.hldIntakeSource = { sourceMode: "manual_override", manualOverrideReason: "   " };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects a manual_override that carries a questionnaire id", () => {
+    const p = mutable();
+    p.hldIntakeSource = {
+      sourceMode: "manual_override",
+      manualOverrideReason: "Engineer entered manually.",
+      sourceQuestionnaireArtifactId: "q-1",
+    };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects a questionnaire_assisted with a blank questionnaire id", () => {
+    const p = mutable();
+    p.hldIntakeSource = { sourceMode: "questionnaire_assisted", sourceQuestionnaireArtifactId: " " };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects a questionnaire_assisted that carries a manual override reason", () => {
+    const p = mutable();
+    p.hldIntakeSource = {
+      sourceMode: "questionnaire_assisted",
+      sourceQuestionnaireArtifactId: "q-1",
+      manualOverrideReason: "nope",
+    };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects an invalid sourceMode", () => {
+    const p = mutable();
+    p.hldIntakeSource = { sourceMode: "auto" };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("does not add the source questionnaire id to sourceArtifactIds when provenance is questionnaire-assisted", () => {
+    const p = mutable();
+    p.hldIntakeSource = { sourceMode: "questionnaire_assisted", sourceQuestionnaireArtifactId: "q-1" };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(true);
+    // q-1 is provenance, not an authority reference.
+    expect((p.sourceArtifactIds as string[])).not.toContain("q-1");
+  });
+});
+
 describe("validateRfpHldSourceBundlePayload - source ids & lineage", () => {
   it("rejects duplicate referenced artifact ids across authorities", () => {
     const p = mutable();

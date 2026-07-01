@@ -46,6 +46,85 @@ export interface RfpHldReadinessAssumption {
   note?: string;
 }
 
+/**
+ * Resolved, sanitized source provenance of an APPROVED hld_intake. The approved
+ * intake - not the source questionnaire - is readiness authority; this only
+ * records which mode produced it plus the single provenance id/reason.
+ */
+export type RfpHldReadinessIntakeSource =
+  | { sourceMode: "manual_override"; manualOverrideReason: string }
+  | { sourceMode: "questionnaire_assisted"; sourceQuestionnaireArtifactId: string };
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function nonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+/**
+ * Pure validator/resolver for the source provenance of an APPROVED hld_intake.
+ * A legacy/ambiguous approved intake without a valid sourceMode resolves to null,
+ * so HLD readiness fails closed on it. The source questionnaire is provenance
+ * only: this never requires it to be current/latest/approved, it only checks the
+ * intake's own recorded provenance. Accepts exactly:
+ *   - manual_override: nonblank manualOverrideReason, no sourceQuestionnaireArtifactId,
+ *     and empty artifact sourceArtifactIds; or
+ *   - questionnaire_assisted: nonblank sourceQuestionnaireArtifactId, no
+ *     manualOverrideReason, artifact sourceArtifactIds exactly
+ *     [sourceQuestionnaireArtifactId], and a questionnaireReview object whose
+ *     sourceQuestionnaireArtifactId matches.
+ * Returns the sanitized source, or null.
+ */
+export function resolveApprovedHldIntakeSource(
+  intake: ProjectArtifact
+): RfpHldReadinessIntakeSource | null {
+  if (intake.status !== "approved") return null;
+  const payload = intake.payload;
+  if (!isPlainObject(payload)) return null;
+  if (payload.payloadKind !== "rfp_hld_intake") return null;
+  const sourceArtifactIds = intake.sourceArtifactIds;
+
+  if (payload.sourceMode === "manual_override") {
+    if (!nonBlankString(payload.manualOverrideReason)) return null;
+    if (
+      "sourceQuestionnaireArtifactId" in payload &&
+      payload.sourceQuestionnaireArtifactId !== undefined
+    ) {
+      return null;
+    }
+    if ("questionnaireReview" in payload && payload.questionnaireReview !== undefined) {
+      return null;
+    }
+    if (sourceArtifactIds.length !== 0) return null;
+    return {
+      sourceMode: "manual_override",
+      manualOverrideReason: payload.manualOverrideReason.trim(),
+    };
+  }
+
+  if (payload.sourceMode === "questionnaire_assisted") {
+    if (!nonBlankString(payload.sourceQuestionnaireArtifactId)) return null;
+    if ("manualOverrideReason" in payload && payload.manualOverrideReason !== undefined) {
+      return null;
+    }
+    const questionnaireId = payload.sourceQuestionnaireArtifactId.trim();
+    if (sourceArtifactIds.length !== 1 || sourceArtifactIds[0] !== questionnaireId) {
+      return null;
+    }
+    const review = payload.questionnaireReview;
+    if (!isPlainObject(review)) return null;
+    if (review.sourceQuestionnaireArtifactId !== questionnaireId) return null;
+    return {
+      sourceMode: "questionnaire_assisted",
+      sourceQuestionnaireArtifactId: questionnaireId,
+    };
+  }
+
+  return null;
+}
+
 /** Lean design-domain summary carried on the readiness report. */
 export interface RfpHldReadinessDomainSummary {
   claimedDomains: RfpHldDesignDomain[];
@@ -72,6 +151,8 @@ export interface RfpHldReadinessReport {
   sourceComplianceMatrixArtifactId?: string;
   sourceConfigurationArtifactId?: string;
   sourceHldIntakeArtifactId?: string;
+  /** Source provenance of the approved HLD intake; present only when it is valid. */
+  hldIntakeSource?: RfpHldReadinessIntakeSource;
   coveredDomains: RfpHldDesignDomain[];
   excludedDomains: RfpHldDesignDomain[];
   missingKnowledgePackDomains: RfpHldDesignDomain[];
@@ -176,7 +257,13 @@ export function getRfpHldReadinessReport(
   const requirementsId = approvedLatestId(artifacts, projectId, "requirements_baseline");
   const complianceId = approvedLatestId(artifacts, projectId, "compliance_matrix");
   const intake = latestArtifact(artifacts, projectId, "hld_intake");
-  const intakeId = intake !== undefined && intake.status === "approved" ? intake.id : undefined;
+  const intakeApproved = intake !== undefined && intake.status === "approved";
+  // The approved intake is readiness authority; a legacy/ambiguous approved intake
+  // without valid source provenance blocks readiness (resolves to null).
+  const intakeSource = intakeApproved
+    ? resolveApprovedHldIntakeSource(intake!)
+    : null;
+  const intakeId = intakeSource !== null ? intake!.id : undefined;
 
   const knowledgePacksReady = domain.missingKnowledgePackDomains.length === 0;
 
@@ -212,7 +299,9 @@ export function getRfpHldReadinessReport(
     {
       id: "hld_intake",
       satisfied: intakeId !== undefined,
-      message: "Approved HLD intake is required before HLD readiness.",
+      message: !intakeApproved
+        ? "Approved HLD intake is required before HLD readiness."
+        : "Approved HLD intake must record a valid source mode (questionnaire-assisted with matching questionnaire provenance, or manual override with an explicit reason) before HLD readiness.",
     },
     {
       id: "design_knowledge_packs",
@@ -260,6 +349,7 @@ export function getRfpHldReadinessReport(
       ? { sourceConfigurationArtifactId: configurationSourceId }
       : {}),
     ...(intakeId !== undefined ? { sourceHldIntakeArtifactId: intakeId } : {}),
+    ...(intakeSource !== null ? { hldIntakeSource: intakeSource } : {}),
     coveredDomains: domain.coveredDomains,
     excludedDomains,
     missingKnowledgePackDomains: domain.missingKnowledgePackDomains,

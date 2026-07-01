@@ -86,6 +86,8 @@ function readyArtifacts(): ProjectArtifact[] {
     artifact("hld_intake", 1, "approved", {
       payload: {
         payloadKind: "rfp_hld_intake",
+        sourceMode: "manual_override",
+        manualOverrideReason: "Engineer entered the intake manually.",
         answers: [
           { fieldId: "resiliency_expectations", label: "Resiliency expectations", status: "unknown", notes: "awaiting customer" },
         ],
@@ -255,6 +257,16 @@ describe("createRfpHldReadinessSnapshotDraft - ready creation", () => {
     const json = JSON.stringify(payload);
     expect(json).not.toContain("storagePath");
     expect(json).not.toContain("s3://");
+  });
+
+  it("persists the corrected hldIntakeSource provenance in the snapshot payload", async () => {
+    await createRfpHldReadinessSnapshotDraft(input());
+
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.hldIntakeSource).toEqual({
+      sourceMode: "manual_override",
+      manualOverrideReason: "Engineer entered the intake manually.",
+    });
   });
 
   it("returns lean summaries (no full payload body) plus the readiness report", async () => {

@@ -96,6 +96,8 @@ type RfpHldReadinessSnapshotPayload = {
   sourceComplianceMatrixArtifactId?: string;
   sourceConfigurationArtifactId?: string;
   sourceHldIntakeArtifactId?: string;
+  /** Corrected HLD intake source-mode/provenance; present only when valid. */
+  hldIntakeSource?: RfpHldReadinessReport["hldIntakeSource"];
   coveredDomains: RfpHldReadinessReport["coveredDomains"];
   excludedDomains: RfpHldReadinessReport["excludedDomains"];
   domainReadiness: RfpHldReadinessReport["domainReadiness"];
@@ -177,6 +179,9 @@ function buildPayload(
       : {}),
     ...(report.sourceHldIntakeArtifactId !== undefined
       ? { sourceHldIntakeArtifactId: report.sourceHldIntakeArtifactId }
+      : {}),
+    ...(report.hldIntakeSource !== undefined
+      ? { hldIntakeSource: report.hldIntakeSource }
       : {}),
     coveredDomains: [...report.coveredDomains],
     excludedDomains: [...report.excludedDomains],

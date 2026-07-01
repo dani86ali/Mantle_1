@@ -89,6 +89,8 @@ function boqFile(): ProjectFile {
 
 // ---- normal (BoQ present, one campus pack) happy fixtures ------------------
 
+const MANUAL_OVERRIDE_REASON = "Engineer entered the intake manually.";
+
 const NORMAL_SOURCE_IDS = ["evp-1", "req-1", "cmx-1", "cfg-1", "hint-1", "dkp-1"];
 
 function normalArtifacts(): ProjectArtifact[] {
@@ -116,6 +118,8 @@ function normalArtifacts(): ProjectArtifact[] {
     mk("hint-1", "hld_intake", "approved", {
       payload: {
         payloadKind: "rfp_hld_intake",
+        sourceMode: "manual_override",
+        manualOverrideReason: MANUAL_OVERRIDE_REASON,
         answers: [
           {
             fieldId: "resiliency_expectations",
@@ -151,6 +155,7 @@ function normalArtifacts(): ProjectArtifact[] {
         sourceComplianceMatrixArtifactId: "cmx-1",
         sourceConfigurationArtifactId: "cfg-1",
         sourceHldIntakeArtifactId: "hint-1",
+        hldIntakeSource: { sourceMode: "manual_override", manualOverrideReason: MANUAL_OVERRIDE_REASON },
         sourceArtifactIds: [...NORMAL_SOURCE_IDS],
       },
     }),
@@ -187,7 +192,12 @@ function noBoqArtifacts(): ProjectArtifact[] {
       payload: { payloadKind: "rfp_no_boq_service_only_exception", reason: "Services only" },
     }),
     mk("hint-1", "hld_intake", "approved", {
-      payload: { payloadKind: "rfp_hld_intake", answers: [] },
+      payload: {
+        payloadKind: "rfp_hld_intake",
+        sourceMode: "manual_override",
+        manualOverrideReason: MANUAL_OVERRIDE_REASON,
+        answers: [],
+      },
     }),
     mk("hrs-1", "hld_readiness_snapshot", "approved", {
       sourceArtifactIds: [...NO_BOQ_SOURCE_IDS],
@@ -200,6 +210,7 @@ function noBoqArtifacts(): ProjectArtifact[] {
         sourceComplianceMatrixArtifactId: "cmx-1",
         sourceConfigurationArtifactId: "cfg-exc-1",
         sourceHldIntakeArtifactId: "hint-1",
+        hldIntakeSource: { sourceMode: "manual_override", manualOverrideReason: MANUAL_OVERRIDE_REASON },
         sourceArtifactIds: [...NO_BOQ_SOURCE_IDS],
       },
     }),
@@ -407,6 +418,125 @@ describe("buildRfpHldSourceBundleDraft - readiness snapshot integrity", () => {
         payload: { ...(a.payload as object), sourceArtifactIds: staleIds },
       };
     });
+    const result = buildRfpHldSourceBundleDraft(pureInput(artifacts, [boqFile()]));
+    expect(result.status).toBe("blocked");
+    if (result.status !== "blocked") throw new Error("unreachable");
+    expect(result.code).toBe("stale_readiness_snapshot");
+  });
+});
+
+// A questionnaire-assisted variant: the intake records questionnaire provenance,
+// and the approved snapshot records the matching provenance. The questionnaire id
+// is provenance only - it never joins the bundle's source ids.
+const QUESTIONNAIRE_ID = "q-src-1";
+
+function questionnaireAssistedArtifacts(): ProjectArtifact[] {
+  return normalArtifacts().map((a) => {
+    if (a.type === "hld_intake") {
+      return {
+        ...a,
+        sourceArtifactIds: [QUESTIONNAIRE_ID],
+        payload: {
+          payloadKind: "rfp_hld_intake",
+          sourceMode: "questionnaire_assisted",
+          sourceQuestionnaireArtifactId: QUESTIONNAIRE_ID,
+          questionnaireReview: { sourceQuestionnaireArtifactId: QUESTIONNAIRE_ID },
+          answers: [],
+        },
+      };
+    }
+    if (a.type === "hld_readiness_snapshot") {
+      return {
+        ...a,
+        payload: {
+          ...(a.payload as object),
+          hldIntakeSource: {
+            sourceMode: "questionnaire_assisted",
+            sourceQuestionnaireArtifactId: QUESTIONNAIRE_ID,
+          },
+        },
+      };
+    }
+    return a;
+  });
+}
+
+describe("buildRfpHldSourceBundleDraft - hld intake source provenance", () => {
+  it("carries manual_override hldIntakeSource without adding any questionnaire id", () => {
+    const result = buildRfpHldSourceBundleDraft(pureInput(normalArtifacts(), [boqFile()]));
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.payload.hldIntakeSource).toEqual({
+      sourceMode: "manual_override",
+      manualOverrideReason: MANUAL_OVERRIDE_REASON,
+    });
+    expect(new Set(result.payload.sourceArtifactIds)).toEqual(
+      new Set([...NORMAL_SOURCE_IDS, "hrs-1"])
+    );
+  });
+
+  it("carries questionnaire_assisted provenance but keeps the questionnaire id out of source ids and lineage", () => {
+    const result = buildRfpHldSourceBundleDraft(
+      pureInput(questionnaireAssistedArtifacts(), [boqFile()])
+    );
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.payload.hldIntakeSource).toEqual({
+      sourceMode: "questionnaire_assisted",
+      sourceQuestionnaireArtifactId: QUESTIONNAIRE_ID,
+    });
+    expect(result.payload.sourceArtifactIds).not.toContain(QUESTIONNAIRE_ID);
+    expect(result.payload.lineage.compiledArtifactIds).not.toContain(QUESTIONNAIRE_ID);
+    expect(validateRfpHldSourceBundlePayload(result.payload).errors).toEqual([]);
+  });
+
+  it("blocks (stale) when the snapshot hldIntakeSource does not match current readiness", () => {
+    const artifacts = normalArtifacts().map((a) =>
+      a.type === "hld_readiness_snapshot"
+        ? {
+            ...a,
+            payload: {
+              ...(a.payload as object),
+              hldIntakeSource: { sourceMode: "manual_override", manualOverrideReason: "A different reason." },
+            },
+          }
+        : a
+    );
+    const result = buildRfpHldSourceBundleDraft(pureInput(artifacts, [boqFile()]));
+    expect(result.status).toBe("blocked");
+    if (result.status !== "blocked") throw new Error("unreachable");
+    expect(result.code).toBe("stale_readiness_snapshot");
+  });
+
+  it("blocks (stale) when the snapshot omits hldIntakeSource entirely", () => {
+    const artifacts = normalArtifacts().map((a) => {
+      if (a.type !== "hld_readiness_snapshot") return a;
+      const payload = { ...(a.payload as Record<string, unknown>) };
+      delete payload.hldIntakeSource;
+      return { ...a, payload };
+    });
+    const result = buildRfpHldSourceBundleDraft(pureInput(artifacts, [boqFile()]));
+    expect(result.status).toBe("blocked");
+    if (result.status !== "blocked") throw new Error("unreachable");
+    expect(result.code).toBe("stale_readiness_snapshot");
+  });
+
+  it("blocks (stale) when the snapshot hldIntakeSource has extra keys", () => {
+    const artifacts = normalArtifacts().map((a) =>
+      a.type === "hld_readiness_snapshot"
+        ? {
+            ...a,
+            payload: {
+              ...(a.payload as object),
+              hldIntakeSource: {
+                sourceMode: "manual_override",
+                manualOverrideReason: MANUAL_OVERRIDE_REASON,
+                sourceQuestionnaireArtifactId: QUESTIONNAIRE_ID,
+              },
+            },
+          }
+        : a
+    );
     const result = buildRfpHldSourceBundleDraft(pureInput(artifacts, [boqFile()]));
     expect(result.status).toBe("blocked");
     if (result.status !== "blocked") throw new Error("unreachable");

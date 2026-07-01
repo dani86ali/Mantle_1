@@ -66,6 +66,7 @@ const TS = new Date("2026-06-12T00:00:00.000Z");
 const FIXED_CREATED = new Date("2026-06-23T09:15:00.000Z");
 const DECIDED_AT = new Date("2026-06-23T10:00:00.000Z");
 const PAYLOAD_SENTINEL = "SECRET-CREATED-BY-VALUE";
+const MANUAL_OVERRIDE_REASON = "Engineer entered the intake manually.";
 
 // ---- upstream fixtures (mirrors the Stage 6B-002 assembler test) -----------
 
@@ -140,6 +141,8 @@ function normalArtifacts(): ProjectArtifact[] {
     mk("hint-1", "hld_intake", "approved", {
       payload: {
         payloadKind: "rfp_hld_intake",
+        sourceMode: "manual_override",
+        manualOverrideReason: MANUAL_OVERRIDE_REASON,
         answers: [
           {
             fieldId: "resiliency_expectations",
@@ -175,6 +178,10 @@ function normalArtifacts(): ProjectArtifact[] {
         sourceComplianceMatrixArtifactId: "cmx-1",
         sourceConfigurationArtifactId: "cfg-1",
         sourceHldIntakeArtifactId: "hint-1",
+        hldIntakeSource: {
+          sourceMode: "manual_override",
+          manualOverrideReason: MANUAL_OVERRIDE_REASON,
+        },
         sourceArtifactIds: [...NORMAL_SOURCE_IDS],
       },
     }),
@@ -202,7 +209,12 @@ function noBoqArtifacts(): ProjectArtifact[] {
       payload: { payloadKind: "rfp_no_boq_service_only_exception", reason: "Services only" },
     }),
     mk("hint-1", "hld_intake", "approved", {
-      payload: { payloadKind: "rfp_hld_intake", answers: [] },
+      payload: {
+        payloadKind: "rfp_hld_intake",
+        sourceMode: "manual_override",
+        manualOverrideReason: MANUAL_OVERRIDE_REASON,
+        answers: [],
+      },
     }),
     mk("hrs-1", "hld_readiness_snapshot", "approved", {
       sourceArtifactIds: [...NO_BOQ_SOURCE_IDS],
@@ -215,6 +227,10 @@ function noBoqArtifacts(): ProjectArtifact[] {
         sourceComplianceMatrixArtifactId: "cmx-1",
         sourceConfigurationArtifactId: "cfg-exc-1",
         sourceHldIntakeArtifactId: "hint-1",
+        hldIntakeSource: {
+          sourceMode: "manual_override",
+          manualOverrideReason: MANUAL_OVERRIDE_REASON,
+        },
         sourceArtifactIds: [...NO_BOQ_SOURCE_IDS],
       },
     }),

@@ -14,13 +14,14 @@
  * also re-validates the exact persisted payload against the snapshot contract
  * before recording - confirming payloadKind, readiness="ready", ordered source ids,
  * required named sources, empty missingInputs, valid domain arrays, valid
- * assumptions, and non-empty validationMessages. A REJECTION may be recorded even
- * when the payload is malformed. This service runs no AI and makes no SKU/pricing/
- * catalog/config/design decision: it imports exactly the project store, the artifact
- * store, the approval store, the pure approval helper, the snapshot payload kind,
- * and the HLD domain definitions - no file/evidence store, no fs/path, no route or
- * UI module. Summaries are lean and serializable (ISO dates, copied arrays, no
- * payload, no tenantId).
+ * assumptions, HLD intake source-mode provenance, and non-empty
+ * validationMessages. A REJECTION may be recorded even when the payload is
+ * malformed. This service runs no AI and makes no SKU/pricing/catalog/config/
+ * design decision: it imports exactly the project store, the artifact store, the
+ * approval store, the pure approval helper, the snapshot payload kind, and the HLD
+ * domain definitions - no file/evidence store, no fs/path, no route or UI module.
+ * Summaries are lean and serializable (ISO dates, copied arrays, no payload, no
+ * tenantId).
  */
 import { getProjectById } from "@/lib/db/project-store";
 import { getProjectArtifactById } from "@/lib/db/project-artifact-store";
@@ -55,7 +56,7 @@ const ALLOWED_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
   "sourceArtifactIds", "sourceEvidencePackageArtifactId",
   "sourceRequirementsBaselineArtifactId", "sourceComplianceMatrixArtifactId",
   "sourceConfigurationArtifactId", "sourceHldIntakeArtifactId",
-  "coveredDomains", "excludedDomains", "domainReadiness",
+  "hldIntakeSource", "coveredDomains", "excludedDomains", "domainReadiness",
   "assumptions", "missingInputs", "validationMessages",
 ]);
 
@@ -66,6 +67,14 @@ const ALLOWED_DOMAIN_READINESS_KEYS: ReadonlySet<string> = new Set([
 
 const ALLOWED_ASSUMPTION_KEYS: ReadonlySet<string> = new Set([
   "fieldId", "label", "status", "note",
+]);
+
+const MANUAL_HLD_INTAKE_SOURCE_KEYS: ReadonlySet<string> = new Set([
+  "sourceMode", "manualOverrideReason",
+]);
+
+const QUESTIONNAIRE_HLD_INTAKE_SOURCE_KEYS: ReadonlySet<string> = new Set([
+  "sourceMode", "sourceQuestionnaireArtifactId",
 ]);
 
 const REQUIRED_SOURCE_FIELDS = [
@@ -140,6 +149,28 @@ function isDomainArray(value: unknown): value is RfpHldDesignDomain[] {
   return true;
 }
 
+function keysEqual(keys: readonly string[], allowed: ReadonlySet<string>): boolean {
+  if (keys.length !== allowed.size) return false;
+  for (const key of keys) {
+    if (!allowed.has(key)) return false;
+  }
+  return true;
+}
+
+function isHldIntakeSourceValid(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  const keys = Object.keys(value);
+  if (value.sourceMode === "manual_override") {
+    return keysEqual(keys, MANUAL_HLD_INTAKE_SOURCE_KEYS)
+      && isNonblankString(value.manualOverrideReason);
+  }
+  if (value.sourceMode === "questionnaire_assisted") {
+    return keysEqual(keys, QUESTIONNAIRE_HLD_INTAKE_SOURCE_KEYS)
+      && isNonblankString(value.sourceQuestionnaireArtifactId);
+  }
+  return false;
+}
+
 function toProjectSummary(project: Project): RfpHldReadinessSnapshotReviewProjectSummary {
   return {
     id: project.id,
@@ -188,6 +219,8 @@ function isPersistedSnapshotPayloadValid(
     if (!isNonblankString(payload[field])) return false;
     if (!srcSet.has(payload[field])) return false;
   }
+
+  if (!isHldIntakeSourceValid(payload.hldIntakeSource)) return false;
 
   const mi = payload.missingInputs;
   if (!Array.isArray(mi) || mi.length !== 0) return false;

@@ -107,6 +107,15 @@ export interface RfpHldSourceBundleValidation {
   checkedAt: string;
 }
 
+/**
+ * Closed source provenance of the approved HLD intake, carried for audit only.
+ * The approved hld_intake is bundle authority; the source questionnaire is
+ * provenance and never becomes a bundle authority reference.
+ */
+export type RfpHldSourceBundleIntakeSource =
+  | { sourceMode: "manual_override"; manualOverrideReason: string }
+  | { sourceMode: "questionnaire_assisted"; sourceQuestionnaireArtifactId: string };
+
 /** Provenance lineage of the compiled bundle. */
 export interface RfpHldSourceBundleLineage {
   compiledFromReadinessSnapshotArtifactId: string;
@@ -140,6 +149,14 @@ export interface RfpHldSourceBundlePayload {
    * designKnowledgePackRefs. Newly assembled bundles always include it.
    */
   designKnowledgePackContents?: RfpHldApprovedDesignKnowledgeContent[];
+  /**
+   * Corrected approved-HLD-intake source provenance (audit only). Optional for
+   * historical bundle compatibility; validated closed when present. Newly
+   * assembled bundles always populate it from current readiness. The source
+   * questionnaire stays provenance - it is NOT added to sourceArtifactIds or
+   * lineage.compiledArtifactIds.
+   */
+  hldIntakeSource?: RfpHldSourceBundleIntakeSource;
   coveredDomains: RfpHldDesignDomain[];
   missingDomains: RfpHldDesignDomain[];
   excludedDomains: RfpHldDesignDomain[];
@@ -343,6 +360,29 @@ function validateDesignKnowledgePackContents(
   }
 }
 
+/**
+ * Validate the optional closed `hldIntakeSource` provenance object. manual_override
+ * requires a nonblank manualOverrideReason and forbids a questionnaire id;
+ * questionnaire_assisted requires a nonblank sourceQuestionnaireArtifactId and
+ * forbids a manual override reason. The closed key set enforces the "forbids"
+ * rules; this adds the nonblank checks. Fail-closed.
+ */
+function validateIntakeSource(errors: string[], raw: unknown): void {
+  const o = asObject(raw);
+  if (!o) { errors.push("hldIntakeSource: must be an object"); return; }
+  if (o.sourceMode === "manual_override") {
+    checkKeys(errors, "hldIntakeSource", o, ["sourceMode", "manualOverrideReason"]);
+    if (!isNonBlank(o.manualOverrideReason)) errors.push("hldIntakeSource: blank manualOverrideReason");
+  } else if (o.sourceMode === "questionnaire_assisted") {
+    checkKeys(errors, "hldIntakeSource", o, ["sourceMode", "sourceQuestionnaireArtifactId"]);
+    if (!isNonBlank(o.sourceQuestionnaireArtifactId)) {
+      errors.push("hldIntakeSource: blank sourceQuestionnaireArtifactId");
+    }
+  } else {
+    errors.push("hldIntakeSource: invalid sourceMode");
+  }
+}
+
 function validateEntry(errors: string[], label: string, raw: unknown): void {
   const o = asObject(raw);
   if (!o) { errors.push(`${label}: must be an object`); return; }
@@ -410,7 +450,10 @@ export function validateRfpHldSourceBundlePayload(
   const root = asObject(payload);
   if (!root) return { valid: false, errors: ["payload: must be an object"] };
 
-  checkKeys(errors, "payload", root, TOP_LEVEL_KEYS, ["designKnowledgePackContents"]);
+  checkKeys(errors, "payload", root, TOP_LEVEL_KEYS, [
+    "designKnowledgePackContents",
+    "hldIntakeSource",
+  ]);
   if (root.payloadKind !== RFP_HLD_SOURCE_BUNDLE_PAYLOAD_KIND) errors.push("payload: wrong payloadKind");
   if (!isNonBlank(root.createdBy)) errors.push("payload: blank createdBy");
   if (!isIsoUtc(root.createdAt)) errors.push("payload: createdAt is not ISO UTC");
@@ -458,6 +501,11 @@ export function validateRfpHldSourceBundlePayload(
   // Optional approved DKP content: closed-shape + bijective with the pack refs.
   if ("designKnowledgePackContents" in root && root.designKnowledgePackContents !== undefined) {
     validateDesignKnowledgePackContents(errors, root.designKnowledgePackContents, packRefIdentities);
+  }
+
+  // Optional approved-HLD-intake source provenance: closed-shape when present.
+  if ("hldIntakeSource" in root && root.hldIntakeSource !== undefined) {
+    validateIntakeSource(errors, root.hldIntakeSource);
   }
 
   // Globally unique referenced artifact ids across all authorities + packs.

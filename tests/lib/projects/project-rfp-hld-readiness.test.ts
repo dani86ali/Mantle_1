@@ -72,11 +72,16 @@ function noBoqException(version: number, status: ProjectArtifactStatus = "approv
   });
 }
 
-// An approved hld_intake whose unknown/NA answers become sanitized assumptions.
+const MANUAL_OVERRIDE_REASON = "Engineer entered the intake manually.";
+
+// An approved manual-override hld_intake whose unknown/NA answers become sanitized
+// assumptions. Manual override records an explicit reason and no source artifacts.
 function hldIntake(version: number, status: ProjectArtifactStatus = "approved") {
   return artifact("hld_intake", version, status, {
     payload: {
       payloadKind: "rfp_hld_intake",
+      sourceMode: "manual_override",
+      manualOverrideReason: MANUAL_OVERRIDE_REASON,
       answers: [
         { fieldId: "existing_network_context", label: "Existing network context", status: "answered", value: "brownfield" },
         { fieldId: "resiliency_expectations", label: "Resiliency expectations", status: "unknown", notes: "  awaiting customer  " },
@@ -84,6 +89,45 @@ function hldIntake(version: number, status: ProjectArtifactStatus = "approved") 
       ],
     },
   });
+}
+
+const QUESTIONNAIRE_ID = "hld_intake_questionnaire-v1";
+
+// An approved questionnaire-assisted hld_intake. Provenance = the exact source
+// questionnaire id, recorded both on the payload and in sourceArtifactIds.
+function hldIntakeFromQuestionnaire(
+  version: number,
+  overrides: Partial<ProjectArtifact> = {},
+  payloadOverrides: Record<string, unknown> = {}
+) {
+  return artifact("hld_intake", version, "approved", {
+    sourceArtifactIds: [QUESTIONNAIRE_ID],
+    payload: {
+      payloadKind: "rfp_hld_intake",
+      sourceMode: "questionnaire_assisted",
+      sourceQuestionnaireArtifactId: QUESTIONNAIRE_ID,
+      questionnaireReview: { sourceQuestionnaireArtifactId: QUESTIONNAIRE_ID },
+      answers: [],
+      ...payloadOverrides,
+    },
+    ...overrides,
+  });
+}
+
+// A legacy/ambiguous approved hld_intake with NO sourceMode - must block readiness.
+function legacyHldIntake(version: number) {
+  return artifact("hld_intake", version, "approved", {
+    payload: { payloadKind: "rfp_hld_intake", answers: [] },
+  });
+}
+
+function coreApproved(): ProjectArtifact[] {
+  return [
+    artifact("evidence_package", 1, "approved"),
+    artifact("requirements_baseline", 1, "approved"),
+    artifact("compliance_matrix", 1, "approved"),
+    noBoqException(1),
+  ];
 }
 
 function report(files: ProjectFile[], artifacts: ProjectArtifact[]) {
@@ -310,6 +354,107 @@ describe("getRfpHldReadinessReport - ready report", () => {
     expect(json).not.toContain("s3://");
     expect(json).not.toContain("payload-not-leaked");
     expect(json).not.toContain("brownfield");
+  });
+});
+
+describe("getRfpHldReadinessReport - approved hld_intake source provenance", () => {
+  it("blocks an approved legacy/ambiguous hld_intake that is missing a sourceMode", () => {
+    const r = report([], [...coreApproved(), legacyHldIntake(1)]);
+    expect(r.status).toBe("blocked");
+    expect(r.missingInputs).toEqual(["hld_intake"]);
+    expect(r.hldIntakeSource).toBeUndefined();
+    expect(r.validationMessages.join(" ")).toMatch(/valid source mode/i);
+  });
+
+  it("accepts an explicit manual override and exposes hldIntakeSource", () => {
+    const r = report([], READY_SERVICE_ONLY);
+    expect(r.status).toBe("ready");
+    expect(r.hldIntakeSource).toEqual({
+      sourceMode: "manual_override",
+      manualOverrideReason: MANUAL_OVERRIDE_REASON,
+    });
+  });
+
+  it("blocks a manual override with a blank reason", () => {
+    const intake = artifact("hld_intake", 1, "approved", {
+      payload: { payloadKind: "rfp_hld_intake", sourceMode: "manual_override", manualOverrideReason: "   ", answers: [] },
+    });
+    const r = report([], [...coreApproved(), intake]);
+    expect(r.status).toBe("blocked");
+    expect(r.missingInputs).toEqual(["hld_intake"]);
+  });
+
+  it("blocks a manual override that carries source artifact ids", () => {
+    const intake = artifact("hld_intake", 1, "approved", {
+      sourceArtifactIds: ["some-questionnaire"],
+      payload: { payloadKind: "rfp_hld_intake", sourceMode: "manual_override", manualOverrideReason: MANUAL_OVERRIDE_REASON, answers: [] },
+    });
+    const r = report([], [...coreApproved(), intake]);
+    expect(r.missingInputs).toEqual(["hld_intake"]);
+  });
+
+  it("blocks a manual override that carries questionnaire review provenance", () => {
+    const intake = artifact("hld_intake", 1, "approved", {
+      payload: {
+        payloadKind: "rfp_hld_intake",
+        sourceMode: "manual_override",
+        manualOverrideReason: MANUAL_OVERRIDE_REASON,
+        questionnaireReview: { sourceQuestionnaireArtifactId: QUESTIONNAIRE_ID },
+        answers: [],
+      },
+    });
+    const r = report([], [...coreApproved(), intake]);
+    expect(r.missingInputs).toEqual(["hld_intake"]);
+  });
+
+  it("accepts a questionnaire-assisted intake whose source ids exactly match the questionnaire id", () => {
+    const r = report([], [...coreApproved(), hldIntakeFromQuestionnaire(1)]);
+    expect(r.status).toBe("ready");
+    expect(r.hldIntakeSource).toEqual({
+      sourceMode: "questionnaire_assisted",
+      sourceQuestionnaireArtifactId: QUESTIONNAIRE_ID,
+    });
+  });
+
+  it("blocks a questionnaire-assisted intake whose sourceArtifactIds do not match the questionnaire id", () => {
+    const r = report([], [
+      ...coreApproved(),
+      hldIntakeFromQuestionnaire(1, { sourceArtifactIds: ["other-id"] }),
+    ]);
+    expect(r.status).toBe("blocked");
+    expect(r.missingInputs).toEqual(["hld_intake"]);
+    expect(r.hldIntakeSource).toBeUndefined();
+  });
+
+  it("blocks a questionnaire-assisted intake with no questionnaire provenance id", () => {
+    const r = report([], [
+      ...coreApproved(),
+      hldIntakeFromQuestionnaire(1, { sourceArtifactIds: [] }, { sourceQuestionnaireArtifactId: "" }),
+    ]);
+    expect(r.missingInputs).toEqual(["hld_intake"]);
+  });
+
+  it("blocks a questionnaire-assisted intake missing its questionnaire review block", () => {
+    const r = report([], [
+      ...coreApproved(),
+      hldIntakeFromQuestionnaire(1, {}, { questionnaireReview: undefined }),
+    ]);
+    expect(r.missingInputs).toEqual(["hld_intake"]);
+  });
+
+  it("blocks a questionnaire-assisted intake whose recorded review provenance mismatches", () => {
+    const r = report([], [
+      ...coreApproved(),
+      hldIntakeFromQuestionnaire(1, {}, { questionnaireReview: { sourceQuestionnaireArtifactId: "different" } }),
+    ]);
+    expect(r.missingInputs).toEqual(["hld_intake"]);
+  });
+
+  it("does not add the source questionnaire id to the authority sourceArtifactIds", () => {
+    const r = report([], [...coreApproved(), hldIntakeFromQuestionnaire(1)]);
+    expect(r.status).toBe("ready");
+    expect(r.sourceArtifactIds).not.toContain(QUESTIONNAIRE_ID);
+    expect(r.sourceArtifactIds).toContain("hld_intake-v1");
   });
 });
 
