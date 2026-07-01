@@ -22,11 +22,13 @@
  * records nothing. A REJECTION skips every payload check so a malformed or stale
  * draft can still be rejected.
  *
- * After those gates pass, APPROVAL additionally fails closed (Stage 6E-B) unless a
- * current valid advisory hld_design_model_review exists for this exact model and the
- * current source bundle: the latest non-retired review of the model must validate
- * against the Stage 6E-B review contract, tie to the model and current bundle, and
- * carry no blocking findings. Missing -> hld_design_model_review_required; an invalid
+ * After those gates pass, APPROVAL additionally fails closed (Stage 6E-B / 6H-0H-A)
+ * unless a current valid OpenAI ADVISORY hld_design_model_review exists for this
+ * exact model and the current source bundle: the latest non-retired review of the
+ * model must validate against the Stage 6E-B review contract, tie to the model and
+ * current bundle, carry reviewer.type "ai_advisory" (a deterministic/engineer review
+ * no longer satisfies the mandatory gate), and carry no blocking findings. A missing
+ * OR non-ai_advisory latest review -> hld_design_model_review_required; an invalid
  * latest review payload -> invalid_hld_design_model_review_payload; a current valid
  * review with blocking findings -> blocking_hld_design_model_review_findings. Warnings
  * and suggestions are advisory and proceed to engineer approval. Retired
@@ -390,6 +392,16 @@ function evaluateReviewGate(
     latest.sourceArtifactIds[0] === model.id &&
     latest.sourceArtifactIds[1] === sourceBundle.id;
   if (!tiesToCurrent) {
+    return {
+      status: "hld_design_model_review_required",
+      artifact: toArtifactSummary(model),
+    };
+  }
+
+  // The mandatory quality gate is the OpenAI advisory review (Stage 6H-0H-A). A
+  // current, valid deterministic/engineer review no longer satisfies approval -
+  // treat it as if no matching review exists so a fresh ai_advisory review is run.
+  if (payload.reviewer.type !== "ai_advisory") {
     return {
       status: "hld_design_model_review_required",
       artifact: toArtifactSummary(model),

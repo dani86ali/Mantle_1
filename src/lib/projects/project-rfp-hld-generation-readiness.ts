@@ -62,6 +62,7 @@ export type RfpHldGenerationReadinessBlockerCode =
   | "source_bundle_upstream_not_current"
   | "matching_review_missing"
   | "matching_review_payload_invalid"
+  | "matching_review_not_openai_advisory"
   | "matching_review_model_mismatch"
   | "matching_review_source_bundle_mismatch"
   | "matching_review_source_ids_mismatch"
@@ -472,7 +473,7 @@ function nextActionFor(blockers: readonly RfpHldGenerationReadinessBlocker[]): s
   if (blockers.length === 0) return "Approved HLD design model is ready for future HLD generation.";
   const codes = new Set(blockers.map((b) => b.code));
   if (codes.has("no_approved_hld_design_model")) {
-    return "Approve a current HLD design model after deterministic review.";
+    return "Approve a current HLD design model after OpenAI advisory review.";
   }
   if (codes.has("approved_model_wrong_stage")) {
     return "Reapprove the HLD design model on the hld_design_delta_review stage before future HLD generation.";
@@ -489,11 +490,12 @@ function nextActionFor(blockers: readonly RfpHldGenerationReadinessBlocker[]): s
   if (
     codes.has("matching_review_missing") ||
     codes.has("matching_review_payload_invalid") ||
+    codes.has("matching_review_not_openai_advisory") ||
     codes.has("matching_review_model_mismatch") ||
     codes.has("matching_review_source_bundle_mismatch") ||
     codes.has("matching_review_source_ids_mismatch")
   ) {
-    return "Run a fresh deterministic HLD design-model review for the approved model.";
+    return "Run a fresh OpenAI advisory HLD quality review for the approved model.";
   }
   if (codes.has("matching_review_blocking_findings")) {
     return "Resolve blocking advisory review findings before future HLD generation.";
@@ -666,7 +668,7 @@ export function getRfpHldGenerationReadiness(
     addBlocker(
       blockers,
       "matching_review_missing",
-      "No current deterministic advisory review exists for the approved HLD design model."
+      "No current OpenAI advisory HLD quality review exists for the approved HLD design model."
     );
   } else {
     reviewSummary = toReviewSummary(review);
@@ -680,6 +682,13 @@ export function getRfpHldGenerationReadiness(
       );
     } else {
       const payload = review.payload as unknown as RfpHldDesignModelReviewPayload;
+      if (payload.reviewer.type !== "ai_advisory") {
+        addBlocker(
+          blockers,
+          "matching_review_not_openai_advisory",
+          "The latest HLD design-model review is not an OpenAI advisory review; a current OpenAI advisory HLD quality review is required."
+        );
+      }
       if (payload.sourceHldDesignModelArtifactId !== approvedModel.id) {
         addBlocker(
           blockers,

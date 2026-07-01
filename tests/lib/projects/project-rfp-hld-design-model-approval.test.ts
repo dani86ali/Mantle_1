@@ -236,7 +236,7 @@ function validReviewPayload(
     sourceHldDesignModelArtifactId: MODEL_ID,
     sourceHldSourceBundleArtifactId: BUNDLE_ID,
     reviewedAt: CREATED_AT,
-    reviewer: { type: "deterministic" },
+    reviewer: { type: "ai_advisory" },
     sourceReferences: [{ id: "ref-1", artifactId: MODEL_ID }],
     findings: [
       {
@@ -559,6 +559,43 @@ describe("reviewRfpHldDesignModelArtifact - advisory review gate", () => {
     expect(result.artifact.id).toBe(MODEL_ID);
     expect("payload" in result.artifact).toBe(false);
     expect(JSON.stringify(result)).not.toContain(TENANT);
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("treats a current valid deterministic review as insufficient (mandatory OpenAI advisory gate)", async () => {
+    const payload = validReviewPayload({ reviewer: { type: "deterministic" } });
+    mockListProjectArtifacts.mockResolvedValue([
+      validBundleArtifact(),
+      validModelArtifact(),
+      validReviewArtifact({ payload: payload as unknown as Record<string, unknown> }),
+    ]);
+    const result = await review();
+    expect(result.status).toBe("hld_design_model_review_required");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("treats a current valid engineer review as insufficient (mandatory OpenAI advisory gate)", async () => {
+    const payload = validReviewPayload({ reviewer: { type: "engineer" } });
+    mockListProjectArtifacts.mockResolvedValue([
+      validBundleArtifact(),
+      validModelArtifact(),
+      validReviewArtifact({ payload: payload as unknown as Record<string, unknown> }),
+    ]);
+    const result = await review();
+    expect(result.status).toBe("hld_design_model_review_required");
+    expect(mockCreateApproval).not.toHaveBeenCalled();
+  });
+
+  it("blocks a blocking OpenAI advisory review with blocking_hld_design_model_review_findings", async () => {
+    const payload = blockingReviewPayload();
+    payload.reviewer = { type: "ai_advisory" };
+    mockListProjectArtifacts.mockResolvedValue([
+      validBundleArtifact(),
+      validModelArtifact(),
+      validReviewArtifact({ payload: payload as unknown as Record<string, unknown> }),
+    ]);
+    const result = await review();
+    expect(result.status).toBe("blocking_hld_design_model_review_findings");
     expect(mockCreateApproval).not.toHaveBeenCalled();
   });
 

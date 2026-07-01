@@ -247,7 +247,7 @@ function reviewPayload(
     sourceHldDesignModelArtifactId: MODEL_ID,
     sourceHldSourceBundleArtifactId: BUNDLE_ID,
     reviewedAt: CREATED_AT,
-    reviewer: { type: "deterministic" },
+    reviewer: { type: "ai_advisory" },
     sourceReferences: [{ id: "ref-1", artifactId: MODEL_ID }],
     findings: [
       {
@@ -388,6 +388,46 @@ describe("getRfpHldGenerationReadiness", () => {
   it("blocks when no current matching review exists", () => {
     const artifacts = validArtifacts().filter((a) => a.type !== "hld_design_model_review");
     expect(blockerCodes(artifacts)).toContain("matching_review_missing");
+  });
+
+  it("blocks a current valid deterministic review as not OpenAI advisory", () => {
+    const payload = reviewPayload({ reviewer: { type: "deterministic" } });
+    const artifacts = [
+      ...upstreamArtifacts(),
+      sourceBundle(),
+      model(),
+      review({ payload: payload as unknown as Record<string, unknown> }),
+    ];
+    const report = getRfpHldGenerationReadiness({ projectId: PROJECT, artifacts });
+    expect(report.ready).toBe(false);
+    expect(report.blockers.map((b) => b.code)).toContain(
+      "matching_review_not_openai_advisory"
+    );
+    expect(report.nextAction).toContain("OpenAI advisory");
+  });
+
+  it("blocks a current valid engineer review as not OpenAI advisory", () => {
+    const payload = reviewPayload({ reviewer: { type: "engineer" } });
+    const artifacts = [
+      ...upstreamArtifacts(),
+      sourceBundle(),
+      model(),
+      review({ payload: payload as unknown as Record<string, unknown> }),
+    ];
+    expect(blockerCodes(artifacts)).toContain("matching_review_not_openai_advisory");
+  });
+
+  it("stays ready for a current nonblocking OpenAI advisory review", () => {
+    const payload = reviewPayload({ reviewer: { type: "ai_advisory" } });
+    const artifacts = [
+      ...upstreamArtifacts(),
+      sourceBundle(),
+      model(),
+      review({ payload: payload as unknown as Record<string, unknown> }),
+    ];
+    const report = getRfpHldGenerationReadiness({ projectId: PROJECT, artifacts });
+    expect(report.ready).toBe(true);
+    expect(report.review?.reviewerType).toBe("ai_advisory");
   });
 
   it("blocks when the latest matching review payload is invalid", () => {
