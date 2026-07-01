@@ -28,6 +28,7 @@ import {
   validateRfpHldIntakeQuestionnairePayload,
   type RfpHldIntakeQuestionnaireAnswerType,
   type RfpHldIntakeQuestionnairePayload,
+  type RfpHldIntakeQuestionnaireSourceRef,
 } from "@/lib/projects/project-rfp-hld-intake-questionnaire";
 import type {
   Project,
@@ -176,6 +177,8 @@ export interface RfpHldIntakeQuestionnaireReview {
   sourceQuestionnaireVersion: number;
   questionnairePayloadKind: string;
   reviewedQuestions: RfpHldIntakeReviewedQuestion[];
+  /** A copy of the source questionnaire's approved source-ref catalog. */
+  sourceRefs: RfpHldIntakeQuestionnaireSourceRef[];
   counts: RfpHldIntakeQuestionnaireReviewCounts;
 }
 
@@ -605,7 +608,8 @@ function normalizeStringArray(
  */
 function normalizeReviewedQuestions(
   raw: unknown,
-  sourceQuestionIds: ReadonlySet<string>
+  sourceQuestions: ReadonlyMap<string, ReadonlySet<string>>,
+  catalogRefIds: ReadonlySet<string>
 ): {
   reviewed: RfpHldIntakeReviewedQuestion[];
   counts: RfpHldIntakeQuestionnaireReviewCounts;
@@ -677,7 +681,7 @@ function normalizeReviewedQuestions(
       if (sourceQuestionId === "") {
         fail(`Reviewed question requires a sourceQuestionId: ${questionId}.`);
       }
-      if (!sourceQuestionIds.has(sourceQuestionId)) {
+      if (!sourceQuestions.has(sourceQuestionId)) {
         fail(`Unknown sourceQuestionId: ${sourceQuestionId}.`);
       }
       if (seenSourceIds.has(sourceQuestionId)) {
@@ -692,6 +696,26 @@ function normalizeReviewedQuestions(
       `Reviewed question ${questionId} sourceRefIds`,
       isAdded
     );
+
+    // Provenance guard: non-added questions must preserve the EXACT source
+    // provenance id set (blocks browser tampering); added questions may cite
+    // nothing, but any supplied ref must resolve to the source catalog.
+    if (isAdded) {
+      for (const rid of sourceRefIds) {
+        if (!catalogRefIds.has(rid)) {
+          fail(`Added reviewed question ${questionId} cites an unknown sourceRefId: ${rid}.`);
+        }
+      }
+    } else {
+      const expected = sourceQuestions.get(sourceQuestionId as string);
+      const matches =
+        expected !== undefined &&
+        sourceRefIds.length === expected.size &&
+        sourceRefIds.every((rid) => expected.has(rid));
+      if (!matches) {
+        fail(`Reviewed question ${questionId} sourceRefIds must match the source question provenance.`);
+      }
+    }
 
     const isSelect = SELECT_ANSWER_TYPES.has(answerType);
     let allowedOptions: string[] | undefined;
@@ -758,7 +782,7 @@ function normalizeReviewedQuestions(
   }
 
   // Every original source question must be represented exactly once.
-  if (seenSourceIds.size !== sourceQuestionIds.size) {
+  if (seenSourceIds.size !== sourceQuestions.size) {
     fail("Every source question must be reviewed exactly once.");
   }
   if (counts.active === 0) {
@@ -881,14 +905,22 @@ export async function createRfpHldIntakeFromQuestionnaireDraft(
   }
 
   const sourcePayload = source.payload as unknown as RfpHldIntakeQuestionnairePayload;
-  const sourceQuestionIds = new Set(
-    sourcePayload.questions.map((question) => question.questionId)
+  // The source questionnaire's questions and sourceRefs are the ONLY provenance
+  // catalog: each source question maps to its exact source-ref id set, and every
+  // reviewed ref must resolve to the approved catalog.
+  const sourceQuestions = new Map<string, ReadonlySet<string>>(
+    sourcePayload.questions.map((question) => [
+      question.questionId,
+      new Set(question.sourceRefIds),
+    ])
   );
+  const catalogRefIds = new Set(sourcePayload.sourceRefs.map((ref) => ref.refId));
 
   // Request-derived validation (throws RfpHldIntakeValidationError -> 400).
   const { reviewed, counts } = normalizeReviewedQuestions(
     input.reviewedQuestions,
-    sourceQuestionIds
+    sourceQuestions,
+    catalogRefIds
   );
   const activeQuestions = reviewed
     .filter((question) => ACTIVE_REVIEW_ACTIONS.has(question.action))
@@ -907,6 +939,17 @@ export async function createRfpHldIntakeFromQuestionnaireDraft(
       sourceQuestionnaireVersion: source.version,
       questionnairePayloadKind: RFP_HLD_INTAKE_QUESTIONNAIRE_PAYLOAD_KIND,
       reviewedQuestions: reviewed,
+      // Persist a copy of the approved catalog by explicit per-field whitelist.
+      sourceRefs: sourcePayload.sourceRefs.map((ref) => ({
+        refId: ref.refId,
+        artifactId: ref.artifactId,
+        artifactType: ref.artifactType,
+        stageId: ref.stageId,
+        status: ref.status,
+        version: ref.version,
+        payloadKind: ref.payloadKind,
+        label: ref.label,
+      })),
       counts,
     },
     answers,

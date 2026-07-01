@@ -17,6 +17,18 @@ function minimalPayload(): RfpHldIntakeQuestionnairePayload {
     createdBy: "engineer@example.com",
     createdAt: CREATED_AT,
     sourceArtifactIds: ["art-req-1"],
+    sourceRefs: [
+      {
+        refId: "ref-req-1",
+        artifactId: "art-req-1",
+        artifactType: "input_package",
+        stageId: "input_package_review",
+        status: "approved",
+        version: 1,
+        payloadKind: "rfp_input_package",
+        label: "Requirements package",
+      },
+    ],
     questions: [
       {
         questionId: "q-1",
@@ -26,7 +38,7 @@ function minimalPayload(): RfpHldIntakeQuestionnairePayload {
         whyAsked: "Determines the WAN edge sizing for the branch design.",
         answerType: "number",
         required: true,
-        sourceRefIds: ["art-req-1"],
+        sourceRefIds: ["ref-req-1"],
       },
     ],
     validation: {
@@ -45,6 +57,28 @@ function validPayload(): RfpHldIntakeQuestionnairePayload {
     createdBy: "engineer@example.com",
     createdAt: CREATED_AT,
     sourceArtifactIds: ["art-req-1", "art-cmx-1"],
+    sourceRefs: [
+      {
+        refId: "ref-req-1",
+        artifactId: "art-req-1",
+        artifactType: "input_package",
+        stageId: "input_package_review",
+        status: "approved",
+        version: 1,
+        payloadKind: "rfp_input_package",
+        label: "Requirements package",
+      },
+      {
+        refId: "ref-cmx-1",
+        artifactId: "art-cmx-1",
+        artifactType: "compliance_matrix",
+        stageId: "compliance_matrix_review",
+        status: "approved",
+        version: 2,
+        payloadKind: "rfp_compliance_matrix",
+        label: "Compliance matrix",
+      },
+    ],
     questions: [
       {
         questionId: "q-1",
@@ -54,7 +88,7 @@ function validPayload(): RfpHldIntakeQuestionnairePayload {
         whyAsked: "Sizes the campus access design and uplink strategy.",
         answerType: "free_text",
         required: true,
-        sourceRefIds: ["art-req-1"],
+        sourceRefIds: ["ref-req-1"],
       },
       {
         questionId: "q-2",
@@ -64,7 +98,7 @@ function validPayload(): RfpHldIntakeQuestionnairePayload {
         whyAsked: "Selects the macro or micro segmentation approach for the design.",
         answerType: "single_select",
         required: true,
-        sourceRefIds: ["art-cmx-1"],
+        sourceRefIds: ["ref-cmx-1"],
         allowedOptions: ["macro", "micro", "none"],
         requiredInputIds: ["art-req-1"],
       },
@@ -76,7 +110,7 @@ function validPayload(): RfpHldIntakeQuestionnairePayload {
         whyAsked: "Confirms the power resiliency assumptions for the topology.",
         answerType: "boolean",
         required: false,
-        sourceRefIds: ["art-req-1"],
+        sourceRefIds: ["ref-req-1"],
       },
     ],
     validation: {
@@ -105,6 +139,9 @@ const questionAt = (p: Record<string, unknown>, i: number): Record<string, unkno
 
 const validationOf = (p: Record<string, unknown>): Record<string, unknown> =>
   p.validation as Record<string, unknown>;
+
+const sourceRefAt = (p: Record<string, unknown>, i: number): Record<string, unknown> =>
+  (p.sourceRefs as Record<string, unknown>[])[i];
 
 // ---------------------------------------------------------------------------
 // Happy path
@@ -202,6 +239,92 @@ describe("validateRfpHldIntakeQuestionnairePayload - sourceArtifactIds", () => {
     const p = mutable();
     p.sourceArtifactIds = "art-req-1";
     expect(isValidRfpHldIntakeQuestionnairePayload(p)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sourceRefs catalog + provenance resolution
+// ---------------------------------------------------------------------------
+
+describe("validateRfpHldIntakeQuestionnairePayload - sourceRefs catalog", () => {
+  it("accepts a payload that carries a closed sourceRefs catalog", () => {
+    const result = validateRfpHldIntakeQuestionnairePayload(validPayload());
+    expect(result.errors).toEqual([]);
+    expect(validPayload().sourceRefs.length).toBeGreaterThan(0);
+  });
+
+  it("rejects a missing sourceRefs key", () => {
+    const p = mutable();
+    delete p.sourceRefs;
+    expect(isValidRfpHldIntakeQuestionnairePayload(p)).toBe(false);
+  });
+
+  it("rejects an empty or non-array sourceRefs", () => {
+    for (const bad of [[], {}, "x"]) {
+      const p = mutable();
+      p.sourceRefs = bad;
+      expect(isValidRfpHldIntakeQuestionnairePayload(p)).toBe(false);
+    }
+  });
+
+  it("rejects a duplicate refId", () => {
+    const p = mutable();
+    sourceRefAt(p, 1).refId = "ref-req-1";
+    expect(isValidRfpHldIntakeQuestionnairePayload(p)).toBe(false);
+  });
+
+  it("rejects an unexpected key inside a sourceRef (closed shape)", () => {
+    const p = mutable();
+    sourceRefAt(p, 0).extra = "x";
+    expect(isValidRfpHldIntakeQuestionnairePayload(p)).toBe(false);
+  });
+
+  it("rejects a missing sourceRef key", () => {
+    const p = mutable();
+    delete sourceRefAt(p, 0).payloadKind;
+    expect(isValidRfpHldIntakeQuestionnairePayload(p)).toBe(false);
+  });
+
+  it("rejects a blank sourceRef string field", () => {
+    for (const key of ["refId", "artifactId", "artifactType", "stageId", "payloadKind", "label"]) {
+      const p = mutable();
+      sourceRefAt(p, 0)[key] = "  ";
+      expect(isValidRfpHldIntakeQuestionnairePayload(p)).toBe(false);
+    }
+  });
+
+  it("rejects a sourceRef status other than approved", () => {
+    const p = mutable();
+    sourceRefAt(p, 0).status = "needs_review";
+    expect(isValidRfpHldIntakeQuestionnairePayload(p)).toBe(false);
+  });
+
+  it("rejects a non-positive or non-integer sourceRef version", () => {
+    for (const bad of [0, -1, 1.5, "1"]) {
+      const p = mutable();
+      sourceRefAt(p, 0).version = bad;
+      expect(isValidRfpHldIntakeQuestionnairePayload(p)).toBe(false);
+    }
+  });
+
+  it("rejects a sourceRef artifactId absent from sourceArtifactIds", () => {
+    const p = mutable();
+    sourceRefAt(p, 0).artifactId = "art-not-listed";
+    expect(isValidRfpHldIntakeQuestionnairePayload(p)).toBe(false);
+  });
+
+  it("rejects a sourceArtifactId with no matching sourceRef", () => {
+    const p = mutable();
+    (p.sourceArtifactIds as string[]).push("art-orphan-1");
+    expect(isValidRfpHldIntakeQuestionnairePayload(p)).toBe(false);
+  });
+
+  it("rejects a question sourceRefId absent from the sourceRefs catalog", () => {
+    const p = mutable();
+    questionAt(p, 0).sourceRefIds = ["ref-not-in-catalog"];
+    const result = validateRfpHldIntakeQuestionnairePayload(p);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("unknown sourceRef"))).toBe(true);
   });
 });
 

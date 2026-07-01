@@ -70,8 +70,27 @@ const ALLOWED_REVIEW_KEYS: ReadonlySet<string> = new Set([
   "sourceQuestionnaireVersion",
   "questionnairePayloadKind",
   "reviewedQuestions",
+  "sourceRefs",
   "counts",
 ]);
+const ALLOWED_SOURCE_REF_KEYS: ReadonlySet<string> = new Set([
+  "refId",
+  "artifactId",
+  "artifactType",
+  "stageId",
+  "status",
+  "version",
+  "payloadKind",
+  "label",
+]);
+const SOURCE_REF_STRING_KEYS: readonly string[] = [
+  "refId",
+  "artifactId",
+  "artifactType",
+  "stageId",
+  "payloadKind",
+  "label",
+];
 const ALLOWED_REVIEWED_QUESTION_KEYS: ReadonlySet<string> = new Set([
   "questionId",
   "action",
@@ -298,6 +317,32 @@ function statusCountsMatch(
 }
 
 /**
+ * Validate the persisted review source-ref catalog with the same closed rules as
+ * the questionnaire contract (nonempty, closed shape, unique refId, status
+ * approved, positive version, nonblank strings). Returns the refId set, or null on
+ * any deviation.
+ */
+function collectValidReviewSourceRefIds(raw: unknown): Set<string> | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const refIds = new Set<string>();
+  for (const item of raw) {
+    if (!isPlainRecord(item)) return null;
+    for (const key of Object.keys(item)) {
+      if (!ALLOWED_SOURCE_REF_KEYS.has(key)) return null;
+    }
+    for (const field of SOURCE_REF_STRING_KEYS) {
+      if (!isNonblankString(item[field])) return null;
+    }
+    if (item.status !== "approved") return null;
+    if (!isPositiveInteger(item.version)) return null;
+    const refId = item.refId as string;
+    if (refIds.has(refId)) return null;
+    refIds.add(refId);
+  }
+  return refIds;
+}
+
+/**
  * Re-validate a persisted questionnaire_assisted payload's internal consistency:
  * the source id / audit block / reviewed decisions / counts and the answers'
  * correspondence to the active reviewed questions. This does NOT re-load the
@@ -331,6 +376,9 @@ function isValidQuestionnairePayload(
   if (review.questionnairePayloadKind !== HLD_INTAKE_QUESTIONNAIRE_PAYLOAD_KIND) {
     return false;
   }
+
+  const catalogRefIds = collectValidReviewSourceRefIds(review.sourceRefs);
+  if (catalogRefIds === null) return false;
 
   const reviewedQuestions = review.reviewedQuestions;
   if (!Array.isArray(reviewedQuestions) || reviewedQuestions.length === 0) {
@@ -383,6 +431,10 @@ function isValidQuestionnairePayload(
     }
 
     if (!isValidStringArray(q.sourceRefIds, isAdded)) return false;
+    // Every reviewed sourceRefId must resolve to the persisted review catalog.
+    for (const rid of q.sourceRefIds as string[]) {
+      if (!catalogRefIds.has(rid)) return false;
+    }
 
     if (SELECT_ANSWER_TYPES.has(answerType)) {
       if (!isValidStringArray(q.allowedOptions, false)) return false;

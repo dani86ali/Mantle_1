@@ -48,6 +48,28 @@ function validPayload(): RfpHldIntakeQuestionnairePayload {
     createdBy: "engineer@example.com",
     createdAt: CREATED_AT,
     sourceArtifactIds: ["art-req-1", "art-cmx-1"],
+    sourceRefs: [
+      {
+        refId: "ref-req-1",
+        artifactId: "art-req-1",
+        artifactType: "input_package",
+        stageId: "input_package_review",
+        status: "approved",
+        version: 1,
+        payloadKind: "rfp_input_package",
+        label: "Requirements package",
+      },
+      {
+        refId: "ref-cmx-1",
+        artifactId: "art-cmx-1",
+        artifactType: "compliance_matrix",
+        stageId: "compliance_matrix_review",
+        status: "approved",
+        version: 2,
+        payloadKind: "rfp_compliance_matrix",
+        label: "Compliance matrix",
+      },
+    ],
     questions: [
       {
         questionId: "q-2",
@@ -57,7 +79,7 @@ function validPayload(): RfpHldIntakeQuestionnairePayload {
         whyAsked: "Sizes the security zoning for the HLD.",
         answerType: "single_select",
         required: true,
-        sourceRefIds: ["art-cmx-1"],
+        sourceRefIds: ["ref-cmx-1"],
         allowedOptions: ["Flat", "Zoned"],
       },
       {
@@ -68,7 +90,7 @@ function validPayload(): RfpHldIntakeQuestionnairePayload {
         whyAsked: "Sizes the campus access design.",
         answerType: "free_text",
         required: true,
-        sourceRefIds: ["art-req-1"],
+        sourceRefIds: ["ref-req-1"],
         requiredInputIds: ["art-req-1"],
       },
     ],
@@ -188,6 +210,7 @@ describe("loadRfpHldIntakeQuestionnaireList", () => {
       createdAt: CREATED_AT,
       questionCount: 2,
       sourceArtifactCount: 2,
+      sourceRefCount: 2,
       validationStatus: "passed",
       validationFindingCount: 1,
       payloadValid: true,
@@ -352,9 +375,32 @@ describe("loadRfpHldIntakeQuestionnaireDetail", () => {
       whyAsked: "Sizes the security zoning for the HLD.",
       answerType: "single_select",
       required: true,
-      sourceRefIds: ["art-cmx-1"],
+      sourceRefIds: ["ref-cmx-1"],
       allowedOptions: ["Flat", "Zoned"],
     });
+    // The sanitized closed source-ref catalog is projected in the detail payload.
+    expect(result.questionnaire.sourceRefs).toEqual([
+      {
+        refId: "ref-req-1",
+        artifactId: "art-req-1",
+        artifactType: "input_package",
+        stageId: "input_package_review",
+        status: "approved",
+        version: 1,
+        payloadKind: "rfp_input_package",
+        label: "Requirements package",
+      },
+      {
+        refId: "ref-cmx-1",
+        artifactId: "art-cmx-1",
+        artifactType: "compliance_matrix",
+        stageId: "compliance_matrix_review",
+        status: "approved",
+        version: 2,
+        payloadKind: "rfp_compliance_matrix",
+        label: "Compliance matrix",
+      },
+    ]);
     expect(result.questionnaire.validation).toEqual({
       status: "passed",
       checkedAt: CREATED_AT,

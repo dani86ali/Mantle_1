@@ -139,6 +139,17 @@ export async function draftRfpHldIntakeQuestionnaireCandidate(
     createdBy: draftingInput.createdBy,
     createdAt: draftingInput.createdAt,
     sourceArtifactIds: draftingInput.sourceArtifactIds.slice(),
+    // Copy the approved catalog by explicit per-field whitelist; never alias input.
+    sourceRefs: draftingInput.sourceRefs.map((ref) => ({
+      refId: ref.refId,
+      artifactId: ref.artifactId,
+      artifactType: ref.artifactType,
+      stageId: ref.stageId,
+      status: ref.status,
+      version: ref.version,
+      payloadKind: ref.payloadKind,
+      label: ref.label,
+    })),
     questions: extracted.questions,
     validation: {
       status: "passed",

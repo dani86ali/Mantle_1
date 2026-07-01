@@ -130,6 +130,12 @@ function makeQuestionnairePayload(
     sourceQuestionnaireVersion: 3,
     questionnairePayloadKind: "rfp_hld_intake_questionnaire",
     reviewedQuestions,
+    sourceRefs: [
+      { refId: "ref-1", artifactId: "input-pkg-1", artifactType: "input_package", stageId: "input_package_review", status: "approved", version: 1, payloadKind: "rfp_input_package", label: "Ref 1" },
+      { refId: "ref-2", artifactId: "input-pkg-1", artifactType: "input_package", stageId: "input_package_review", status: "approved", version: 1, payloadKind: "rfp_input_package", label: "Ref 2" },
+      { refId: "ref-3", artifactId: "input-pkg-1", artifactType: "input_package", stageId: "input_package_review", status: "approved", version: 1, payloadKind: "rfp_input_package", label: "Ref 3" },
+      { refId: "ref-4", artifactId: "input-pkg-1", artifactType: "input_package", stageId: "input_package_review", status: "approved", version: 1, payloadKind: "rfp_input_package", label: "Ref 4" },
+    ],
     counts: { accepted: 1, edited: 1, added: 1, removed: 1, waived: 1, active: 3 },
   };
   const answers: AnswerRecord[] = [
@@ -381,6 +387,13 @@ describe("reviewRfpHldIntakeArtifact - approval payload re-validation", () => {
       ["questionnaire source version invalid", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { r.sourceQuestionnaireVersion = 0; }))],
       ["counts mismatch", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { (r.counts as Record<string, number>).accepted = 5; }))],
       ["extra reviewed-question key", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { (r.reviewedQuestions as ReviewRecord[])[0].injected = "x"; }))],
+      ["missing review sourceRefs catalog", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { delete r.sourceRefs; }))],
+      ["empty review sourceRefs catalog", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { r.sourceRefs = []; }))],
+      ["review sourceRef not approved", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { (r.sourceRefs as ReviewRecord[])[0].status = "needs_review"; }))],
+      ["review sourceRef duplicate refId", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { (r.sourceRefs as ReviewRecord[])[1].refId = "ref-1"; }))],
+      ["review sourceRef non-positive version", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { (r.sourceRefs as ReviewRecord[])[0].version = 0; }))],
+      ["review sourceRef extra key", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { (r.sourceRefs as ReviewRecord[])[0].injected = "x"; }))],
+      ["reviewed sourceRefId absent from the catalog", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { (r.reviewedQuestions as ReviewRecord[])[0].sourceRefIds = ["ref-not-in-catalog"]; }))],
       ["added carrying a sourceQuestionId", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { (r.reviewedQuestions as ReviewRecord[])[4].sourceQuestionId = "sq-1"; }))],
       ["active question missing order", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { delete (r.reviewedQuestions as ReviewRecord[])[0].order; }))],
       ["waived missing waiverReason", makeQuestionnaireArtifact(makeQuestionnairePayload((r) => { delete (r.reviewedQuestions as ReviewRecord[])[3].waiverReason; }))],

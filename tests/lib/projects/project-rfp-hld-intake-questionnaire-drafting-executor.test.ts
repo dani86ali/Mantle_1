@@ -139,6 +139,10 @@ describe("draftRfpHldIntakeQuestionnaireCandidate - valid candidate output", () 
     expect(q.createdBy).toBe(input.createdBy);
     expect(q.createdAt).toBe(input.createdAt);
     expect(q.sourceArtifactIds).toEqual(input.sourceArtifactIds);
+    // The approved catalog is copied by explicit per-field whitelist (not aliased).
+    expect(q.sourceRefs).toEqual(input.sourceRefs);
+    expect(q.sourceRefs).not.toBe(input.sourceRefs);
+    expect(q.sourceRefs[0]).not.toBe(input.sourceRefs[0]);
     // The embedded self-assessment is stamped by this boundary alone.
     expect(q.validation).toEqual({
       status: "passed",
@@ -177,6 +181,10 @@ describe("draftRfpHldIntakeQuestionnaireCandidate - invalid candidate output", (
       { questions: [{ ...validQuestion(), whyAsked: "asserts final authority" }] },
     ],
     ["an invalid question shape", { questions: [{ questionId: "" }] }],
+    [
+      "a question citing a ref not in the approved catalog",
+      { questions: [{ ...validQuestion(), sourceRefIds: ["ref-not-in-catalog"] }] },
+    ],
   ];
 
   it.each(CASES)(

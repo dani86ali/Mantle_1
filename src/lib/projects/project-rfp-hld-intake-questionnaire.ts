@@ -62,6 +62,23 @@ export interface RfpHldIntakeQuestionnaireQuestion {
   requiredInputIds?: string[];
 }
 
+/**
+ * A closed provenance reference persisted in the questionnaire catalog. It proves
+ * the approved source chain (artifact id + type + stage + status + version + payload
+ * kind) without carrying any raw body, file path, storage handle, or authority
+ * decision. Shape-compatible with the transient drafting-input source refs.
+ */
+export interface RfpHldIntakeQuestionnaireSourceRef {
+  refId: string;
+  artifactId: string;
+  artifactType: string;
+  stageId: string;
+  status: "approved";
+  version: number;
+  payloadKind: string;
+  label: string;
+}
+
 /** A structured embedded validation finding (no raw/provider/authority content). */
 export interface RfpHldIntakeQuestionnaireFinding {
   id: string;
@@ -84,6 +101,8 @@ export interface RfpHldIntakeQuestionnairePayload {
   createdBy: string;
   createdAt: string;
   sourceArtifactIds: string[];
+  /** Closed catalog of approved source refs every question sourceRefId resolves to. */
+  sourceRefs: RfpHldIntakeQuestionnaireSourceRef[];
   questions: RfpHldIntakeQuestionnaireQuestion[];
   validation: RfpHldIntakeQuestionnaireValidationSummary;
 }
@@ -117,8 +136,15 @@ const FINDING_SEVERITIES: ReadonlySet<string> = new Set([
 const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 
 const TOP_LEVEL_KEYS: readonly string[] = [
-  "payloadKind", "createdBy", "createdAt", "sourceArtifactIds", "questions",
-  "validation",
+  "payloadKind", "createdBy", "createdAt", "sourceArtifactIds", "sourceRefs",
+  "questions", "validation",
+];
+const SOURCE_REF_KEYS: readonly string[] = [
+  "refId", "artifactId", "artifactType", "stageId", "status", "version",
+  "payloadKind", "label",
+];
+const SOURCE_REF_STRING_KEYS: readonly string[] = [
+  "refId", "artifactId", "artifactType", "stageId", "payloadKind", "label",
 ];
 const QUESTION_REQUIRED: readonly string[] = [
   "questionId", "order", "domain", "questionText", "whyAsked", "answerType",
@@ -291,6 +317,29 @@ function validateQuestion(
   };
 }
 
+/** Validate one closed source ref; returns its refId/artifactId when nonblank. */
+function validateSourceRef(
+  errors: string[], label: string, raw: unknown
+): { refId: string | null; artifactId: string | null } {
+  const o = asObject(raw);
+  if (!o) {
+    errors.push(`${label}: must be an object`);
+    return { refId: null, artifactId: null };
+  }
+  checkKeys(errors, label, o, SOURCE_REF_KEYS);
+  for (const f of SOURCE_REF_STRING_KEYS) {
+    if (!isNonBlank(o[f])) errors.push(`${label}: blank ${f}`);
+  }
+  if (o.status !== "approved") errors.push(`${label}: status must be "approved"`);
+  if (!isPositiveInteger(o.version)) {
+    errors.push(`${label}: version must be a positive integer`);
+  }
+  return {
+    refId: isNonBlank(o.refId) ? o.refId : null,
+    artifactId: isNonBlank(o.artifactId) ? o.artifactId : null,
+  };
+}
+
 function validateFinding(errors: string[], label: string, raw: unknown): string | null {
   const o = asObject(raw);
   if (!o) { errors.push(`${label}: must be an object`); return null; }
@@ -366,6 +415,45 @@ export function validateRfpHldIntakeQuestionnairePayload(
 
   validateStringArray(errors, "sourceArtifactIds", root.sourceArtifactIds, true);
 
+  const sourceArtifactIdSet = new Set<string>(
+    Array.isArray(root.sourceArtifactIds)
+      ? root.sourceArtifactIds.filter((v): v is string => isNonBlank(v))
+      : []
+  );
+
+  // Closed source-ref catalog: nonempty, unique refId, approved-only, and the
+  // provenance anchor every question sourceRefId must resolve to.
+  const refIds = new Set<string>();
+  const refArtifactIds = new Set<string>();
+  if (!Array.isArray(root.sourceRefs)) {
+    errors.push("sourceRefs: must be an array");
+  } else if (root.sourceRefs.length === 0) {
+    errors.push("sourceRefs: must not be empty");
+  } else {
+    const seenRefIds: string[] = [];
+    root.sourceRefs.forEach((r, i) => {
+      const res = validateSourceRef(errors, `sourceRefs[${i}]`, r);
+      if (res.refId !== null) {
+        seenRefIds.push(res.refId);
+        refIds.add(res.refId);
+      }
+      if (res.artifactId !== null) refArtifactIds.add(res.artifactId);
+    });
+    if (hasDups(seenRefIds)) errors.push("sourceRefs: duplicate refId");
+  }
+
+  // sourceArtifactIds and sourceRefs artifact ids must cover each other exactly.
+  for (const aid of Array.from(refArtifactIds)) {
+    if (!sourceArtifactIdSet.has(aid)) {
+      errors.push(`sourceRefs: artifactId "${aid}" is not in sourceArtifactIds`);
+    }
+  }
+  for (const aid of Array.from(sourceArtifactIdSet)) {
+    if (!refArtifactIds.has(aid)) {
+      errors.push(`sourceArtifactIds: "${aid}" has no matching sourceRef`);
+    }
+  }
+
   if (!Array.isArray(root.questions)) {
     errors.push("questions: must be an array");
   } else if (root.questions.length === 0) {
@@ -377,6 +465,16 @@ export function validateRfpHldIntakeQuestionnairePayload(
       const res = validateQuestion(errors, `questions[${i}]`, q);
       if (res.questionId !== null) questionIds.push(res.questionId);
       if (res.order !== null) orders.push(res.order);
+      const qo = asObject(q);
+      if (qo && Array.isArray(qo.sourceRefIds)) {
+        qo.sourceRefIds.forEach((rid, j) => {
+          if (isNonBlank(rid) && !refIds.has(rid)) {
+            errors.push(
+              `questions[${i}].sourceRefIds[${j}]: unknown sourceRef "${rid}"`
+            );
+          }
+        });
+      }
     });
     if (hasDups(questionIds)) errors.push("questions: duplicate questionId");
     if (new Set(orders).size !== orders.length) errors.push("questions: duplicate order");

@@ -437,6 +437,12 @@ function makeSourceQuestionnairePayload(): Record<string, unknown> {
     createdBy: "engineer-1",
     createdAt: "2026-06-18T09:00:00.000Z",
     sourceArtifactIds: ["input-pkg-1"],
+    sourceRefs: [
+      { refId: "ref-1", artifactId: "input-pkg-1", artifactType: "input_package", stageId: "input_package_review", status: "approved", version: 1, payloadKind: "rfp_input_package", label: "Ref 1" },
+      { refId: "ref-2", artifactId: "input-pkg-1", artifactType: "input_package", stageId: "input_package_review", status: "approved", version: 1, payloadKind: "rfp_input_package", label: "Ref 2" },
+      { refId: "ref-3", artifactId: "input-pkg-1", artifactType: "input_package", stageId: "input_package_review", status: "approved", version: 1, payloadKind: "rfp_input_package", label: "Ref 3" },
+      { refId: "ref-4", artifactId: "input-pkg-1", artifactType: "input_package", stageId: "input_package_review", status: "approved", version: 1, payloadKind: "rfp_input_package", label: "Ref 4" },
+    ],
     questions: [
       { questionId: "sq-1", order: 1, domain: "campus_switching", questionText: "Existing core?", whyAsked: "context", answerType: "free_text", required: true, sourceRefIds: ["ref-1"] },
       { questionId: "sq-2", order: 2, domain: "campus_switching", questionText: "Redundancy?", whyAsked: "resiliency", answerType: "single_select", required: false, sourceRefIds: ["ref-2"], allowedOptions: ["yes", "no"] },
@@ -757,6 +763,68 @@ describe("createRfpHldIntakeFromQuestionnaireDraft - review/answer validation", 
     const answers = makeQuestionAnswers();
     answers[0] = { questionId: "sq-1", status: "answered", value: "   " };
     await expectReviewReject(makeReviewedQuestions(), answers);
+  });
+
+  it("rejects altered sourceRefIds on a non-added reviewed question (provenance tamper)", async () => {
+    const reviewed = makeReviewedQuestions();
+    // sq-1's source provenance is ["ref-1"]; a browser swaps it to ["ref-2"].
+    reviewed[0] = { ...reviewed[0], sourceRefIds: ["ref-2"] };
+    await expectReviewReject(reviewed);
+  });
+
+  it("rejects extra sourceRefIds appended to a non-added reviewed question", async () => {
+    const reviewed = makeReviewedQuestions();
+    reviewed[0] = { ...reviewed[0], sourceRefIds: ["ref-1", "ref-2"] };
+    await expectReviewReject(reviewed);
+  });
+
+  it("rejects an added question citing a sourceRefId not in the catalog", async () => {
+    const reviewed = makeReviewedQuestions();
+    reviewed[4] = { ...reviewed[4], sourceRefIds: ["ref-not-in-catalog"] };
+    await expectReviewReject(reviewed);
+  });
+
+  it("allows an added question that cites a catalog sourceRefId", async () => {
+    getProjectMock.mockResolvedValue(makeProject());
+    getArtifactMock.mockResolvedValue(makeSourceArtifact());
+    createMock.mockResolvedValue(makeCreatedArtifact({ sourceArtifactIds: [SOURCE_ID] }));
+    const reviewed = makeReviewedQuestions();
+    reviewed[4] = { ...reviewed[4], sourceRefIds: ["ref-1"] };
+
+    const result = await createRfpHldIntakeFromQuestionnaireDraft(
+      qInput({ reviewedQuestions: reviewed })
+    );
+
+    expect(result.status).toBe("ok");
+  });
+});
+
+describe("createRfpHldIntakeFromQuestionnaireDraft - provenance persistence", () => {
+  beforeEach(() => {
+    getProjectMock.mockResolvedValue(makeProject());
+    getArtifactMock.mockResolvedValue(makeSourceArtifact());
+    createMock.mockResolvedValue(
+      makeCreatedArtifact({ sourceArtifactIds: [SOURCE_ID] })
+    );
+  });
+
+  it("persists a copy of the source questionnaire sourceRefs catalog in the review block", async () => {
+    await createRfpHldIntakeFromQuestionnaireDraft(qInput());
+
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    const review = payload.questionnaireReview as Record<string, unknown>;
+    const sourceRefs = review.sourceRefs as Array<Record<string, unknown>>;
+    expect(sourceRefs.map((r) => r.refId)).toEqual(["ref-1", "ref-2", "ref-3", "ref-4"]);
+    expect(sourceRefs[0]).toEqual({
+      refId: "ref-1",
+      artifactId: "input-pkg-1",
+      artifactType: "input_package",
+      stageId: "input_package_review",
+      status: "approved",
+      version: 1,
+      payloadKind: "rfp_input_package",
+      label: "Ref 1",
+    });
   });
 });
 

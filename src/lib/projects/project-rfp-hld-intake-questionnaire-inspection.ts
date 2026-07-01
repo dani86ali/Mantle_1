@@ -24,6 +24,7 @@ import {
   validateRfpHldIntakeQuestionnairePayload,
   type RfpHldIntakeQuestionnairePayload,
   type RfpHldIntakeQuestionnaireQuestion,
+  type RfpHldIntakeQuestionnaireSourceRef,
   type RfpHldIntakeQuestionnaireValidationSummary,
 } from "@/lib/projects/project-rfp-hld-intake-questionnaire";
 import type { Project, ProjectArtifact } from "@/types/project";
@@ -61,6 +62,7 @@ export interface RfpHldIntakeQuestionnaireInspectionPayloadSummary {
   createdAt: string;
   questionCount: number;
   sourceArtifactCount: number;
+  sourceRefCount: number;
   validationStatus: string;
   validationFindingCount: number;
   payloadValid: boolean;
@@ -103,6 +105,18 @@ export interface RfpHldIntakeQuestionnaireInspectionQuestion {
   requiredInputIds?: string[];
 }
 
+/** Sanitized closed source ref (provenance catalog projection). */
+export interface RfpHldIntakeQuestionnaireInspectionSourceRef {
+  refId: string;
+  artifactId: string;
+  artifactType: string;
+  stageId: string;
+  status: "approved";
+  version: number;
+  payloadKind: string;
+  label: string;
+}
+
 export interface RfpHldIntakeQuestionnaireInspectionValidation {
   status: string;
   checkedAt: string;
@@ -115,6 +129,7 @@ export interface RfpHldIntakeQuestionnaireInspectionDetailPayload {
   createdBy: string;
   createdAt: string;
   sourceArtifactIds: string[];
+  sourceRefs: RfpHldIntakeQuestionnaireInspectionSourceRef[];
   questions: RfpHldIntakeQuestionnaireInspectionQuestion[];
   validation: RfpHldIntakeQuestionnaireInspectionValidation;
 }
@@ -203,6 +218,7 @@ function toPayloadSummary(
   const record = toRecord(payload);
   const questions = record.questions;
   const sourceArtifactIds = record.sourceArtifactIds;
+  const sourceRefs = record.sourceRefs;
   const validation = toRecord(record.validation);
   return {
     payloadKind: asString(record.payloadKind),
@@ -212,6 +228,7 @@ function toPayloadSummary(
     sourceArtifactCount: Array.isArray(sourceArtifactIds)
       ? sourceArtifactIds.length
       : 0,
+    sourceRefCount: Array.isArray(sourceRefs) ? sourceRefs.length : 0,
     validationStatus: asString(validation.status),
     validationFindingCount: asCount(validation.findingCount),
     payloadValid: validateRfpHldIntakeQuestionnairePayload(payload).valid,
@@ -246,6 +263,22 @@ function toQuestion(
     ...(question.requiredInputIds !== undefined
       ? { requiredInputIds: question.requiredInputIds.slice() }
       : {}),
+  };
+}
+
+/** Copy only the closed source-ref fields into the sanitized projection. */
+function toSourceRef(
+  ref: RfpHldIntakeQuestionnaireSourceRef
+): RfpHldIntakeQuestionnaireInspectionSourceRef {
+  return {
+    refId: ref.refId,
+    artifactId: ref.artifactId,
+    artifactType: ref.artifactType,
+    stageId: ref.stageId,
+    status: ref.status,
+    version: ref.version,
+    payloadKind: ref.payloadKind,
+    label: ref.label,
   };
 }
 
@@ -336,6 +369,7 @@ export async function loadRfpHldIntakeQuestionnaireDetail(
       createdBy: payload.createdBy,
       createdAt: payload.createdAt,
       sourceArtifactIds: payload.sourceArtifactIds.slice(),
+      sourceRefs: payload.sourceRefs.map((ref) => toSourceRef(ref)),
       questions,
       validation: {
         status: validation.status,
