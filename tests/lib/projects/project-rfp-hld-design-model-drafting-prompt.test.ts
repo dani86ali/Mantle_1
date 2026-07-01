@@ -87,6 +87,17 @@ function validBundlePayload(): RfpHldSourceBundlePayload {
         },
       },
     ],
+    hldIntakeAnswers: {
+      sourceHldIntakeArtifactId: "hint-1",
+      sourceHldIntakeVersion: 1,
+      sourceMode: "manual_override",
+      answers: [
+        { fieldId: "target_topology_intent", label: "Target topology intent", status: "answered", value: "Collapsed core campus." },
+        { fieldId: "resiliency_expectations", label: "Resiliency expectations", status: "unknown", notes: "awaiting customer" },
+      ],
+      answerCount: 2,
+      statusCounts: { answered: 1, unknown: 1, not_applicable: 0 },
+    },
     coveredDomains: ["campus_switching"],
     missingDomains: [],
     excludedDomains: ["service_only"],
@@ -198,11 +209,23 @@ const WHITELIST_KEYS = [
   "authorities",
   "designKnowledgePackRefs",
   "designKnowledgePackContents",
+  "hldIntakeAnswers",
   "assumptions",
   "constraints",
   "warnings",
   "instructions",
 ];
+
+const INTAKE_ANSWERS_KEYS = [
+  "sourceHldIntakeArtifactId",
+  "sourceHldIntakeVersion",
+  "sourceMode",
+  "answers",
+  "answerCount",
+  "statusCounts",
+];
+
+const INTAKE_ANSWER_KEYS = ["fieldId", "label", "status", "value", "notes"];
 
 const CONTENT_KEYS = [
   "contentKind",
@@ -316,6 +339,61 @@ describe("buildRfpHldDesignModelDraftingRequest - approved DKP content", () => {
     expect(req.user).not.toContain("rawDocumentBody");
     expect(req.user).not.toContain("unitPrice");
     expect(req.user).not.toContain("should-not-appear");
+  });
+});
+
+describe("buildRfpHldDesignModelDraftingRequest - approved intake answers", () => {
+  it("throws when sanitized approved HLD intake answers are missing", () => {
+    const bundle = validBundle();
+    delete (bundle as { hldIntakeAnswers?: unknown }).hldIntakeAnswers;
+    expect(() => buildRfpHldDesignModelDraftingRequest(bundle)).toThrow(/intake answers/i);
+  });
+
+  it("serializes the sanitized approved HLD intake answers", () => {
+    const parsed = JSON.parse(buildRfpHldDesignModelDraftingRequest(validBundle()).user);
+    const a = parsed.hldIntakeAnswers;
+    expect(a.sourceHldIntakeArtifactId).toBe("hint-1");
+    expect(a.sourceHldIntakeVersion).toBe(1);
+    expect(a.sourceMode).toBe("manual_override");
+    expect(a.answerCount).toBe(2);
+    expect(a.statusCounts).toEqual({ answered: 1, unknown: 1, not_applicable: 0 });
+    expect(a.answers.map((x: { fieldId: string }) => x.fieldId)).toEqual([
+      "target_topology_intent",
+      "resiliency_expectations",
+    ]);
+  });
+
+  it("whitelists exactly the intake-answers section keys", () => {
+    const parsed = JSON.parse(buildRfpHldDesignModelDraftingRequest(validBundle()).user);
+    expect(Object.keys(parsed.hldIntakeAnswers).sort()).toEqual(
+      INTAKE_ANSWERS_KEYS.slice().sort()
+    );
+  });
+
+  it("whitelists only the per-answer keys present on each answer", () => {
+    const parsed = JSON.parse(buildRfpHldDesignModelDraftingRequest(validBundle()).user);
+    for (const answer of parsed.hldIntakeAnswers.answers) {
+      for (const key of Object.keys(answer)) {
+        expect(INTAKE_ANSWER_KEYS).toContain(key);
+      }
+    }
+    // The answered field carries a value, the unknown field carries notes not value.
+    expect(parsed.hldIntakeAnswers.answers[0].value).toBe("Collapsed core campus.");
+    expect(parsed.hldIntakeAnswers.answers[1]).not.toHaveProperty("value");
+    expect(parsed.hldIntakeAnswers.answers[1].notes).toBe("awaiting customer");
+  });
+
+  it("does not serialize fields smuggled onto the answers section or an answer", () => {
+    const bundle = validBundle();
+    const answers = bundle.hldIntakeAnswers as unknown as Record<string, unknown>;
+    answers.questionnaireReview = { audit: "leak" };
+    (answers.answers as Record<string, unknown>[])[0].sourceQuestionText = "RAW QUESTION";
+    (answers.answers as Record<string, unknown>[])[0].unitPrice = 999;
+    const req = buildRfpHldDesignModelDraftingRequest(bundle);
+    expect(req.user).not.toContain("questionnaireReview");
+    expect(req.user).not.toContain("RAW QUESTION");
+    expect(req.user).not.toContain("sourceQuestionText");
+    expect(req.user).not.toContain("unitPrice");
   });
 });
 

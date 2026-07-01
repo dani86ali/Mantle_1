@@ -116,6 +116,42 @@ export type RfpHldSourceBundleIntakeSource =
   | { sourceMode: "manual_override"; manualOverrideReason: string }
   | { sourceMode: "questionnaire_assisted"; sourceQuestionnaireArtifactId: string };
 
+/** Allowed disposition of one sanitized approved HLD intake answer. */
+export type RfpHldSourceBundleIntakeAnswerStatus =
+  | "answered"
+  | "unknown"
+  | "not_applicable";
+
+/**
+ * One sanitized approved HLD intake answer carried into the bundle. Only the
+ * engineer-approved field id, canonical label, disposition, and (for answered
+ * fields) the value plus optional notes are surfaced - never source question
+ * text beyond the label, reviewed-question audit, source file ids, or raw docs.
+ */
+export interface RfpHldSourceBundleIntakeAnswer {
+  fieldId: string;
+  label: string;
+  status: RfpHldSourceBundleIntakeAnswerStatus;
+  value?: string;
+  notes?: string;
+}
+
+/**
+ * Sanitized approved HLD intake answers carried on the bundle for downstream
+ * (candidate-only) HLD drafting. The approved hld_intake stays the authority; this
+ * is a closed projection of its answers plus provenance/counts. Optional for
+ * historical bundle compatibility; validated closed when present and cross-checked
+ * against the approved hldIntake authority reference and hldIntakeSource provenance.
+ */
+export interface RfpHldSourceBundleIntakeAnswers {
+  sourceHldIntakeArtifactId: string;
+  sourceHldIntakeVersion: number;
+  sourceMode: "manual_override" | "questionnaire_assisted";
+  answers: RfpHldSourceBundleIntakeAnswer[];
+  answerCount: number;
+  statusCounts: { answered: number; unknown: number; not_applicable: number };
+}
+
 /** Provenance lineage of the compiled bundle. */
 export interface RfpHldSourceBundleLineage {
   compiledFromReadinessSnapshotArtifactId: string;
@@ -157,6 +193,15 @@ export interface RfpHldSourceBundlePayload {
    * lineage.compiledArtifactIds.
    */
   hldIntakeSource?: RfpHldSourceBundleIntakeSource;
+  /**
+   * Sanitized approved HLD intake answers. Optional for historical bundle
+   * compatibility; validated closed when present and cross-checked against the
+   * approved hldIntake authority reference and hldIntakeSource provenance. Newly
+   * assembled bundles always populate it. Carries only whitelisted answer fields -
+   * no reviewed-question audit, source question text beyond the label, source file
+   * ids, tenant/project ids, or pricing/SKU/catalog/configuration decisions.
+   */
+  hldIntakeAnswers?: RfpHldSourceBundleIntakeAnswers;
   coveredDomains: RfpHldDesignDomain[];
   missingDomains: RfpHldDesignDomain[];
   excludedDomains: RfpHldDesignDomain[];
@@ -224,6 +269,10 @@ function isNonBlank(v: unknown): v is string {
 
 function isVersion(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v >= 1;
+}
+
+function isCount(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0;
 }
 
 function isIsoUtc(v: unknown): v is string {
@@ -383,6 +432,110 @@ function validateIntakeSource(errors: string[], raw: unknown): void {
   }
 }
 
+const INTAKE_ANSWER_REQUIRED: readonly string[] = ["fieldId", "label", "status"];
+const INTAKE_ANSWERS_KEYS: readonly string[] = [
+  "sourceHldIntakeArtifactId", "sourceHldIntakeVersion", "sourceMode",
+  "answers", "answerCount", "statusCounts",
+];
+const STATUS_COUNT_KEYS: readonly string[] = ["answered", "unknown", "not_applicable"];
+
+/**
+ * Validate one sanitized approved HLD intake answer. Fail-closed on a closed key
+ * set: nonblank fieldId/label, status in {answered,unknown,not_applicable},
+ * answered requires a nonblank value, unknown/not_applicable must not carry a
+ * value, optional notes must be nonblank. Returns the status for tallying, or null.
+ */
+function validateIntakeAnswer(
+  errors: string[], label: string, raw: unknown
+): RfpHldSourceBundleIntakeAnswerStatus | null {
+  const o = asObject(raw);
+  if (!o) { errors.push(`${label}: must be an object`); return null; }
+  checkKeys(errors, label, o, INTAKE_ANSWER_REQUIRED, ["value", "notes"]);
+  if (!isNonBlank(o.fieldId)) errors.push(`${label}: blank fieldId`);
+  if (!isNonBlank(o.label)) errors.push(`${label}: blank label`);
+  let status: RfpHldSourceBundleIntakeAnswerStatus | null = null;
+  if (o.status === "answered" || o.status === "unknown" || o.status === "not_applicable") {
+    status = o.status;
+  } else {
+    errors.push(`${label}: invalid status`);
+  }
+  if (status === "answered") {
+    if (!isNonBlank(o.value)) errors.push(`${label}: answered requires a nonblank value`);
+  } else if ("value" in o) {
+    errors.push(`${label}: only an answered field may carry a value`);
+  }
+  if ("notes" in o && !isNonBlank(o.notes)) errors.push(`${label}: blank notes`);
+  return status;
+}
+
+/**
+ * Validate the optional closed `hldIntakeAnswers` section: closed key set, nonblank
+ * provenance id matching the approved hldIntake authority reference (id + version),
+ * sourceMode matching the hldIntakeSource provenance (when present), a closed answer
+ * array (no duplicate fieldIds), and answer/status counts that agree with the
+ * answers. Fail-closed; never drops answers silently.
+ */
+function validateIntakeAnswers(
+  errors: string[],
+  raw: unknown,
+  hldIntakeRef: { artifactId: string; version: number } | null,
+  intakeSourceMode: string | null
+): void {
+  const o = asObject(raw);
+  if (!o) { errors.push("hldIntakeAnswers: must be an object"); return; }
+  checkKeys(errors, "hldIntakeAnswers", o, INTAKE_ANSWERS_KEYS);
+
+  if (!isNonBlank(o.sourceHldIntakeArtifactId)) {
+    errors.push("hldIntakeAnswers: blank sourceHldIntakeArtifactId");
+  } else if (hldIntakeRef !== null && o.sourceHldIntakeArtifactId !== hldIntakeRef.artifactId) {
+    errors.push("hldIntakeAnswers: sourceHldIntakeArtifactId does not match the approved hld_intake authority");
+  }
+  if (!isVersion(o.sourceHldIntakeVersion)) {
+    errors.push("hldIntakeAnswers: bad sourceHldIntakeVersion");
+  } else if (hldIntakeRef !== null && o.sourceHldIntakeVersion !== hldIntakeRef.version) {
+    errors.push("hldIntakeAnswers: sourceHldIntakeVersion does not match the approved hld_intake authority");
+  }
+  if (o.sourceMode !== "manual_override" && o.sourceMode !== "questionnaire_assisted") {
+    errors.push("hldIntakeAnswers: invalid sourceMode");
+  } else if (intakeSourceMode !== null && o.sourceMode !== intakeSourceMode) {
+    errors.push("hldIntakeAnswers: sourceMode does not match the approved hld_intake provenance");
+  }
+
+  const counts = { answered: 0, unknown: 0, not_applicable: 0 };
+  if (!Array.isArray(o.answers)) {
+    errors.push("hldIntakeAnswers.answers: must be an array");
+  } else {
+    const seen = new Set<string>();
+    o.answers.forEach((ans, i) => {
+      const status = validateIntakeAnswer(errors, `hldIntakeAnswers.answers[${i}]`, ans);
+      if (status !== null) counts[status] += 1;
+      const fieldId = asObject(ans)?.fieldId;
+      if (typeof fieldId === "string" && fieldId.trim() !== "") {
+        if (seen.has(fieldId)) errors.push(`hldIntakeAnswers.answers[${i}]: duplicate fieldId`);
+        seen.add(fieldId);
+      }
+    });
+    if (isCount(o.answerCount) && o.answerCount !== o.answers.length) {
+      errors.push("hldIntakeAnswers: answerCount does not match answers length");
+    }
+  }
+  if (!isCount(o.answerCount)) errors.push("hldIntakeAnswers: bad answerCount");
+
+  const sc = asObject(o.statusCounts);
+  if (!sc) {
+    errors.push("hldIntakeAnswers.statusCounts: must be an object");
+  } else {
+    checkKeys(errors, "hldIntakeAnswers.statusCounts", sc, STATUS_COUNT_KEYS);
+    for (const k of STATUS_COUNT_KEYS as readonly ("answered" | "unknown" | "not_applicable")[]) {
+      if (!isCount(sc[k])) {
+        errors.push(`hldIntakeAnswers.statusCounts: bad ${k}`);
+      } else if (Array.isArray(o.answers) && sc[k] !== counts[k]) {
+        errors.push(`hldIntakeAnswers.statusCounts: ${k} does not match answers`);
+      }
+    }
+  }
+}
+
 function validateEntry(errors: string[], label: string, raw: unknown): void {
   const o = asObject(raw);
   if (!o) { errors.push(`${label}: must be an object`); return; }
@@ -453,6 +606,7 @@ export function validateRfpHldSourceBundlePayload(
   checkKeys(errors, "payload", root, TOP_LEVEL_KEYS, [
     "designKnowledgePackContents",
     "hldIntakeSource",
+    "hldIntakeAnswers",
   ]);
   if (root.payloadKind !== RFP_HLD_SOURCE_BUNDLE_PAYLOAD_KIND) errors.push("payload: wrong payloadKind");
   if (!isNonBlank(root.createdBy)) errors.push("payload: blank createdBy");
@@ -460,6 +614,7 @@ export function validateRfpHldSourceBundlePayload(
 
   const referencedIds: string[] = [];
   let readinessSnapshotArtifactId: string | null = null;
+  let hldIntakeRef: { artifactId: string; version: number } | null = null;
 
   const authorities = asObject(root.authorities);
   if (!authorities) {
@@ -473,6 +628,11 @@ export function validateRfpHldSourceBundlePayload(
     }
     const configId = validateConfigAuthority(errors, "authorities.configurationAuthority", authorities.configurationAuthority);
     if (configId !== null) referencedIds.push(configId);
+
+    const hldIntake = asObject(authorities.hldIntake);
+    if (hldIntake && isNonBlank(hldIntake.artifactId) && isVersion(hldIntake.version)) {
+      hldIntakeRef = { artifactId: hldIntake.artifactId, version: hldIntake.version };
+    }
   }
 
   const packDomains: string[] = [];
@@ -506,6 +666,17 @@ export function validateRfpHldSourceBundlePayload(
   // Optional approved-HLD-intake source provenance: closed-shape when present.
   if ("hldIntakeSource" in root && root.hldIntakeSource !== undefined) {
     validateIntakeSource(errors, root.hldIntakeSource);
+  }
+
+  // Optional sanitized approved-HLD-intake answers: closed-shape when present,
+  // cross-checked against the approved hldIntake authority + intake provenance.
+  if ("hldIntakeAnswers" in root && root.hldIntakeAnswers !== undefined) {
+    const intakeSourceObj = asObject(root.hldIntakeSource);
+    const intakeSourceMode =
+      intakeSourceObj && typeof intakeSourceObj.sourceMode === "string"
+        ? intakeSourceObj.sourceMode
+        : null;
+    validateIntakeAnswers(errors, root.hldIntakeAnswers, hldIntakeRef, intakeSourceMode);
   }
 
   // Globally unique referenced artifact ids across all authorities + packs.

@@ -45,6 +45,8 @@ import {
   type RfpHldSourceBundleAuthorityReference,
   type RfpHldSourceBundleConfigurationAuthority,
   type RfpHldSourceBundleDesignKnowledgePackReference,
+  type RfpHldSourceBundleIntakeAnswer,
+  type RfpHldSourceBundleIntakeAnswers,
   type RfpHldSourceBundleIntakeSource,
   type RfpHldSourceBundlePayload,
   type RfpHldSourceBundleStatementEntry,
@@ -229,6 +231,85 @@ function toAssumptionEntry(
   };
 }
 
+/** Sanitize one approved intake answer into the closed bundle answer shape, or null. */
+function sanitizeIntakeAnswer(raw: unknown): RfpHldSourceBundleIntakeAnswer | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const fieldId = typeof record.fieldId === "string" ? record.fieldId.trim() : "";
+  const label = typeof record.label === "string" ? record.label.trim() : "";
+  const status = record.status;
+  if (fieldId === "" || label === "") return null;
+  if (status !== "answered" && status !== "unknown" && status !== "not_applicable") {
+    return null;
+  }
+  const answer: RfpHldSourceBundleIntakeAnswer = { fieldId, label, status };
+  if (status === "answered") {
+    const value = typeof record.value === "string" ? record.value.trim() : "";
+    if (value === "") return null;
+    answer.value = value;
+  } else if ("value" in record) {
+    return null;
+  }
+  if ("notes" in record) {
+    const notes = typeof record.notes === "string" ? record.notes.trim() : "";
+    if (notes === "") return null;
+    answer.notes = notes;
+  }
+  return answer;
+}
+
+/**
+ * Copy ONLY sanitized approved intake answer fields from the resolved approved
+ * hld_intake artifact into the closed bundle answer section. Never copies the
+ * questionnaireReview, reviewed questions, source question text beyond labels,
+ * source file/tenant/project ids, pricing, SKU, catalog, or configuration fields.
+ * The source questionnaire id stays provenance and is never a bundle source id.
+ */
+function toIntakeAnswers(
+  intake: ProjectArtifact
+):
+  | { status: "ok"; intakeAnswers: RfpHldSourceBundleIntakeAnswers }
+  | { status: "invalid"; errors: string[] } {
+  const payload = intake.payload;
+  const sourceMode =
+    payload.sourceMode === "manual_override" ||
+    payload.sourceMode === "questionnaire_assisted"
+      ? payload.sourceMode
+      : null;
+  if (sourceMode === null) {
+    return { status: "invalid", errors: ["Approved hld_intake has no valid sourceMode."] };
+  }
+  if (!Array.isArray(payload.answers)) {
+    return { status: "invalid", errors: ["Approved hld_intake answers must be an array."] };
+  }
+  const answers: RfpHldSourceBundleIntakeAnswer[] = [];
+  const statusCounts = { answered: 0, unknown: 0, not_applicable: 0 };
+  const errors: string[] = [];
+  payload.answers.forEach((raw, index) => {
+    const sanitized = sanitizeIntakeAnswer(raw);
+    if (sanitized === null) {
+      errors.push(`Approved hld_intake answer ${index} is malformed.`);
+      return;
+    }
+    answers.push(sanitized);
+    statusCounts[sanitized.status] += 1;
+  });
+  if (errors.length > 0) {
+    return { status: "invalid", errors };
+  }
+  return {
+    status: "ok",
+    intakeAnswers: {
+      sourceHldIntakeArtifactId: intake.id,
+      sourceHldIntakeVersion: intake.version,
+      sourceMode,
+      answers,
+      answerCount: answers.length,
+      statusCounts,
+    },
+  };
+}
+
 /**
  * Pure assembler: compile a validated `hld_source_bundle` payload from supplied
  * Project rows, or a fail-closed blocked/invalid result. Makes no I/O.
@@ -359,6 +440,12 @@ export function buildRfpHldSourceBundleDraft(
     };
   }
 
+  // Sanitized approved intake answers from the resolved approved hld_intake.
+  const intakeAnswers = toIntakeAnswers(intake);
+  if (intakeAnswers.status === "invalid") {
+    return { status: "invalid_payload", errors: intakeAnswers.errors };
+  }
+
   const configurationAuthority: RfpHldSourceBundleConfigurationAuthority = {
     artifactId: configArtifact.id,
     artifactType: "configuration_expansion",
@@ -413,6 +500,9 @@ export function buildRfpHldSourceBundleDraft(
     ...(readiness.hldIntakeSource !== undefined
       ? { hldIntakeSource: readiness.hldIntakeSource as RfpHldSourceBundleIntakeSource }
       : {}),
+    // Sanitized approved HLD intake answers (source-bound input for candidate-only
+    // HLD drafting). Copied only from the resolved approved hld_intake authority.
+    hldIntakeAnswers: intakeAnswers.intakeAnswers,
     coveredDomains,
     missingDomains: [],
     excludedDomains,

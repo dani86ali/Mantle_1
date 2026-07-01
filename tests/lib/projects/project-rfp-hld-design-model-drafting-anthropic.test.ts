@@ -43,6 +43,21 @@ function makeBundle(): RfpHldDesignModelCandidateInputBundle {
     excludedDomains: [],
     authorities: {} as RfpHldDesignModelCandidateInputBundle["authorities"],
     designKnowledgePackRefs: [],
+    hldIntakeAnswers: {
+      sourceHldIntakeArtifactId: "hint-1",
+      sourceHldIntakeVersion: 1,
+      sourceMode: "manual_override",
+      answers: [
+        {
+          fieldId: "target_topology_intent",
+          label: "Target topology intent",
+          status: "answered",
+          value: "Collapsed core campus.",
+        },
+      ],
+      answerCount: 1,
+      statusCounts: { answered: 1, unknown: 0, not_applicable: 0 },
+    },
     assumptions: [],
     constraints: [],
     warnings: [],

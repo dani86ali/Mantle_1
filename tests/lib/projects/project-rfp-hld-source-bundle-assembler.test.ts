@@ -312,6 +312,23 @@ describe("buildRfpHldSourceBundleDraft - happy path (normal configuration_expans
     // Trimmed and blank-dropped by the pure content selector.
     expect(contents[0].designPrinciples).toEqual(["Collapsed core for the campus."]);
     expect(contents[0].topologyGuidance).toEqual(["Dual uplinks per access switch."]);
+
+    // Sanitized approved HLD intake answers, copied from the approved hld_intake.
+    expect(payload.hldIntakeAnswers).toEqual({
+      sourceHldIntakeArtifactId: "hint-1",
+      sourceHldIntakeVersion: 1,
+      sourceMode: "manual_override",
+      answers: [
+        {
+          fieldId: "resiliency_expectations",
+          label: "Resiliency expectations",
+          status: "unknown",
+          notes: "awaiting customer",
+        },
+      ],
+      answerCount: 1,
+      statusCounts: { answered: 0, unknown: 1, not_applicable: 0 },
+    });
   });
 });
 
@@ -488,6 +505,18 @@ describe("buildRfpHldSourceBundleDraft - hld intake source provenance", () => {
     expect(result.payload.sourceArtifactIds).not.toContain(QUESTIONNAIRE_ID);
     expect(result.payload.lineage.compiledArtifactIds).not.toContain(QUESTIONNAIRE_ID);
     expect(validateRfpHldSourceBundlePayload(result.payload).errors).toEqual([]);
+    // Sanitized intake answers record questionnaire-assisted provenance but never
+    // the questionnaireReview audit or the source questionnaire id.
+    expect(result.payload.hldIntakeAnswers).toEqual({
+      sourceHldIntakeArtifactId: "hint-1",
+      sourceHldIntakeVersion: 1,
+      sourceMode: "questionnaire_assisted",
+      answers: [],
+      answerCount: 0,
+      statusCounts: { answered: 0, unknown: 0, not_applicable: 0 },
+    });
+    expect(JSON.stringify(result.payload.hldIntakeAnswers)).not.toContain(QUESTIONNAIRE_ID);
+    expect(JSON.stringify(result.payload.hldIntakeAnswers)).not.toContain("questionnaireReview");
   });
 
   it("blocks (stale) when the snapshot hldIntakeSource does not match current readiness", () => {
@@ -541,6 +570,66 @@ describe("buildRfpHldSourceBundleDraft - hld intake source provenance", () => {
     expect(result.status).toBe("blocked");
     if (result.status !== "blocked") throw new Error("unreachable");
     expect(result.code).toBe("stale_readiness_snapshot");
+  });
+
+  it("returns invalid_payload instead of silently dropping malformed approved intake answers", () => {
+    const artifacts = normalArtifacts().map((a) =>
+      a.type === "hld_intake"
+        ? {
+            ...a,
+            payload: {
+              ...(a.payload as object),
+              answers: [
+                {
+                  fieldId: "target_topology_intent",
+                  label: "Target topology intent",
+                  status: "answered",
+                  value: "   ",
+                },
+              ],
+            },
+          }
+        : a
+    );
+    const result = buildRfpHldSourceBundleDraft(pureInput(artifacts, [boqFile()]));
+    expect(result.status).toBe("invalid_payload");
+    if (result.status !== "invalid_payload") throw new Error("unreachable");
+    expect(result.errors).toContain("Approved hld_intake answer 0 is malformed.");
+  });
+
+  it("returns invalid_payload instead of silently dropping value or notes defects from intake answers", () => {
+    const artifacts = normalArtifacts().map((a) =>
+      a.type === "hld_intake"
+        ? {
+            ...a,
+            payload: {
+              ...(a.payload as object),
+              answers: [
+                {
+                  fieldId: "resiliency_expectations",
+                  label: "Resiliency expectations",
+                  status: "unknown",
+                  value: "smuggled answer",
+                },
+                {
+                  fieldId: "target_topology_intent",
+                  label: "Target topology intent",
+                  status: "answered",
+                  value: "Collapsed core campus.",
+                  notes: "   ",
+                },
+              ],
+            },
+          }
+        : a
+    );
+    const result = buildRfpHldSourceBundleDraft(pureInput(artifacts, [boqFile()]));
+    expect(result.status).toBe("invalid_payload");
+    if (result.status !== "invalid_payload") throw new Error("unreachable");
+    expect(result.errors).toEqual([
+      "Approved hld_intake answer 0 is malformed.",
+      "Approved hld_intake answer 1 is malformed.",
+    ]);
   });
 });
 

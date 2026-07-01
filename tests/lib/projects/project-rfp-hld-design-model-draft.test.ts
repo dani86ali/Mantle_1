@@ -103,6 +103,17 @@ function validBundlePayload(): RfpHldSourceBundlePayload {
         payloadKind: "rfp_hld_design_knowledge_pack", domain: "campus_switching",
       },
     ],
+    hldIntakeAnswers: {
+      sourceHldIntakeArtifactId: "hint-1",
+      sourceHldIntakeVersion: 1,
+      sourceMode: "manual_override",
+      answers: [
+        { fieldId: "target_topology_intent", label: "Target topology intent", status: "answered", value: "Collapsed core campus." },
+        { fieldId: "resiliency_expectations", label: "Resiliency expectations", status: "unknown", notes: "awaiting customer" },
+      ],
+      answerCount: 2,
+      statusCounts: { answered: 1, unknown: 1, not_applicable: 0 },
+    },
     coveredDomains: ["campus_switching"],
     missingDomains: [],
     excludedDomains: ["service_only"],

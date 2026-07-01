@@ -42,6 +42,8 @@ export const RFP_HLD_DESIGN_MODEL_DRAFTING_SYSTEM_PROMPT: string = [
   "evidence, or authority.",
   "Never make SKU, pricing, catalog, configuration, validation, topology-fact,",
   "scope, or final design approval decisions.",
+  "Treat the approved HLD intake answers as source-bound input only; do not",
+  "expand scope, invent facts, or create new authority beyond them.",
   "Never emit final HLD documents, HTML, diagrams, Mermaid, draw.io/XML, SVG/XML,",
   "TP/proposal, or any customer-facing deliverable content.",
   "Never claim Cisco-certified, CVD-certified, BOMATIC-certified, or AI-certified",
@@ -60,6 +62,15 @@ type RfpHldDesignModelDraftingRebuildContext = NonNullable<
 type RfpHldDesignModelDraftingKnowledgeContent = NonNullable<
   RfpHldDesignModelCandidateInputBundle["designKnowledgePackContents"]
 >[number];
+
+/** The sanitized approved HLD intake answers carried in the candidate input. */
+type RfpHldDesignModelDraftingIntakeAnswers = NonNullable<
+  RfpHldDesignModelCandidateInputBundle["hldIntakeAnswers"]
+>;
+
+/** One sanitized approved HLD intake answer. */
+type RfpHldDesignModelDraftingIntakeAnswer =
+  RfpHldDesignModelDraftingIntakeAnswers["answers"][number];
 
 /**
  * Fixed framing for a bounded rebuild correction pass. Provider-neutral; mirrors
@@ -118,6 +129,8 @@ export interface RfpHldDesignModelDraftingUserPayload {
   designKnowledgePackRefs: RfpHldDesignModelCandidateInputBundle["designKnowledgePackRefs"];
   /** Approved DKP content, per-field whitelisted; empty array when none present. */
   designKnowledgePackContents: RfpHldDesignModelDraftingKnowledgeContent[];
+  /** Sanitized approved HLD intake answers, per-field whitelisted. */
+  hldIntakeAnswers: RfpHldDesignModelDraftingIntakeAnswers;
   assumptions: RfpHldDesignModelCandidateInputBundle["assumptions"];
   constraints: RfpHldDesignModelCandidateInputBundle["constraints"];
   warnings: RfpHldDesignModelCandidateInputBundle["warnings"];
@@ -155,6 +168,12 @@ export function buildRfpHldDesignModelDraftingRequest(
   ) {
     throw new Error(
       "bundle must be an rfp_hld_design_model_candidate_input bundle."
+    );
+  }
+  const hldIntakeAnswers = bundle.hldIntakeAnswers;
+  if (hldIntakeAnswers === undefined || hldIntakeAnswers === null) {
+    throw new Error(
+      "bundle must include sanitized approved HLD intake answers."
     );
   }
 
@@ -197,6 +216,24 @@ export function buildRfpHldDesignModelDraftingRequest(
         sectionCounts: { ...content.sectionCounts },
       })
     ),
+    // Explicit per-field mirror: any field smuggled onto the answer section or an
+    // individual answer is structurally excluded, like the other whitelist keys.
+    hldIntakeAnswers: ((intake) => ({
+      sourceHldIntakeArtifactId: intake.sourceHldIntakeArtifactId,
+      sourceHldIntakeVersion: intake.sourceHldIntakeVersion,
+      sourceMode: intake.sourceMode,
+      answers: intake.answers.map(
+        (answer): RfpHldDesignModelDraftingIntakeAnswer => ({
+          fieldId: answer.fieldId,
+          label: answer.label,
+          status: answer.status,
+          ...(answer.value !== undefined ? { value: answer.value } : {}),
+          ...(answer.notes !== undefined ? { notes: answer.notes } : {}),
+        })
+      ),
+      answerCount: intake.answerCount,
+      statusCounts: { ...intake.statusCounts },
+    }))(hldIntakeAnswers),
     assumptions: cloneJson(bundle.assumptions),
     constraints: cloneJson(bundle.constraints),
     warnings: cloneJson(bundle.warnings),

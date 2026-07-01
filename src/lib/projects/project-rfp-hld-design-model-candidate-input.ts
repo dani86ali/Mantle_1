@@ -25,6 +25,7 @@ import {
   type RfpHldSourceBundleDesignKnowledgePackReference,
   type RfpHldSourceBundleStatementEntry,
   type RfpHldSourceBundleFinding,
+  type RfpHldSourceBundleIntakeAnswers,
   type RfpHldApprovedDesignKnowledgeContent,
 } from "@/lib/projects/project-rfp-hld-source-bundle";
 import { RFP_HLD_DESIGN_MODEL_PAYLOAD_KIND } from "@/lib/projects/project-rfp-hld-design-model";
@@ -99,6 +100,14 @@ export interface RfpHldDesignModelCandidateInputBundle {
    * source bundles (then an empty array); freshly assembled bundles carry content.
    */
   designKnowledgePackContents?: RfpHldApprovedDesignKnowledgeContent[];
+  /**
+   * Sanitized approved HLD intake answers copied from the source bundle. A fresh,
+   * non-aliased copy of the corrected `hldIntakeAnswers` section. Optional on the
+   * type for historical/fixture compatibility, but the builder ALWAYS populates it
+   * and fails closed (invalid_source_bundle_payload) when the source bundle omits
+   * the corrected section rather than drafting without intake answers.
+   */
+  hldIntakeAnswers?: RfpHldSourceBundleIntakeAnswers;
   assumptions: RfpHldSourceBundleStatementEntry[];
   constraints: RfpHldSourceBundleStatementEntry[];
   warnings: RfpHldSourceBundleFinding[];
@@ -211,6 +220,17 @@ export function buildRfpHldDesignModelCandidateInput(
     return { status: "blocked", reason: "source_artifact_ids_mismatch" };
   }
 
+  // Fail closed (never draft without intake answers) when the source bundle omits
+  // the corrected sanitized approved-HLD-intake answer section.
+  if (payload.hldIntakeAnswers === undefined) {
+    return {
+      status: "invalid_source_bundle_payload",
+      errors: [
+        "hldIntakeAnswers: source bundle is missing the corrected approved HLD intake answers section",
+      ],
+    };
+  }
+
   const bundle: RfpHldDesignModelCandidateInputBundle = {
     payloadKind: RFP_HLD_DESIGN_MODEL_CANDIDATE_INPUT_PAYLOAD_KIND,
     createdBy: input.createdBy.trim(),
@@ -227,6 +247,8 @@ export function buildRfpHldDesignModelCandidateInput(
     designKnowledgePackRefs: cloneJson(payload.designKnowledgePackRefs),
     // Fresh copy of approved DKP content; empty array for historical bundles.
     designKnowledgePackContents: cloneJson(payload.designKnowledgePackContents ?? []),
+    // Fresh, non-aliased copy of the sanitized approved HLD intake answers.
+    hldIntakeAnswers: cloneJson(payload.hldIntakeAnswers),
     assumptions: cloneJson(payload.assumptions),
     constraints: cloneJson(payload.constraints),
     warnings: cloneJson(payload.warnings),

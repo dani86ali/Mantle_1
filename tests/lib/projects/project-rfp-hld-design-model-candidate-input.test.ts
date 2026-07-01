@@ -84,6 +84,17 @@ function validBundlePayload(): RfpHldSourceBundlePayload {
         },
       },
     ],
+    hldIntakeAnswers: {
+      sourceHldIntakeArtifactId: "hint-1",
+      sourceHldIntakeVersion: 1,
+      sourceMode: "manual_override",
+      answers: [
+        { fieldId: "target_topology_intent", label: "Target topology intent", status: "answered", value: "Collapsed core campus." },
+        { fieldId: "resiliency_expectations", label: "Resiliency expectations", status: "unknown", notes: "awaiting customer" },
+      ],
+      answerCount: 2,
+      statusCounts: { answered: 1, unknown: 1, not_applicable: 0 },
+    },
     coveredDomains: ["campus_switching"],
     missingDomains: [],
     excludedDomains: ["service_only"],
@@ -187,6 +198,36 @@ describe("buildRfpHldDesignModelCandidateInput - happy path", () => {
     expect(payload.designKnowledgePackContents?.[0].designPrinciples).toEqual([
       "Collapsed core for the campus.",
     ]);
+  });
+
+  it("copies fresh sanitized approved HLD intake answers from the source bundle", () => {
+    const input = validInput();
+    const payload = input.artifact.payload as unknown as RfpHldSourceBundlePayload;
+    const result = buildRfpHldDesignModelCandidateInput(input);
+    if (result.status !== "ok") throw new Error("expected ok");
+    const answers = result.bundle.hldIntakeAnswers;
+    if (!answers) throw new Error("expected intake answers");
+    expect(answers.sourceHldIntakeArtifactId).toBe("hint-1");
+    expect(answers.sourceMode).toBe("manual_override");
+    expect(answers.answers.map((a) => a.fieldId)).toEqual([
+      "target_topology_intent",
+      "resiliency_expectations",
+    ]);
+    expect(answers.answerCount).toBe(2);
+    // Fresh, non-aliased copy; mutating the bundle must not reach the source.
+    expect(answers).not.toBe(payload.hldIntakeAnswers);
+    expect(answers.answers).not.toBe(payload.hldIntakeAnswers?.answers);
+    answers.answers.push({ fieldId: "x", label: "X", status: "unknown" });
+    expect(payload.hldIntakeAnswers?.answers).toHaveLength(2);
+  });
+
+  it("fails closed with invalid_source_bundle_payload when the source bundle omits intake answers", () => {
+    const artifact = validArtifact();
+    delete (artifact.payload as Record<string, unknown>).hldIntakeAnswers;
+    const result = buildRfpHldDesignModelCandidateInput(validInput({ artifact }));
+    expect(result.status).toBe("invalid_source_bundle_payload");
+    if (result.status !== "invalid_source_bundle_payload") return;
+    expect(result.errors.some((e) => e.includes("hldIntakeAnswers"))).toBe(true);
   });
 
   it("uses an empty content array for a historical source bundle that omits content", () => {

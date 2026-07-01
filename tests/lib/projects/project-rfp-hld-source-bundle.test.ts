@@ -58,6 +58,17 @@ function validPayload(): RfpHldSourceBundlePayload {
         payloadKind: "rfp_hld_design_knowledge_pack", domain: "campus_switching",
       },
     ],
+    hldIntakeAnswers: {
+      sourceHldIntakeArtifactId: "hint-1",
+      sourceHldIntakeVersion: 1,
+      sourceMode: "manual_override",
+      answers: [
+        { fieldId: "target_topology_intent", label: "Target topology intent", status: "answered", value: "Collapsed core campus." },
+        { fieldId: "resiliency_expectations", label: "Resiliency expectations", status: "unknown", notes: "awaiting customer" },
+      ],
+      answerCount: 2,
+      statusCounts: { answered: 1, unknown: 1, not_applicable: 0 },
+    },
     coveredDomains: ["campus_switching"],
     missingDomains: [],
     excludedDomains: ["service_only"],
@@ -358,6 +369,7 @@ describe("validateRfpHldSourceBundlePayload - optional hldIntakeSource", () => {
   it("accepts a questionnaire_assisted provenance object", () => {
     const p = mutable();
     p.hldIntakeSource = { sourceMode: "questionnaire_assisted", sourceQuestionnaireArtifactId: "q-1" };
+    (p.hldIntakeAnswers as Record<string, unknown>).sourceMode = "questionnaire_assisted";
     expect(isValidRfpHldSourceBundlePayload(p)).toBe(true);
   });
 
@@ -408,9 +420,102 @@ describe("validateRfpHldSourceBundlePayload - optional hldIntakeSource", () => {
   it("does not add the source questionnaire id to sourceArtifactIds when provenance is questionnaire-assisted", () => {
     const p = mutable();
     p.hldIntakeSource = { sourceMode: "questionnaire_assisted", sourceQuestionnaireArtifactId: "q-1" };
+    (p.hldIntakeAnswers as Record<string, unknown>).sourceMode = "questionnaire_assisted";
     expect(isValidRfpHldSourceBundlePayload(p)).toBe(true);
     // q-1 is provenance, not an authority reference.
     expect((p.sourceArtifactIds as string[])).not.toContain("q-1");
+  });
+});
+
+describe("validateRfpHldSourceBundlePayload - optional hldIntakeAnswers", () => {
+  it("accepts a bundle carrying valid sanitized intake answers", () => {
+    const result = validateRfpHldSourceBundlePayload(validPayload());
+    expect(result.errors).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  it("accepts a historical bundle that omits hldIntakeAnswers entirely", () => {
+    const p = mutable();
+    delete p.hldIntakeAnswers;
+    expect("hldIntakeAnswers" in p).toBe(false);
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(true);
+  });
+
+  it("rejects an unexpected key on the answers section", () => {
+    const p = mutable();
+    (p.hldIntakeAnswers as Record<string, unknown>).questionnaireReview = { x: 1 };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects an unexpected key on an individual answer", () => {
+    const p = mutable();
+    ((p.hldIntakeAnswers as Record<string, unknown>).answers as Record<string, unknown>[])[0].sourceQuestionText =
+      "leak";
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects a sourceHldIntakeArtifactId that does not match the hldIntake authority", () => {
+    const p = mutable();
+    (p.hldIntakeAnswers as Record<string, unknown>).sourceHldIntakeArtifactId = "other-intake";
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects a sourceHldIntakeVersion that does not match the hldIntake authority", () => {
+    const p = mutable();
+    (p.hldIntakeAnswers as Record<string, unknown>).sourceHldIntakeVersion = 2;
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects a sourceMode that does not match hldIntakeSource provenance", () => {
+    const p = mutable();
+    p.hldIntakeSource = { sourceMode: "manual_override", manualOverrideReason: "Engineer entered." };
+    (p.hldIntakeAnswers as Record<string, unknown>).sourceMode = "questionnaire_assisted";
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects an answered answer with a blank value", () => {
+    const p = mutable();
+    ((p.hldIntakeAnswers as Record<string, unknown>).answers as Record<string, unknown>[])[0].value = "   ";
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects an unknown answer that carries a value", () => {
+    const p = mutable();
+    ((p.hldIntakeAnswers as Record<string, unknown>).answers as Record<string, unknown>[])[1].value = "smuggled";
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects an invalid answer status", () => {
+    const p = mutable();
+    ((p.hldIntakeAnswers as Record<string, unknown>).answers as Record<string, unknown>[])[0].status = "maybe";
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects blank optional notes", () => {
+    const p = mutable();
+    ((p.hldIntakeAnswers as Record<string, unknown>).answers as Record<string, unknown>[])[1].notes = "  ";
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects a duplicate answer fieldId", () => {
+    const p = mutable();
+    const answers = (p.hldIntakeAnswers as Record<string, unknown>).answers as Record<string, unknown>[];
+    answers[1].fieldId = answers[0].fieldId;
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects an answerCount that does not match the answers", () => {
+    const p = mutable();
+    (p.hldIntakeAnswers as Record<string, unknown>).answerCount = 5;
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
+  });
+
+  it("rejects statusCounts that do not match the answers", () => {
+    const p = mutable();
+    (p.hldIntakeAnswers as Record<string, unknown>).statusCounts = {
+      answered: 2, unknown: 0, not_applicable: 0,
+    };
+    expect(isValidRfpHldSourceBundlePayload(p)).toBe(false);
   });
 });
 
