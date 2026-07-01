@@ -46,6 +46,11 @@ import type {
  * a future rendered-output contract - only its staleness edges are declared
  * here, no generation behavior.
  *
+ * Stage 6H-0B: hld_intake_questionnaire is a candidate / review-only question set
+ * whose only downstream is hld_intake, so a changed questionnaire marks the latest
+ * eligible hld_intake stale and then propagates through the rest of this spine. It
+ * is itself an input root - nothing upstream feeds it.
+ *
  * Stage 6.3: design_knowledge_pack is an approved domain knowledge artifact
  * (solution patterns, validated topologies, design constraints) that feeds
  * hld_readiness_snapshot. Its payload schema is defined in a separate prompt.
@@ -67,6 +72,7 @@ const ARTIFACT_DEPENDENCY_GRAPH: Readonly<
   ],
   hld_design_delta: ["technical_proposal"],
   priced_boq: ["technical_proposal", "export_package"],
+  hld_intake_questionnaire: ["hld_intake"],
   hld_intake: ["hld_readiness_snapshot"],
   design_knowledge_pack: ["hld_readiness_snapshot"],
   hld_readiness_snapshot: ["hld_source_bundle"],

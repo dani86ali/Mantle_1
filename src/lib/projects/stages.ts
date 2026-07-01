@@ -101,6 +101,7 @@ export const PROJECT_STAGE_DEFINITIONS: readonly ProjectStageDefinition[] = [
     activeInModes: ["rfp"],
     artifactTypes: [
       "hld_design_delta",
+      "hld_intake_questionnaire",
       "hld_intake",
       "hld_readiness_snapshot",
       "hld_source_bundle",

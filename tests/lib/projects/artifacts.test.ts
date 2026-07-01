@@ -61,6 +61,7 @@ describe("getArtifactTypesForStage", () => {
     // sitting before the still-reserved final hld_document.
     expect(getArtifactTypesForStage("hld_design_delta_review")).toEqual([
       "hld_design_delta",
+      "hld_intake_questionnaire",
       "hld_intake",
       "hld_readiness_snapshot",
       "hld_source_bundle",
@@ -94,6 +95,7 @@ describe("isArtifactTypeAllowedForStage", () => {
   it("allows every Stage 6 HLD artifact under hld_design_delta_review", () => {
     for (const type of [
       "hld_design_delta",
+      "hld_intake_questionnaire",
       "hld_intake",
       "hld_readiness_snapshot",
       "hld_source_bundle",
@@ -129,6 +131,28 @@ describe("isArtifactTypeAllowedForStage", () => {
       "export_approval",
     ] as const) {
       expect(isArtifactTypeAllowedForStage(stageId, "design_knowledge_pack")).toBe(false);
+    }
+  });
+
+  it("hld_intake_questionnaire is allowed on hld_design_delta_review (Stage 6H-0B)", () => {
+    expect(
+      isArtifactTypeAllowedForStage("hld_design_delta_review", "hld_intake_questionnaire")
+    ).toBe(true);
+  });
+
+  it("hld_intake_questionnaire is not allowed on unrelated stages", () => {
+    for (const stageId of [
+      "intake_package_review",
+      "boq_format_validation",
+      "sku_resolution",
+      "configuration_expansion_review",
+      "requirements_baseline_review",
+      "compliance_matrix_review",
+      "boq_pricing_review",
+      "proposal_review",
+      "export_approval",
+    ] as const) {
+      expect(isArtifactTypeAllowedForStage(stageId, "hld_intake_questionnaire")).toBe(false);
     }
   });
 
@@ -304,6 +328,26 @@ describe("materializeProjectArtifactVersion", () => {
       version: 1,
       payload: {},
     });
+  });
+
+  it("materializes hld_intake_questionnaire at hld_design_delta_review (Stage 6H-0B)", () => {
+    // Contract-level only: a versioned, empty-payload candidate row awaiting
+    // review. No questionnaire content is generated here.
+    const row = materializeProjectArtifactVersion({
+      projectId: PROJECT,
+      tenantId: TENANT,
+      stageId: "hld_design_delta_review",
+      type: "hld_intake_questionnaire",
+      status: "needs_review",
+    });
+    expect(row).toMatchObject({
+      stageId: "hld_design_delta_review",
+      type: "hld_intake_questionnaire",
+      status: "needs_review",
+      version: 1,
+      payload: {},
+    });
+    expect("filePath" in row).toBe(false);
   });
 
   it("rejects disallowed stage/type combinations", () => {

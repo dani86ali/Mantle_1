@@ -19,6 +19,7 @@ const VALID_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "requirements_baseline",
   "compliance_matrix",
   "hld_design_delta",
+  "hld_intake_questionnaire",
   "hld_intake",
   "hld_readiness_snapshot",
   "hld_source_bundle",
@@ -35,6 +36,7 @@ const VALID_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
 
 /** The Stage 6 HLD readiness spine artifact types. (Prompt 462) */
 const STAGE_6_HLD_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
+  "hld_intake_questionnaire",
   "hld_intake",
   "hld_readiness_snapshot",
   "hld_source_bundle",
@@ -224,6 +226,7 @@ describe("artifact metadata", () => {
     // the still-reserved final hld_document.
     expect(hld?.artifactTypes).toEqual([
       "hld_design_delta",
+      "hld_intake_questionnaire",
       "hld_intake",
       "hld_readiness_snapshot",
       "hld_source_bundle",
@@ -256,6 +259,27 @@ describe("artifact metadata", () => {
     );
     for (const def of unrelatedStages) {
       expect(def.artifactTypes).not.toContain("design_knowledge_pack");
+    }
+  });
+
+  it("hld_intake_questionnaire is a canonical artifact type on the HLD stage only (Stage 6H-0B)", () => {
+    // Present in the canonical artifact-type set (the typed array also enforces
+    // this at compile time).
+    expect(VALID_ARTIFACT_TYPES).toContain("hld_intake_questionnaire");
+    const hld = PROJECT_STAGE_DEFINITIONS.find(
+      (d) => d.stageId === "hld_design_delta_review"
+    );
+    expect(hld?.artifactTypes).toContain("hld_intake_questionnaire");
+    // It sits just before hld_intake (the candidate question set that feeds it).
+    const types = hld?.artifactTypes ?? [];
+    expect(types.indexOf("hld_intake_questionnaire")).toBe(
+      types.indexOf("hld_intake") - 1
+    );
+    // Nowhere else.
+    for (const def of PROJECT_STAGE_DEFINITIONS.filter(
+      (d) => d.stageId !== "hld_design_delta_review"
+    )) {
+      expect(def.artifactTypes).not.toContain("hld_intake_questionnaire");
     }
   });
 

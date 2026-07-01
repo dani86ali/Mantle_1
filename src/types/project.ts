@@ -88,6 +88,14 @@ export type ProjectArtifactStatus =
  * options, and design constraints curated per-project. Its payload schema and
  * domain readiness helper are defined in a separate prompt. It feeds
  * `hld_readiness_snapshot` via a direct staleness edge.
+ *
+ * `hld_intake_questionnaire` (Stage 6H-0B) is a CANDIDATE / review-only set of
+ * design-intake questions (question text, rationale, answer type, and provenance
+ * references) an engineer reviews before answering the approved `hld_intake`. It
+ * is NOT design authority and holds NO engineer answers and no default design,
+ * pricing, SKU, catalog, or configuration decisions. It feeds `hld_intake`
+ * through a single staleness edge; its pure contract/validator lives in
+ * src/lib/projects/project-rfp-hld-intake-questionnaire.ts.
  */
 export type ProjectArtifactType =
   | "input_package"
@@ -100,6 +108,7 @@ export type ProjectArtifactType =
   | "requirements_baseline"
   | "compliance_matrix"
   | "hld_design_delta"
+  | "hld_intake_questionnaire"
   | "hld_intake"
   | "hld_readiness_snapshot"
   | "hld_source_bundle"

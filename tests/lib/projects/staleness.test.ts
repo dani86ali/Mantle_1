@@ -24,6 +24,7 @@ const ALL_ARTIFACT_TYPES: readonly ProjectArtifactType[] = [
   "requirements_baseline",
   "compliance_matrix",
   "hld_design_delta",
+  "hld_intake_questionnaire",
   "hld_intake",
   "hld_readiness_snapshot",
   "hld_source_bundle",
@@ -1082,6 +1083,161 @@ describe("planStaleArtifactUpdates", () => {
         changed,
         artifact({ id: "tp", type: "technical_proposal", version: 1 }),
       ],
+    });
+    expect(plan).toEqual([]);
+  });
+});
+
+describe("hld_intake_questionnaire staleness edges (Stage 6H-0B)", () => {
+  it("directly feeds only hld_intake", () => {
+    expect(getDirectDownstreamArtifactTypes("hld_intake_questionnaire")).toEqual([
+      "hld_intake",
+    ]);
+  });
+
+  it("transitively reaches the whole HLD chain through hld_intake", () => {
+    expect(
+      getTransitiveDownstreamArtifactTypes("hld_intake_questionnaire")
+    ).toEqual([
+      "hld_intake",
+      "hld_readiness_snapshot",
+      "hld_source_bundle",
+      "hld_design_model",
+      "hld_design_model_review",
+      "hld_diagram",
+      "hld_document_model",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+  });
+
+  it("hld_intake is downstream of the questionnaire; the questionnaire is not downstream of hld_intake", () => {
+    expect(
+      isArtifactTypeDownstreamOf("hld_intake_questionnaire", "hld_intake")
+    ).toBe(true);
+    expect(
+      isArtifactTypeDownstreamOf("hld_intake_questionnaire", "export_package")
+    ).toBe(true);
+    // It is an input root: nothing upstream feeds it.
+    expect(
+      isArtifactTypeDownstreamOf("hld_intake", "hld_intake_questionnaire")
+    ).toBe(false);
+    for (const type of ALL_ARTIFACT_TYPES) {
+      expect(getDirectDownstreamArtifactTypes(type)).not.toContain(
+        "hld_intake_questionnaire"
+      );
+    }
+  });
+
+  it("a changed latest questionnaire marks the latest eligible hld_intake stale and records the cause", () => {
+    const changed = artifact({
+      id: "hiq-2",
+      type: "hld_intake_questionnaire",
+      version: 2,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hint-1", type: "hld_intake", version: 1 }),
+        artifact({ id: "hint-2", type: "hld_intake", version: 2, status: "approved" }),
+      ],
+    });
+    const intakeUpdates = plan.filter((u) => u.type === "hld_intake");
+    expect(intakeUpdates).toHaveLength(1);
+    expect(intakeUpdates[0].artifactId).toBe("hint-2");
+    expect(intakeUpdates[0].version).toBe(2);
+    expect(intakeUpdates[0].previousStatus).toBe("approved");
+    expect(intakeUpdates[0].nextStatus).toBe("stale");
+    expect(intakeUpdates[0].changedArtifactType).toBe("hld_intake_questionnaire");
+  });
+
+  it("propagates through the existing HLD readiness/source-bundle/model chain", () => {
+    const changed = artifact({
+      id: "hiq-1",
+      type: "hld_intake_questionnaire",
+      version: 1,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hint", type: "hld_intake", version: 1 }),
+        artifact({ id: "hrs", type: "hld_readiness_snapshot", version: 1 }),
+        artifact({ id: "hsb", type: "hld_source_bundle", version: 1 }),
+        artifact({ id: "hdm", type: "hld_design_model", version: 1 }),
+        artifact({ id: "hdmr", type: "hld_design_model_review", version: 1 }),
+        artifact({ id: "hdg", type: "hld_diagram", version: 1 }),
+        artifact({ id: "hdmdl", type: "hld_document_model", version: 1 }),
+        artifact({ id: "hdoc", type: "hld_document", version: 1 }),
+        artifact({ id: "tp", type: "technical_proposal", version: 1 }),
+        artifact({ id: "exp", type: "export_package", version: 1 }),
+        // Sibling input, never downstream of the questionnaire.
+        artifact({ id: "req", type: "requirements_baseline", version: 1 }),
+      ],
+    });
+    expect(plan.map((u) => u.type)).toEqual([
+      "hld_intake",
+      "hld_readiness_snapshot",
+      "hld_source_bundle",
+      "hld_design_model",
+      "hld_design_model_review",
+      "hld_diagram",
+      "hld_document_model",
+      "hld_document",
+      "technical_proposal",
+      "export_package",
+    ]);
+    expect(plan.every((u) => u.nextStatus === "stale")).toBe(true);
+    expect(plan.map((u) => u.type)).not.toContain("requirements_baseline");
+  });
+
+  it("does not mark a non-latest hld_intake stale", () => {
+    const changed = artifact({
+      id: "hiq-1",
+      type: "hld_intake_questionnaire",
+      version: 1,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hint-1", type: "hld_intake", version: 1 }),
+        artifact({ id: "hint-2", type: "hld_intake", version: 2 }),
+      ],
+    });
+    const intakeUpdates = plan.filter((u) => u.type === "hld_intake");
+    expect(intakeUpdates).toHaveLength(1);
+    expect(intakeUpdates[0].artifactId).toBe("hint-2");
+    expect(intakeUpdates[0].version).toBe(2);
+  });
+
+  it("skips an hld_intake whose latest version is not stale-eligible", () => {
+    const changed = artifact({
+      id: "hiq-1",
+      type: "hld_intake_questionnaire",
+      version: 1,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [
+        changed,
+        artifact({ id: "hint", type: "hld_intake", version: 1, status: "stale" }),
+      ],
+    });
+    expect(plan).toEqual([]);
+  });
+
+  it("returns an empty plan when no downstream artifacts are present", () => {
+    const changed = artifact({
+      id: "hiq-1",
+      type: "hld_intake_questionnaire",
+      version: 1,
+    });
+    const plan = planStaleArtifactUpdates({
+      changedArtifact: changed,
+      artifacts: [changed],
     });
     expect(plan).toEqual([]);
   });
