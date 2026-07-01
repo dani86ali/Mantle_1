@@ -69,6 +69,21 @@ function makeInput(): RfpHldIntakeQuestionnaireDraftingInput {
         label: "Source bundle",
       },
     ],
+    approvedSourceContexts: [
+      {
+        contextKind: "approved_project_artifact_context",
+        sourceRefId: "source-evidence",
+        artifactId: "art-evidence-1",
+        artifactType: "evidence_package",
+        stageId: "intake_package_review",
+        status: "approved",
+        version: 3,
+        payloadKind: "rfp_evidence_package",
+        label: "Approved evidence package",
+        summary: "Approved evidence package with 4 evidence item(s).",
+        excerpts: ["Two-building campus with a shared core."],
+      },
+    ],
     designKnowledgePackContents: [makeContent()],
     instructions: {
       candidateOnly: RFP_HLD_INTAKE_QUESTIONNAIRE_DRAFTING_CANDIDATE_ONLY,
@@ -84,6 +99,7 @@ const WHITELIST_KEYS = [
   "createdAt",
   "sourceArtifactIds",
   "sourceRefs",
+  "approvedSourceContexts",
   "designKnowledgePackContents",
   "instructions",
 ];
@@ -165,6 +181,66 @@ describe("buildRfpHldIntakeQuestionnaireDraftingRequest", () => {
     expect(c.source).toBe(RFP_HLD_APPROVED_DESIGN_KNOWLEDGE_CONTENT_SOURCE);
     expect(c.designPrinciples).toEqual([
       "Prefer a collapsed core for small campuses",
+    ]);
+  });
+
+  it("carries approved source-context blocks field-by-field with their source-chain proof", () => {
+    const req = buildRfpHldIntakeQuestionnaireDraftingRequest(makeInput());
+    const parsed = JSON.parse(req.user) as RfpHldIntakeQuestionnaireDraftingUserPayload;
+    expect(parsed.approvedSourceContexts).toHaveLength(1);
+    expect(parsed.approvedSourceContexts[0]).toEqual({
+      contextKind: "approved_project_artifact_context",
+      sourceRefId: "source-evidence",
+      artifactId: "art-evidence-1",
+      artifactType: "evidence_package",
+      stageId: "intake_package_review",
+      status: "approved",
+      version: 3,
+      payloadKind: "rfp_evidence_package",
+      label: "Approved evidence package",
+      summary: "Approved evidence package with 4 evidence item(s).",
+      excerpts: ["Two-building campus with a shared core."],
+    });
+  });
+
+  it("drops smuggled fields on an approved source-context block by construction", () => {
+    const hostile = {
+      ...makeInput(),
+      approvedSourceContexts: [
+        {
+          contextKind: "approved_project_artifact_context",
+          sourceRefId: "source-evidence",
+          artifactId: "art-evidence-1",
+          artifactType: "evidence_package",
+          stageId: "intake_package_review",
+          status: "approved",
+          version: 3,
+          payloadKind: "rfp_evidence_package",
+          label: "Approved evidence package",
+          summary: "ok",
+          excerpts: [],
+          storagePath: "SMUGGLED-ctx-path",
+          rawText: "SMUGGLED-ctx-raw",
+          pricing: "SMUGGLED-ctx-pricing",
+        },
+      ],
+    } as unknown as RfpHldIntakeQuestionnaireDraftingInput;
+
+    const req = buildRfpHldIntakeQuestionnaireDraftingRequest(hostile);
+    expect(req.user).not.toContain("SMUGGLED-");
+    const parsed = JSON.parse(req.user) as RfpHldIntakeQuestionnaireDraftingUserPayload;
+    expect(Object.keys(parsed.approvedSourceContexts[0]).sort()).toEqual([
+      "artifactId",
+      "artifactType",
+      "contextKind",
+      "excerpts",
+      "label",
+      "payloadKind",
+      "sourceRefId",
+      "stageId",
+      "status",
+      "summary",
+      "version",
     ]);
   });
 

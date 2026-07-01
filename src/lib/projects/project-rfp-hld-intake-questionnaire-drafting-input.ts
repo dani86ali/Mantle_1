@@ -71,6 +71,34 @@ export interface RfpHldIntakeQuestionnaireDraftingSourceRef {
   label: string;
 }
 
+/**
+ * A compact, source-proven block of approved project-artifact CONTEXT a candidate
+ * question may lean on. It carries the approved source chain (artifact id + type +
+ * stage + status + version) plus a short human-facing label, a bounded summary, and
+ * a small set of capped excerpts derived ONLY from already-approved artifact payload
+ * fields. It never carries a raw document dump, a file path, a storage handle, a
+ * tenant id, a provider response, a pricing/catalog value, a priced BoQ figure, or a
+ * SKU/configuration decision - configuration context, when present, is a bounded
+ * description/count only, never turning SKU/catalog/config into AI authority.
+ */
+export interface RfpHldIntakeQuestionnaireApprovedSourceContext {
+  contextKind: "approved_project_artifact_context";
+  sourceRefId: string;
+  artifactId: string;
+  artifactType:
+    | "evidence_package"
+    | "requirements_baseline"
+    | "compliance_matrix"
+    | "configuration_expansion";
+  stageId: string;
+  status: "approved";
+  version: number;
+  payloadKind?: string;
+  label: string;
+  summary: string;
+  excerpts: string[];
+}
+
 /** Fixed candidate-only instructions carried alongside the drafting material. */
 export interface RfpHldIntakeQuestionnaireDraftingInstructions {
   candidateOnly: typeof RFP_HLD_INTAKE_QUESTIONNAIRE_DRAFTING_CANDIDATE_ONLY;
@@ -89,6 +117,13 @@ export interface RfpHldIntakeQuestionnaireDraftingInput {
   createdAt: string;
   sourceArtifactIds: string[];
   sourceRefs: RfpHldIntakeQuestionnaireDraftingSourceRef[];
+  /**
+   * Bounded, sanitized approved-artifact CONTEXT the candidate drafting run may lean
+   * on, keyed by the source ref it elaborates. Summaries and capped excerpts only -
+   * never a raw dump, path, handle, tenant id, provider data, or pricing/SKU/catalog/
+   * configuration decision.
+   */
+  approvedSourceContexts: RfpHldIntakeQuestionnaireApprovedSourceContext[];
   designKnowledgePackContents: RfpHldApprovedDesignKnowledgeContent[];
   instructions: RfpHldIntakeQuestionnaireDraftingInstructions;
 }

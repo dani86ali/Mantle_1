@@ -54,6 +54,10 @@ type RfpHldIntakeQuestionnaireDraftingKnowledgeContent =
 type RfpHldIntakeQuestionnaireDraftingSourceRefField =
   RfpHldIntakeQuestionnaireDraftingInput["sourceRefs"][number];
 
+/** One bounded approved-artifact context block carried in the drafting input. */
+type RfpHldIntakeQuestionnaireDraftingApprovedSourceContextField =
+  RfpHldIntakeQuestionnaireDraftingInput["approvedSourceContexts"][number];
+
 /**
  * The whitelisted user payload, built with explicit, stable key ordering. Mirrors
  * only fields already present on the drafting-input bundle; any field smuggled
@@ -65,6 +69,7 @@ export interface RfpHldIntakeQuestionnaireDraftingUserPayload {
   createdAt: RfpHldIntakeQuestionnaireDraftingInput["createdAt"];
   sourceArtifactIds: RfpHldIntakeQuestionnaireDraftingInput["sourceArtifactIds"];
   sourceRefs: RfpHldIntakeQuestionnaireDraftingSourceRefField[];
+  approvedSourceContexts: RfpHldIntakeQuestionnaireDraftingApprovedSourceContextField[];
   designKnowledgePackContents: RfpHldIntakeQuestionnaireDraftingKnowledgeContent[];
   instructions: RfpHldIntakeQuestionnaireDraftingInput["instructions"];
 }
@@ -120,6 +125,26 @@ export function buildRfpHldIntakeQuestionnaireDraftingRequest(
         version: ref.version,
         payloadKind: ref.payloadKind,
         label: ref.label,
+      })
+    ),
+    // Explicit per-field mirror: any field smuggled onto a context block is
+    // structurally excluded, and each block keeps its source-chain proof plus its
+    // bounded summary/excerpts (never a raw dump, path, handle, or authority field).
+    approvedSourceContexts: (bundle.approvedSourceContexts ?? []).map(
+      (context): RfpHldIntakeQuestionnaireDraftingApprovedSourceContextField => ({
+        contextKind: context.contextKind,
+        sourceRefId: context.sourceRefId,
+        artifactId: context.artifactId,
+        artifactType: context.artifactType,
+        stageId: context.stageId,
+        status: context.status,
+        version: context.version,
+        ...(context.payloadKind !== undefined
+          ? { payloadKind: context.payloadKind }
+          : {}),
+        label: context.label,
+        summary: context.summary,
+        excerpts: context.excerpts.slice(),
       })
     ),
     // Explicit per-field mirror (not a wholesale clone): any field smuggled onto a

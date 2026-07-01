@@ -5,11 +5,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // Mock auth and the read-only inspection services so both routes' auth gate,
 // tenant/param authority, body-ignoring, GET-only surface, and result mapping are
 // tested independent of the DB and stores.
-const { mockRequireAuth, mockLoadList, mockLoadDetail } = vi.hoisted(() => ({
-  mockRequireAuth: vi.fn(),
-  mockLoadList: vi.fn(),
-  mockLoadDetail: vi.fn(),
-}));
+const { mockRequireAuth, mockLoadList, mockLoadDetail, mockCreateDraft } =
+  vi.hoisted(() => ({
+    mockRequireAuth: vi.fn(),
+    mockLoadList: vi.fn(),
+    mockLoadDetail: vi.fn(),
+    mockCreateDraft: vi.fn(),
+  }));
 
 vi.mock("@/lib/middleware/auth", () => ({ requireAuth: mockRequireAuth }));
 vi.mock(
@@ -19,8 +21,17 @@ vi.mock(
     loadRfpHldIntakeQuestionnaireDetail: mockLoadDetail,
   })
 );
+vi.mock(
+  "@/lib/projects/project-rfp-hld-intake-questionnaire-generation",
+  () => ({
+    createRfpHldIntakeQuestionnaireDraft: mockCreateDraft,
+  })
+);
 
-import { GET as LIST_GET } from "@/app/api/projects/[id]/rfp/hld-intake-questionnaires/route";
+import {
+  GET as LIST_GET,
+  POST as LIST_POST,
+} from "@/app/api/projects/[id]/rfp/hld-intake-questionnaires/route";
 import * as listRouteModule from "@/app/api/projects/[id]/rfp/hld-intake-questionnaires/route";
 import { GET as DETAIL_GET } from "@/app/api/projects/[id]/rfp/artifacts/[artifactId]/hld-intake-questionnaire/route";
 import * as detailRouteModule from "@/app/api/projects/[id]/rfp/artifacts/[artifactId]/hld-intake-questionnaire/route";
@@ -76,6 +87,7 @@ const LIST_OK = {
         createdAt: "2026-06-20T12:00:00.000Z",
         questionCount: 2,
         sourceArtifactCount: 1,
+        sourceRefCount: 1,
         validationStatus: "passed",
         validationFindingCount: 0,
         payloadValid: true,
@@ -89,6 +101,18 @@ const QUESTIONNAIRE = {
   createdBy: SESSION.userId,
   createdAt: "2026-06-20T12:00:00.000Z",
   sourceArtifactIds: ["art-req-1"],
+  sourceRefs: [
+    {
+      refId: "art-req-1",
+      artifactId: "art-req-1",
+      artifactType: "requirements_baseline",
+      stageId: "requirements_baseline_review",
+      status: "approved",
+      version: 2,
+      payloadKind: "rfp_requirements_baseline",
+      label: "Approved requirements baseline",
+    },
+  ],
   questions: [
     {
       questionId: "q-1",
@@ -119,10 +143,30 @@ function req(body: unknown = { decoy: true }): NextRequest {
   } as unknown as NextRequest;
 }
 
+const CREATE_PAYLOAD_SUMMARY = {
+  payloadKind: "rfp_hld_intake_questionnaire",
+  createdBy: SESSION.userId,
+  createdAt: "2026-06-20T12:00:00.000Z",
+  questionCount: 2,
+  sourceArtifactCount: 5,
+  sourceRefCount: 5,
+  validationStatus: "passed",
+  validationFindingCount: 0,
+  payloadValid: true,
+};
+
+const CREATE_OK = {
+  status: "ok",
+  project: RFP_PROJECT,
+  artifact: ARTIFACT_SUMMARY,
+  payloadSummary: CREATE_PAYLOAD_SUMMARY,
+};
+
 beforeEach(() => {
   mockRequireAuth.mockReset().mockReturnValue(SESSION);
   mockLoadList.mockReset().mockResolvedValue(LIST_OK);
   mockLoadDetail.mockReset().mockResolvedValue(DETAIL_OK);
+  mockCreateDraft.mockReset().mockResolvedValue(CREATE_OK);
 });
 
 // ---------------------------------------------------------------------------
@@ -189,11 +233,141 @@ describe("GET .../rfp/hld-intake-questionnaires (list)", () => {
     expect(JSON.stringify(await res.json())).not.toContain(secret);
   });
 
-  it("exports GET only", () => {
+  it("exports GET and POST only", () => {
     expect(typeof listRouteModule.GET).toBe("function");
-    for (const method of ["POST", "PATCH", "PUT", "DELETE"]) {
+    expect(typeof listRouteModule.POST).toBe("function");
+    for (const method of ["PATCH", "PUT", "DELETE"]) {
       expect((listRouteModule as Record<string, unknown>)[method]).toBeUndefined();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// list route - POST (create)
+// ---------------------------------------------------------------------------
+
+describe("POST .../rfp/hld-intake-questionnaires (create)", () => {
+  it("returns the requireAuth response and never calls the service or reads the body", async () => {
+    const unauth = NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    mockRequireAuth.mockReturnValue(unauth);
+    const request = req();
+    const res = await LIST_POST(request, LIST_PARAMS);
+    expect(res).toBe(unauth);
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+    expect(request.json).not.toHaveBeenCalled();
+    expect(request.formData).not.toHaveBeenCalled();
+  });
+
+  it("passes only tenantId, route projectId, and createdBy; a decoy body is never read", async () => {
+    const request = req({
+      tenantId: "attacker-tenant",
+      projectId: "attacker-project",
+      createdBy: "attacker-user",
+      status: "approved",
+      payload: { evil: true },
+    });
+    const res = await LIST_POST(request, LIST_PARAMS);
+    expect(res.status).toBe(201);
+    expect(request.json).not.toHaveBeenCalled();
+    expect(request.formData).not.toHaveBeenCalled();
+    const arg = mockCreateDraft.mock.calls[0][0] as Record<string, unknown>;
+    expect(Object.keys(arg).sort()).toEqual(["createdBy", "projectId", "tenantId"]);
+    expect(arg.tenantId).toBe(SESSION.tenantId);
+    expect(arg.projectId).toBe(PROJECT);
+    expect(arg.createdBy).toBe(SESSION.userId);
+    expect(JSON.stringify(arg)).not.toContain("attacker");
+  });
+
+  it("maps ok to 201 with { artifact, payloadSummary } and no tenantId leak", async () => {
+    const res = await LIST_POST(req(), LIST_PARAMS);
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toEqual({
+      artifact: ARTIFACT_SUMMARY,
+      payloadSummary: CREATE_PAYLOAD_SUMMARY,
+    });
+    expect("status" in body).toBe(false);
+    expect(JSON.stringify(body)).not.toContain(SESSION.tenantId);
+  });
+
+  it("maps not_found to 404 and wrong_mode to 409", async () => {
+    mockCreateDraft.mockResolvedValue({ status: "not_found" });
+    let res = await LIST_POST(req(), LIST_PARAMS);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ code: "project_not_found", error: "Project not found." });
+
+    mockCreateDraft.mockResolvedValue({ status: "wrong_mode", project: WRONG_MODE_PROJECT });
+    res = await LIST_POST(req(), LIST_PARAMS);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      code: "wrong_project_mode",
+      error: "Project is not an RFP project.",
+      project: WRONG_MODE_PROJECT,
+    });
+  });
+
+  it("maps blocked to 409 with blockerCode and messages", async () => {
+    mockCreateDraft.mockResolvedValue({
+      status: "blocked",
+      code: "missing_approved_compliance_matrix",
+      messages: ["No approved compliance matrix is available."],
+    });
+    const res = await LIST_POST(req(), LIST_PARAMS);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      code: "hld_intake_questionnaire_blocked",
+      error: "HLD intake questionnaire creation is blocked.",
+      blockerCode: "missing_approved_compliance_matrix",
+      messages: ["No approved compliance matrix is available."],
+    });
+  });
+
+  it("maps drafting_unavailable to 503 and drafting_failed to 502", async () => {
+    mockCreateDraft.mockResolvedValue({ status: "drafting_unavailable" });
+    let res = await LIST_POST(req(), LIST_PARAMS);
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe(
+      "hld_intake_questionnaire_drafting_unavailable"
+    );
+
+    mockCreateDraft.mockResolvedValue({ status: "drafting_failed" });
+    res = await LIST_POST(req(), LIST_PARAMS);
+    expect(res.status).toBe(502);
+    expect((await res.json()).code).toBe("hld_intake_questionnaire_drafting_failed");
+  });
+
+  it("maps invalid_candidate_output and invalid_payload to 409 with errors", async () => {
+    mockCreateDraft.mockResolvedValue({
+      status: "invalid_candidate_output",
+      errors: ["provider output: bad"],
+    });
+    let res = await LIST_POST(req(), LIST_PARAMS);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      code: "hld_intake_questionnaire_invalid_candidate",
+      error: "HLD intake questionnaire candidate output is invalid.",
+      errors: ["provider output: bad"],
+    });
+
+    mockCreateDraft.mockResolvedValue({
+      status: "invalid_payload",
+      errors: ["payload: bad"],
+    });
+    res = await LIST_POST(req(), LIST_PARAMS);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      code: "hld_intake_questionnaire_invalid_payload",
+      error: "HLD intake questionnaire payload is invalid.",
+      errors: ["payload: bad"],
+    });
+  });
+
+  it("maps an unexpected service error to a controlled 500 without exposing the thrown error", async () => {
+    const secret = "boom-create-stack";
+    mockCreateDraft.mockRejectedValue(new Error(secret));
+    const res = await LIST_POST(req(), LIST_PARAMS);
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(await res.json())).not.toContain(secret);
   });
 });
 
@@ -330,15 +504,23 @@ describe("route module purity (static source check)", () => {
   const listSource = readFileSync(LIST_SRC, "utf8");
   const detailSource = readFileSync(DETAIL_SRC, "utf8");
 
-  it("each route imports only Next.js server primitives, requireAuth, and the inspection service", () => {
-    for (const source of [listSource, detailSource]) {
-      const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
-      expect(froms).toEqual([
-        "next/server",
-        "@/lib/middleware/auth",
-        "@/lib/projects/project-rfp-hld-intake-questionnaire-inspection",
-      ]);
-    }
+  it("the list route imports only Next.js server primitives, requireAuth, the inspection service, and the generation service", () => {
+    const froms = Array.from(listSource.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
+    expect(froms).toEqual([
+      "next/server",
+      "@/lib/middleware/auth",
+      "@/lib/projects/project-rfp-hld-intake-questionnaire-inspection",
+      "@/lib/projects/project-rfp-hld-intake-questionnaire-generation",
+    ]);
+  });
+
+  it("the detail route imports only Next.js server primitives, requireAuth, and the inspection service", () => {
+    const froms = Array.from(detailSource.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
+    expect(froms).toEqual([
+      "next/server",
+      "@/lib/middleware/auth",
+      "@/lib/projects/project-rfp-hld-intake-questionnaire-inspection",
+    ]);
   });
 
   it("neither route reads the request body or multipart form data", () => {

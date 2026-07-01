@@ -1966,6 +1966,10 @@ const HLD_INTAKE_QUESTIONNAIRE_SUBMIT_SUCCESS =
   "HLD intake draft created from questionnaire for engineer review.";
 const HLD_INTAKE_QUESTIONNAIRE_SUBMIT_ERROR =
   "Unable to create questionnaire-assisted HLD intake draft.";
+const HLD_INTAKE_QUESTIONNAIRE_CREATE_SUCCESS =
+  "Candidate HLD intake questionnaire created for engineer review.";
+const HLD_INTAKE_QUESTIONNAIRE_CREATE_ERROR =
+  "Unable to create HLD intake questionnaire.";
 
 /** Exact UI copy required for the HLD knowledge-pack list/detail/create/review states. */
 const HLD_KNOWLEDGE_PACK_LIST_ERROR = "Unable to load HLD knowledge packs.";
@@ -4264,6 +4268,19 @@ export default function ProjectRfpEvidencePage() {
     useState<string | null>(null);
   const [hldIntakeQuestionnaireSuccess, setHldIntakeQuestionnaireSuccess] =
     useState<string | null>(null);
+  // Candidate questionnaire CREATION trigger (candidate/review only; never authority).
+  const [
+    hldIntakeQuestionnaireCreatePending,
+    setHldIntakeQuestionnaireCreatePending,
+  ] = useState(false);
+  const [
+    hldIntakeQuestionnaireCreateError,
+    setHldIntakeQuestionnaireCreateError,
+  ] = useState<string | null>(null);
+  const [
+    hldIntakeQuestionnaireCreateSuccess,
+    setHldIntakeQuestionnaireCreateSuccess,
+  ] = useState<string | null>(null);
 
   // HLD design knowledge pack list/detail plus the compact create form and review.
   const [hldKnowledgePackList, setHldKnowledgePackList] = useState<HldKnowledgePackListResponse | null>(null);
@@ -4805,6 +4822,33 @@ export default function ProjectRfpEvidencePage() {
   useEffect(() => {
     void loadHldIntakeQuestionnaireList();
   }, [loadHldIntakeQuestionnaireList]);
+
+  // Trigger creation of ONE candidate questionnaire from the approved source chain.
+  // The POST carries no request body; the backend fail-closes and drafts candidate
+  // questions only. On success the candidate list refreshes for engineer review.
+  const createHldIntakeQuestionnaire = useCallback(async (): Promise<void> => {
+    setHldIntakeQuestionnaireCreatePending(true);
+    setHldIntakeQuestionnaireCreateError(null);
+    setHldIntakeQuestionnaireCreateSuccess(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${id}/rfp/hld-intake-questionnaires`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        setHldIntakeQuestionnaireCreateError(HLD_INTAKE_QUESTIONNAIRE_CREATE_ERROR);
+        return;
+      }
+      setHldIntakeQuestionnaireCreateSuccess(
+        HLD_INTAKE_QUESTIONNAIRE_CREATE_SUCCESS
+      );
+      await loadHldIntakeQuestionnaireList();
+    } catch {
+      setHldIntakeQuestionnaireCreateError(HLD_INTAKE_QUESTIONNAIRE_CREATE_ERROR);
+    } finally {
+      setHldIntakeQuestionnaireCreatePending(false);
+    }
+  }, [id, loadHldIntakeQuestionnaireList]);
 
   // A candidate questionnaire's questions are fetched only here, on an explicit
   // "Use" click, and seed the SE review + answer draft.
@@ -11036,6 +11080,39 @@ export default function ProjectRfpEvidencePage() {
                   questions to create an HLD intake draft for engineer review. The
                   questionnaire is review input only; it is never authority.
                 </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="hld-intake-questionnaire-create"
+                    disabled={hldIntakeQuestionnaireCreatePending}
+                    onClick={() => void createHldIntakeQuestionnaire()}
+                    className={PLAIN_BTN}
+                  >
+                    {hldIntakeQuestionnaireCreatePending
+                      ? "Creating candidate questionnaire..."
+                      : "Create candidate questionnaire"}
+                  </button>
+                  <span className={MUTED_TEXT}>
+                    Drafts candidate questions from approved sources for engineer
+                    review; it is never final authority.
+                  </span>
+                </div>
+                {hldIntakeQuestionnaireCreateError && (
+                  <div
+                    data-testid="hld-intake-questionnaire-create-error"
+                    className={ERROR_BOX}
+                  >
+                    {hldIntakeQuestionnaireCreateError}
+                  </div>
+                )}
+                {hldIntakeQuestionnaireCreateSuccess && (
+                  <p
+                    data-testid="hld-intake-questionnaire-create-success"
+                    className="text-xs text-emerald-300"
+                  >
+                    {hldIntakeQuestionnaireCreateSuccess}
+                  </p>
+                )}
                 {hldIntakeQuestionnaireListError && (
                   <div
                     data-testid="hld-intake-questionnaire-error"

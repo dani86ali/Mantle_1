@@ -44,6 +44,7 @@ function makeInput(): RfpHldIntakeQuestionnaireDraftingInput {
         label: "Source bundle",
       },
     ],
+    approvedSourceContexts: [],
     designKnowledgePackContents: [],
     instructions: {
       candidateOnly: RFP_HLD_INTAKE_QUESTIONNAIRE_DRAFTING_CANDIDATE_ONLY,

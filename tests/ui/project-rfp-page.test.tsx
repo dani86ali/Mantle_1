@@ -2358,6 +2358,15 @@ function stubFetch(
         return jsonResponse({ artifact: hldIntakeListItem() }, 201);
       }
       if (url === HLD_INTAKE_QUESTIONNAIRE_LIST_URL) {
+        if (init?.method === "POST") {
+          return jsonResponse(
+            {
+              artifact: hldIntakeQuestionnaireListItem(),
+              payloadSummary: {},
+            },
+            201
+          );
+        }
         return jsonResponse(hldIntakeQuestionnaireListResponse());
       }
       if (url === HLD_INTAKE_QUESTIONNAIRE_DETAIL_URL) {
@@ -5285,6 +5294,78 @@ describe("ProjectRfpEvidencePage - Stage 6H-0E-C questionnaire-assisted HLD inta
     expect(calls.some((c) => c.url === HLD_INTAKE_QUESTIONNAIRE_DETAIL_URL)).toBe(
       true
     );
+  });
+
+  it("creates a candidate questionnaire via an empty-body POST and reloads the list", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("hld-intake-panel");
+
+    const listGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_INTAKE_QUESTIONNAIRE_LIST_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    const create = await screen.findByTestId("hld-intake-questionnaire-create");
+    await act(async () => {
+      fireEvent.click(create);
+    });
+
+    await screen.findByTestId("hld-intake-questionnaire-create-success");
+
+    const post = calls.find(
+      (c) =>
+        c.url === HLD_INTAKE_QUESTIONNAIRE_LIST_URL &&
+        c.init?.method === "POST"
+    );
+    expect(post).toBeDefined();
+    // The POST carries no request body and leaks no caller authority/provenance.
+    expect(post?.init?.body === undefined || post?.init?.body === null).toBe(true);
+    const forbidden = [
+      "tenantId",
+      "projectId",
+      "createdBy",
+      "status",
+      "sourceArtifactIds",
+      "payload",
+      "sourceMode",
+      "pricing",
+      "sku",
+      "catalog",
+      "config",
+    ];
+    const bodyStr = post?.init?.body === undefined ? "" : String(post?.init?.body);
+    for (const key of forbidden) expect(bodyStr).not.toContain(key);
+
+    // The candidate list is refreshed after a successful create.
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_INTAKE_QUESTIONNAIRE_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+
+    // No TP / final HLD / HLD close / export / document / diagram POST is made.
+    const forbiddenPostRoutes = [
+      "/rfp/hld-intake/questionnaire-assisted",
+      "/rfp/hld-close",
+      "/rfp/hld-document",
+      "/rfp/hld-diagram",
+      "/rfp/hld-proposal",
+      "/rfp/tp",
+      "/rfp/technical-proposal",
+    ];
+    expect(
+      calls.filter(
+        (c) =>
+          c.init?.method === "POST" &&
+          forbiddenPostRoutes.some((r) => c.url.includes(r))
+      )
+    ).toHaveLength(0);
   });
 
   it("keeps submit disabled while an active answered row has a blank value", async () => {
