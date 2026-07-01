@@ -14,6 +14,9 @@ vi.mock("@/lib/db/project-artifact-store", () => ({
 vi.mock("@/lib/projects/project-rfp-hld-design-model-review", () => ({
   validateRfpHldDesignModelReviewPayload: vi.fn(),
 }));
+vi.mock("@/lib/projects/project-rfp-hld-final-authority-regeneration-guard", () => ({
+  evaluateRfpHldFinalAuthorityRegenerationGuard: vi.fn(),
+}));
 
 import { getProjectById } from "@/lib/db/project-store";
 import {
@@ -22,6 +25,7 @@ import {
   listProjectArtifacts,
 } from "@/lib/db/project-artifact-store";
 import { validateRfpHldDesignModelReviewPayload } from "@/lib/projects/project-rfp-hld-design-model-review";
+import { evaluateRfpHldFinalAuthorityRegenerationGuard } from "@/lib/projects/project-rfp-hld-final-authority-regeneration-guard";
 import {
   createRfpHldDesignModelRebuildRequest,
   listRfpHldDesignModelRebuildRequests,
@@ -33,6 +37,7 @@ const getArtifactMock = vi.mocked(getProjectArtifactById);
 const listMock = vi.mocked(listProjectArtifacts);
 const createMock = vi.mocked(createProjectArtifactVersion);
 const reviewValidatorMock = vi.mocked(validateRfpHldDesignModelReviewPayload);
+const guardMock = vi.mocked(evaluateRfpHldFinalAuthorityRegenerationGuard);
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const PROJECT = "proj-1";
@@ -150,6 +155,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   getProjectMock.mockResolvedValue(makeProject());
   reviewValidatorMock.mockReturnValue({ valid: true, errors: [] });
+  guardMock.mockResolvedValue({ blocked: false });
   listMock.mockResolvedValue([]);
   createMock.mockImplementation(async (req) => ({
     id: "req-new",
@@ -185,6 +191,31 @@ describe("createRfpHldDesignModelRebuildRequest - happy path", () => {
       expect(result.artifact.sourceArtifactIds).toEqual([MODEL_ID, REVIEW_ID]);
       expect(JSON.stringify(result.artifact)).not.toContain(TENANT);
     }
+  });
+});
+
+describe("createRfpHldDesignModelRebuildRequest - final HLD authority guard", () => {
+  const FINAL_AUTHORITY_SUMMARY = {
+    project: { id: PROJECT, name: "Acme RFP", mode: "rfp", createdAt: "x", updatedAt: "y" },
+    artifact: { id: "hdoc-1", type: "hld_document", status: "approved" },
+    payloadSummary: { payloadKind: "rfp_hld_document", drawioXmlLength: 42 },
+    finalAuthorityStatus: "approved_manual_drawio_upload",
+  };
+
+  it("returns final_hld_already_approved after project/mode gate and before loading artifacts or writing", async () => {
+    wireArtifacts(makeModel(), makeReview());
+    guardMock.mockResolvedValue({ blocked: true, finalAuthority: FINAL_AUTHORITY_SUMMARY as never });
+
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+
+    expect(result).toEqual({
+      status: "final_hld_already_approved",
+      finalAuthority: FINAL_AUTHORITY_SUMMARY,
+    });
+    expect(guardMock).toHaveBeenCalledWith({ tenantId: TENANT, projectId: PROJECT });
+    expect(getArtifactMock).not.toHaveBeenCalled();
+    expect(listMock).not.toHaveBeenCalled();
+    expect(createMock).not.toHaveBeenCalled();
   });
 });
 

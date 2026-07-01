@@ -15,8 +15,10 @@
  * request body is NEVER read: the diagram type is fixed to "topology" and all
  * source ids are resolved server-side from the readiness report. Result maps to
  * HTTP: not_found -> 404 project_not_found, wrong_mode -> 409 wrong_project_mode,
- * readiness_blocked -> 409 hld_diagram_generation_not_ready (with nextAction),
- * no_topology -> 409 hld_diagram_no_topology (with blockerCode),
+ * final_hld_already_approved -> 409 hld_diagram_final_authority_exists (with
+ * sanitized finalAuthority), readiness_blocked -> 409
+ * hld_diagram_generation_not_ready (with nextAction), no_topology -> 409
+ * hld_diagram_no_topology (with blockerCode),
  * precondition_failed -> 409 hld_diagram_precondition_failed (with blockerCode),
  * invalid_payload -> 409 hld_diagram_payload_invalid (with errors; nothing was
  * written), ok -> 201 with { artifact, payloadSummary }.
@@ -109,6 +111,16 @@ export async function POST(
           code: "wrong_project_mode",
           error: "Project is not an RFP project.",
           project: result.project,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "final_hld_already_approved") {
+      return NextResponse.json(
+        {
+          code: "hld_diagram_final_authority_exists",
+          error: "An approved final HLD document already exists; regeneration is blocked.",
+          finalAuthority: result.finalAuthority,
         },
         { status: 409 }
       );

@@ -18,10 +18,12 @@
  * before the service is called. No client source ids, payload, status, createdBy, or
  * authority field is ever accepted.
  * Result maps to HTTP: not_found -> 404 project_not_found, wrong_mode -> 409
- * wrong_project_mode, readiness_blocked -> 409 hld_document_model_not_ready (with
- * nextAction), precondition_failed -> 409 hld_document_model_precondition_failed
- * (with blockerCode), invalid_payload -> 409 hld_document_model_payload_invalid
- * (with errors), ok -> 201 with { artifact, payloadSummary }.
+ * wrong_project_mode, final_hld_already_approved -> 409
+ * hld_document_model_final_authority_exists (with sanitized finalAuthority),
+ * readiness_blocked -> 409 hld_document_model_not_ready (with nextAction),
+ * precondition_failed -> 409 hld_document_model_precondition_failed (with
+ * blockerCode), invalid_payload -> 409 hld_document_model_payload_invalid (with
+ * errors), ok -> 201 with { artifact, payloadSummary }.
  *
  * This route is a transport adapter only: it never touches the DB or any store,
  * reads no raw RFP files or storage paths, parses no documents, prices nothing,
@@ -148,6 +150,16 @@ export async function POST(
           code: "wrong_project_mode",
           error: "Project is not an RFP project.",
           project: result.project,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "final_hld_already_approved") {
+      return NextResponse.json(
+        {
+          code: "hld_document_model_final_authority_exists",
+          error: "An approved final HLD document already exists; regeneration is blocked.",
+          finalAuthority: result.finalAuthority,
         },
         { status: 409 }
       );

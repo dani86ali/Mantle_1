@@ -16,7 +16,9 @@
  * (tenantId/projectId/createdBy/status/source ids/payload) is ignored entirely
  * and the request body is never parsed. Result maps to HTTP:
  * not_found -> 404 project_not_found, wrong_mode -> 409 wrong_project_mode,
- * blocked -> 409 hld_design_model_blocked (with blockerCode + messages),
+ * final_hld_already_approved -> 409 hld_design_model_final_authority_exists
+ * (with sanitized finalAuthority), blocked -> 409 hld_design_model_blocked
+ * (with blockerCode + messages),
  * invalid_source_bundle_payload -> 409 hld_design_model_source_bundle_invalid
  * (with errors), candidate_input_blocked -> 409
  * hld_design_model_candidate_input_blocked (with reason), drafting_unavailable ->
@@ -111,6 +113,16 @@ export async function POST(
           code: "wrong_project_mode",
           error: "Project is not an RFP project.",
           project: result.project,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "final_hld_already_approved") {
+      return NextResponse.json(
+        {
+          code: "hld_design_model_final_authority_exists",
+          error: "An approved final HLD document already exists; regeneration is blocked.",
+          finalAuthority: result.finalAuthority,
         },
         { status: 409 }
       );

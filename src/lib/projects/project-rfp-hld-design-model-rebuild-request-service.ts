@@ -27,6 +27,10 @@ import {
 import { isArtifactReviewable } from "@/lib/projects/approvals";
 import { validateRfpHldDesignModelReviewPayload } from "@/lib/projects/project-rfp-hld-design-model-review";
 import {
+  evaluateRfpHldFinalAuthorityRegenerationGuard,
+  type RfpHldFinalAuthorityRegenerationSummary,
+} from "@/lib/projects/project-rfp-hld-final-authority-regeneration-guard";
+import {
   RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND,
   validateRfpHldDesignModelRebuildRequestPayload,
   type RfpHldDesignModelRebuildRequestPayload,
@@ -130,6 +134,10 @@ export interface CreateRfpHldDesignModelRebuildRequestInput {
 export type CreateRfpHldDesignModelRebuildRequestResult =
   | { status: "not_found" }
   | { status: "wrong_mode"; project: RfpHldDesignModelRebuildRequestProjectSummary }
+  | {
+      status: "final_hld_already_approved";
+      finalAuthority: RfpHldFinalAuthorityRegenerationSummary;
+    }
   | { status: "invalid_source_model" }
   | { status: "invalid_review" }
   | {
@@ -427,7 +435,8 @@ function toListedArtifactSummary(
  * Create exactly ONE bounded `needs_review` `hld_design_model_rebuild_request` on
  * the `hld_design_delta_review` stage, tenant-scoped, only after every gate passes.
  * Throws on blank required ids/text before any store call. Returns explicit result
- * statuses for not_found, wrong_mode, invalid_source_model, invalid_review,
+ * statuses for not_found, wrong_mode, final_hld_already_approved (writing nothing
+ * before source artifact reads), invalid_source_model, invalid_review,
  * active_request_exists, invalid_request_payload, and ok. Never executes a rebuild.
  */
 export async function createRfpHldDesignModelRebuildRequest(
@@ -453,6 +462,13 @@ export async function createRfpHldDesignModelRebuildRequest(
   if (project === null) return { status: "not_found" };
   if (project.mode !== "rfp") {
     return { status: "wrong_mode", project: toProjectSummary(project) };
+  }
+
+  // Stop before loading any source artifact or creating a request once an approved,
+  // source-valid FINAL HLD document authority already exists; never regenerate it.
+  const guard = await evaluateRfpHldFinalAuthorityRegenerationGuard({ tenantId, projectId });
+  if (guard.blocked) {
+    return { status: "final_hld_already_approved", finalAuthority: guard.finalAuthority };
   }
 
   const model = await getProjectArtifactById(tenantId, projectId, modelId);

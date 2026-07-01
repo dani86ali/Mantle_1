@@ -11,7 +11,10 @@
  * ignored entirely. Result maps to HTTP: invalid body -> 400
  * invalid_rfp_hld_design_model_rebuild_request, not_found -> 404
  * project_not_found, wrong_mode -> 409 wrong_project_mode (with the project),
- * invalid_source_model -> 409 hld_design_model_rebuild_request_invalid_source_model,
+ * final_hld_already_approved -> 409
+ * hld_design_model_rebuild_request_final_authority_exists (with sanitized
+ * finalAuthority), invalid_source_model -> 409
+ * hld_design_model_rebuild_request_invalid_source_model,
  * invalid_review -> 409 hld_design_model_rebuild_request_invalid_review,
  * active_request_exists -> 409 hld_design_model_rebuild_request_already_active
  * (with the existing artifact), engineer_redo_limit_exhausted -> 409
@@ -111,6 +114,16 @@ export async function POST(
           code: "wrong_project_mode",
           error: "Project is not an RFP project.",
           project: result.project,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "final_hld_already_approved") {
+      return NextResponse.json(
+        {
+          code: "hld_design_model_rebuild_request_final_authority_exists",
+          error: "An approved final HLD document already exists; regeneration is blocked.",
+          finalAuthority: result.finalAuthority,
         },
         { status: 409 }
       );

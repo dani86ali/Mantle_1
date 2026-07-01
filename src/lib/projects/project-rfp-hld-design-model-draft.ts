@@ -37,6 +37,10 @@ import {
   type RfpHldDesignModelCandidateInputBlockedReason,
 } from "@/lib/projects/project-rfp-hld-design-model-candidate-input";
 import {
+  evaluateRfpHldFinalAuthorityRegenerationGuard,
+  type RfpHldFinalAuthorityRegenerationSummary,
+} from "@/lib/projects/project-rfp-hld-final-authority-regeneration-guard";
+import {
   draftRfpHldDesignModelCandidate,
   getConfiguredRfpHldDesignModelDraftingExecutor,
   type RfpHldDesignModelDraftingExecutor,
@@ -120,6 +124,10 @@ export interface CreateRfpHldDesignModelDraftInput {
 export type CreateRfpHldDesignModelDraftResult =
   | { status: "not_found" }
   | { status: "wrong_mode"; project: RfpHldDesignModelDraftProjectSummary }
+  | {
+      status: "final_hld_already_approved";
+      finalAuthority: RfpHldFinalAuthorityRegenerationSummary;
+    }
   | { status: "blocked"; code: RfpHldDesignModelBlockedCode; messages: string[] }
   | { status: "invalid_source_bundle_payload"; errors: string[] }
   | {
@@ -201,11 +209,14 @@ function toPayloadSummary(
  * approved bundle; invokes the Stage 6D-003 executor boundary (drafting_unavailable
  * when none is configured, drafting_failed without exposing a thrown detail); and
  * HARD-GATES the untrusted executor payload with the Stage 6C fail-closed validator
- * (invalid_draft_payload with deterministic errors) BEFORE persisting. On success
- * exactly one artifact is written with empty sourceFileIds and sourceArtifactIds
- * equal to [the approved source-bundle id]; only lean summaries are returned. Reads
- * no raw documents/files/evidence; makes no pricing/SKU/catalog/config/design
- * authority decision; persists only on a valid draft.
+ * (invalid_draft_payload with deterministic errors) BEFORE persisting. After the
+ * project/mode gate, an approved source-valid final HLD document blocks generation
+ * as final_hld_already_approved before source-bundle listing, executor work, or any
+ * write. On success exactly one artifact is written with empty sourceFileIds and
+ * sourceArtifactIds equal to [the approved source-bundle id]; only lean summaries
+ * are returned. Reads no raw documents/files/evidence; makes no
+ * pricing/SKU/catalog/config/design authority decision; persists only on a valid
+ * draft.
  */
 export async function createRfpHldDesignModelDraft(
   input: CreateRfpHldDesignModelDraftInput
@@ -219,6 +230,16 @@ export async function createRfpHldDesignModelDraft(
   if (project === null) return { status: "not_found" };
   if (project.mode !== "rfp") {
     return { status: "wrong_mode", project: toProjectSummary(project) };
+  }
+
+  // Stop before any readiness/executor work or artifact write once an approved,
+  // source-valid FINAL HLD document authority already exists; never regenerate it.
+  const guard = await evaluateRfpHldFinalAuthorityRegenerationGuard({
+    tenantId: input.tenantId,
+    projectId,
+  });
+  if (guard.blocked) {
+    return { status: "final_hld_already_approved", finalAuthority: guard.finalAuthority };
   }
 
   const artifacts = await listProjectArtifacts(input.tenantId, projectId);

@@ -17,6 +17,7 @@ const {
   mockLoadReadiness,
   mockValidateBundle,
   mockValidateModel,
+  mockGuard,
 } = vi.hoisted(() => ({
   mockGetProjectById: vi.fn(),
   mockGetArtifactById: vi.fn(),
@@ -25,6 +26,7 @@ const {
   mockLoadReadiness: vi.fn(),
   mockValidateBundle: vi.fn(),
   mockValidateModel: vi.fn(),
+  mockGuard: vi.fn(),
 }));
 
 vi.mock("@/lib/db/project-store", () => ({
@@ -43,6 +45,9 @@ vi.mock("@/lib/projects/project-rfp-hld-source-bundle", () => ({
 }));
 vi.mock("@/lib/projects/project-rfp-hld-design-model", () => ({
   validateRfpHldDesignModelPayload: mockValidateModel,
+}));
+vi.mock("@/lib/projects/project-rfp-hld-final-authority-regeneration-guard", () => ({
+  evaluateRfpHldFinalAuthorityRegenerationGuard: mockGuard,
 }));
 
 import {
@@ -281,6 +286,36 @@ beforeEach(() => {
   mockLoadReadiness.mockReset().mockResolvedValue(readyReport());
   mockValidateBundle.mockReset().mockReturnValue({ valid: true, errors: [] });
   mockValidateModel.mockReset().mockReturnValue({ valid: true, errors: [] });
+  mockGuard.mockReset().mockResolvedValue({ blocked: false });
+});
+
+// ---------------------------------------------------------------------------
+// Final HLD authority regeneration guard
+// ---------------------------------------------------------------------------
+
+const FINAL_AUTHORITY_SUMMARY = {
+  project: { id: PROJECT, name: "STC RFP HLD", mode: "rfp", createdAt: "x", updatedAt: "y" },
+  artifact: { id: "hdoc-1", type: "hld_document", status: "approved" },
+  payloadSummary: { payloadKind: "rfp_hld_document", drawioXmlLength: 42 },
+  finalAuthorityStatus: "approved_manual_drawio_upload",
+};
+
+describe("createRfpHldDocumentModelDraft - final HLD authority guard", () => {
+  it("returns final_hld_already_approved after project/mode gate and before readiness/write", async () => {
+    mockGuard.mockResolvedValue({ blocked: true, finalAuthority: FINAL_AUTHORITY_SUMMARY });
+
+    const result = await createRfpHldDocumentModelDraft(baseInput());
+
+    expect(result).toEqual({
+      status: "final_hld_already_approved",
+      finalAuthority: FINAL_AUTHORITY_SUMMARY,
+    });
+    expect(mockGuard).toHaveBeenCalledWith({ tenantId: TENANT, projectId: PROJECT });
+    expect(mockLoadReadiness).not.toHaveBeenCalled();
+    expect(mockGetArtifactById).not.toHaveBeenCalled();
+    expect(mockListByType).not.toHaveBeenCalled();
+    expect(mockCreateArtifact).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -667,6 +702,7 @@ describe("project-rfp-hld-document-model-draft - module purity (static)", () => 
       "@/lib/db/project-store",
       "@/lib/db/project-artifact-store",
       "@/lib/projects/project-rfp-hld-generation-readiness",
+      "@/lib/projects/project-rfp-hld-final-authority-regeneration-guard",
       "@/lib/projects/project-rfp-hld-source-bundle",
       "@/lib/projects/project-rfp-hld-design-model",
       "@/lib/projects/project-rfp-hld-diagram",

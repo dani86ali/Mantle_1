@@ -9,6 +9,9 @@ vi.mock("@/lib/db/project-artifact-store", () => ({
   createProjectArtifactVersion: vi.fn(),
   retireProjectArtifactVersion: vi.fn(),
 }));
+vi.mock("@/lib/projects/project-rfp-hld-final-authority-regeneration-guard", () => ({
+  evaluateRfpHldFinalAuthorityRegenerationGuard: vi.fn(),
+}));
 
 import { getProjectById } from "@/lib/db/project-store";
 import {
@@ -29,6 +32,7 @@ import { RFP_HLD_DESIGN_MODEL_REVIEW_PAYLOAD_KIND } from "@/lib/projects/project
 import { RFP_HLD_DESIGN_MODEL_REBUILD_REQUEST_PAYLOAD_KIND } from "@/lib/projects/project-rfp-hld-design-model-rebuild-request";
 import type { RfpHldDesignModelDraftingExecutor } from "@/lib/projects/project-rfp-hld-design-model-drafting-executor";
 import { executeRfpHldDesignModelRebuild } from "@/lib/projects/project-rfp-hld-design-model-rebuild-executor";
+import { evaluateRfpHldFinalAuthorityRegenerationGuard } from "@/lib/projects/project-rfp-hld-final-authority-regeneration-guard";
 import type { Project, ProjectArtifact } from "@/types/project";
 
 const TENANT_ID = "tenant-1";
@@ -48,6 +52,7 @@ const mockGetArtifact = vi.mocked(getProjectArtifactById);
 const mockListArtifacts = vi.mocked(listProjectArtifacts);
 const mockCreateArtifact = vi.mocked(createProjectArtifactVersion);
 const mockRetire = vi.mocked(retireProjectArtifactVersion);
+const mockGuard = vi.mocked(evaluateRfpHldFinalAuthorityRegenerationGuard);
 
 // HLD provider env vars the configured drafting factory reads; saved/restored so
 // this service suite stays deterministic even when the shell has them set.
@@ -392,6 +397,7 @@ beforeEach(() => {
   mockGetProjectById.mockResolvedValue(validProject());
   mockListArtifacts.mockResolvedValue([bundleArtifact()]);
   wireArtifacts();
+  mockGuard.mockResolvedValue({ blocked: false });
   mockCreateArtifact.mockResolvedValue(createdModelRow());
   // Default: pre-claim flips needs_review -> stale; any mark flips stale -> failed.
   mockRetire.mockImplementation(async (i) =>
@@ -513,6 +519,7 @@ describe("executeRfpHldDesignModelRebuild - concurrency / reuse safety", () => {
       vi.clearAllMocks();
       mockGetProjectById.mockResolvedValue(validProject());
       mockListArtifacts.mockResolvedValue([bundleArtifact()]);
+      mockGuard.mockResolvedValue({ blocked: false });
       wireArtifacts({ [REQUEST_ID]: requestArtifact({ status }) });
       const result = await executeRfpHldDesignModelRebuild(baseInput());
       expect(result.status).toBe("request_not_active");
@@ -554,6 +561,27 @@ describe("executeRfpHldDesignModelRebuild - project + request gates", () => {
     );
   });
 
+  it("returns final_hld_already_approved after project/mode gate and before loading/retiring the request", async () => {
+    const FINAL_AUTHORITY_SUMMARY = {
+      project: { id: PROJECT_ID, name: "Acme RFP", mode: "rfp", createdAt: "x", updatedAt: "y" },
+      artifact: { id: "hdoc-1", type: "hld_document", status: "approved" },
+      payloadSummary: { payloadKind: "rfp_hld_document", drawioXmlLength: 42 },
+      finalAuthorityStatus: "approved_manual_drawio_upload",
+    };
+    mockGuard.mockResolvedValue({ blocked: true, finalAuthority: FINAL_AUTHORITY_SUMMARY as never });
+
+    const result = await executeRfpHldDesignModelRebuild(baseInput());
+
+    expect(result).toEqual({
+      status: "final_hld_already_approved",
+      finalAuthority: FINAL_AUTHORITY_SUMMARY,
+    });
+    expect(mockGuard).toHaveBeenCalledWith({ tenantId: TENANT_ID, projectId: PROJECT_ID });
+    expect(mockGetArtifact).not.toHaveBeenCalled();
+    expect(mockRetire).not.toHaveBeenCalled();
+    expect(mockCreateArtifact).not.toHaveBeenCalled();
+  });
+
   it("returns artifact_not_rebuild_request for a wrong type/stage artifact", async () => {
     wireArtifacts({ [REQUEST_ID]: requestArtifact({ type: "hld_design_model" }) });
     const result = await executeRfpHldDesignModelRebuild(baseInput());
@@ -583,6 +611,7 @@ describe("executeRfpHldDesignModelRebuild - source model / review gates", () => 
       vi.clearAllMocks();
       mockGetProjectById.mockResolvedValue(validProject());
       mockListArtifacts.mockResolvedValue([bundleArtifact()]);
+      mockGuard.mockResolvedValue({ blocked: false });
       wireArtifacts({ [MODEL_ID]: modelArtifact({ status }) });
       const result = await executeRfpHldDesignModelRebuild(baseInput());
       expect(result.status).toBe("source_model_unavailable");

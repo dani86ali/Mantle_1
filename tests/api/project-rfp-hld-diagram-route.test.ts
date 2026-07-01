@@ -184,6 +184,22 @@ describe("POST /api/projects/[id]/rfp/hld-diagram - result mapping", () => {
     expect(body.project).toEqual(WRONG_MODE_PROJECT);
   });
 
+  it("maps final_hld_already_approved to 409 hld_diagram_final_authority_exists with the sanitized finalAuthority", async () => {
+    const finalAuthority = {
+      project: { id: PROJECT, name: "STC RFP Bid", mode: "rfp" },
+      artifact: { id: "hdoc-1", type: "hld_document", status: "approved" },
+      payloadSummary: { payloadKind: "rfp_hld_document", drawioXmlLength: 42 },
+      finalAuthorityStatus: "approved_manual_drawio_upload",
+    };
+    mockCreateDraft.mockResolvedValue({ status: "final_hld_already_approved", finalAuthority });
+    const res = await POST(req(), PARAMS);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("hld_diagram_final_authority_exists");
+    expect(body.finalAuthority).toEqual(finalAuthority);
+    expect(JSON.stringify(body)).not.toContain("drawioXml\":");
+  });
+
   it("maps readiness_blocked to 409 hld_diagram_generation_not_ready with nextAction", async () => {
     mockCreateDraft.mockResolvedValue({
       status: "readiness_blocked", readinessStatus: "blocked", nextAction: "Run a fresh review.",

@@ -46,6 +46,10 @@ import {
   type RfpHldDesignModelRebuildCandidateInputBlockedReason,
 } from "@/lib/projects/project-rfp-hld-design-model-rebuild-candidate-input";
 import {
+  evaluateRfpHldFinalAuthorityRegenerationGuard,
+  type RfpHldFinalAuthorityRegenerationSummary,
+} from "@/lib/projects/project-rfp-hld-final-authority-regeneration-guard";
+import {
   draftRfpHldDesignModelCandidate,
   getConfiguredRfpHldDesignModelDraftingExecutor,
   type RfpHldDesignModelDraftingExecutor,
@@ -156,6 +160,10 @@ export interface ExecuteRfpHldDesignModelRebuildInput {
 export type ExecuteRfpHldDesignModelRebuildResult =
   | { status: "not_found" }
   | { status: "wrong_mode"; project: RfpHldDesignModelRebuildExecutionProjectSummary }
+  | {
+      status: "final_hld_already_approved";
+      finalAuthority: RfpHldFinalAuthorityRegenerationSummary;
+    }
   | { status: "request_not_found" }
   | {
       status: "artifact_not_rebuild_request";
@@ -295,8 +303,11 @@ function isUsableReview(
 /**
  * Execute one bounded `hld_design_model_rebuild_request`, tenant-scoped, only
  * after every deterministic gate passes (see the per-gate result statuses below).
- * Throws on blank required ids before any store call. The EXACTLY-ONCE seam: once
- * an executor is confirmed available, the request is atomically retired to `stale`
+ * Throws on blank required ids before any store call. After the project/mode gate,
+ * an approved source-valid final HLD document blocks execution as
+ * final_hld_already_approved before request load/retirement or executor work. The
+ * EXACTLY-ONCE seam: once an executor is confirmed available, the request is
+ * atomically retired to `stale`
  * on its exact observed version+status BEFORE the executor runs - a lost claim is
  * request_retire_failed and the executor is never called. After the claim, a
  * thrown/failed executor or an invalid draft marks the SAME request `failed`
@@ -324,6 +335,14 @@ export async function executeRfpHldDesignModelRebuild(
   if (project === null) return { status: "not_found" };
   if (project.mode !== "rfp") {
     return { status: "wrong_mode", project: toProjectSummary(project) };
+  }
+
+  // Stop before loading/retiring the request or invoking the executor once an
+  // approved, source-valid FINAL HLD document authority already exists; never
+  // regenerate it.
+  const guard = await evaluateRfpHldFinalAuthorityRegenerationGuard({ tenantId, projectId });
+  if (guard.blocked) {
+    return { status: "final_hld_already_approved", finalAuthority: guard.finalAuthority };
   }
 
   // Load the bounded rebuild request and fail closed on its row/payload state.

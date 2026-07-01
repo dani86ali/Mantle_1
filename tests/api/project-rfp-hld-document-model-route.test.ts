@@ -384,6 +384,22 @@ describe("POST /api/projects/[id]/rfp/hld-document-model - result mapping", () =
     expect(body.project).toEqual(WRONG_MODE_PROJECT);
   });
 
+  it("maps final_hld_already_approved to 409 hld_document_model_final_authority_exists with the sanitized finalAuthority", async () => {
+    const finalAuthority = {
+      project: { id: PROJECT, name: "RFP", mode: "rfp" },
+      artifact: { id: "hdoc-1", type: "hld_document", status: "approved" },
+      payloadSummary: { payloadKind: "rfp_hld_document", drawioXmlLength: 42 },
+      finalAuthorityStatus: "approved_manual_drawio_upload",
+    };
+    mockCreateDraft.mockResolvedValue({ status: "final_hld_already_approved", finalAuthority });
+    const res = await POST(req(), PARAMS);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("hld_document_model_final_authority_exists");
+    expect(body.finalAuthority).toEqual(finalAuthority);
+    expect(JSON.stringify(body)).not.toContain("drawioXml\":");
+  });
+
   it("maps readiness_blocked to 409 hld_document_model_not_ready with nextAction", async () => {
     mockCreateDraft.mockResolvedValue({
       status: "readiness_blocked",
@@ -548,7 +564,9 @@ describe("route module purity (static source check)", () => {
       "download",
       "upload",
       "render",
-      "final",
+      // "final" is intentionally allowed: the final-authority regeneration guard
+      // maps to code hld_document_model_final_authority_exists. Output-format bans
+      // below (<html/<mxfile/mermaid/etc.) still guard against real HLD output.
       "<html",
       "<svg",
       "<mxfile",
@@ -568,7 +586,7 @@ describe("route module purity (static source check)", () => {
     const noExport = source.replace(/\bexport\b/g, "");
     const lower = noExport.toLowerCase();
     for (const term of [
-      "final",
+      // "final" allowed: see the final-authority regeneration guard mapping above.
       "render",
       "rendered",
       "download",

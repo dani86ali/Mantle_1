@@ -30,6 +30,10 @@ import {
 } from "@/lib/db/project-artifact-store";
 import { loadRfpHldGenerationReadiness } from "@/lib/projects/project-rfp-hld-generation-readiness";
 import {
+  evaluateRfpHldFinalAuthorityRegenerationGuard,
+  type RfpHldFinalAuthorityRegenerationSummary,
+} from "@/lib/projects/project-rfp-hld-final-authority-regeneration-guard";
+import {
   validateRfpHldDesignModelPayload,
   type RfpHldDesignModelPayload,
 } from "@/lib/projects/project-rfp-hld-design-model";
@@ -135,6 +139,10 @@ export interface CreateRfpHldDiagramDraftInput {
 export type CreateRfpHldDiagramDraftResult =
   | { status: "not_found" }
   | { status: "wrong_mode"; project: RfpHldDiagramDraftProjectSummary }
+  | {
+      status: "final_hld_already_approved";
+      finalAuthority: RfpHldFinalAuthorityRegenerationSummary;
+    }
   | { status: "readiness_blocked"; readinessStatus: string; nextAction: string }
   | { status: "no_topology"; code: "no_diagram_topology" }
   | { status: "precondition_failed"; code: RfpHldDiagramDraftPreconditionCode }
@@ -357,7 +365,8 @@ export function buildRfpHldDiagramDraftPayload(input: {
  * Create exactly ONE internal `needs_review` `hld_diagram` draft on the
  * `hld_design_delta_review` stage, tenant-scoped, only after every gate passes.
  * Throws on blank projectId or createdBy before any store call. Returns explicit
- * result statuses for not_found, wrong_mode, readiness_blocked, no_topology (code
+ * result statuses for not_found, wrong_mode, final_hld_already_approved (writing
+ * nothing before readiness work), readiness_blocked, no_topology (code
  * `no_diagram_topology`, writing nothing), precondition_failed (writing nothing),
  * invalid_payload (writing nothing), and ok. Source ids come from the Stage 6F
  * readiness report, never from input. Never approves anything and never produces a
@@ -378,6 +387,13 @@ export async function createRfpHldDiagramDraft(
   if (project === null) return { status: "not_found" };
   if (project.mode !== "rfp") {
     return { status: "wrong_mode", project: toProjectSummary(project) };
+  }
+
+  // Stop before any readiness work or artifact write once an approved, source-valid
+  // FINAL HLD document authority already exists; never regenerate it.
+  const guard = await evaluateRfpHldFinalAuthorityRegenerationGuard({ tenantId, projectId });
+  if (guard.blocked) {
+    return { status: "final_hld_already_approved", finalAuthority: guard.finalAuthority };
   }
 
   // Stage 6F readiness is the only gate; proceed only when it is ready.

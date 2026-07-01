@@ -187,6 +187,22 @@ describe("POST hld-design-model-rebuild-request - result mapping", () => {
     expect(body.project).toEqual(WRONG_MODE_PROJECT);
   });
 
+  it("maps final_hld_already_approved to 409 hld_design_model_rebuild_request_final_authority_exists with the sanitized finalAuthority", async () => {
+    const finalAuthority = {
+      project: { id: PROJECT, name: "RFP", mode: "rfp" },
+      artifact: { id: "hdoc-1", type: "hld_document", status: "approved" },
+      payloadSummary: { payloadKind: "rfp_hld_document", drawioXmlLength: 42 },
+      finalAuthorityStatus: "approved_manual_drawio_upload",
+    };
+    mockCreate.mockResolvedValue({ status: "final_hld_already_approved", finalAuthority });
+    const res = await POST(req(), PARAMS);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("hld_design_model_rebuild_request_final_authority_exists");
+    expect(body.finalAuthority).toEqual(finalAuthority);
+    expect(JSON.stringify(body)).not.toContain("drawioXml\":");
+  });
+
   it("maps invalid_source_model to 409", async () => {
     mockCreate.mockResolvedValue({ status: "invalid_source_model" });
     const res = await POST(req(), PARAMS);

@@ -141,6 +141,29 @@ const BLOCKED_CASES: Array<
     },
   ],
   [
+    "final_hld_already_approved",
+    {
+      status: "final_hld_already_approved",
+      finalAuthority: {
+        project: { id: PROJECT, name: "RFP", mode: "rfp" },
+        artifact: { id: "hdoc-1", type: "hld_document", status: "approved" },
+        payloadSummary: { payloadKind: "rfp_hld_document", drawioXmlLength: 42 },
+        finalAuthorityStatus: "approved_manual_drawio_upload",
+      },
+    },
+    409,
+    {
+      code: "hld_design_model_rebuild_final_authority_exists",
+      error: "An approved final HLD document already exists; regeneration is blocked.",
+      finalAuthority: {
+        project: { id: PROJECT, name: "RFP", mode: "rfp" },
+        artifact: { id: "hdoc-1", type: "hld_document", status: "approved" },
+        payloadSummary: { payloadKind: "rfp_hld_document", drawioXmlLength: 42 },
+        finalAuthorityStatus: "approved_manual_drawio_upload",
+      },
+    },
+  ],
+  [
     "request_not_found",
     { status: "request_not_found" },
     404,

@@ -18,6 +18,7 @@
  *   ok                                    -> 201 { artifact, consumedRequest, sourceBundle, payloadSummary }
  *   not_found                             -> 404 project_not_found
  *   wrong_mode                            -> 409 wrong_project_mode (project)
+ *   final_hld_already_approved            -> 409 hld_design_model_rebuild_final_authority_exists (finalAuthority)
  *   request_not_found                     -> 404 hld_design_model_rebuild_request_not_found
  *   artifact_not_rebuild_request          -> 409 artifact_not_hld_design_model_rebuild_request (artifact)
  *   request_not_active                    -> 409 hld_design_model_rebuild_request_not_active (artifact)
@@ -82,6 +83,16 @@ export async function POST(
           code: "wrong_project_mode",
           error: "Project is not an RFP project.",
           project: result.project,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "final_hld_already_approved") {
+      return NextResponse.json(
+        {
+          code: "hld_design_model_rebuild_final_authority_exists",
+          error: "An approved final HLD document already exists; regeneration is blocked.",
+          finalAuthority: result.finalAuthority,
         },
         { status: 409 }
       );
