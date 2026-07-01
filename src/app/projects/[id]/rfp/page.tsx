@@ -591,6 +591,286 @@ function hldIntakeDraftComplete(draft: HldIntakeDraft): boolean {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Questionnaire-assisted HLD intake (Stage 6H-0E-C)
+// ---------------------------------------------------------------------------
+
+/** The answer types a candidate/reviewed question may request. */
+const HLD_QUESTIONNAIRE_ANSWER_TYPES = [
+  "free_text",
+  "single_select",
+  "multi_select",
+  "boolean",
+  "number",
+] as const;
+const HLD_QUESTIONNAIRE_SELECT_TYPES: ReadonlySet<string> = new Set([
+  "single_select",
+  "multi_select",
+]);
+/** The SE review dispositions for one source question. */
+const HLD_QUESTIONNAIRE_REVIEW_ACTIONS = [
+  "accepted",
+  "edited",
+  "removed",
+  "waived",
+] as const;
+const HLD_QUESTIONNAIRE_ACTIVE_ACTIONS: ReadonlySet<string> = new Set([
+  "accepted",
+  "edited",
+  "added",
+]);
+
+/** One questionnaire candidate in the list response. */
+interface HldIntakeQuestionnaireListItem {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  payloadSummary?: {
+    payloadKind?: string;
+    createdBy?: string;
+    createdAt?: string;
+    questionCount?: number;
+    sourceArtifactCount?: number;
+    validationStatus?: string;
+    validationFindingCount?: number;
+    payloadValid?: boolean;
+  };
+}
+
+/** Lean list response of GET /api/projects/[id]/rfp/hld-intake-questionnaires. */
+interface HldIntakeQuestionnaireListResponse {
+  project?: { id: string; name?: string };
+  artifactCount: number;
+  artifacts: HldIntakeQuestionnaireListItem[];
+}
+
+/** One sanitized candidate question in a questionnaire detail. */
+interface HldIntakeQuestionnaireQuestion {
+  questionId: string;
+  order: number;
+  domain: string;
+  questionText: string;
+  whyAsked: string;
+  answerType: string;
+  required: boolean;
+  sourceRefIds: string[];
+  allowedOptions?: string[];
+  requiredInputIds?: string[];
+}
+
+/** Detail response of GET .../artifacts/[id]/hld-intake-questionnaire. */
+interface HldIntakeQuestionnaireDetailResponse {
+  artifact?: { id: string; status: ProjectArtifactStatus; version: number };
+  questionnaire?: {
+    payloadKind?: string;
+    createdBy?: string;
+    createdAt?: string;
+    sourceArtifactIds?: string[];
+    questions?: HldIntakeQuestionnaireQuestion[];
+    validation?: { status?: string; findingCount?: number };
+  };
+}
+
+/** Loaded questionnaire detail: the artifact summary plus sanitized questions. */
+interface HldIntakeQuestionnaireDetail {
+  artifact: NonNullable<HldIntakeQuestionnaireDetailResponse["artifact"]>;
+  questionnaire: NonNullable<
+    HldIntakeQuestionnaireDetailResponse["questionnaire"]
+  >;
+}
+
+type HldQuestionnaireReviewAction =
+  | "accepted"
+  | "edited"
+  | "removed"
+  | "waived"
+  | "added";
+
+/** One in-progress SE review + answer row over a source (or added) question. */
+interface HldQuestionnaireReviewRow {
+  /** Stable local row key (source question id, or a synthetic added key). */
+  rowKey: string;
+  /** The reviewed question id sent to the service (source id, or the added key). */
+  questionId: string;
+  /** The originating source question id; absent for human-added rows. */
+  sourceQuestionId?: string;
+  action: HldQuestionnaireReviewAction;
+  /** Presentation order as a raw input string (active rows only). */
+  order: string;
+  questionText: string;
+  whyAsked: string;
+  answerType: string;
+  required: boolean;
+  /** Newline-separated allowed options text (select answer types only). */
+  allowedOptionsText: string;
+  sourceRefIds: string[];
+  waiverReason: string;
+  answerStatus: string;
+  answerValue: string;
+  answerNotes: string;
+}
+
+/** Split a newline/comma separated options string into trimmed nonblank options. */
+function parseQuestionnaireOptions(text: string): string[] {
+  return text
+    .split(/[\n,]/)
+    .map((option) => option.trim())
+    .filter((option) => option !== "");
+}
+
+/** Seed one review row from a source question (defaults to accepted + answered). */
+function questionnaireRowFromQuestion(
+  question: HldIntakeQuestionnaireQuestion
+): HldQuestionnaireReviewRow {
+  return {
+    rowKey: question.questionId,
+    questionId: question.questionId,
+    sourceQuestionId: question.questionId,
+    action: "accepted",
+    order: String(question.order),
+    questionText: question.questionText,
+    whyAsked: question.whyAsked,
+    answerType: question.answerType,
+    required: question.required,
+    allowedOptionsText: (question.allowedOptions ?? []).join("\n"),
+    sourceRefIds: question.sourceRefIds.slice(),
+    waiverReason: "",
+    answerStatus: "answered",
+    answerValue: "",
+    answerNotes: "",
+  };
+}
+
+/** Seed a full review draft from a loaded questionnaire detail (order-sorted). */
+function questionnaireReviewDraft(
+  detail: HldIntakeQuestionnaireDetail
+): HldQuestionnaireReviewRow[] {
+  const questions = (detail.questionnaire.questions ?? [])
+    .slice()
+    .sort((a, b) => a.order - b.order);
+  return questions.map((question) => questionnaireRowFromQuestion(question));
+}
+
+/** A fresh human-added review row: no source id, active order after existing rows. */
+function questionnaireAddedRow(
+  rows: readonly HldQuestionnaireReviewRow[]
+): HldQuestionnaireReviewRow {
+  const maxOrder = rows.reduce((max, row) => {
+    const value = Number(row.order);
+    return Number.isInteger(value) && value > max ? value : max;
+  }, 0);
+  return {
+    rowKey: `added-${rows.length}-${maxOrder + 1}`,
+    questionId: `added-${rows.length}-${maxOrder + 1}`,
+    action: "added",
+    order: String(maxOrder + 1),
+    questionText: "",
+    whyAsked: "",
+    answerType: "free_text",
+    required: false,
+    allowedOptionsText: "",
+    sourceRefIds: [],
+    waiverReason: "",
+    answerStatus: "answered",
+    answerValue: "",
+    answerNotes: "",
+  };
+}
+
+/** True when the row is active (collects an order and an answer). */
+function isActiveQuestionnaireRow(row: HldQuestionnaireReviewRow): boolean {
+  return HLD_QUESTIONNAIRE_ACTIVE_ACTIONS.has(row.action);
+}
+
+/**
+ * Build one reviewedQuestions entry carrying ONLY the service input fields. No
+ * tenant/project/user/status/sourceMode/authority field is ever included; order is
+ * a number for active rows and omitted otherwise; sourceQuestionId is omitted for
+ * added rows; allowedOptions only for select types; waiverReason only for waived.
+ */
+function questionnaireReviewedEntry(
+  row: HldQuestionnaireReviewRow
+): Record<string, unknown> {
+  const active = isActiveQuestionnaireRow(row);
+  const isSelect = HLD_QUESTIONNAIRE_SELECT_TYPES.has(row.answerType);
+  const entry: Record<string, unknown> = {
+    questionId: row.questionId,
+    action: row.action,
+    questionText: row.questionText.trim(),
+    whyAsked: row.whyAsked.trim(),
+    answerType: row.answerType,
+    required: row.required,
+    sourceRefIds: row.sourceRefIds.slice(),
+  };
+  if (row.action !== "added" && row.sourceQuestionId !== undefined) {
+    entry.sourceQuestionId = row.sourceQuestionId;
+  }
+  if (active) entry.order = Number(row.order);
+  if (isSelect) entry.allowedOptions = parseQuestionnaireOptions(row.allowedOptionsText);
+  if (row.action === "waived") entry.waiverReason = row.waiverReason.trim();
+  return entry;
+}
+
+/** Build one answers entry for an active row (value only when answered). */
+function questionnaireAnswerEntry(
+  row: HldQuestionnaireReviewRow
+): Record<string, unknown> {
+  const entry: Record<string, unknown> = {
+    questionId: row.questionId,
+    status: row.answerStatus,
+  };
+  if (row.answerStatus === "answered") {
+    const value = row.answerValue.trim();
+    if (value !== "") entry.value = value;
+  }
+  const notes = row.answerNotes.trim();
+  if (notes !== "") entry.notes = notes;
+  return entry;
+}
+
+/**
+ * Assemble the questionnaire-assisted POST body from the review rows. Top-level
+ * keys are EXACTLY { sourceQuestionnaireArtifactId, reviewedQuestions, answers };
+ * answers carry exactly one entry per active row and none for removed/waived rows.
+ */
+function buildQuestionnaireAssistedBody(
+  sourceQuestionnaireArtifactId: string,
+  rows: readonly HldQuestionnaireReviewRow[]
+): Record<string, unknown> {
+  return {
+    sourceQuestionnaireArtifactId,
+    reviewedQuestions: rows.map((row) => questionnaireReviewedEntry(row)),
+    answers: rows
+      .filter((row) => isActiveQuestionnaireRow(row))
+      .map((row) => questionnaireAnswerEntry(row)),
+  };
+}
+
+/** True when the review rows satisfy every submit precondition. */
+function questionnaireReviewComplete(
+  rows: readonly HldQuestionnaireReviewRow[]
+): boolean {
+  const activeOrders: number[] = [];
+  for (const row of rows) {
+    if (row.questionText.trim() === "" || row.whyAsked.trim() === "") return false;
+    if (row.action === "waived" && row.waiverReason.trim() === "") return false;
+    if (HLD_QUESTIONNAIRE_SELECT_TYPES.has(row.answerType)) {
+      if (parseQuestionnaireOptions(row.allowedOptionsText).length === 0) return false;
+    }
+    if (isActiveQuestionnaireRow(row)) {
+      const order = Number(row.order);
+      if (!Number.isInteger(order) || order < 1) return false;
+      activeOrders.push(order);
+      if (row.answerStatus === "answered" && row.answerValue.trim() === "") {
+        return false;
+      }
+    }
+  }
+  if (activeOrders.length === 0) return false;
+  if (new Set(activeOrders).size !== activeOrders.length) return false;
+  return true;
+}
+
 /** Canonical design knowledge-pack list sections, in persisted order. */
 const HLD_KNOWLEDGE_PACK_SECTIONS = [
   { id: "designPrinciples", label: "Design principles" },
@@ -1676,6 +1956,16 @@ const HLD_INTAKE_CREATE_ERROR = "Unable to create HLD intake draft.";
 const HLD_INTAKE_APPROVE_SUCCESS = "HLD intake approved.";
 const HLD_INTAKE_REJECT_SUCCESS = "HLD intake changes requested.";
 const HLD_INTAKE_REVIEW_ERROR = "Unable to review HLD intake.";
+
+/** Exact UI copy for the questionnaire-assisted HLD intake list/detail/submit states. */
+const HLD_INTAKE_QUESTIONNAIRE_LIST_ERROR =
+  "Unable to load HLD intake questionnaires.";
+const HLD_INTAKE_QUESTIONNAIRE_DETAIL_ERROR =
+  "Unable to load HLD intake questionnaire detail.";
+const HLD_INTAKE_QUESTIONNAIRE_SUBMIT_SUCCESS =
+  "HLD intake draft created from questionnaire for engineer review.";
+const HLD_INTAKE_QUESTIONNAIRE_SUBMIT_ERROR =
+  "Unable to create questionnaire-assisted HLD intake draft.";
 
 /** Exact UI copy required for the HLD knowledge-pack list/detail/create/review states. */
 const HLD_KNOWLEDGE_PACK_LIST_ERROR = "Unable to load HLD knowledge packs.";
@@ -3953,6 +4243,28 @@ export default function ProjectRfpEvidencePage() {
   const [hldIntakeReviewError, setHldIntakeReviewError] = useState<string | null>(null);
   const [hldIntakeReviewSuccess, setHldIntakeReviewSuccess] = useState<string | null>(null);
 
+  // Questionnaire-assisted HLD intake: candidate list, loaded detail, and the SE
+  // review + answer draft that produces the questionnaire-assisted intake POST.
+  const [hldIntakeQuestionnaireList, setHldIntakeQuestionnaireList] =
+    useState<HldIntakeQuestionnaireListResponse | null>(null);
+  const [hldIntakeQuestionnaireListError, setHldIntakeQuestionnaireListError] =
+    useState<string | null>(null);
+  const [hldIntakeQuestionnaireDetail, setHldIntakeQuestionnaireDetail] =
+    useState<HldIntakeQuestionnaireDetail | null>(null);
+  const [hldIntakeQuestionnaireDetailLoading, setHldIntakeQuestionnaireDetailLoading] =
+    useState(false);
+  const [hldIntakeQuestionnaireDetailError, setHldIntakeQuestionnaireDetailError] =
+    useState<string | null>(null);
+  const [hldIntakeQuestionnaireRows, setHldIntakeQuestionnaireRows] = useState<
+    HldQuestionnaireReviewRow[]
+  >([]);
+  const [hldIntakeQuestionnairePending, setHldIntakeQuestionnairePending] =
+    useState(false);
+  const [hldIntakeQuestionnaireError, setHldIntakeQuestionnaireError] =
+    useState<string | null>(null);
+  const [hldIntakeQuestionnaireSuccess, setHldIntakeQuestionnaireSuccess] =
+    useState<string | null>(null);
+
   // HLD design knowledge pack list/detail plus the compact create form and review.
   const [hldKnowledgePackList, setHldKnowledgePackList] = useState<HldKnowledgePackListResponse | null>(null);
   const [hldKnowledgePackListLoading, setHldKnowledgePackListLoading] = useState(true);
@@ -4464,6 +4776,77 @@ export default function ProjectRfpEvidencePage() {
         setHldIntakeDetailError(HLD_INTAKE_DETAIL_ERROR);
       } finally {
         setHldIntakeDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  // Questionnaire candidates load alongside the HLD intake list. This is read-only
+  // review input; it never drafts or persists a questionnaire and never calls AI.
+  const loadHldIntakeQuestionnaireList = useCallback(async (): Promise<void> => {
+    setHldIntakeQuestionnaireListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-intake-questionnaires`);
+      const body = (await res
+        .json()
+        .catch(() => null)) as HldIntakeQuestionnaireListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
+        setHldIntakeQuestionnaireList(null);
+        setHldIntakeQuestionnaireListError(HLD_INTAKE_QUESTIONNAIRE_LIST_ERROR);
+        return;
+      }
+      setHldIntakeQuestionnaireList(body);
+    } catch {
+      setHldIntakeQuestionnaireList(null);
+      setHldIntakeQuestionnaireListError(HLD_INTAKE_QUESTIONNAIRE_LIST_ERROR);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldIntakeQuestionnaireList();
+  }, [loadHldIntakeQuestionnaireList]);
+
+  // A candidate questionnaire's questions are fetched only here, on an explicit
+  // "Use" click, and seed the SE review + answer draft.
+  const loadHldIntakeQuestionnaireDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setHldIntakeQuestionnaireDetail(null);
+      setHldIntakeQuestionnaireRows([]);
+      setHldIntakeQuestionnaireError(null);
+      setHldIntakeQuestionnaireSuccess(null);
+      setHldIntakeQuestionnaireDetailError(null);
+      setHldIntakeQuestionnaireDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-intake-questionnaire`
+        );
+        const body = (await res
+          .json()
+          .catch(() => null)) as HldIntakeQuestionnaireDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.questionnaire === undefined ||
+          !Array.isArray(body.questionnaire.questions)
+        ) {
+          setHldIntakeQuestionnaireDetailError(
+            HLD_INTAKE_QUESTIONNAIRE_DETAIL_ERROR
+          );
+          return;
+        }
+        const detail: HldIntakeQuestionnaireDetail = {
+          artifact: body.artifact,
+          questionnaire: body.questionnaire,
+        };
+        setHldIntakeQuestionnaireDetail(detail);
+        setHldIntakeQuestionnaireRows(questionnaireReviewDraft(detail));
+      } catch {
+        setHldIntakeQuestionnaireDetailError(
+          HLD_INTAKE_QUESTIONNAIRE_DETAIL_ERROR
+        );
+      } finally {
+        setHldIntakeQuestionnaireDetailLoading(false);
       }
     },
     [id]
@@ -5637,6 +6020,57 @@ export default function ProjectRfpEvidencePage() {
     hldIntakeCreatePending,
     hldIntakeDraft,
     hldIntakeOverrideReason,
+    id,
+    loadHldGenerationReadiness,
+    loadHldIntakeList,
+    loadHldReadinessList,
+  ]);
+
+  // Submit the SE-reviewed source questionnaire as a questionnaire-assisted HLD
+  // intake. The POST body is EXACTLY { sourceQuestionnaireArtifactId,
+  // reviewedQuestions, answers } - no caller tenant/project/user/status/sourceMode
+  // or authority field. The created intake remains needs_review; approval stays the
+  // readiness-input authority gate.
+  const submitHldIntakeQuestionnaire = useCallback(async (): Promise<void> => {
+    if (hldIntakeQuestionnairePending) return;
+    const detail = hldIntakeQuestionnaireDetail;
+    if (detail === null) return;
+    if (!questionnaireReviewComplete(hldIntakeQuestionnaireRows)) return;
+    setHldIntakeQuestionnairePending(true);
+    setHldIntakeQuestionnaireError(null);
+    setHldIntakeQuestionnaireSuccess(null);
+    try {
+      const requestBody = buildQuestionnaireAssistedBody(
+        detail.artifact.id,
+        hldIntakeQuestionnaireRows
+      );
+      const res = await fetch(
+        `/api/projects/${id}/rfp/hld-intake/questionnaire-assisted`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        }
+      );
+      if (!res.ok) {
+        setHldIntakeQuestionnaireError(HLD_INTAKE_QUESTIONNAIRE_SUBMIT_ERROR);
+        return;
+      }
+      setHldIntakeQuestionnaireDetail(null);
+      setHldIntakeQuestionnaireRows([]);
+      setHldIntakeQuestionnaireSuccess(HLD_INTAKE_QUESTIONNAIRE_SUBMIT_SUCCESS);
+      void loadHldIntakeList();
+      void loadHldReadinessList();
+      void loadHldGenerationReadiness();
+    } catch {
+      setHldIntakeQuestionnaireError(HLD_INTAKE_QUESTIONNAIRE_SUBMIT_ERROR);
+    } finally {
+      setHldIntakeQuestionnairePending(false);
+    }
+  }, [
+    hldIntakeQuestionnaireDetail,
+    hldIntakeQuestionnairePending,
+    hldIntakeQuestionnaireRows,
     id,
     loadHldGenerationReadiness,
     loadHldIntakeList,
@@ -10591,6 +11025,354 @@ export default function ProjectRfpEvidencePage() {
                 })()}
               </div>
             )}
+
+            <details data-testid="hld-intake-questionnaire-section" className="mt-3">
+              <summary className="cursor-pointer text-xs font-medium text-text-tertiary">
+                Questionnaire-assisted HLD intake
+              </summary>
+              <div className="mt-2 space-y-2">
+                <p className={MUTED_TEXT}>
+                  Review an existing candidate intake questionnaire, then answer the
+                  questions to create an HLD intake draft for engineer review. The
+                  questionnaire is review input only; it is never authority.
+                </p>
+                {hldIntakeQuestionnaireListError && (
+                  <div
+                    data-testid="hld-intake-questionnaire-error"
+                    className={ERROR_BOX}
+                  >
+                    {hldIntakeQuestionnaireListError}
+                  </div>
+                )}
+                {hldIntakeQuestionnaireSuccess && (
+                  <p
+                    data-testid="hld-intake-questionnaire-submit-success"
+                    className="text-xs text-emerald-300"
+                  >
+                    {hldIntakeQuestionnaireSuccess}
+                  </p>
+                )}
+                {hldIntakeQuestionnaireList !== null &&
+                  (() => {
+                    const candidate = hldIntakeQuestionnaireList.artifacts
+                      .filter(
+                        (a) =>
+                          (a.status === "needs_review" || a.status === "approved") &&
+                          a.payloadSummary?.payloadValid === true
+                      )
+                      .sort((a, b) => b.version - a.version)[0];
+                    if (candidate === undefined) {
+                      return (
+                        <p className="text-xs text-text-tertiary">
+                          No candidate questionnaire available.
+                        </p>
+                      );
+                    }
+                    const summary = candidate.payloadSummary;
+                    return (
+                      <div
+                        data-testid="hld-intake-questionnaire-candidate"
+                        className={SUBTLE_CARD}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusBadge status={candidate.status} />
+                          <span className="text-xs text-text-secondary">
+                            v{candidate.version}
+                          </span>
+                          {summary?.questionCount !== undefined && (
+                            <span className="text-xs text-text-secondary">
+                              {summary.questionCount} question(s)
+                            </span>
+                          )}
+                          {summary?.validationStatus !== undefined && (
+                            <span className="text-xs text-text-secondary">
+                              {humanizeToken(summary.validationStatus)} (
+                              {summary?.validationFindingCount ?? 0})
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            data-testid="hld-intake-questionnaire-use"
+                            disabled={hldIntakeQuestionnaireDetailLoading}
+                            onClick={() =>
+                              void loadHldIntakeQuestionnaireDetail(candidate.id)
+                            }
+                            className={PLAIN_BTN}
+                          >
+                            Use
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                {hldIntakeQuestionnaireDetailError && (
+                  <div
+                    data-testid="hld-intake-questionnaire-detail-error"
+                    className={ERROR_BOX}
+                  >
+                    {hldIntakeQuestionnaireDetailError}
+                  </div>
+                )}
+                {hldIntakeQuestionnaireDetail !== null &&
+                  (() => {
+                    const updateRow = (
+                      index: number,
+                      patch: Partial<HldQuestionnaireReviewRow>
+                    ): void =>
+                      setHldIntakeQuestionnaireRows((prev) =>
+                        prev.map((row, i) =>
+                          i === index ? { ...row, ...patch } : row
+                        )
+                      );
+                    const removeRow = (index: number): void =>
+                      setHldIntakeQuestionnaireRows((prev) =>
+                        prev.filter((_, i) => i !== index)
+                      );
+                    return (
+                      <div className="space-y-2">
+                        {hldIntakeQuestionnaireRows.map((row, index) => {
+                          const active = isActiveQuestionnaireRow(row);
+                          const isSelect =
+                            HLD_QUESTIONNAIRE_SELECT_TYPES.has(row.answerType);
+                          return (
+                            <div
+                              key={row.rowKey}
+                              data-testid={`hld-intake-questionnaire-row-${index}`}
+                              className={`${SUBTLE_CARD} space-y-1`}
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                {row.action === "added" ? (
+                                  <span className="text-xs font-medium text-text-secondary">
+                                    Added question
+                                  </span>
+                                ) : (
+                                  <select
+                                    data-testid={`hld-intake-questionnaire-action-${index}`}
+                                    value={row.action}
+                                    disabled={hldIntakeQuestionnairePending}
+                                    onChange={(e) =>
+                                      updateRow(index, {
+                                        action:
+                                          e.target
+                                            .value as HldQuestionnaireReviewAction,
+                                      })
+                                    }
+                                    className={FIELD}
+                                  >
+                                    {HLD_QUESTIONNAIRE_REVIEW_ACTIONS.map(
+                                      (action) => (
+                                        <option key={action} value={action}>
+                                          {humanizeToken(action)}
+                                        </option>
+                                      )
+                                    )}
+                                  </select>
+                                )}
+                                {active && (
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    data-testid={`hld-intake-questionnaire-order-${index}`}
+                                    value={row.order}
+                                    disabled={hldIntakeQuestionnairePending}
+                                    onChange={(e) =>
+                                      updateRow(index, { order: e.target.value })
+                                    }
+                                    className={`${FIELD} w-16`}
+                                  />
+                                )}
+                                {row.action === "added" && (
+                                  <button
+                                    type="button"
+                                    data-testid={`hld-intake-questionnaire-remove-added-${index}`}
+                                    disabled={hldIntakeQuestionnairePending}
+                                    onClick={() => removeRow(index)}
+                                    className={PLAIN_BTN}
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+                              <textarea
+                                data-testid={`hld-intake-questionnaire-text-${index}`}
+                                value={row.questionText}
+                                disabled={hldIntakeQuestionnairePending}
+                                onChange={(e) =>
+                                  updateRow(index, { questionText: e.target.value })
+                                }
+                                rows={1}
+                                placeholder="Question text"
+                                className={`${FIELD} w-full`}
+                              />
+                              <textarea
+                                data-testid={`hld-intake-questionnaire-why-${index}`}
+                                value={row.whyAsked}
+                                disabled={hldIntakeQuestionnairePending}
+                                onChange={(e) =>
+                                  updateRow(index, { whyAsked: e.target.value })
+                                }
+                                rows={1}
+                                placeholder="Why asked"
+                                className={`${FIELD} w-full`}
+                              />
+                              <div className="flex flex-wrap items-center gap-2">
+                                <select
+                                  data-testid={`hld-intake-questionnaire-answer-type-${index}`}
+                                  value={row.answerType}
+                                  disabled={hldIntakeQuestionnairePending}
+                                  onChange={(e) =>
+                                    updateRow(index, {
+                                      answerType: e.target.value,
+                                    })
+                                  }
+                                  className={FIELD}
+                                >
+                                  {HLD_QUESTIONNAIRE_ANSWER_TYPES.map((type) => (
+                                    <option key={type} value={type}>
+                                      {humanizeToken(type)}
+                                    </option>
+                                  ))}
+                                </select>
+                                <label className="flex items-center gap-1 text-xs text-text-tertiary">
+                                  <input
+                                    type="checkbox"
+                                    data-testid={`hld-intake-questionnaire-required-${index}`}
+                                    checked={row.required}
+                                    disabled={hldIntakeQuestionnairePending}
+                                    onChange={(e) =>
+                                      updateRow(index, {
+                                        required: e.target.checked,
+                                      })
+                                    }
+                                  />
+                                  Required
+                                </label>
+                              </div>
+                              {isSelect && (
+                                <textarea
+                                  data-testid={`hld-intake-questionnaire-options-${index}`}
+                                  value={row.allowedOptionsText}
+                                  disabled={hldIntakeQuestionnairePending}
+                                  onChange={(e) =>
+                                    updateRow(index, {
+                                      allowedOptionsText: e.target.value,
+                                    })
+                                  }
+                                  rows={2}
+                                  placeholder="Allowed options (one per line)"
+                                  className={`${FIELD} w-full`}
+                                />
+                              )}
+                              {row.action === "waived" && (
+                                <textarea
+                                  data-testid={`hld-intake-questionnaire-waiver-${index}`}
+                                  value={row.waiverReason}
+                                  disabled={hldIntakeQuestionnairePending}
+                                  onChange={(e) =>
+                                    updateRow(index, {
+                                      waiverReason: e.target.value,
+                                    })
+                                  }
+                                  rows={1}
+                                  placeholder="Waiver reason"
+                                  className={`${FIELD} w-full`}
+                                />
+                              )}
+                              {active && (
+                                <div className="space-y-1">
+                                  <select
+                                    data-testid={`hld-intake-questionnaire-answer-status-${index}`}
+                                    value={row.answerStatus}
+                                    disabled={hldIntakeQuestionnairePending}
+                                    onChange={(e) =>
+                                      updateRow(index, {
+                                        answerStatus: e.target.value,
+                                      })
+                                    }
+                                    className={FIELD}
+                                  >
+                                    {HLD_INTAKE_STATUSES.map((status) => (
+                                      <option key={status} value={status}>
+                                        {humanizeToken(status)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {row.answerStatus === "answered" && (
+                                    <textarea
+                                      data-testid={`hld-intake-questionnaire-answer-value-${index}`}
+                                      value={row.answerValue}
+                                      disabled={hldIntakeQuestionnairePending}
+                                      onChange={(e) =>
+                                        updateRow(index, {
+                                          answerValue: e.target.value,
+                                        })
+                                      }
+                                      rows={1}
+                                      placeholder="Answer"
+                                      className={`${FIELD} w-full`}
+                                    />
+                                  )}
+                                  <textarea
+                                    data-testid={`hld-intake-questionnaire-answer-notes-${index}`}
+                                    value={row.answerNotes}
+                                    disabled={hldIntakeQuestionnairePending}
+                                    onChange={(e) =>
+                                      updateRow(index, {
+                                        answerNotes: e.target.value,
+                                      })
+                                    }
+                                    rows={1}
+                                    placeholder="Notes (optional)"
+                                    className={`${FIELD} w-full`}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            data-testid="hld-intake-questionnaire-add"
+                            disabled={hldIntakeQuestionnairePending}
+                            onClick={() =>
+                              setHldIntakeQuestionnaireRows((prev) => [
+                                ...prev,
+                                questionnaireAddedRow(prev),
+                              ])
+                            }
+                            className={PLAIN_BTN}
+                          >
+                            Add question
+                          </button>
+                          <button
+                            type="button"
+                            data-testid="hld-intake-questionnaire-submit"
+                            disabled={
+                              hldIntakeQuestionnairePending ||
+                              !questionnaireReviewComplete(
+                                hldIntakeQuestionnaireRows
+                              )
+                            }
+                            onClick={() => void submitHldIntakeQuestionnaire()}
+                            className={ACTION_BTN}
+                          >
+                            Create intake from questionnaire
+                          </button>
+                          {hldIntakeQuestionnaireError && (
+                            <span
+                              data-testid="hld-intake-questionnaire-submit-error"
+                              className="text-xs text-destructive"
+                            >
+                              {hldIntakeQuestionnaireError}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+              </div>
+            </details>
 
             <details data-testid="hld-intake-form" className="mt-3">
               <summary className="cursor-pointer text-xs font-medium text-text-tertiary">

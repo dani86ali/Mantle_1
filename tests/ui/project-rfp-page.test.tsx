@@ -44,6 +44,10 @@ const HLD_INTAKE_ARTIFACT_ID = "art-hld-intake-1";
 const HLD_INTAKE_APPROVED_ID = "art-hld-intake-approved-1";
 const HLD_INTAKE_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_INTAKE_ARTIFACT_ID}/hld-intake`;
 const HLD_INTAKE_REVIEW_URL = `${HLD_INTAKE_DETAIL_URL}/review`;
+const HLD_INTAKE_QUESTIONNAIRE_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-intake-questionnaires`;
+const HLD_INTAKE_QUESTIONNAIRE_ID = "art-hld-intake-questionnaire-1";
+const HLD_INTAKE_QUESTIONNAIRE_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_INTAKE_QUESTIONNAIRE_ID}/hld-intake-questionnaire`;
+const HLD_INTAKE_QUESTIONNAIRE_ASSISTED_URL = `/api/projects/${PROJECT_ID}/rfp/hld-intake/questionnaire-assisted`;
 const HLD_KNOWLEDGE_PACK_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-knowledge-packs`;
 const HLD_KNOWLEDGE_PACK_ARTIFACT_ID = "art-hld-pack-1";
 const HLD_KNOWLEDGE_PACK_APPROVED_ID = "art-hld-pack-approved-1";
@@ -1124,6 +1128,98 @@ function hldIntakeDetailResponse(
         { fieldId: "exclusions", status: "unknown" },
       ],
       sourceArtifactIds: [COMPLIANCE_MATRIX_ARTIFACT_ID],
+    },
+  };
+}
+
+function hldIntakeQuestionnaireListItem(
+  id = HLD_INTAKE_QUESTIONNAIRE_ID,
+  status = "needs_review",
+  version = 2,
+  payloadValid = true
+): Record<string, unknown> {
+  return {
+    id,
+    projectId: PROJECT_ID,
+    stageId: "hld_design_delta_review",
+    type: "hld_intake_questionnaire",
+    status,
+    version,
+    sourceArtifactIds: ["art-req-1"],
+    payloadSummary: {
+      payloadKind: "rfp_hld_intake_questionnaire",
+      createdBy: "user-1",
+      createdAt: "2026-06-20T09:00:00.000Z",
+      questionCount: 3,
+      sourceArtifactCount: 1,
+      validationStatus: "passed",
+      validationFindingCount: 0,
+      payloadValid,
+    },
+  };
+}
+
+function hldIntakeQuestionnaireListResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 2,
+    artifacts: [
+      hldIntakeQuestionnaireListItem(HLD_INTAKE_QUESTIONNAIRE_ID, "needs_review", 2),
+      hldIntakeQuestionnaireListItem("art-hld-intake-questionnaire-old", "needs_review", 1),
+    ],
+  };
+}
+
+function hldIntakeQuestionnaireDetailResponse(): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: {
+      id: HLD_INTAKE_QUESTIONNAIRE_ID,
+      projectId: PROJECT_ID,
+      type: "hld_intake_questionnaire",
+      status: "needs_review",
+      version: 2,
+      sourceArtifactIds: ["art-req-1"],
+    },
+    questionnaire: {
+      payloadKind: "rfp_hld_intake_questionnaire",
+      createdBy: "user-1",
+      createdAt: "2026-06-20T09:00:00.000Z",
+      sourceArtifactIds: ["art-req-1"],
+      questions: [
+        {
+          questionId: "q-1",
+          order: 1,
+          domain: "campus_switching",
+          questionText: "What is the access-layer footprint per site?",
+          whyAsked: "Sizes the campus access design.",
+          answerType: "free_text",
+          required: true,
+          sourceRefIds: ["art-req-1"],
+        },
+        {
+          questionId: "q-2",
+          order: 2,
+          domain: "routing_wan",
+          questionText: "What WAN bandwidth is required per branch?",
+          whyAsked: "Sizes the WAN edge.",
+          answerType: "free_text",
+          required: false,
+          sourceRefIds: ["art-req-1"],
+        },
+        {
+          questionId: "q-3",
+          order: 3,
+          domain: "security",
+          questionText: "Which segmentation model applies?",
+          whyAsked: "Sizes the security zoning.",
+          answerType: "single_select",
+          required: true,
+          sourceRefIds: ["art-req-1"],
+          allowedOptions: ["Flat", "Zoned"],
+        },
+      ],
+      validation: { status: "passed", findingCount: 0 },
     },
   };
 }
@@ -2258,6 +2354,15 @@ function stubFetch(
         return jsonResponse(hldIntakeListResponse());
       }
       if (url === HLD_INTAKE_DETAIL_URL) return jsonResponse(hldIntakeDetailResponse());
+      if (url === HLD_INTAKE_QUESTIONNAIRE_ASSISTED_URL) {
+        return jsonResponse({ artifact: hldIntakeListItem() }, 201);
+      }
+      if (url === HLD_INTAKE_QUESTIONNAIRE_LIST_URL) {
+        return jsonResponse(hldIntakeQuestionnaireListResponse());
+      }
+      if (url === HLD_INTAKE_QUESTIONNAIRE_DETAIL_URL) {
+        return jsonResponse(hldIntakeQuestionnaireDetailResponse());
+      }
       if (url === HLD_KNOWLEDGE_PACK_REVIEW_URL) {
         return jsonResponse({ artifactStatus: "approved" });
       }
@@ -4956,6 +5061,325 @@ describe("ProjectRfpEvidencePage - Stage 6.2 HLD intake surface", () => {
         generationRoutes.some((r) => c.url.includes(r))
     );
     expect(generationPosts).toHaveLength(0);
+  });
+});
+
+describe("ProjectRfpEvidencePage - Stage 6H-0E-C questionnaire-assisted HLD intake", () => {
+  function lastBody(calls: FetchCall[], url: string): Record<string, unknown> {
+    const matching = calls.filter(
+      (c) => c.url === url && c.init?.method === "POST"
+    );
+    const body = matching[matching.length - 1]?.init?.body;
+    return JSON.parse(String(body)) as Record<string, unknown>;
+  }
+
+  async function loadQuestionnaire(): Promise<void> {
+    const use = await screen.findByTestId("hld-intake-questionnaire-use");
+    await act(async () => {
+      fireEvent.click(use);
+    });
+    await screen.findByTestId("hld-intake-questionnaire-row-0");
+  }
+
+  it("loads a candidate questionnaire, reviews questions, and posts only the three allowed keys", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("hld-intake-panel");
+
+    // The section is a compact collapsed details, not an always-open giant form.
+    expect(
+      screen.getByTestId("hld-intake-questionnaire-section").tagName
+    ).toBe("DETAILS");
+
+    await loadQuestionnaire();
+
+    // Seeded rows: q-1 (0), q-2 (1), q-3/single_select (2).
+    // Edit q-1, remove q-2, waive q-3, add a human question, change order, answer.
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-action-0"), {
+      target: { value: "edited" },
+    });
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-text-0"), {
+      target: { value: "  What is the access footprint per building?  " },
+    });
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-answer-value-0"), {
+      target: { value: "  Two closets per building.  " },
+    });
+
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-action-1"), {
+      target: { value: "removed" },
+    });
+
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-action-2"), {
+      target: { value: "waived" },
+    });
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-waiver-2"), {
+      target: { value: "Segmentation confirmed out of scope." },
+    });
+
+    // Add a human question BEFORE reordering, so its seeded order is max(1,2,3)+1 = 4.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-intake-questionnaire-add"));
+    });
+    // The added row is appended as row index 3.
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-text-3"), {
+      target: { value: "Any brownfield cabling constraints?" },
+    });
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-why-3"), {
+      target: { value: "Captures installation constraints." },
+    });
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-answer-value-3"), {
+      target: { value: "No brownfield cabling constraints." },
+    });
+
+    // Reorder the edited q-1 above the added row (still unique among active orders).
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-order-0"), {
+      target: { value: "5" },
+    });
+
+    const intakeGetsBefore = calls.filter(
+      (c) => c.url === HLD_INTAKE_LIST_URL && (c.init?.method ?? "GET") === "GET"
+    ).length;
+    const readinessGetsBefore = calls.filter(
+      (c) => c.url === HLD_READINESS_LIST_URL
+    ).length;
+    const generationGetsBefore = calls.filter(
+      (c) => c.url === HLD_GENERATION_READINESS_URL
+    ).length;
+
+    await waitFor(() => {
+      expect(
+        (screen.getByTestId("hld-intake-questionnaire-submit") as HTMLButtonElement)
+          .disabled
+      ).toBe(false);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-intake-questionnaire-submit"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_INTAKE_QUESTIONNAIRE_ASSISTED_URL &&
+            c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const body = lastBody(calls, HLD_INTAKE_QUESTIONNAIRE_ASSISTED_URL);
+    expect(Object.keys(body).sort()).toEqual([
+      "answers",
+      "reviewedQuestions",
+      "sourceQuestionnaireArtifactId",
+    ]);
+    expect(body.sourceQuestionnaireArtifactId).toBe(HLD_INTAKE_QUESTIONNAIRE_ID);
+
+    const reviewed = body.reviewedQuestions as Record<string, unknown>[];
+    expect(reviewed.map((r) => r.action)).toEqual([
+      "edited",
+      "removed",
+      "waived",
+      "added",
+    ]);
+    // Edited row keeps its source id and carries the trimmed text and a numeric order.
+    const edited = reviewed[0];
+    expect(edited.sourceQuestionId).toBe("q-1");
+    expect(edited.questionText).toBe("What is the access footprint per building?");
+    expect(edited.order).toBe(5);
+    // Removed row carries no order; waived row carries a reason and no order.
+    expect(reviewed[1]).not.toHaveProperty("order");
+    expect(reviewed[2]).toHaveProperty("waiverReason");
+    expect(reviewed[2]).not.toHaveProperty("order");
+    // Added row has no source id and an active order.
+    expect(reviewed[3]).not.toHaveProperty("sourceQuestionId");
+    expect(reviewed[3].action).toBe("added");
+    expect(reviewed[3].order).toBe(4);
+
+    // No caller authority/provenance field leaks in any reviewed entry.
+    const forbiddenReviewedKeys = [
+      "sourceMode",
+      "tenantId",
+      "projectId",
+      "createdBy",
+      "status",
+      "pricing",
+      "sku",
+      "catalog",
+      "config",
+      "authority",
+      "manualOverrideReason",
+    ];
+    for (const entry of reviewed) {
+      for (const forbidden of forbiddenReviewedKeys) {
+        expect(entry).not.toHaveProperty(forbidden);
+      }
+    }
+    for (const forbidden of ["sourceMode", "manualOverrideReason", "tenantId", "createdBy"]) {
+      expect(JSON.stringify(body)).not.toContain(forbidden);
+    }
+
+    // Answers: exactly one per active (edited q-1, added) row; none for removed/waived.
+    const answers = body.answers as Record<string, unknown>[];
+    expect(answers).toHaveLength(2);
+    expect(answers.map((a) => a.questionId).sort()).toEqual([
+      "q-1",
+      reviewed[3].questionId,
+    ].sort());
+    const q1Answer = answers.find((a) => a.questionId === "q-1");
+    expect(q1Answer?.status).toBe("answered");
+    expect(q1Answer?.value).toBe("Two closets per building.");
+
+    // Success clears the draft and refreshes intake, readiness, and generation reads.
+    await screen.findByTestId("hld-intake-questionnaire-submit-success");
+    expect(screen.queryByTestId("hld-intake-questionnaire-row-0")).toBeNull();
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) => c.url === HLD_INTAKE_LIST_URL && (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(intakeGetsBefore);
+      expect(
+        calls.filter((c) => c.url === HLD_READINESS_LIST_URL).length
+      ).toBeGreaterThan(readinessGetsBefore);
+      expect(
+        calls.filter((c) => c.url === HLD_GENERATION_READINESS_URL).length
+      ).toBeGreaterThan(generationGetsBefore);
+    });
+  });
+
+  it("skips an invalid latest questionnaire candidate and uses the latest valid artifact", async () => {
+    const calls = stubFetch((url) => {
+      if (url === HLD_INTAKE_QUESTIONNAIRE_LIST_URL) {
+        return jsonResponse({
+          project: projectContext(),
+          artifactCount: 2,
+          artifacts: [
+            hldIntakeQuestionnaireListItem(
+              "art-hld-intake-questionnaire-invalid",
+              "needs_review",
+              3,
+              false
+            ),
+            hldIntakeQuestionnaireListItem(
+              HLD_INTAKE_QUESTIONNAIRE_ID,
+              "needs_review",
+              2,
+              true
+            ),
+          ],
+        });
+      }
+      if (url === HLD_INTAKE_QUESTIONNAIRE_DETAIL_URL) {
+        return jsonResponse(hldIntakeQuestionnaireDetailResponse());
+      }
+      return jsonResponse({}, 200);
+    });
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("hld-intake-panel");
+
+    await loadQuestionnaire();
+
+    expect(
+      calls.some((c) => c.url.includes("art-hld-intake-questionnaire-invalid"))
+    ).toBe(false);
+    expect(calls.some((c) => c.url === HLD_INTAKE_QUESTIONNAIRE_DETAIL_URL)).toBe(
+      true
+    );
+  });
+
+  it("keeps submit disabled while an active answered row has a blank value", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("hld-intake-panel");
+    await loadQuestionnaire();
+
+    // Reduce to a single active accepted row (q-1); q-2 and q-3 removed.
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-action-1"), {
+      target: { value: "removed" },
+    });
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-action-2"), {
+      target: { value: "removed" },
+    });
+
+    // q-1 is answered with a blank value -> submit stays disabled.
+    expect(
+      (screen.getByTestId("hld-intake-questionnaire-submit") as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-answer-value-0"), {
+      target: { value: "Two closets per building." },
+    });
+    await waitFor(() => {
+      expect(
+        (screen.getByTestId("hld-intake-questionnaire-submit") as HTMLButtonElement)
+          .disabled
+      ).toBe(false);
+    });
+  });
+
+  it("keeps submit disabled while a waived row is missing its waiver reason", async () => {
+    stubFetch();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("hld-intake-panel");
+    await loadQuestionnaire();
+
+    // q-1 active with an answer; q-2 removed; q-3 waived without a reason.
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-answer-value-0"), {
+      target: { value: "Two closets per building." },
+    });
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-action-1"), {
+      target: { value: "removed" },
+    });
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-action-2"), {
+      target: { value: "waived" },
+    });
+
+    expect(
+      (screen.getByTestId("hld-intake-questionnaire-submit") as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+
+    fireEvent.change(screen.getByTestId("hld-intake-questionnaire-waiver-2"), {
+      target: { value: "Segmentation confirmed out of scope." },
+    });
+    await waitFor(() => {
+      expect(
+        (screen.getByTestId("hld-intake-questionnaire-submit") as HTMLButtonElement)
+          .disabled
+      ).toBe(false);
+    });
+  });
+
+  it("still posts only { answers, manualOverrideReason } from the separate manual override form", async () => {
+    const calls = stubFetch();
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("hld-intake-panel");
+
+    // The manual override form remains a distinct, separate details section.
+    expect(screen.getByTestId("hld-intake-form").tagName).toBe("DETAILS");
+
+    for (const fieldId of HLD_INTAKE_FIELD_IDS) {
+      fireEvent.change(screen.getByTestId(`hld-intake-status-${fieldId}`), {
+        target: { value: "unknown" },
+      });
+    }
+    fireEvent.change(screen.getByTestId("hld-intake-override-reason"), {
+      target: { value: "Manual override for this bid." },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-intake-create"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some((c) => c.url === HLD_INTAKE_LIST_URL && c.init?.method === "POST")
+      ).toBe(true);
+    });
+    const body = lastBody(calls, HLD_INTAKE_LIST_URL);
+    expect(Object.keys(body).sort()).toEqual(["answers", "manualOverrideReason"]);
+    expect(body).not.toHaveProperty("sourceQuestionnaireArtifactId");
+    expect(body).not.toHaveProperty("reviewedQuestions");
   });
 });
 
