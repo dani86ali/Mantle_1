@@ -1,4 +1,16 @@
 /**
+ * GET + POST /api/projects/[id]/rfp/hld-document.
+ *
+ * GET reads the active FINAL HLD authority (Stage 6H-0I-B). session.tenantId is the
+ * only tenant authority and the route param id is the only project authority; the GET
+ * reads NO request body. Result maps to HTTP: not_found -> 404 project_not_found,
+ * wrong_mode -> 409 wrong_project_mode (with the lean project summary), not_finalized
+ * -> 409 hld_document_not_final (with blockerCode and any pending latestArtifact),
+ * stale_final_authority -> 409 hld_document_final_authority_stale (with blockerCode +
+ * the lean artifact summary), ok -> 200 { project, finalAuthority }. The 200 body omits
+ * the full payload and NEVER carries drawio XML. An unexpected service error maps to a
+ * controlled 500.
+ *
  * POST /api/projects/[id]/rfp/hld-document.
  *
  * Record ONE reviewable (needs_review) FINAL hld_document artifact from a SE MANUAL
@@ -26,6 +38,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/middleware/auth";
 import { createRfpHldDocumentManualUpload } from "@/lib/projects/project-rfp-hld-document-manual-upload";
+import { selectRfpHldFinalAuthority } from "@/lib/projects/project-rfp-hld-document-final-authority";
 
 const REQUIRED_KEYS: readonly string[] = [
   "documentModelArtifactId",
@@ -78,6 +91,75 @@ function parseUploadBody(body: unknown): ParsedUploadBody | null {
     drawioXml: record.drawioXml as string,
     ...("note" in record ? { note: record.note as string } : {}),
   };
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = requireAuth(request);
+  if (session instanceof NextResponse) return session;
+
+  try {
+    const result = await selectRfpHldFinalAuthority({
+      tenantId: session.tenantId,
+      projectId: params.id,
+    });
+
+    if (result.status === "not_found") {
+      return NextResponse.json(
+        { code: "project_not_found", error: "Project not found." },
+        { status: 404 }
+      );
+    }
+    if (result.status === "wrong_mode") {
+      return NextResponse.json(
+        {
+          code: "wrong_project_mode",
+          error: "Project is not an RFP project.",
+          project: result.project,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "not_finalized") {
+      return NextResponse.json(
+        {
+          code: "hld_document_not_final",
+          error: "No approved final HLD document authority is available.",
+          blockerCode: result.blockerCode,
+          ...(result.latestArtifact !== undefined
+            ? { latestArtifact: result.latestArtifact }
+            : {}),
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "stale_final_authority") {
+      return NextResponse.json(
+        {
+          code: "hld_document_final_authority_stale",
+          error: "The approved final HLD document is no longer valid authority.",
+          blockerCode: result.blockerCode,
+          artifact: result.artifact,
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(
+      { project: result.project, finalAuthority: result.authority },
+      { status: 200 }
+    );
+  } catch {
+    return NextResponse.json(
+      {
+        code: "rfp_hld_document_authority_failed",
+        error: "Unable to read final RFP HLD document authority.",
+      },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(

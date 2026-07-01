@@ -518,11 +518,7 @@ describe("module purity (static source check)", () => {
       "@/lib/db/project-artifact-store",
       "@/lib/db/project-approval-store",
       "@/lib/projects/approvals",
-      "@/lib/projects/project-rfp-hld-document",
-      "@/lib/projects/project-rfp-hld-document-model",
-      "@/lib/projects/project-rfp-hld-source-bundle",
-      "@/lib/projects/project-rfp-hld-design-model",
-      "@/lib/projects/project-rfp-hld-diagram",
+      "@/lib/projects/project-rfp-hld-document-source-chain",
       "@/types/project",
     ]);
   });

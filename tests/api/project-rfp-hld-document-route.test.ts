@@ -2,19 +2,24 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// Mock auth and the manual-upload service so the route's auth gate, strict body parse,
-// tenant/user/param authority, and result mapping are tested independent of the DB.
-const { mockRequireAuth, mockUpload } = vi.hoisted(() => ({
+// Mock auth and the manual-upload + final-authority services so the route's auth gate,
+// strict body parse, tenant/user/param authority, and result mapping are tested
+// independent of the DB.
+const { mockRequireAuth, mockUpload, mockSelectAuthority } = vi.hoisted(() => ({
   mockRequireAuth: vi.fn(),
   mockUpload: vi.fn(),
+  mockSelectAuthority: vi.fn(),
 }));
 
 vi.mock("@/lib/middleware/auth", () => ({ requireAuth: mockRequireAuth }));
 vi.mock("@/lib/projects/project-rfp-hld-document-manual-upload", () => ({
   createRfpHldDocumentManualUpload: mockUpload,
 }));
+vi.mock("@/lib/projects/project-rfp-hld-document-final-authority", () => ({
+  selectRfpHldFinalAuthority: mockSelectAuthority,
+}));
 
-import { POST } from "@/app/api/projects/[id]/rfp/hld-document/route";
+import { GET, POST } from "@/app/api/projects/[id]/rfp/hld-document/route";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -69,6 +74,28 @@ const PAYLOAD_SUMMARY = {
 
 const OK_RESULT = { status: "ok", artifact: ARTIFACT_SUMMARY, payloadSummary: PAYLOAD_SUMMARY };
 
+const PROJECT_SUMMARY = {
+  id: PROJECT,
+  name: "Acme RFP",
+  mode: "rfp",
+  createdAt: "2026-06-30T00:00:00.000Z",
+  updatedAt: "2026-06-30T00:00:00.000Z",
+};
+
+const FINAL_AUTHORITY = {
+  artifact: ARTIFACT_SUMMARY,
+  payloadSummary: PAYLOAD_SUMMARY,
+  finalAuthorityStatus: "approved_manual_drawio_upload",
+};
+
+const AUTHORITY_OK_RESULT = {
+  status: "ok",
+  project: PROJECT_SUMMARY,
+  authority: FINAL_AUTHORITY,
+  // Full payload the service keeps internally; the route must never return it.
+  payload: { drawioXml: "SECRET-DRAWIO-XML-BODY", payloadKind: "rfp_hld_document" },
+};
+
 function req(body: unknown = VALID_BODY): NextRequest {
   return {
     headers: { get: () => null },
@@ -86,6 +113,103 @@ function reqBadJson(): NextRequest {
 beforeEach(() => {
   mockRequireAuth.mockReset().mockReturnValue(SESSION);
   mockUpload.mockReset().mockResolvedValue(OK_RESULT);
+  mockSelectAuthority.mockReset().mockResolvedValue(AUTHORITY_OK_RESULT);
+});
+
+describe("GET hld-document - auth + final authority mapping", () => {
+  it("returns the requireAuth response and never reads the body or calls the service", async () => {
+    const unauth = NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    mockRequireAuth.mockReturnValue(unauth);
+    const request = req();
+    const res = await GET(request, PARAMS);
+    expect(res.status).toBe(401);
+    expect(request.json).not.toHaveBeenCalled();
+    expect(mockSelectAuthority).not.toHaveBeenCalled();
+  });
+
+  it("calls the service with session tenant + route project id and never reads the body", async () => {
+    const request = req();
+    const res = await GET(request, PARAMS);
+    expect(res.status).toBe(200);
+    expect(request.json).not.toHaveBeenCalled();
+    expect(mockSelectAuthority).toHaveBeenCalledTimes(1);
+    const arg = mockSelectAuthority.mock.calls[0][0] as Record<string, unknown>;
+    expect(arg.tenantId).toBe(SESSION.tenantId);
+    expect(arg.projectId).toBe(PROJECT);
+    expect(Object.keys(arg).sort()).toEqual(["projectId", "tenantId"]);
+  });
+
+  it("maps ok to 200 with project + finalAuthority and never leaks the payload or drawioXml", async () => {
+    const res = await GET(req(), PARAMS);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.project).toEqual(PROJECT_SUMMARY);
+    expect(json.finalAuthority).toEqual(FINAL_AUTHORITY);
+    expect("payload" in json).toBe(false);
+    expect(JSON.stringify(json)).not.toContain("SECRET-DRAWIO-XML-BODY");
+    expect(JSON.stringify(json)).not.toContain("drawioXml\"");
+  });
+
+  it("maps not_found -> 404 and wrong_mode -> 409", async () => {
+    mockSelectAuthority.mockResolvedValueOnce({ status: "not_found" });
+    expect((await GET(req(), PARAMS)).status).toBe(404);
+
+    mockSelectAuthority.mockResolvedValueOnce({
+      status: "wrong_mode",
+      project: { id: PROJECT, name: "x", mode: "quick_bom", createdAt: "", updatedAt: "" },
+    });
+    const wrong = await GET(req(), PARAMS);
+    expect(wrong.status).toBe(409);
+    expect((await wrong.json()).code).toBe("wrong_project_mode");
+  });
+
+  it("maps not_finalized -> 409 with blockerCode and any pending latestArtifact", async () => {
+    mockSelectAuthority.mockResolvedValueOnce({
+      status: "not_finalized",
+      project: PROJECT_SUMMARY,
+      blockerCode: "no_final_hld_document",
+    });
+    const none = await GET(req(), PARAMS);
+    expect(none.status).toBe(409);
+    const noneJson = await none.json();
+    expect(noneJson.code).toBe("hld_document_not_final");
+    expect(noneJson.blockerCode).toBe("no_final_hld_document");
+    expect("latestArtifact" in noneJson).toBe(false);
+
+    mockSelectAuthority.mockResolvedValueOnce({
+      status: "not_finalized",
+      project: PROJECT_SUMMARY,
+      blockerCode: "manual_upload_pending_review",
+      latestArtifact: ARTIFACT_SUMMARY,
+    });
+    const pending = await GET(req(), PARAMS);
+    expect(pending.status).toBe(409);
+    const pendingJson = await pending.json();
+    expect(pendingJson.blockerCode).toBe("manual_upload_pending_review");
+    expect(pendingJson.latestArtifact).toEqual(ARTIFACT_SUMMARY);
+  });
+
+  it("maps stale_final_authority -> 409 with blockerCode + artifact summary", async () => {
+    mockSelectAuthority.mockResolvedValueOnce({
+      status: "stale_final_authority",
+      project: PROJECT_SUMMARY,
+      blockerCode: "source_diagram_unavailable",
+      artifact: ARTIFACT_SUMMARY,
+    });
+    const res = await GET(req(), PARAMS);
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json.code).toBe("hld_document_final_authority_stale");
+    expect(json.blockerCode).toBe("source_diagram_unavailable");
+    expect(json.artifact).toEqual(ARTIFACT_SUMMARY);
+  });
+
+  it("maps an unexpected service throw to a controlled 500", async () => {
+    mockSelectAuthority.mockRejectedValueOnce(new Error("boom"));
+    const res = await GET(req(), PARAMS);
+    expect(res.status).toBe(500);
+    expect((await res.json()).code).toBe("rfp_hld_document_authority_failed");
+  });
 });
 
 describe("POST hld-document - auth + strict body", () => {
@@ -199,12 +323,13 @@ describe("module purity (static source check)", () => {
   const SRC_PATH = join(process.cwd(), "src/app/api/projects/[id]/rfp/hld-document/route.ts");
   const source = readFileSync(SRC_PATH, "utf8");
 
-  it("imports only next/server, requireAuth, and the manual-upload service", () => {
+  it("imports only next/server, requireAuth, and the two upload/authority services", () => {
     const froms = Array.from(source.matchAll(/from\s+"([^"]+)"/g), (m) => m[1]);
     expect(froms).toEqual([
       "next/server",
       "@/lib/middleware/auth",
       "@/lib/projects/project-rfp-hld-document-manual-upload",
+      "@/lib/projects/project-rfp-hld-document-final-authority",
     ]);
   });
 

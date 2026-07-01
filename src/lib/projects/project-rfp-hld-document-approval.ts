@@ -30,22 +30,9 @@ import { getProjectArtifactById } from "@/lib/db/project-artifact-store";
 import { createProjectApproval } from "@/lib/db/project-approval-store";
 import { isArtifactReviewable } from "@/lib/projects/approvals";
 import {
-  validateRfpHldDocumentPayload,
-  type RfpHldDocumentPayload,
-} from "@/lib/projects/project-rfp-hld-document";
-import {
-  validateRfpHldDocumentModelPayload,
-  type RfpHldDocumentModelPayload,
-} from "@/lib/projects/project-rfp-hld-document-model";
-import { validateRfpHldSourceBundlePayload } from "@/lib/projects/project-rfp-hld-source-bundle";
-import {
-  validateRfpHldDesignModelPayload,
-  type RfpHldDesignModelPayload,
-} from "@/lib/projects/project-rfp-hld-design-model";
-import {
-  validateRfpHldDiagramDraftPayload,
-  type RfpHldDiagramDraftPayload,
-} from "@/lib/projects/project-rfp-hld-diagram";
+  evaluateRfpHldDocumentSourceChain,
+  type RfpHldDocumentStaleCode,
+} from "@/lib/projects/project-rfp-hld-document-source-chain";
 import type {
   Project,
   ProjectApproval,
@@ -56,13 +43,6 @@ import type {
 
 const DOCUMENT_TYPE: ProjectArtifact["type"] = "hld_document";
 const HLD_STAGE: ProjectArtifact["stageId"] = "hld_design_delta_review";
-const SOURCE_BUNDLE_TYPE: ProjectArtifact["type"] = "hld_source_bundle";
-const MODEL_TYPE: ProjectArtifact["type"] = "hld_design_model";
-const REVIEW_TYPE: ProjectArtifact["type"] = "hld_design_model_review";
-const DIAGRAM_TYPE: ProjectArtifact["type"] = "hld_diagram";
-const DOCUMENT_MODEL_TYPE: ProjectArtifact["type"] = "hld_document_model";
-const ACTIVE_REVIEW_STATUSES: ReadonlySet<ProjectArtifactStatus> =
-  new Set<ProjectArtifactStatus>(["generated", "needs_review", "approved"]);
 
 export interface ReviewRfpHldDocumentArtifactInput {
   tenantId: string;
@@ -96,21 +76,6 @@ export interface RfpHldDocumentReviewArtifactSummary {
   updatedAt: string;
 }
 
-/** Stable sub-reason for a stale source-chain approval block (never leaks payload). */
-export type RfpHldDocumentStaleCode =
-  | "source_artifact_ids_mismatch"
-  | "source_document_model_unavailable"
-  | "source_document_model_invalid"
-  | "source_bundle_unavailable"
-  | "source_bundle_invalid"
-  | "source_model_unavailable"
-  | "source_model_invalid"
-  | "source_diagram_unavailable"
-  | "source_diagram_invalid"
-  | "source_review_unavailable"
-  | "source_chain_mismatch"
-  | "source_version_mismatch";
-
 export type ReviewRfpHldDocumentArtifactResult =
   | { status: "not_found" }
   | { status: "wrong_mode"; project: RfpHldDocumentReviewProjectSummary }
@@ -131,10 +96,6 @@ export type ReviewRfpHldDocumentArtifactResult =
       stageStatus: ProjectStageStatus;
       artifact: RfpHldDocumentReviewArtifactSummary;
     };
-
-function sameOrdered(a: readonly unknown[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((value, index) => value === b[index]);
-}
 
 function toProjectSummary(project: Project): RfpHldDocumentReviewProjectSummary {
   return {
@@ -173,162 +134,27 @@ function staleResult(
   };
 }
 
-function isApprovedTypeOnStage(
-  artifact: ProjectArtifact | null,
-  projectId: string,
-  type: ProjectArtifact["type"]
-): boolean {
-  return (
-    artifact !== null &&
-    artifact.projectId === projectId &&
-    artifact.type === type &&
-    artifact.stageId === HLD_STAGE &&
-    artifact.status === "approved"
-  );
-}
-
-function isActiveReviewOnStage(
-  artifact: ProjectArtifact | null,
-  projectId: string
-): boolean {
-  return (
-    artifact !== null &&
-    artifact.projectId === projectId &&
-    artifact.type === REVIEW_TYPE &&
-    artifact.stageId === HLD_STAGE &&
-    ACTIVE_REVIEW_STATUSES.has(artifact.status)
-  );
-}
-
 /**
- * Approval-only source-chain gate. Returns the invalid/stale result that must
- * short-circuit the approval, or null when the persisted upload is valid and still
- * ties through the approved bundle/model/diagram/document-model chain. Reads the
- * artifact store but mutates nothing, and never leaks any payload body or drawio XML.
+ * Approval-only source-chain gate. Wraps {@link evaluateRfpHldDocumentSourceChain},
+ * mapping its neutral outcome to the approval result that must short-circuit the
+ * approval, or null when the persisted upload is valid and still ties through the
+ * approved bundle/model/diagram/document-model chain.
  */
 async function evaluateDocumentSourceChain(
   tenantId: string,
   projectId: string,
   artifact: ProjectArtifact
 ): Promise<ReviewRfpHldDocumentArtifactResult | null> {
-  if (!validateRfpHldDocumentPayload(artifact.payload).valid) {
+  const outcome = await evaluateRfpHldDocumentSourceChain(tenantId, projectId, artifact);
+  if (outcome.kind === "invalid_payload") {
     return {
       status: "invalid_hld_document_payload",
       artifact: toArtifactSummary(artifact),
     };
   }
-
-  const payload = artifact.payload as unknown as RfpHldDocumentPayload;
-  const bundleId = payload.sourceHldSourceBundleArtifactId;
-  const modelId = payload.sourceHldDesignModelArtifactId;
-  const diagramId = payload.sourceHldDiagramArtifactId;
-  const documentModelId = payload.sourceHldDocumentModelArtifactId;
-  const expectedSourceIds = [bundleId, modelId, diagramId, documentModelId];
-
-  if (
-    !sameOrdered(artifact.sourceArtifactIds, expectedSourceIds) ||
-    !sameOrdered(payload.sourceArtifactIds, expectedSourceIds)
-  ) {
-    return staleResult(artifact, "source_artifact_ids_mismatch");
+  if (outcome.kind === "stale") {
+    return staleResult(artifact, outcome.staleCode);
   }
-
-  // --- Source bundle: approved root authority, version-locked ---
-  const bundle = await getProjectArtifactById(tenantId, projectId, bundleId);
-  if (!isApprovedTypeOnStage(bundle, projectId, SOURCE_BUNDLE_TYPE)) {
-    return staleResult(artifact, "source_bundle_unavailable");
-  }
-  if ((bundle as ProjectArtifact).version !== payload.sourceBundleVersion) {
-    return staleResult(artifact, "source_version_mismatch");
-  }
-  if (!validateRfpHldSourceBundlePayload((bundle as ProjectArtifact).payload).valid) {
-    return staleResult(artifact, "source_bundle_invalid");
-  }
-
-  // --- Design model: approved, version-locked, tied to exactly [bundle] ---
-  const model = await getProjectArtifactById(tenantId, projectId, modelId);
-  if (!isApprovedTypeOnStage(model, projectId, MODEL_TYPE)) {
-    return staleResult(artifact, "source_model_unavailable");
-  }
-  const modelArtifact = model as ProjectArtifact;
-  if (modelArtifact.version !== payload.sourceModelVersion) {
-    return staleResult(artifact, "source_version_mismatch");
-  }
-  if (!sameOrdered(modelArtifact.sourceArtifactIds, [bundleId])) {
-    return staleResult(artifact, "source_chain_mismatch");
-  }
-  if (!validateRfpHldDesignModelPayload(modelArtifact.payload).valid) {
-    return staleResult(artifact, "source_model_invalid");
-  }
-  const modelPayload = modelArtifact.payload as unknown as RfpHldDesignModelPayload;
-  if (
-    modelPayload.sourceHldSourceBundleArtifactId !== bundleId ||
-    !sameOrdered(modelPayload.sourceArtifactIds, [bundleId])
-  ) {
-    return staleResult(artifact, "source_chain_mismatch");
-  }
-
-  // --- Diagram: approved, version-locked, valid, tied to the model + bundle ---
-  const diagram = await getProjectArtifactById(tenantId, projectId, diagramId);
-  if (!isApprovedTypeOnStage(diagram, projectId, DIAGRAM_TYPE)) {
-    return staleResult(artifact, "source_diagram_unavailable");
-  }
-  const diagramArtifact = diagram as ProjectArtifact;
-  if (diagramArtifact.version !== payload.sourceDiagramVersion) {
-    return staleResult(artifact, "source_version_mismatch");
-  }
-  if (!validateRfpHldDiagramDraftPayload(diagramArtifact.payload).valid) {
-    return staleResult(artifact, "source_diagram_invalid");
-  }
-  const diagramPayload = diagramArtifact.payload as unknown as RfpHldDiagramDraftPayload;
-  const reviewId = diagramPayload.sourceReviewArtifactId;
-  if (!sameOrdered(diagramArtifact.sourceArtifactIds, [modelId, bundleId, reviewId])) {
-    return staleResult(artifact, "source_chain_mismatch");
-  }
-  if (
-    diagramPayload.sourceHldDesignModelArtifactId !== modelId ||
-    diagramPayload.sourceHldSourceBundleArtifactId !== bundleId
-  ) {
-    return staleResult(artifact, "source_chain_mismatch");
-  }
-  if (diagramPayload.sourceModelVersion !== modelArtifact.version) {
-    return staleResult(artifact, "source_version_mismatch");
-  }
-
-  const review = await getProjectArtifactById(tenantId, projectId, reviewId);
-  if (!isActiveReviewOnStage(review, projectId)) {
-    return staleResult(artifact, "source_review_unavailable");
-  }
-  if (!sameOrdered((review as ProjectArtifact).sourceArtifactIds, [modelId, bundleId])) {
-    return staleResult(artifact, "source_chain_mismatch");
-  }
-
-  // --- Document model: approved, version-locked, tied to [bundle, model, diagram] ---
-  const documentModel = await getProjectArtifactById(tenantId, projectId, documentModelId);
-  if (!isApprovedTypeOnStage(documentModel, projectId, DOCUMENT_MODEL_TYPE)) {
-    return staleResult(artifact, "source_document_model_unavailable");
-  }
-  const documentModelArtifact = documentModel as ProjectArtifact;
-  if (documentModelArtifact.version !== payload.sourceDocumentModelVersion) {
-    return staleResult(artifact, "source_version_mismatch");
-  }
-  if (!validateRfpHldDocumentModelPayload(documentModelArtifact.payload).valid) {
-    return staleResult(artifact, "source_document_model_invalid");
-  }
-  const documentModelPayload =
-    documentModelArtifact.payload as unknown as RfpHldDocumentModelPayload;
-  const docModelSources = [bundleId, modelId, diagramId];
-  if (
-    !sameOrdered(documentModelArtifact.sourceArtifactIds, docModelSources) ||
-    !sameOrdered(documentModelPayload.sourceArtifactIds, docModelSources) ||
-    documentModelPayload.sourceHldSourceBundleArtifactId !== bundleId ||
-    documentModelPayload.sourceHldDesignModelArtifactId !== modelId ||
-    documentModelPayload.sourceHldDiagramArtifactId !== diagramId ||
-    documentModelPayload.sourceModelVersion !== modelArtifact.version ||
-    documentModelPayload.sourceDiagramVersion !== diagramArtifact.version
-  ) {
-    return staleResult(artifact, "source_chain_mismatch");
-  }
-
   return null;
 }
 
