@@ -142,6 +142,11 @@ export type CreateRfpHldDesignModelRebuildRequestResult =
       maxRedoAttempts: 1 | 2;
       attemptCount: number;
     }
+  | {
+      status: "engineer_redo_limit_exhausted";
+      maxRedoRequests: 1;
+      requestCount: number;
+    }
   | { status: "invalid_request_payload"; errors: string[] }
   | {
       status: "ok";
@@ -249,6 +254,32 @@ function reviewTiesToBundle(
 }
 
 /**
+ * Count valid, non-rejected `hld_design_model_rebuild_request` artifacts with
+ * `requestSource: "engineer"` whose source review ties to the SAME source bundle.
+ * Fail-closed: a rejected engineer request and a malformed engineer payload do NOT
+ * consume the SE redo cap, but any other non-rejected valid engineer row (open,
+ * stale, failed, or approved) does. Used both to switch the OpenAI redo budget into
+ * its post-SE phase and to cap SE-directed engineer redo requests at one per bundle.
+ */
+function countEngineerRequestsForBundle(
+  artifacts: readonly ProjectArtifact[],
+  bundleId: string
+): number {
+  let count = 0;
+  for (const a of artifacts) {
+    if (a.type !== REQUEST_TYPE) continue;
+    if (a.status === "rejected") continue;
+    if (!validateRfpHldDesignModelRebuildRequestPayload(a.payload).valid) continue;
+    const p = a.payload;
+    if (p.requestSource !== "engineer") continue;
+    if (reviewTiesToBundle(artifacts, str(p.sourceReviewArtifactId), bundleId)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
  * True if the source bundle is in the post-SE phase: at least one valid, non-rejected
  * `hld_design_model_rebuild_request` with `requestSource: "engineer"` exists whose
  * source review ties to the SAME source bundle. This is the corrected budget switch
@@ -258,17 +289,7 @@ function hasPostSeEngineerMarker(
   artifacts: readonly ProjectArtifact[],
   bundleId: string
 ): boolean {
-  for (const a of artifacts) {
-    if (a.type !== REQUEST_TYPE) continue;
-    if (a.status === "rejected") continue;
-    if (!validateRfpHldDesignModelRebuildRequestPayload(a.payload).valid) continue;
-    const p = a.payload;
-    if (p.requestSource !== "engineer") continue;
-    if (reviewTiesToBundle(artifacts, str(p.sourceReviewArtifactId), bundleId)) {
-      return true;
-    }
-  }
-  return false;
+  return countEngineerRequestsForBundle(artifacts, bundleId) >= 1;
 }
 
 function toProjectSummary(
@@ -492,6 +513,18 @@ export async function createRfpHldDesignModelRebuildRequest(
       maxRedoAttempts,
       sourceHldSourceBundleArtifactId: bundleId,
     };
+  } else {
+    // SE-directed HLD redo request cap (Stage 6H-0H-F). A human/engineer gets at
+    // most one non-rejected redo request per source bundle. Determine the current
+    // review's source bundle, count prior valid non-rejected engineer requests tied
+    // to that same bundle, and fail-closed if any already exists: write nothing.
+    // Only rejected/malformed engineer requests are exempt; stale/failed/approved
+    // ones consume the cap.
+    const bundleId = str(review!.payload.sourceHldSourceBundleArtifactId).trim();
+    const requestCount = countEngineerRequestsForBundle(artifacts, bundleId);
+    if (requestCount >= 1) {
+      return { status: "engineer_redo_limit_exhausted", maxRedoRequests: 1, requestCount };
+    }
   }
 
   const requestedAt = (input.requestedAt ?? new Date()).toISOString();

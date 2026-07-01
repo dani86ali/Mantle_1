@@ -249,6 +249,27 @@ describe("POST hld-design-model-rebuild-request - result mapping", () => {
     expect(body.attemptCount).toBe(2);
   });
 
+  it("maps engineer_redo_limit_exhausted to 409 with max 1 and count, leaking no body text", async () => {
+    mockCreate.mockResolvedValue({
+      status: "engineer_redo_limit_exhausted",
+      maxRedoRequests: 1,
+      requestCount: 1,
+    });
+    const res = await POST(req(), PARAMS);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe(
+      "hld_design_model_rebuild_request_engineer_redo_limit_exhausted"
+    );
+    expect(body.maxRedoRequests).toBe(1);
+    expect(body.requestCount).toBe(1);
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(SESSION.tenantId);
+    expect(serialized).not.toContain(SESSION.userId);
+    expect(serialized).not.toContain(VALID_BODY.reason);
+    expect(serialized).not.toContain(VALID_BODY.instructions);
+  });
+
   it("maps invalid_request_payload to 409 with errors", async () => {
     mockCreate.mockResolvedValue({
       status: "invalid_request_payload",

@@ -525,6 +525,114 @@ describe("createRfpHldDesignModelRebuildRequest - post-SE OpenAI-forced redo", (
   });
 });
 
+describe("createRfpHldDesignModelRebuildRequest - SE-directed engineer redo cap", () => {
+  it("allows the first engineer request for a bundle and persists engineer with no OpenAI fields", async () => {
+    wireArtifacts(makeModel(), makeBundleReview());
+    listMock.mockResolvedValue([]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("ok");
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.requestSource).toBe("engineer");
+    for (const key of [
+      "redoPhase",
+      "redoAttempt",
+      "maxRedoAttempts",
+      "sourceHldSourceBundleArtifactId",
+    ]) {
+      expect(key in payload, key).toBe(false);
+    }
+  });
+
+  it("blocks a second engineer request for the same bundle after a stale engineer marker", async () => {
+    wireArtifacts(makeModel(), makeBundleReview());
+    listMock.mockResolvedValue([makeBundleReview(), makeEngineerMarker()]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("engineer_redo_limit_exhausted");
+    if (result.status === "engineer_redo_limit_exhausted") {
+      expect(result.maxRedoRequests).toBe(1);
+      expect(result.requestCount).toBe(1);
+    }
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("consumes the cap for non-open non-rejected engineer markers (failed, approved)", async () => {
+    // Point each marker at a different source model so it does not trip the
+    // active-request check (which keys on the current model) and the cap is isolated.
+    for (const status of ["failed", "approved"] as const) {
+      createMock.mockClear();
+      wireArtifacts(makeModel(), makeBundleReview());
+      listMock.mockResolvedValue([
+        makeBundleReview(),
+        makeEngineerMarker({
+          id: `eng-${status}`,
+          status,
+          sourceArtifactIds: ["other-model", REVIEW_ID],
+          payload: {
+            ...(makeEngineerMarker().payload as Record<string, unknown>),
+            sourceArtifactIds: ["other-model", REVIEW_ID],
+            sourceHldDesignModelArtifactId: "other-model",
+          },
+        }),
+      ]);
+      const result = await createRfpHldDesignModelRebuildRequest(input());
+      expect(result.status, status).toBe("engineer_redo_limit_exhausted");
+      expect(createMock).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does not consume the cap for rejected or malformed engineer markers", async () => {
+    wireArtifacts(makeModel(), makeBundleReview());
+    listMock.mockResolvedValue([
+      makeBundleReview(),
+      makeEngineerMarker({ id: "eng-rejected", status: "rejected" }),
+      {
+        ...makeEngineerMarker({ id: "eng-malformed" }),
+        payload: { requestSource: "engineer" },
+      },
+    ]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("ok");
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.requestSource).toBe("engineer");
+  });
+
+  it("does not consume the cap for an engineer marker tied to a different bundle", async () => {
+    wireArtifacts(makeModel(), makeBundleReview());
+    listMock.mockResolvedValue([
+      makeBundleReview("other-bundle"),
+      makeEngineerMarker(),
+    ]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("ok");
+  });
+
+  it("returns active_request_exists before the engineer cap when a request is active", async () => {
+    wireArtifacts(makeModel(), makeBundleReview());
+    listMock.mockResolvedValue([
+      makeActiveRequest(),
+      makeBundleReview(),
+      makeEngineerMarker(),
+    ]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("active_request_exists");
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves OpenAI-forced requests unaffected by the engineer cap", async () => {
+    // A blocking ai_advisory review with a prior engineer marker still routes through
+    // the Stage 6H-0H-E post-SE OpenAI budget, not the engineer cap.
+    wireArtifacts(makeModel(), makeBlockingAiReview());
+    listMock.mockResolvedValue([makeBundleReview(), makeEngineerMarker()]);
+    const result = await createRfpHldDesignModelRebuildRequest(input());
+    expect(result.status).toBe("ok");
+    const payload = createMock.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.requestSource).toBe("openai_advisory");
+    expect(payload.redoPhase).toBe("se_directed_openai_gate");
+    expect(payload.redoAttempt).toBe(1);
+    expect(payload.maxRedoAttempts).toBe(2);
+  });
+});
+
 describe("listRfpHldDesignModelRebuildRequests", () => {
   const LIST_INPUT = { tenantId: TENANT, projectId: PROJECT };
 

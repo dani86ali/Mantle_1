@@ -14,7 +14,9 @@
  * invalid_source_model -> 409 hld_design_model_rebuild_request_invalid_source_model,
  * invalid_review -> 409 hld_design_model_rebuild_request_invalid_review,
  * active_request_exists -> 409 hld_design_model_rebuild_request_already_active
- * (with the existing artifact), invalid_request_payload -> 409
+ * (with the existing artifact), engineer_redo_limit_exhausted -> 409
+ * hld_design_model_rebuild_request_engineer_redo_limit_exhausted (max 1 + count,
+ * nothing written, no body text), invalid_request_payload -> 409
  * hld_design_model_rebuild_request_payload_invalid (with errors; nothing written),
  * ok -> 201 with { artifact }.
  *
@@ -150,6 +152,18 @@ export async function POST(
           phase: result.phase,
           maxRedoAttempts: result.maxRedoAttempts,
           attemptCount: result.attemptCount,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "engineer_redo_limit_exhausted") {
+      return NextResponse.json(
+        {
+          code: "hld_design_model_rebuild_request_engineer_redo_limit_exhausted",
+          error:
+            "The SE-directed HLD redo request limit for this source bundle is reached.",
+          maxRedoRequests: result.maxRedoRequests,
+          requestCount: result.requestCount,
         },
         { status: 409 }
       );
