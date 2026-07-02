@@ -72,6 +72,14 @@ const OUTPUT_TYPE: ProjectArtifactType = "hld_diagram_output";
 const ACTIVE_REVIEW_STATUSES: ReadonlySet<ProjectArtifactStatus> =
   new Set<ProjectArtifactStatus>(["generated", "needs_review", "approved"]);
 
+/**
+ * Current-output status boundary: an existing `hld_diagram_output` in any of these
+ * states blocks creating another current output. Rejected/stale/failed/missing/
+ * not_applicable outputs do NOT block a fresh create.
+ */
+const CURRENT_OUTPUT_STATUSES: ReadonlySet<ProjectArtifactStatus> =
+  new Set<ProjectArtifactStatus>(["generated", "needs_review", "approved"]);
+
 const OUTPUT_TITLE = "HLD Topology Diagram Output";
 
 // Deterministic grid geometry constants (bounded, positive).
@@ -156,6 +164,7 @@ export type CreateRfpHldDiagramOutputResult =
     }
   | { status: "readiness_blocked"; readinessStatus: string; nextAction: string }
   | { status: "precondition_failed"; code: RfpHldDiagramOutputPreconditionCode }
+  | { status: "current_output_exists"; artifact: RfpHldDiagramOutputArtifactSummary }
   | { status: "invalid_payload"; errors: string[] }
   | {
       status: "ok";
@@ -490,6 +499,23 @@ export async function createRfpHldDiagramOutputDraft(
     .sort((a, b) => b.version - a.version || b.createdAt.getTime() - a.createdAt.getTime())[0];
   if (diagram === undefined) {
     return { status: "precondition_failed", code: "approved_diagram_unavailable" };
+  }
+
+  // HARD GATE: never create a second current output. List existing outputs and
+  // block if any is on this stage/project and in a current status. Rejected/stale/
+  // failed/missing/wrong-stage/wrong-project outputs do not block. No write occurs.
+  const existingOutputs = await listProjectArtifactsByType(tenantId, projectId, OUTPUT_TYPE);
+  const currentOutput = existingOutputs
+    .filter(
+      (row) =>
+        row.projectId === projectId &&
+        row.type === OUTPUT_TYPE &&
+        row.stageId === HLD_STAGE &&
+        CURRENT_OUTPUT_STATUSES.has(row.status)
+    )
+    .sort((a, b) => b.version - a.version || b.createdAt.getTime() - a.createdAt.getTime())[0];
+  if (currentOutput !== undefined) {
+    return { status: "current_output_exists", artifact: toArtifactSummary(currentOutput) };
   }
 
   const createdAt = (input.createdAt ?? new Date()).toISOString();

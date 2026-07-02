@@ -177,6 +177,20 @@ describe("POST /api/projects/[id]/rfp/hld-diagram-output - result mapping", () =
     expect(body.blockerCode).toBe("approved_diagram_unavailable");
   });
 
+  it("maps current_output_exists to 409 with a stable code and a lean artifact only", async () => {
+    mockCreate.mockResolvedValue({ status: "current_output_exists", artifact: ARTIFACT_SUMMARY });
+    const res = await POST(req(), PARAMS);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("hld_diagram_output_current_output_exists");
+    expect(body.artifact).toEqual(ARTIFACT_SUMMARY);
+    // Lean: no payload/summary/provider/raw/final-output fields leak.
+    for (const forbidden of ["payload", "payloadSummary", "provider", "rawText", "finalAuthority", "drawioXml", "downloadUrl", "exportUrl"]) {
+      expect(forbidden in body).toBe(false);
+    }
+    expect(JSON.stringify(body)).not.toContain(SESSION.tenantId);
+  });
+
   it("maps invalid_payload to 409 with errors", async () => {
     mockCreate.mockResolvedValue({ status: "invalid_payload", errors: ["payload: blank title"] });
     const res = await POST(req(), PARAMS);

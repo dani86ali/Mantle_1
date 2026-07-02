@@ -9116,6 +9116,67 @@ describe("ProjectRfpEvidencePage - Stage 6I-C internal HLD diagram output review
     ).toBeInTheDocument();
   });
 
+  // The current-output list must be verified before create is ever offered.
+  function readyOutputListFetch(
+    outputListGet: () => Response | Promise<Response>
+  ): (url: string, init?: RequestInit) => Response | Promise<Response> {
+    return (url, init) => {
+      if (
+        url === HLD_DIAGRAM_OUTPUT_LIST_URL &&
+        (init?.method ?? "GET") === "GET"
+      ) {
+        return outputListGet();
+      }
+      if (url === HLD_DIAGRAM_LIST_URL) return jsonResponse(approvedDiagramList());
+      if (url === HLD_GENERATION_READINESS_URL) {
+        return jsonResponse(hldGenerationReadinessReady());
+      }
+      return jsonResponse({}, 200);
+    };
+  }
+
+  it("hides create while the current-output list is still loading, even when readiness is ready and an approved diagram exists", async () => {
+    stubFetch(
+      readyOutputListFetch(() => new Promise<Response>(() => {}))
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-diagram-output-panel");
+    expect(
+      await screen.findByTestId("hld-diagram-output-blocked")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-diagram-output-create")).toBeNull();
+  });
+
+  it("hides create when the current-output list fails to load and surfaces the error", async () => {
+    stubFetch(
+      readyOutputListFetch(() => jsonResponse({ code: "boom" }, 500))
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-diagram-output-panel");
+    expect(
+      await screen.findByTestId("hld-diagram-output-error")
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("hld-diagram-output-blocked")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-diagram-output-create")).toBeNull();
+  });
+
+  it("hides create when the current-output list is null/unknown-shaped", async () => {
+    stubFetch(
+      readyOutputListFetch(() => jsonResponse({ project: projectContext() }, 200))
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-diagram-output-panel");
+    expect(
+      await screen.findByTestId("hld-diagram-output-blocked")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-diagram-output-create")).toBeNull();
+  });
+
   it("creates an output posting no body/authority fields, refreshes the list, opens the created detail, and makes no final-output call", async () => {
     const calls = stubFetch(
       outputFetch(hldGenerationReadinessReady(), approvedDiagramList())

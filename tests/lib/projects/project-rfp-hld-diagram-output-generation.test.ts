@@ -501,6 +501,118 @@ describe("createRfpHldDiagramOutputDraft - ok", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Current-output guard (no second current output)
+// ---------------------------------------------------------------------------
+
+function outputArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
+  return {
+    id: "hld-output-existing-1",
+    projectId: PROJECT,
+    stageId: "hld_design_delta_review",
+    type: "hld_diagram_output",
+    status: "needs_review",
+    version: 1,
+    payload: { payloadKind: "rfp_hld_diagram_output" },
+    sourceFileIds: [],
+    sourceArtifactIds: [DIAGRAM_ID],
+    createdAt: TS,
+    updatedAt: TS,
+    ...overrides,
+  };
+}
+
+/** Route DIAGRAM_TYPE list to the diagram fixture and OUTPUT_TYPE list to `outputs`. */
+function listByTypeImpl(outputs: ProjectArtifact[]) {
+  return (_t: string, _p: string, type: string) =>
+    Promise.resolve(type === "hld_diagram_output" ? outputs : [diagramArtifact()]);
+}
+
+describe("createRfpHldDiagramOutputDraft - current-output guard", () => {
+  for (const status of ["generated", "needs_review", "approved"] as const) {
+    it(`blocks (current_output_exists) when a ${status} current output exists and writes nothing`, async () => {
+      mockListByType.mockImplementation(
+        listByTypeImpl([outputArtifact({ status: status as ProjectArtifact["status"] })])
+      );
+
+      const result = await createRfpHldDiagramOutputDraft(baseInput());
+
+      expect(result.status).toBe("current_output_exists");
+      if (result.status !== "current_output_exists") throw new Error("unreachable");
+      expect(result.artifact.id).toBe("hld-output-existing-1");
+      expect(result.artifact.status).toBe(status);
+      expect(mockCreateArtifact).not.toHaveBeenCalled();
+    });
+  }
+
+  it("returns the newest current output by version then createdAt", async () => {
+    const older = outputArtifact({ id: "o-old", version: 1, createdAt: new Date("2026-06-19T00:00:00.000Z") });
+    const newer = outputArtifact({ id: "o-new", version: 3, createdAt: new Date("2026-06-20T00:00:00.000Z") });
+    mockListByType.mockImplementation(listByTypeImpl([older, newer]));
+
+    const result = await createRfpHldDiagramOutputDraft(baseInput());
+
+    expect(result.status).toBe("current_output_exists");
+    if (result.status !== "current_output_exists") throw new Error("unreachable");
+    expect(result.artifact.id).toBe("o-new");
+  });
+
+  it("does not block when the only existing output is rejected", async () => {
+    mockListByType.mockImplementation(listByTypeImpl([outputArtifact({ status: "rejected" })]));
+    const result = await createRfpHldDiagramOutputDraft(baseInput());
+    expect(result.status).toBe("ok");
+    expect(mockCreateArtifact).toHaveBeenCalledTimes(1);
+  });
+
+  for (const status of ["missing", "stale", "failed", "not_applicable"] as const) {
+    it(`does not block when the only existing output is ${status}`, async () => {
+      mockListByType.mockImplementation(
+        listByTypeImpl([outputArtifact({ status: status as ProjectArtifact["status"] })])
+      );
+      const result = await createRfpHldDiagramOutputDraft(baseInput());
+      expect(result.status).toBe("ok");
+      expect(mockCreateArtifact).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it("does not block when a current output is on a different stage", async () => {
+    mockListByType.mockImplementation(
+      listByTypeImpl([outputArtifact({ stageId: "bom_generation" as ProjectArtifact["stageId"] })])
+    );
+    const result = await createRfpHldDiagramOutputDraft(baseInput());
+    expect(result.status).toBe("ok");
+    expect(mockCreateArtifact).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not block when a current output belongs to a different project", async () => {
+    mockListByType.mockImplementation(
+      listByTypeImpl([outputArtifact({ projectId: "other-project" })])
+    );
+    const result = await createRfpHldDiagramOutputDraft(baseInput());
+    expect(result.status).toBe("ok");
+    expect(mockCreateArtifact).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a lean blocking artifact summary with no payload/provider/raw/final-output/download/export/draw.io/XML fields", async () => {
+    mockListByType.mockImplementation(listByTypeImpl([outputArtifact()]));
+
+    const result = await createRfpHldDiagramOutputDraft(baseInput());
+
+    expect(result.status).toBe("current_output_exists");
+    if (result.status !== "current_output_exists") throw new Error("unreachable");
+    expect("payload" in result.artifact).toBe(false);
+    expect("tenantId" in result.artifact).toBe(false);
+    const json = JSON.stringify(result);
+    expect(json).not.toContain(TENANT);
+    for (const forbidden of [
+      "payload", "provider", "rawText", "documentText", "filePath", "storagePath",
+      "finalAuthority", "drawioXml", "mxfile", "<mxfile", "downloadUrl", "exportUrl", "nodeType",
+    ]) {
+      expect(json).not.toContain(forbidden);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Pure builder derivation semantics
 // ---------------------------------------------------------------------------
 

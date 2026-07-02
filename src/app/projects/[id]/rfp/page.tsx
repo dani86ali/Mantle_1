@@ -13079,6 +13079,14 @@ export default function ProjectRfpEvidencePage() {
               const hasApprovedDiagram = (
                 hldDiagramList?.artifacts ?? []
               ).some((item) => item.status === "approved");
+              // The current-output list must be successfully loaded before
+              // create can ever be offered: a loading, failed, or null list all
+              // leave this false so a duplicate current output can never be
+              // requested against unverified state.
+              const outputListLoaded =
+                hldDiagramOutputList !== null &&
+                !hldDiagramOutputListLoading &&
+                hldDiagramOutputListError === null;
               // Generated/needs_review/approved output all count as current; a
               // rejected output does not block creating a fresh one.
               const hasCurrentOutput = (
@@ -13090,7 +13098,10 @@ export default function ProjectRfpEvidencePage() {
                   item.status === "approved"
               );
               const outputCanCreate =
-                outputReady && hasApprovedDiagram && !hasCurrentOutput;
+                outputReady &&
+                hasApprovedDiagram &&
+                outputListLoaded &&
+                !hasCurrentOutput;
               return (
                 <div
                   data-testid="hld-diagram-output-readiness"
@@ -13125,8 +13136,10 @@ export default function ProjectRfpEvidencePage() {
                       className="mt-2 text-xs text-amber-200"
                     >
                       Stage 6F generation readiness and an approved HLD diagram
-                      are required, and no current diagram output may exist,
-                      before creating an internal diagram output.
+                      are required, the current diagram output list must load
+                      successfully so its state can be verified, and no current
+                      diagram output may exist, before creating an internal
+                      diagram output.
                     </p>
                   )}
                 </div>

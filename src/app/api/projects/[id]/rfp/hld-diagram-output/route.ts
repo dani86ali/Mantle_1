@@ -20,7 +20,9 @@
  * final_hld_already_approved -> 409 hld_diagram_output_final_authority_exists (with
  * sanitized finalAuthority), readiness_blocked -> 409 hld_diagram_output_not_ready
  * (with nextAction), precondition_failed -> 409 hld_diagram_output_precondition_failed
- * (with blockerCode), invalid_payload -> 409 hld_diagram_output_payload_invalid (with
+ * (with blockerCode), current_output_exists -> 409
+ * hld_diagram_output_current_output_exists (with lean artifact; nothing was written),
+ * invalid_payload -> 409 hld_diagram_output_payload_invalid (with
  * errors; nothing was written), ok -> 201 with { artifact, payloadSummary }.
  *
  * This route is a transport adapter only: it never touches the DB or any store, reads
@@ -178,6 +180,16 @@ export async function POST(
           code: "hld_diagram_output_precondition_failed",
           error: "A required approved upstream artifact could not be resolved.",
           blockerCode: result.code,
+        },
+        { status: 409 }
+      );
+    }
+    if (result.status === "current_output_exists") {
+      return NextResponse.json(
+        {
+          code: "hld_diagram_output_current_output_exists",
+          error: "A current HLD diagram output already exists; create is blocked.",
+          artifact: result.artifact,
         },
         { status: 409 }
       );
