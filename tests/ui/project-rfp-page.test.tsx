@@ -85,6 +85,10 @@ const HLD_DIAGRAM_OUTPUT_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts
 const HLD_DIAGRAM_OUTPUT_REVIEW_URL = `${HLD_DIAGRAM_OUTPUT_DETAIL_URL}/review`;
 const FINAL_HLD_DOCUMENT_STATUS_URL = `/api/projects/${PROJECT_ID}/rfp/hld-document`;
 const GENERATED_HLD_DOCUMENT_CREATE_URL = `/api/projects/${PROJECT_ID}/rfp/hld-document/generated`;
+const FINAL_HLD_DOCUMENT_REVIEW_ARTIFACT_ID = "art-hld-doc-review-1";
+const FINAL_HLD_DOCUMENT_REVIEW_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${FINAL_HLD_DOCUMENT_REVIEW_ARTIFACT_ID}/hld-document/review`;
+const HLD_CLOSE_URL = `/api/projects/${PROJECT_ID}/rfp/hld-close`;
+const TP_HANDOFF_GATE_URL = `/api/projects/${PROJECT_ID}/rfp/tp-handoff-gate`;
 const HLD_INTAKE_FIELD_IDS = [
   "existing_network_context",
   "target_topology_intent",
@@ -2551,6 +2555,15 @@ function stubFetch(
       }
       if (url === FINAL_HLD_DOCUMENT_STATUS_URL) {
         return jsonResponse({ code: "hld_document_not_final" }, 409);
+      }
+      if (url === HLD_CLOSE_URL) {
+        return jsonResponse({ code: "hld_not_closed" }, 409);
+      }
+      if (url === TP_HANDOFF_GATE_URL) {
+        return jsonResponse(
+          { code: "tp_handoff_blocked", gateStatus: "blocked" },
+          409
+        );
       }
       if (url === HLD_GENERATION_READINESS_URL) {
         return jsonResponse(hldGenerationReadinessBlocked());
@@ -10086,6 +10099,542 @@ describe("ProjectRfpEvidencePage - Stage 6I-E generated HLD document readiness",
       "@/lib/llm",
       "@anthropic-ai/sdk",
       "openai",
+    ]) {
+      expect(importLines.join("\n")).not.toContain(token);
+    }
+  });
+});
+
+describe("ProjectRfpEvidencePage - Stage 6I-F final HLD review, close, and TP handoff", () => {
+  const SRC_PATH = join(process.cwd(), "src/app/projects/[id]/rfp/page.tsx");
+
+  const PENDING_GENERATED_BODY = {
+    code: "hld_document_not_final",
+    blockerCode: "generated_hld_document_pending_review",
+    latestArtifact: {
+      id: FINAL_HLD_DOCUMENT_REVIEW_ARTIFACT_ID,
+      status: "needs_review",
+      version: 3,
+    },
+  };
+  const PENDING_MANUAL_BODY = {
+    code: "hld_document_not_final",
+    blockerCode: "manual_upload_pending_review",
+    latestArtifact: {
+      id: FINAL_HLD_DOCUMENT_REVIEW_ARTIFACT_ID,
+      status: "needs_review",
+      version: 1,
+    },
+  };
+  const CLOSE_BLOCKED_BODY = {
+    code: "hld_not_closed",
+    blockerCode: "no_final_authority",
+  };
+  const CLOSE_STALE_BODY = {
+    code: "hld_close_final_authority_stale",
+    staleCode: "authority_stale",
+    blockerCode: "authority_stale",
+    artifact: { id: "art-hld-doc-close-stale-1", status: "approved" },
+  };
+  const CLOSE_CLOSED_GENERATED_BODY = {
+    project: projectContext(),
+    closeStatus: "closed",
+    closeKind: "generated",
+    closedAt: "2026-06-10T09:00:00.000Z",
+    finalAuthority: { payloadSummary: { sourceMode: "generated" } },
+  };
+  const CLOSE_CLOSED_MANUAL_BODY = {
+    project: projectContext(),
+    closeStatus: "closed",
+    closeKind: "manual",
+    closedAt: "2026-06-10T09:00:00.000Z",
+    finalAuthority: { payloadSummary: { sourceMode: "manual_upload" } },
+  };
+  const TP_BLOCKED_BODY = {
+    code: "tp_handoff_blocked",
+    gateStatus: "blocked",
+    blockerCode: "hld_not_closed",
+    hldCloseBlockerCode: "no_final_authority",
+  };
+  const TP_READY_BODY = {
+    project: projectContext(),
+    gateStatus: "ready",
+    hldClose: { closeStatus: "closed", closeKind: "generated" },
+  };
+
+  // A lean handler for the Stage 6I-F reads: final status, the artifact-scoped
+  // review POST, HLD close, and TP handoff. Everything else degrades to an empty
+  // 200 so the page still mounts (the panels under test are what we assert on).
+  function sixIFFetch(opts?: {
+    statusGet?: () => Response | Promise<Response>;
+    closeGet?: () => Response | Promise<Response>;
+    tpGet?: () => Response | Promise<Response>;
+    onReview?: (init?: RequestInit) => Response;
+  }): (url: string, init?: RequestInit) => Response | Promise<Response> {
+    return (url, init) => {
+      if (url === FINAL_HLD_DOCUMENT_STATUS_URL) {
+        return opts?.statusGet
+          ? opts.statusGet()
+          : jsonResponse({ code: "hld_document_not_final" }, 409);
+      }
+      if (url === FINAL_HLD_DOCUMENT_REVIEW_URL && init?.method === "POST") {
+        return opts?.onReview
+          ? opts.onReview(init)
+          : jsonResponse({ artifactStatus: "approved" }, 200);
+      }
+      if (url === HLD_CLOSE_URL) {
+        return opts?.closeGet
+          ? opts.closeGet()
+          : jsonResponse(CLOSE_BLOCKED_BODY, 409);
+      }
+      if (url === TP_HANDOFF_GATE_URL) {
+        return opts?.tpGet ? opts.tpGet() : jsonResponse(TP_BLOCKED_BODY, 409);
+      }
+      return jsonResponse({}, 200);
+    };
+  }
+
+  function countUrl(calls: FetchCall[], url: string): number {
+    return calls.filter((c) => c.url === url).length;
+  }
+
+  function reviewPosts(calls: FetchCall[]): FetchCall[] {
+    return calls.filter(
+      (c) => c.url === FINAL_HLD_DOCUMENT_REVIEW_URL && c.init?.method === "POST"
+    );
+  }
+
+  it("Stage 6I-F shows a pending generated final HLD document as reviewable", async () => {
+    stubFetch(
+      sixIFFetch({ statusGet: () => jsonResponse(PENDING_GENERATED_BODY, 409) })
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("final-hld-document-review-panel");
+    const state = await screen.findByTestId("final-hld-document-review-state");
+    expect(state.textContent ?? "").toContain(
+      "generated HLD document is awaiting SE review"
+    );
+    expect(
+      await screen.findByTestId("final-hld-document-review-controls")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("final-hld-document-approve")).toBeInTheDocument();
+    expect(screen.getByTestId("final-hld-document-reject")).toBeInTheDocument();
+  });
+
+  it("Stage 6I-F shows a pending manual upload as manual and distinct from generated", async () => {
+    stubFetch(
+      sixIFFetch({ statusGet: () => jsonResponse(PENDING_MANUAL_BODY, 409) })
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const state = await screen.findByTestId("final-hld-document-review-state");
+    expect(state.textContent ?? "").toContain(
+      "manual draw.io upload is awaiting SE review"
+    );
+    expect((state.textContent ?? "").toLowerCase()).not.toContain("generated");
+    // A manual pending upload is still reviewable through the same route.
+    expect(
+      await screen.findByTestId("final-hld-document-review-controls")
+    ).toBeInTheDocument();
+  });
+
+  it("Stage 6I-F approve/request-changes post only { decision } or { decision, note } to the artifact-scoped review route", async () => {
+    const calls = stubFetch(
+      sixIFFetch({ statusGet: () => jsonResponse(PENDING_GENERATED_BODY, 409) })
+    );
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("final-hld-document-review-controls");
+
+    async function clickAndSettle(
+      testId: string,
+      expected: number
+    ): Promise<void> {
+      await act(async () => {
+        fireEvent.click(screen.getByTestId(testId));
+      });
+      await waitFor(() => {
+        expect(reviewPosts(calls)).toHaveLength(expected);
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId(testId)).not.toBeDisabled();
+      });
+    }
+
+    // approve, no note
+    await clickAndSettle("final-hld-document-approve", 1);
+    // approve, with a note that is trimmed before sending
+    fireEvent.change(screen.getByTestId("final-hld-document-review-note"), {
+      target: { value: "  tighten scope  " },
+    });
+    await clickAndSettle("final-hld-document-approve", 2);
+    // request changes, with a note
+    fireEvent.change(screen.getByTestId("final-hld-document-review-note"), {
+      target: { value: "add BoQ trace" },
+    });
+    await clickAndSettle("final-hld-document-reject", 3);
+    // request changes, no note (cleared on the prior success)
+    await clickAndSettle("final-hld-document-reject", 4);
+
+    const bodies = reviewPosts(calls).map((c) =>
+      JSON.parse(String(c.init?.body))
+    );
+    expect(bodies).toEqual([
+      { decision: "approve" },
+      { decision: "approve", note: "tighten scope" },
+      { decision: "reject", note: "add BoQ trace" },
+      { decision: "reject" },
+    ]);
+    // Only ever the two strict keys; no authority/source/payload/provider leak.
+    const raw = reviewPosts(calls)
+      .map((c) => String(c.init?.body))
+      .join("|");
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "userId",
+      "status",
+      "payload",
+      "source",
+      "authority",
+      "drawioXml",
+      "provider",
+      "pricing",
+      "sku",
+      "catalog",
+      "config",
+    ]) {
+      expect(raw).not.toContain(forbidden);
+    }
+  });
+
+  it("Stage 6I-F reloads final status, HLD close, and TP handoff after a review", async () => {
+    const calls = stubFetch(
+      sixIFFetch({ statusGet: () => jsonResponse(PENDING_GENERATED_BODY, 409) })
+    );
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("final-hld-document-review-controls");
+
+    const before = {
+      status: countUrl(calls, FINAL_HLD_DOCUMENT_STATUS_URL),
+      close: countUrl(calls, HLD_CLOSE_URL),
+      tp: countUrl(calls, TP_HANDOFF_GATE_URL),
+    };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("final-hld-document-approve"));
+    });
+    await screen.findByTestId("final-hld-document-review-success");
+    await waitFor(() => {
+      expect(countUrl(calls, FINAL_HLD_DOCUMENT_STATUS_URL)).toBeGreaterThan(
+        before.status
+      );
+      expect(countUrl(calls, HLD_CLOSE_URL)).toBeGreaterThan(before.close);
+      expect(countUrl(calls, TP_HANDOFF_GATE_URL)).toBeGreaterThan(before.tp);
+    });
+    // The review posts only to the artifact-scoped route, never a bare final
+    // authority write on the status route.
+    expect(
+      calls.some(
+        (c) =>
+          c.url === FINAL_HLD_DOCUMENT_STATUS_URL && c.init?.method === "POST"
+      )
+    ).toBe(false);
+  });
+
+  it("Stage 6I-F renders compact safe review error copy without leaking raw code/JSON/provider/XML", async () => {
+    stubFetch(
+      sixIFFetch({
+        statusGet: () => jsonResponse(PENDING_GENERATED_BODY, 409),
+        onReview: () =>
+          jsonResponse(
+            {
+              code: "hld_document_review_failed",
+              blockerCode: "BLOCKER-LEAK-CANARY",
+              staleCode: "STALE-LEAK-CANARY",
+              provider: "PROVIDER-LEAK-CANARY",
+              errors: ["ERRORS-LEAK-CANARY"],
+              drawioXml: "<mxGraphModel>MXCELL-LEAK-CANARY</mxGraphModel>",
+            },
+            409
+          ),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const approve = await screen.findByTestId("final-hld-document-approve");
+    await act(async () => {
+      fireEvent.click(approve);
+    });
+
+    const err = await screen.findByTestId("final-hld-document-review-error");
+    expect(err.textContent ?? "").toBe(
+      "Unable to review the final HLD document."
+    );
+    const panel = screen.getByTestId("final-hld-document-review-panel");
+    const text = panel.textContent ?? "";
+    for (const leak of [
+      "hld_document_review_failed",
+      "BLOCKER-LEAK-CANARY",
+      "STALE-LEAK-CANARY",
+      "PROVIDER-LEAK-CANARY",
+      "ERRORS-LEAK-CANARY",
+      "MXCELL-LEAK-CANARY",
+      "mxGraphModel",
+      "blockerCode",
+      "staleCode",
+    ]) {
+      expect(text).not.toContain(leak);
+    }
+    expect(panel.querySelector("pre")).toBeNull();
+    expect(screen.queryByTestId("final-hld-document-review-success")).toBeNull();
+  });
+
+  it("Stage 6I-F HLD close readiness is blocked, stale, or closed by the lean gate with no close mutation", async () => {
+    // Blocked until a valid final authority exists.
+    stubFetch(
+      sixIFFetch({ closeGet: () => jsonResponse(CLOSE_BLOCKED_BODY, 409) })
+    );
+    const first = render(<ProjectRfpEvidencePage />);
+    const blocked = await screen.findByTestId("hld-close-readiness-blocked");
+    expect(blocked.textContent ?? "").toContain(
+      "HLD cannot be closed until a valid final HLD document authority exists"
+    );
+    expect(
+      screen.getByTestId("hld-close-readiness-panel").querySelector("button")
+    ).toBeNull();
+    first.unmount();
+    cleanup();
+    vi.unstubAllGlobals();
+
+    // Stale authority - compact copy, no raw stale code.
+    stubFetch(
+      sixIFFetch({ closeGet: () => jsonResponse(CLOSE_STALE_BODY, 409) })
+    );
+    const second = render(<ProjectRfpEvidencePage />);
+    const stale = await screen.findByTestId("hld-close-readiness-stale");
+    expect(stale.textContent ?? "").toContain("stale");
+    expect(
+      screen.getByTestId("hld-close-readiness-panel").textContent ?? ""
+    ).not.toContain("authority_stale");
+    second.unmount();
+    cleanup();
+    vi.unstubAllGlobals();
+
+    // Closed on a generated authority.
+    stubFetch(
+      sixIFFetch({
+        closeGet: () => jsonResponse(CLOSE_CLOSED_GENERATED_BODY, 200),
+      })
+    );
+    const third = render(<ProjectRfpEvidencePage />);
+    const closedGen = await screen.findByTestId("hld-close-readiness-closed");
+    expect(closedGen.textContent ?? "").toContain(
+      "generated HLD document authority"
+    );
+    third.unmount();
+    cleanup();
+    vi.unstubAllGlobals();
+
+    // Closed on an approved manual upload authority (distinct copy).
+    stubFetch(
+      sixIFFetch({ closeGet: () => jsonResponse(CLOSE_CLOSED_MANUAL_BODY, 200) })
+    );
+    render(<ProjectRfpEvidencePage />);
+    const closedMan = await screen.findByTestId("hld-close-readiness-closed");
+    expect(closedMan.textContent ?? "").toContain(
+      "manual draw.io upload authority"
+    );
+    expect(
+      screen.getByTestId("hld-close-readiness-panel").querySelector("button")
+    ).toBeNull();
+  });
+
+  it("Stage 6I-F TP handoff gate stays read-only: blocked until closed, ready only after, no TP create action", async () => {
+    // Blocked while the HLD is not final/closed.
+    stubFetch(sixIFFetch({ tpGet: () => jsonResponse(TP_BLOCKED_BODY, 409) }));
+    const first = render(<ProjectRfpEvidencePage />);
+    const panel = await screen.findByTestId("tp-handoff-gate-panel");
+    const blocked = await screen.findByTestId("tp-handoff-gate-blocked");
+    expect(blocked.textContent ?? "").toContain(
+      "TP handoff is read-only and blocked until the HLD is final and closed"
+    );
+    expect(panel.querySelector("button")).toBeNull();
+    first.unmount();
+    cleanup();
+    vi.unstubAllGlobals();
+
+    // Ready only once the HLD is closed - still just a read-only gate status.
+    const calls = stubFetch(
+      sixIFFetch({ tpGet: () => jsonResponse(TP_READY_BODY, 200) })
+    );
+    render(<ProjectRfpEvidencePage />);
+    const ready = await screen.findByTestId("tp-handoff-gate-ready");
+    expect(ready.textContent ?? "").toContain("read-only gate status");
+    expect(
+      screen.getByTestId("tp-handoff-gate-panel").querySelector("button")
+    ).toBeNull();
+    // The gate is a GET only; no TP/proposal create POST ever fires.
+    expect(
+      calls.some(
+        (c) =>
+          c.init?.method === "POST" &&
+          (c.url === TP_HANDOFF_GATE_URL ||
+            /technical-proposal|hld-proposal|\/rfp\/tp\//.test(c.url))
+      )
+    ).toBe(false);
+  });
+
+  it("Stage 6I-F renders no draw.io XML, raw JSON, provider, file-path, pricing/SKU/catalog/config, or certification leakage", async () => {
+    stubFetch(
+      sixIFFetch({
+        statusGet: () =>
+          jsonResponse(
+            {
+              code: "hld_document_not_final",
+              blockerCode: "generated_hld_document_pending_review",
+              provider: "STATUS-PROVIDER-LEAK",
+              drawioXml: "<mxGraphModel>STATUS-MXCELL-LEAK</mxGraphModel>",
+              errors: ["STATUS-ERRORS-LEAK"],
+              latestArtifact: {
+                id: FINAL_HLD_DOCUMENT_REVIEW_ARTIFACT_ID,
+                status: "needs_review",
+                version: 4,
+                sourceText: "SOURCE-TEXT-LEAK",
+                filePath: "C:/secret/network-hld.drawio",
+                payload: {
+                  sku: "SKU-LEAK",
+                  price: 987654,
+                  catalog: "CATALOG-LEAK",
+                  config: "CONFIG-LEAK",
+                },
+              },
+            },
+            409
+          ),
+        closeGet: () =>
+          jsonResponse(
+            {
+              code: "hld_not_closed",
+              blockerCode: "CLOSE-BLOCKER-LEAK",
+              provider: "CLOSE-PROVIDER-LEAK",
+            },
+            409
+          ),
+        tpGet: () =>
+          jsonResponse(
+            {
+              code: "tp_handoff_blocked",
+              gateStatus: "blocked",
+              hldCloseBlockerCode: "TP-CLOSE-LEAK",
+              provider: "TP-PROVIDER-LEAK",
+            },
+            409
+          ),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("final-hld-document-review-controls");
+    await screen.findByTestId("hld-close-readiness-blocked");
+    await screen.findByTestId("tp-handoff-gate-blocked");
+
+    const panels = [
+      screen.getByTestId("final-hld-document-review-panel"),
+      screen.getByTestId("hld-close-readiness-panel"),
+      screen.getByTestId("tp-handoff-gate-panel"),
+    ];
+    const text = panels.map((el) => el.textContent ?? "").join("\n");
+    for (const leak of [
+      "STATUS-PROVIDER-LEAK",
+      "STATUS-MXCELL-LEAK",
+      "mxGraphModel",
+      "STATUS-ERRORS-LEAK",
+      "SOURCE-TEXT-LEAK",
+      "C:/secret",
+      "network-hld.drawio",
+      "SKU-LEAK",
+      "987654",
+      "CATALOG-LEAK",
+      "CONFIG-LEAK",
+      "CLOSE-BLOCKER-LEAK",
+      "CLOSE-PROVIDER-LEAK",
+      "TP-CLOSE-LEAK",
+      "TP-PROVIDER-LEAK",
+      "blockerCode",
+      "staleCode",
+      "drawioXml",
+      "provider",
+      "payload",
+      "generated_hld_document_pending_review",
+    ]) {
+      expect(text).not.toContain(leak);
+    }
+    // No certification/approval claims for any vendor or model provider.
+    for (const cert of [
+      "certified",
+      "certification",
+      "OpenAI",
+      "Anthropic",
+      "Claude",
+    ]) {
+      expect(text).not.toContain(cert);
+    }
+    for (const el of panels) {
+      expect(el.querySelector("pre")).toBeNull();
+    }
+  });
+
+  it("Stage 6I-F static: generated HLD document create still posts exactly { documentModelArtifactId }", () => {
+    const source = readFileSync(SRC_PATH, "utf8");
+    expect(source).toContain("/rfp/hld-document/generated");
+    expect(source).toContain("JSON.stringify({ documentModelArtifactId })");
+  });
+
+  it("Stage 6I-F static: wires the artifact-scoped review, close, and TP handoff routes but no bare final write, TP/proposal, or provider route", () => {
+    const source = readFileSync(SRC_PATH, "utf8");
+    // The final HLD document review is wired ONLY in the artifact-scoped form.
+    expect(source).toContain(
+      "/rfp/artifacts/${artifactId}/hld-document/review"
+    );
+    expect(source).toContain("/rfp/hld-close");
+    expect(source).toContain("/rfp/tp-handoff-gate");
+    expect(source).toContain("final-hld-document-review-panel");
+    expect(source).toContain("hld-close-readiness-panel");
+    expect(source).toContain("tp-handoff-gate-panel");
+    // The review body is exactly { decision } or { decision, note }.
+    expect(source).toContain('note === "" ? { decision } : { decision, note }');
+    // The bare final-authority review route stays forbidden; only the
+    // artifact-scoped variant is allowed. Upload/download/export/final/render, a
+    // close mutation, TP/proposal generation, and provider routes stay out.
+    for (const forbidden of [
+      "/rfp/hld-document/review",
+      "/rfp/hld-document/download",
+      "/rfp/hld-document/upload",
+      "/rfp/hld-document/export",
+      "/rfp/hld-document/final",
+      "/rfp/hld-document/render",
+      "/rfp/hld-close/close",
+      "/rfp/tp-handoff-gate/generate",
+      "/rfp/technical-proposal",
+      "/rfp/hld-proposal",
+      "/rfp/hld-html",
+      "/rfp/drawio",
+      "technical_proposal",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
+    // No new server service / DB / provider SDK import for the Stage 6I-F flow.
+    const importLines = source
+      .split("\n")
+      .filter((line) => line.trimStart().startsWith("import"));
+    for (const token of [
+      "@/lib/db/",
+      "@/lib/ai",
+      "@/lib/llm",
+      "@anthropic-ai/sdk",
+      "openai",
+      "project-rfp-hld-close",
+      "project-rfp-tp-handoff",
     ]) {
       expect(importLines.join("\n")).not.toContain(token);
     }

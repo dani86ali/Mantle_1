@@ -1989,14 +1989,59 @@ interface HldDiagramOutputReviewResponse {
 /** Safe UI states normalized from the lean final HLD document status route. */
 type FinalHldDocumentStatus = "final" | "pending" | "none" | "stale";
 
+/**
+ * Lean pending/stale artifact summary surfaced by the Stage 6I-F final HLD
+ * review panel. Only these safe fields are read - never a payload body,
+ * draw.io/XML, provider text, source text, file path, or internal body.
+ */
+interface FinalHldDocumentArtifactSummary {
+  id?: string;
+  status?: string;
+  version?: number;
+  updatedAt?: string;
+}
+
+/**
+ * Lean final-authority summary. Only safe labels are read to distinguish a
+ * generated document from an approved manual draw.io upload; no payload body
+ * is rendered.
+ */
+interface FinalHldDocumentAuthoritySummary {
+  finalAuthorityStatus?: string;
+  payloadSummary?: {
+    sourceMode?: string;
+    finalAuthorityStatus?: string;
+    title?: string;
+    uploadedFileName?: string;
+  };
+}
+
 /** Lean fields the page reads from GET .../rfp/hld-document. No payload body. */
 interface FinalHldDocumentStatusResponse {
-  finalAuthority?: unknown;
+  finalAuthority?: FinalHldDocumentAuthoritySummary | null;
   code?: string;
   blockerCode?: string;
-  latestArtifact?: unknown;
-  artifact?: unknown;
+  latestArtifact?: FinalHldDocumentArtifactSummary | null;
+  artifact?: FinalHldDocumentArtifactSummary | null;
 }
+
+/** Normalized final-authority source, used only to pick safe fixed copy. */
+type HldFinalAuthoritySource = "generated" | "manual";
+
+/** Safe UI states normalized from the lean GET .../rfp/hld-close route. */
+type HldCloseUiState = "loading" | "blocked" | "stale" | "closed" | "error";
+
+/** Lean fields the page reads from GET .../rfp/hld-close. No payload body. */
+interface HldCloseStatusResponse {
+  code?: string;
+  closeStatus?: string;
+  closeKind?: string;
+  closedAt?: string;
+  finalAuthority?: FinalHldDocumentAuthoritySummary | null;
+}
+
+/** Safe UI states normalized from the lean GET .../rfp/tp-handoff-gate route. */
+type TpHandoffUiState = "loading" | "blocked" | "ready" | "error";
 
 /**
  * Fields the page reads from the success response of
@@ -2214,6 +2259,63 @@ const GENERATED_HLD_DOCUMENT_STATUS_NONE =
   "No final HLD document is in place yet.";
 const GENERATED_HLD_DOCUMENT_BLOCKED =
   "An approved HLD diagram output tied to the newest approved HLD document model is required before creating the generated HLD document.";
+
+/**
+ * Exact UI copy for the Stage 6I-F final HLD document review, HLD close
+ * readiness, and read-only TP handoff gate panels. No raw code/blockerCode/
+ * staleCode/JSON/provider/errors/payload/XML is ever rendered.
+ */
+const FINAL_HLD_DOCUMENT_REVIEW_PENDING_GENERATED =
+  "A generated HLD document is awaiting SE review.";
+const FINAL_HLD_DOCUMENT_REVIEW_PENDING_MANUAL =
+  "A manual draw.io upload is awaiting SE review.";
+const FINAL_HLD_DOCUMENT_REVIEW_PENDING_GENERIC =
+  "A final HLD document is awaiting SE review.";
+const FINAL_HLD_DOCUMENT_REVIEW_AUTHORITY_GENERATED =
+  "A generated HLD document is the approved final HLD authority.";
+const FINAL_HLD_DOCUMENT_REVIEW_AUTHORITY_MANUAL =
+  "An approved manual draw.io upload is the final HLD authority and supersedes any generated output.";
+const FINAL_HLD_DOCUMENT_REVIEW_AUTHORITY_GENERIC =
+  "An approved final HLD document authority is in place.";
+const FINAL_HLD_DOCUMENT_REVIEW_STALE =
+  "The final HLD document authority is stale and needs a refreshed SE review.";
+const FINAL_HLD_DOCUMENT_REVIEW_NONE =
+  "No final HLD document authority exists yet.";
+const HLD_DOCUMENT_REVIEW_APPROVE_SUCCESS = "Final HLD document approved.";
+const HLD_DOCUMENT_REVIEW_REJECT_SUCCESS =
+  "Requested changes on the final HLD document.";
+const HLD_DOCUMENT_REVIEW_ERROR = "Unable to review the final HLD document.";
+const HLD_CLOSE_BLOCKED =
+  "HLD cannot be closed until a valid final HLD document authority exists.";
+const HLD_CLOSE_STALE =
+  "HLD close readiness is blocked while the final HLD authority is stale.";
+const HLD_CLOSE_CLOSED_GENERATED =
+  "HLD close readiness is satisfied on the generated HLD document authority.";
+const HLD_CLOSE_CLOSED_MANUAL =
+  "HLD close readiness is satisfied on the approved manual draw.io upload authority.";
+const HLD_CLOSE_CLOSED_GENERIC = "HLD close readiness is satisfied.";
+const HLD_CLOSE_ERROR = "Unable to load HLD close readiness.";
+const TP_HANDOFF_BLOCKED =
+  "TP handoff is read-only and blocked until the HLD is final and closed.";
+const TP_HANDOFF_READY =
+  "TP handoff is available only as a read-only gate status now that the HLD is closed.";
+const TP_HANDOFF_ERROR = "Unable to load TP handoff gate.";
+
+/**
+ * Map a lean source label (payloadSummary.sourceMode / finalAuthorityStatus /
+ * closeKind) to a fixed generated/manual bucket so only safe copy is shown and
+ * no raw value leaks into the DOM.
+ */
+function normalizeHldFinalAuthoritySource(
+  value: unknown
+): HldFinalAuthoritySource | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.toLowerCase();
+  if (normalized.includes("manual") || normalized.includes("upload"))
+    return "manual";
+  if (normalized.includes("generated")) return "generated";
+  return null;
+}
 
 /** Exact UI copy for the advisory deterministic design-model review surface. */
 const HLD_DESIGN_MODEL_REVIEW_LIST_ERROR =
@@ -4715,6 +4817,34 @@ export default function ProjectRfpEvidencePage() {
     generatedHldDocumentCreateSuccess,
     setGeneratedHldDocumentCreateSuccess,
   ] = useState<string | null>(null);
+  // Stage 6I-F final HLD document review, HLD close readiness, and read-only TP
+  // handoff gate. Every read is lean: no payload body, draw.io/XML, provider
+  // text, file path, pricing/SKU/catalog/config, or final-authority write. An
+  // approved manual draw.io upload stays distinct and supersedes generated
+  // output; runtime/customer authority remains SE approval of the hld_document.
+  const [finalHldDocumentBlockerCode, setFinalHldDocumentBlockerCode] =
+    useState<string | null>(null);
+  const [finalHldDocumentArtifact, setFinalHldDocumentArtifact] =
+    useState<FinalHldDocumentArtifactSummary | null>(null);
+  const [
+    finalHldDocumentAuthoritySource,
+    setFinalHldDocumentAuthoritySource,
+  ] = useState<HldFinalAuthoritySource | null>(null);
+  const [hldDocumentReviewNote, setHldDocumentReviewNote] = useState("");
+  const [hldDocumentReviewPending, setHldDocumentReviewPending] =
+    useState(false);
+  const [hldDocumentReviewError, setHldDocumentReviewError] = useState<
+    string | null
+  >(null);
+  const [hldDocumentReviewSuccess, setHldDocumentReviewSuccess] = useState<
+    string | null
+  >(null);
+  const [hldCloseState, setHldCloseState] =
+    useState<HldCloseUiState>("loading");
+  const [hldCloseKind, setHldCloseKind] =
+    useState<HldFinalAuthoritySource | null>(null);
+  const [tpHandoffState, setTpHandoffState] =
+    useState<TpHandoffUiState>("loading");
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -5561,30 +5691,57 @@ export default function ProjectRfpEvidencePage() {
         | FinalHldDocumentStatusResponse
         | null;
       if (res.ok) {
-        setFinalHldDocumentStatus(
+        const authority =
           body !== null &&
-            body.finalAuthority !== undefined &&
-            body.finalAuthority !== null
-            ? "final"
-            : "none"
+          body.finalAuthority !== undefined &&
+          body.finalAuthority !== null
+            ? body.finalAuthority
+            : null;
+        setFinalHldDocumentStatus(authority !== null ? "final" : "none");
+        setFinalHldDocumentBlockerCode(null);
+        setFinalHldDocumentArtifact(null);
+        setFinalHldDocumentAuthoritySource(
+          authority === null
+            ? null
+            : normalizeHldFinalAuthoritySource(
+                authority.payloadSummary?.sourceMode
+              ) ??
+                normalizeHldFinalAuthoritySource(
+                  authority.payloadSummary?.finalAuthorityStatus
+                ) ??
+                normalizeHldFinalAuthoritySource(authority.finalAuthorityStatus)
         );
         return;
       }
+      setFinalHldDocumentAuthoritySource(null);
       if (body?.code === "hld_document_not_final") {
-        setFinalHldDocumentStatus(
+        const pending =
           body.latestArtifact !== undefined && body.latestArtifact !== null
-            ? "pending"
-            : "none"
-        );
+            ? body.latestArtifact
+            : null;
+        setFinalHldDocumentStatus(pending !== null ? "pending" : "none");
+        setFinalHldDocumentBlockerCode(body.blockerCode ?? null);
+        setFinalHldDocumentArtifact(pending);
         return;
       }
       if (body?.code === "hld_document_final_authority_stale") {
         setFinalHldDocumentStatus("stale");
+        setFinalHldDocumentBlockerCode(body.blockerCode ?? null);
+        setFinalHldDocumentArtifact(
+          body.artifact !== undefined && body.artifact !== null
+            ? body.artifact
+            : null
+        );
         return;
       }
       setFinalHldDocumentStatus("none");
+      setFinalHldDocumentBlockerCode(null);
+      setFinalHldDocumentArtifact(null);
     } catch {
       setFinalHldDocumentStatus(null);
+      setFinalHldDocumentBlockerCode(null);
+      setFinalHldDocumentArtifact(null);
+      setFinalHldDocumentAuthoritySource(null);
       setFinalHldDocumentStatusError(FINAL_HLD_DOCUMENT_STATUS_ERROR);
     } finally {
       setFinalHldDocumentStatusLoading(false);
@@ -5594,6 +5751,57 @@ export default function ProjectRfpEvidencePage() {
   useEffect(() => {
     void loadFinalHldDocumentStatus();
   }, [loadFinalHldDocumentStatus]);
+
+  // Stage 6I-F read-only HLD close readiness. A lean GET only: 200 means
+  // close-ready/closed on a valid final authority, 409 means blocked or stale.
+  // No close mutation, TP generation, provider call, or raw code is rendered.
+  const loadHldCloseStatus = useCallback(async (): Promise<void> => {
+    setHldCloseState("loading");
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-close`);
+      const body = (await res.json().catch(() => null)) as
+        | HldCloseStatusResponse
+        | null;
+      if (res.ok) {
+        setHldCloseKind(
+          normalizeHldFinalAuthoritySource(body?.closeKind) ??
+            normalizeHldFinalAuthoritySource(
+              body?.finalAuthority?.payloadSummary?.sourceMode
+            )
+        );
+        setHldCloseState("closed");
+        return;
+      }
+      setHldCloseKind(null);
+      setHldCloseState(
+        body?.code === "hld_close_final_authority_stale" ? "stale" : "blocked"
+      );
+    } catch {
+      setHldCloseKind(null);
+      setHldCloseState("error");
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldCloseStatus();
+  }, [loadHldCloseStatus]);
+
+  // Stage 6I-F read-only TP handoff gate. A lean GET only: 200 means the gate
+  // is ready, any non-ok means blocked. It never creates a technical proposal,
+  // TP/proposal route, export/download/render, or provider call.
+  const loadTpHandoffGate = useCallback(async (): Promise<void> => {
+    setTpHandoffState("loading");
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/tp-handoff-gate`);
+      setTpHandoffState(res.ok ? "ready" : "blocked");
+    } catch {
+      setTpHandoffState("error");
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadTpHandoffGate();
+  }, [loadTpHandoffGate]);
   // Executable-active rebuild requests (lean ids/status only), loaded on mount
   // and refreshed after an execution. The request body is NEVER sent: this is a
   // GET whose tenant/project authority comes only from the session and URL, and
@@ -7075,14 +7283,85 @@ export default function ProjectRfpEvidencePage() {
         setGeneratedHldDocumentCreateSuccess(
           GENERATED_HLD_DOCUMENT_CREATE_SUCCESS
         );
+        // Reload the lean final status, HLD close readiness, and TP handoff gate
+        // so the new pending generated hld_document can surface for review.
         void loadFinalHldDocumentStatus();
+        void loadHldCloseStatus();
+        void loadTpHandoffGate();
       } catch {
         setGeneratedHldDocumentCreateError(GENERATED_HLD_DOCUMENT_CREATE_ERROR);
       } finally {
         setGeneratedHldDocumentCreatePending(false);
       }
     },
-    [generatedHldDocumentCreatePending, id, loadFinalHldDocumentStatus]
+    [
+      generatedHldDocumentCreatePending,
+      id,
+      loadFinalHldDocumentStatus,
+      loadHldCloseStatus,
+      loadTpHandoffGate,
+    ]
+  );
+
+  // Stage 6I-F review of a pending final HLD document (generated OR manual
+  // upload). The POST body is EXACTLY { decision } or { decision, note } to the
+  // artifact-scoped /rfp/artifacts/[artifactId]/hld-document/review route; it
+  // carries no tenant/project/user/status/payload/source/authority/drawioXml/
+  // provider/pricing/SKU/catalog/config field. On success it reloads the lean
+  // final status, HLD close readiness, and TP handoff gate. Raw code/blockerCode/
+  // staleCode/JSON/provider/errors/payload/XML is never rendered.
+  const submitHldDocumentReview = useCallback(
+    async (decision: "approve" | "reject"): Promise<void> => {
+      const artifactId = finalHldDocumentArtifact?.id;
+      if (
+        typeof artifactId !== "string" ||
+        artifactId === "" ||
+        hldDocumentReviewPending
+      )
+        return;
+      setHldDocumentReviewPending(true);
+      setHldDocumentReviewError(null);
+      setHldDocumentReviewSuccess(null);
+      try {
+        const note = hldDocumentReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-document/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              note === "" ? { decision } : { decision, note }
+            ),
+          }
+        );
+        if (!res.ok) {
+          setHldDocumentReviewError(HLD_DOCUMENT_REVIEW_ERROR);
+          return;
+        }
+        setHldDocumentReviewNote("");
+        setHldDocumentReviewSuccess(
+          decision === "approve"
+            ? HLD_DOCUMENT_REVIEW_APPROVE_SUCCESS
+            : HLD_DOCUMENT_REVIEW_REJECT_SUCCESS
+        );
+        void loadFinalHldDocumentStatus();
+        void loadHldCloseStatus();
+        void loadTpHandoffGate();
+      } catch {
+        setHldDocumentReviewError(HLD_DOCUMENT_REVIEW_ERROR);
+      } finally {
+        setHldDocumentReviewPending(false);
+      }
+    },
+    [
+      finalHldDocumentArtifact,
+      hldDocumentReviewNote,
+      hldDocumentReviewPending,
+      id,
+      loadFinalHldDocumentStatus,
+      loadHldCloseStatus,
+      loadTpHandoffGate,
+    ]
   );
 
   const submitHldDesignModelReview = useCallback(
@@ -13769,6 +14048,266 @@ export default function ProjectRfpEvidencePage() {
                 {generatedHldDocumentCreateSuccess}
               </p>
             )}
+          </div>
+          {/* Stage 6I-F: final HLD document review (generated or manual). */}
+          <div
+            data-testid="final-hld-document-review-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                Final HLD document review
+              </h3>
+              <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                Review the pending final HLD document and approve or request
+                changes. An approved manual draw.io upload stays distinct and
+                supersedes generated output; runtime authority is SE approval of
+                the HLD document. Reads lean status only.
+              </p>
+            </div>
+            {(() => {
+              const artifact = finalHldDocumentArtifact;
+              const artifactId = artifact?.id;
+              const artifactStatus = artifact?.status;
+              const reviewablePending =
+                finalHldDocumentStatus === "pending" &&
+                typeof artifactId === "string" &&
+                artifactId !== "" &&
+                (artifactStatus === "needs_review" ||
+                  artifactStatus === "pending_review");
+              const pendingCopy =
+                finalHldDocumentBlockerCode ===
+                "generated_hld_document_pending_review"
+                  ? FINAL_HLD_DOCUMENT_REVIEW_PENDING_GENERATED
+                  : finalHldDocumentBlockerCode ===
+                      "manual_upload_pending_review"
+                    ? FINAL_HLD_DOCUMENT_REVIEW_PENDING_MANUAL
+                    : FINAL_HLD_DOCUMENT_REVIEW_PENDING_GENERIC;
+              const authorityCopy =
+                finalHldDocumentAuthoritySource === "manual"
+                  ? FINAL_HLD_DOCUMENT_REVIEW_AUTHORITY_MANUAL
+                  : finalHldDocumentAuthoritySource === "generated"
+                    ? FINAL_HLD_DOCUMENT_REVIEW_AUTHORITY_GENERATED
+                    : FINAL_HLD_DOCUMENT_REVIEW_AUTHORITY_GENERIC;
+              return (
+                <div
+                  data-testid="final-hld-document-review-status"
+                  className={`mt-3 ${SUBTLE_CARD}`}
+                >
+                  {finalHldDocumentStatusLoading && (
+                    <p
+                      data-testid="final-hld-document-review-loading"
+                      className={MUTED_TEXT}
+                    >
+                      Loading final HLD document status...
+                    </p>
+                  )}
+                  {!finalHldDocumentStatusLoading &&
+                    finalHldDocumentStatusError === null &&
+                    finalHldDocumentStatus !== null && (
+                      <p
+                        data-testid="final-hld-document-review-state"
+                        className={MUTED_TEXT}
+                      >
+                        {finalHldDocumentStatus === "final"
+                          ? authorityCopy
+                          : finalHldDocumentStatus === "pending"
+                            ? pendingCopy
+                            : finalHldDocumentStatus === "stale"
+                              ? FINAL_HLD_DOCUMENT_REVIEW_STALE
+                              : FINAL_HLD_DOCUMENT_REVIEW_NONE}
+                      </p>
+                    )}
+                  {finalHldDocumentStatus === "pending" &&
+                    typeof artifact?.version === "number" &&
+                    Number.isFinite(artifact.version) && (
+                      <p
+                        data-testid="final-hld-document-review-artifact"
+                        className="mt-1 text-xs text-text-tertiary"
+                      >
+                        Draft version {artifact.version}
+                      </p>
+                    )}
+                  {reviewablePending && (
+                    <div
+                      data-testid="final-hld-document-review-controls"
+                      className="mt-2"
+                    >
+                      <label className="flex flex-col text-xs text-text-tertiary">
+                        Review note (optional)
+                        <textarea
+                          data-testid="final-hld-document-review-note"
+                          value={hldDocumentReviewNote}
+                          disabled={hldDocumentReviewPending}
+                          onChange={(e) =>
+                            setHldDocumentReviewNote(e.target.value)
+                          }
+                          rows={2}
+                          className={FIELD}
+                        />
+                      </label>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          data-testid="final-hld-document-approve"
+                          disabled={hldDocumentReviewPending}
+                          onClick={() =>
+                            void submitHldDocumentReview("approve")
+                          }
+                          className={ACTION_BTN}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="final-hld-document-reject"
+                          disabled={hldDocumentReviewPending}
+                          onClick={() => void submitHldDocumentReview("reject")}
+                          className={PLAIN_BTN}
+                        >
+                          Request changes
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {hldDocumentReviewSuccess !== null && (
+                    <p
+                      data-testid="final-hld-document-review-success"
+                      className="mt-2 text-xs text-emerald-300"
+                    >
+                      {hldDocumentReviewSuccess}
+                    </p>
+                  )}
+                  {hldDocumentReviewError !== null && (
+                    <p
+                      data-testid="final-hld-document-review-error"
+                      className="mt-2 text-xs text-destructive"
+                    >
+                      {hldDocumentReviewError}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+            {finalHldDocumentStatusError !== null && (
+              <div
+                data-testid="final-hld-document-review-status-error"
+                className={`mt-3 ${ERROR_BOX}`}
+              >
+                {finalHldDocumentStatusError}
+              </div>
+            )}
+          </div>
+          {/* Stage 6I-F: read-only HLD close readiness. */}
+          <div
+            data-testid="hld-close-readiness-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                HLD close readiness
+              </h3>
+              <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                Read-only HLD close readiness from the lean gate. HLD close
+                requires a valid final HLD document authority; there is no close
+                action here.
+              </p>
+            </div>
+            <div
+              data-testid="hld-close-readiness-status"
+              className={`mt-3 ${SUBTLE_CARD}`}
+            >
+              {hldCloseState === "loading" && (
+                <p
+                  data-testid="hld-close-readiness-loading"
+                  className={MUTED_TEXT}
+                >
+                  Loading HLD close readiness...
+                </p>
+              )}
+              {hldCloseState === "blocked" && (
+                <p
+                  data-testid="hld-close-readiness-blocked"
+                  className="text-xs text-amber-200"
+                >
+                  {HLD_CLOSE_BLOCKED}
+                </p>
+              )}
+              {hldCloseState === "stale" && (
+                <p
+                  data-testid="hld-close-readiness-stale"
+                  className="text-xs text-amber-200"
+                >
+                  {HLD_CLOSE_STALE}
+                </p>
+              )}
+              {hldCloseState === "closed" && (
+                <p
+                  data-testid="hld-close-readiness-closed"
+                  className="text-xs text-emerald-300"
+                >
+                  {hldCloseKind === "manual"
+                    ? HLD_CLOSE_CLOSED_MANUAL
+                    : hldCloseKind === "generated"
+                      ? HLD_CLOSE_CLOSED_GENERATED
+                      : HLD_CLOSE_CLOSED_GENERIC}
+                </p>
+              )}
+              {hldCloseState === "error" && (
+                <p
+                  data-testid="hld-close-readiness-error"
+                  className={MUTED_TEXT}
+                >
+                  {HLD_CLOSE_ERROR}
+                </p>
+              )}
+            </div>
+          </div>
+          {/* Stage 6I-F: read-only TP handoff gate (no TP/proposal action). */}
+          <div
+            data-testid="tp-handoff-gate-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                TP handoff gate
+              </h3>
+              <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                Read-only TP handoff gate status. It stays blocked until the HLD
+                is final and closed, and never creates a technical proposal.
+              </p>
+            </div>
+            <div
+              data-testid="tp-handoff-gate-status"
+              className={`mt-3 ${SUBTLE_CARD}`}
+            >
+              {tpHandoffState === "loading" && (
+                <p data-testid="tp-handoff-gate-loading" className={MUTED_TEXT}>
+                  Loading TP handoff gate...
+                </p>
+              )}
+              {tpHandoffState === "blocked" && (
+                <p
+                  data-testid="tp-handoff-gate-blocked"
+                  className="text-xs text-amber-200"
+                >
+                  {TP_HANDOFF_BLOCKED}
+                </p>
+              )}
+              {tpHandoffState === "ready" && (
+                <p
+                  data-testid="tp-handoff-gate-ready"
+                  className="text-xs text-emerald-300"
+                >
+                  {TP_HANDOFF_READY}
+                </p>
+              )}
+              {tpHandoffState === "error" && (
+                <p data-testid="tp-handoff-gate-error" className={MUTED_TEXT}>
+                  {TP_HANDOFF_ERROR}
+                </p>
+              )}
+            </div>
           </div>
         </section>
       </div>
