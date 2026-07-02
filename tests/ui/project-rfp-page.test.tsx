@@ -79,6 +79,10 @@ const HLD_DOCUMENT_MODEL_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-documen
 const HLD_DOCUMENT_MODEL_ARTIFACT_ID = "art-hld-document-model-1";
 const HLD_DOCUMENT_MODEL_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DOCUMENT_MODEL_ARTIFACT_ID}/hld-document-model`;
 const HLD_DOCUMENT_MODEL_REVIEW_URL = `${HLD_DOCUMENT_MODEL_DETAIL_URL}/review`;
+const HLD_DIAGRAM_OUTPUT_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-diagram-output`;
+const HLD_DIAGRAM_OUTPUT_ARTIFACT_ID = "art-hld-diagram-output-1";
+const HLD_DIAGRAM_OUTPUT_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DIAGRAM_OUTPUT_ARTIFACT_ID}/hld-diagram-output`;
+const HLD_DIAGRAM_OUTPUT_REVIEW_URL = `${HLD_DIAGRAM_OUTPUT_DETAIL_URL}/review`;
 const HLD_INTAKE_FIELD_IDS = [
   "existing_network_context",
   "target_topology_intent",
@@ -2242,6 +2246,114 @@ function hldDocumentModelDetailResponse(
   };
 }
 
+// ---- Stage 6I-C HLD diagram output fixtures --------------------------------
+
+const HLD_DIAGRAM_OUTPUT_SOURCE_DIAGRAM_ID = "art-hld-diagram-approved-out-1";
+
+function hldDiagramOutputListItem(
+  id = HLD_DIAGRAM_OUTPUT_ARTIFACT_ID,
+  status = "needs_review",
+  version = 1
+): Record<string, unknown> {
+  return {
+    id,
+    status,
+    version,
+    payloadSummary: {
+      payloadKind: "rfp_hld_diagram_output",
+      outputFormat: "layout_projection",
+      diagramType: "topology",
+      title: "HLD-OUTPUT-TITLE-CANARY topology layout",
+      nodeCount: 2,
+      linkCount: 1,
+      zoneCount: 1,
+      validationFindingCount: 1,
+      sourceHldDiagramArtifactId: HLD_DIAGRAM_OUTPUT_SOURCE_DIAGRAM_ID,
+      sourceDiagramVersion: 4,
+      canvasWidth: 1280,
+      canvasHeight: 720,
+    },
+  };
+}
+
+function hldDiagramOutputListEmpty(): Record<string, unknown> {
+  return { project: projectContext(), artifactCount: 0, artifacts: [] };
+}
+
+function hldDiagramOutputListResponse(
+  status = "needs_review"
+): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifactCount: 1,
+    artifacts: [hldDiagramOutputListItem(HLD_DIAGRAM_OUTPUT_ARTIFACT_ID, status)],
+  };
+}
+
+function hldDiagramOutputDetailResponse(
+  id = HLD_DIAGRAM_OUTPUT_ARTIFACT_ID,
+  status = "needs_review"
+): Record<string, unknown> {
+  return {
+    project: projectContext(),
+    artifact: { id, status, version: 1 },
+    diagramOutput: {
+      payloadKind: "rfp_hld_diagram_output",
+      createdAt: "2026-06-26T11:00:00.000Z",
+      createdBy: "engineer-1",
+      sourceArtifactIds: [HLD_DIAGRAM_OUTPUT_SOURCE_DIAGRAM_ID],
+      sourceHldDiagramArtifactId: HLD_DIAGRAM_OUTPUT_SOURCE_DIAGRAM_ID,
+      sourceDiagramVersion: 4,
+      outputFormat: "layout_projection",
+      diagramType: "topology",
+      title: "HLD-OUTPUT-TITLE-CANARY topology layout",
+      canvas: { width: 1280, height: 720, gridSize: 10 },
+      zones: [
+        {
+          id: "zone-out-core-1",
+          label: "HLD-OUTPUT-ZONE-CANARY",
+          geometry: { x: 0, y: 0, width: 400, height: 300 },
+          sourceRefIds: ["ref-1"],
+        },
+      ],
+      nodes: [
+        {
+          id: "node-out-core-1",
+          label: "HLD-OUTPUT-NODE-CORE-CANARY",
+          zoneId: "zone-out-core-1",
+          geometry: { x: 40, y: 40, width: 80, height: 40 },
+          sourceRefIds: ["ref-1"],
+        },
+        {
+          id: "node-out-access-1",
+          label: "HLD-OUTPUT-NODE-ACCESS-CANARY",
+          zoneId: "zone-out-core-1",
+          geometry: { x: 200, y: 40, width: 80, height: 40 },
+          sourceRefIds: ["ref-1"],
+        },
+      ],
+      links: [
+        {
+          id: "link-out-uplink-1",
+          sourceNodeId: "node-out-core-1",
+          targetNodeId: "node-out-access-1",
+          label: "HLD-OUTPUT-LINK-CANARY",
+          sourceRefIds: ["ref-1"],
+        },
+      ],
+      validationFindings: [
+        {
+          id: "finding-out-1",
+          severity: "warning",
+          code: "output_zone_overlap",
+          message: "HLD-OUTPUT-FINDING-CANARY zones sit close together.",
+          sourceRefIds: ["ref-1"],
+        },
+      ],
+    },
+  };
+}
+
 // ---- bounded design-model rebuild-request fixtures (Stage 6E-C) ------------
 
 function designModelRebuildRequestListItem(
@@ -2431,6 +2543,9 @@ function stubFetch(
       }
       if (url === HLD_DOCUMENT_MODEL_LIST_URL) {
         return jsonResponse(hldDocumentModelListEmpty());
+      }
+      if (url === HLD_DIAGRAM_OUTPUT_LIST_URL) {
+        return jsonResponse(hldDiagramOutputListEmpty());
       }
       if (url === HLD_GENERATION_READINESS_URL) {
         return jsonResponse(hldGenerationReadinessBlocked());
@@ -8841,6 +8956,494 @@ describe("ProjectRfpEvidencePage static guards", () => {
       for (const term of forbiddenTerms) {
         expect(lower).not.toContain(term);
       }
+    }
+  });
+});
+
+describe("ProjectRfpEvidencePage - Stage 6I-C internal HLD diagram output review gate", () => {
+  // Final/customer output routes the internal diagram-output review gate must
+  // never call. It may GET/POST the internal /rfp/hld-diagram-output list/create
+  // route and the artifact-scoped /hld-diagram-output/review route.
+  const FINAL_OUTPUT_ROUTES = [
+    "/rfp/hld-diagram-output/download",
+    "/rfp/hld-diagram-output/upload",
+    "/rfp/hld-diagram-output/export",
+    "/rfp/hld-diagram-output/final",
+    "/rfp/hld-diagram-output/render",
+    "/rfp/hld-diagram-output/drawio",
+    "/rfp/hld-proposal",
+    "/rfp/hld-html",
+    "/rfp/drawio",
+    "/rfp/hld-export",
+  ];
+  function finalOutputCalls(calls: FetchCall[]): FetchCall[] {
+    return calls.filter((c) => {
+      const path = new URL(c.url, "http://localhost").pathname;
+      return (
+        FINAL_OUTPUT_ROUTES.some((route) => path.includes(route)) ||
+        /\/rfp\/hld-document(?:\/|$)/.test(path)
+      );
+    });
+  }
+
+  function approvedDiagramList(): Record<string, unknown> {
+    return {
+      project: projectContext(),
+      artifactCount: 1,
+      artifacts: [hldDiagramListItem(HLD_DIAGRAM_ARTIFACT_ID, "approved")],
+    };
+  }
+
+  function outputFetch(
+    readinessBody: Record<string, unknown>,
+    diagramListBody: Record<string, unknown> = hldDiagramListEmpty(),
+    outputListBody: Record<string, unknown> = hldDiagramOutputListEmpty(),
+    outputDetailBody: Record<string, unknown> = hldDiagramOutputDetailResponse(),
+    onCreate?: (init?: RequestInit) => Response,
+    onReview?: (init?: RequestInit) => Response
+  ): (url: string, init?: RequestInit) => Response {
+    return (url, init) => {
+      if (url === HLD_DIAGRAM_OUTPUT_REVIEW_URL && init?.method === "POST") {
+        return onReview
+          ? onReview(init)
+          : jsonResponse({ artifactStatus: "approved" }, 200);
+      }
+      if (url === HLD_DIAGRAM_OUTPUT_LIST_URL) {
+        if (init?.method === "POST") {
+          return onCreate
+            ? onCreate(init)
+            : jsonResponse(
+                { artifact: { id: HLD_DIAGRAM_OUTPUT_ARTIFACT_ID } },
+                201
+              );
+        }
+        return jsonResponse(outputListBody);
+      }
+      if (url === HLD_DIAGRAM_OUTPUT_DETAIL_URL) {
+        return jsonResponse(outputDetailBody);
+      }
+      if (url === HLD_DIAGRAM_LIST_URL) return jsonResponse(diagramListBody);
+      if (url === HLD_GENERATION_READINESS_URL) {
+        return jsonResponse(readinessBody);
+      }
+      return jsonResponse({}, 200);
+    };
+  }
+
+  it("renders the output panel after the HLD diagram panel and hides create when Stage 6F readiness is blocked", async () => {
+    stubFetch(outputFetch(hldGenerationReadinessBlocked(), approvedDiagramList()));
+    render(<ProjectRfpEvidencePage />);
+
+    const diagramPanel = await screen.findByTestId("hld-diagram-panel");
+    const outputPanel = await screen.findByTestId("hld-diagram-output-panel");
+    expect(
+      diagramPanel.compareDocumentPosition(outputPanel) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    const docPanel = await screen.findByTestId("hld-document-model-panel");
+    // The output panel sits before the document-model panel.
+    expect(
+      outputPanel.compareDocumentPosition(docPanel) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    expect(
+      await screen.findByTestId("hld-diagram-output-blocked")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-diagram-output-create")).toBeNull();
+    expect(
+      await screen.findByTestId("hld-diagram-output-empty")
+    ).toBeInTheDocument();
+  });
+
+  it("hides create when readiness is ready but no approved hld_diagram exists", async () => {
+    stubFetch(
+      outputFetch(hldGenerationReadinessReady(), hldDiagramListEmpty())
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("hld-diagram-output-panel");
+    expect(
+      await screen.findByTestId("hld-diagram-output-blocked")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("hld-diagram-output-create")).toBeNull();
+  });
+
+  it("hides create when a generated/needs_review/approved output already exists", async () => {
+    for (const status of ["generated", "needs_review", "approved"]) {
+      cleanup();
+      vi.unstubAllGlobals();
+      stubFetch(
+        outputFetch(
+          hldGenerationReadinessReady(),
+          approvedDiagramList(),
+          hldDiagramOutputListResponse(status)
+        )
+      );
+      render(<ProjectRfpEvidencePage />);
+      await screen.findByTestId("hld-diagram-output-panel");
+      await screen.findByTestId("hld-diagram-output-list");
+      expect(screen.queryByTestId("hld-diagram-output-create")).toBeNull();
+    }
+  });
+
+  it("shows create when readiness is ready, an approved hld_diagram exists, and the output list is empty or only rejected", async () => {
+    // Empty output list -> create visible.
+    stubFetch(
+      outputFetch(hldGenerationReadinessReady(), approvedDiagramList())
+    );
+    const { unmount } = render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("hld-diagram-output-panel");
+    const createBtn = await screen.findByTestId("hld-diagram-output-create");
+    expect(createBtn).not.toBeDisabled();
+    expect(createBtn.textContent ?? "").toContain("Create HLD diagram output");
+    unmount();
+
+    // Only a rejected output -> a fresh one may still be created.
+    cleanup();
+    vi.unstubAllGlobals();
+    stubFetch(
+      outputFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDiagramOutputListResponse("rejected")
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("hld-diagram-output-panel");
+    expect(
+      await screen.findByTestId("hld-diagram-output-create")
+    ).toBeInTheDocument();
+  });
+
+  it("creates an output posting no body/authority fields, refreshes the list, opens the created detail, and makes no final-output call", async () => {
+    const calls = stubFetch(
+      outputFetch(hldGenerationReadinessReady(), approvedDiagramList())
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const createBtn = await screen.findByTestId("hld-diagram-output-create");
+    const listGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DIAGRAM_OUTPUT_LIST_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(createBtn);
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_DIAGRAM_OUTPUT_LIST_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) => c.url === HLD_DIAGRAM_OUTPUT_LIST_URL && c.init?.method === "POST"
+    );
+    const rawBody = post?.init?.body;
+    const bodyText =
+      rawBody === undefined || rawBody === null ? "" : String(rawBody);
+    expect(rawBody === undefined || rawBody === null || bodyText === "{}").toBe(
+      true
+    );
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "createdBy",
+      "userId",
+      "status",
+      "sourceArtifactIds",
+      "sourceHldDiagramArtifactId",
+      "payload",
+      "authority",
+      "diagramType",
+      "sku",
+      "pricing",
+      "catalog",
+      "config",
+      "provider",
+    ]) {
+      expect(bodyText).not.toContain(forbidden);
+    }
+
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DIAGRAM_OUTPUT_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+    expect(
+      await screen.findByTestId("hld-diagram-output-create-success")
+    ).toBeInTheDocument();
+    await screen.findByTestId("hld-diagram-output-drawer-content");
+    expect(
+      calls.some(
+        (c) =>
+          c.url === HLD_DIAGRAM_OUTPUT_DETAIL_URL &&
+          (c.init?.method ?? "GET") === "GET"
+      )
+    ).toBe(true);
+    expect(finalOutputCalls(calls).map((c) => c.url)).toEqual([]);
+  });
+
+  it("inspects a needs_review output with approve/reject controls, resolved labels, validation findings, and raw ids only in the collapsed audit", async () => {
+    stubFetch(
+      outputFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDiagramOutputListResponse()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-diagram-output-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    const content = await screen.findByTestId(
+      "hld-diagram-output-drawer-content"
+    );
+    expect(
+      screen.getByTestId("hld-diagram-output-drawer-nodes")
+    ).toHaveTextContent("HLD-OUTPUT-NODE-CORE-CANARY");
+    const linksSection = screen.getByTestId("hld-diagram-output-drawer-links");
+    expect(linksSection).toHaveTextContent("HLD-OUTPUT-NODE-CORE-CANARY");
+    expect(linksSection).toHaveTextContent("HLD-OUTPUT-NODE-ACCESS-CANARY");
+    expect(
+      screen.getByTestId("hld-diagram-output-drawer-zones")
+    ).toHaveTextContent("HLD-OUTPUT-ZONE-CANARY");
+    expect(
+      screen.getByTestId("hld-diagram-output-drawer-findings")
+    ).toHaveTextContent("HLD-OUTPUT-FINDING-CANARY");
+
+    // needs_review review controls are present.
+    expect(screen.getByTestId("hld-diagram-output-review")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("hld-diagram-output-review-note")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("hld-diagram-output-approve")).toBeInTheDocument();
+    expect(screen.getByTestId("hld-diagram-output-reject")).toBeInTheDocument();
+
+    // Raw artifact/source/node/link/zone ids live ONLY in the collapsed audit.
+    const audit = content.querySelector(
+      "[data-testid='hld-diagram-output-drawer-audit']"
+    );
+    expect(audit).not.toBeNull();
+    expect((audit as HTMLElement).tagName).toBe("DETAILS");
+    expect((audit as HTMLElement).hasAttribute("open")).toBe(false);
+    expect(audit?.textContent ?? "").toContain(
+      HLD_DIAGRAM_OUTPUT_SOURCE_DIAGRAM_ID
+    );
+
+    const outside = content.cloneNode(true) as HTMLElement;
+    outside
+      .querySelector("[data-testid='hld-diagram-output-drawer-audit']")
+      ?.remove();
+    const outsideText = outside.textContent ?? "";
+    expect(outsideText).not.toContain(HLD_DIAGRAM_OUTPUT_SOURCE_DIAGRAM_ID);
+    expect(outsideText).not.toContain("node-out-core-1");
+    expect(outsideText).not.toContain("link-out-uplink-1");
+    expect(outsideText).not.toContain("zone-out-core-1");
+  });
+
+  it("approves an output posting exactly { decision: approve }, refreshes list and detail, and shows success", async () => {
+    const calls = stubFetch(
+      outputFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDiagramOutputListResponse()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-diagram-output-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-diagram-output-drawer-content");
+
+    const listGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DIAGRAM_OUTPUT_LIST_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+    const detailGetsBefore = calls.filter(
+      (c) =>
+        c.url === HLD_DIAGRAM_OUTPUT_DETAIL_URL &&
+        (c.init?.method ?? "GET") === "GET"
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-diagram-output-approve"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_DIAGRAM_OUTPUT_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) => c.url === HLD_DIAGRAM_OUTPUT_REVIEW_URL && c.init?.method === "POST"
+    );
+    const bodyText = String(post?.init?.body ?? "");
+    expect(JSON.parse(bodyText)).toEqual({ decision: "approve" });
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "artifactId",
+      "decidedBy",
+      "payload",
+      "note",
+    ]) {
+      expect(bodyText).not.toContain(forbidden);
+    }
+
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (c) =>
+            c.url === HLD_DIAGRAM_OUTPUT_LIST_URL &&
+            (c.init?.method ?? "GET") === "GET"
+        ).length
+      ).toBeGreaterThan(listGetsBefore);
+    });
+    expect(
+      calls.filter(
+        (c) =>
+          c.url === HLD_DIAGRAM_OUTPUT_DETAIL_URL &&
+          (c.init?.method ?? "GET") === "GET"
+      ).length
+    ).toBeGreaterThan(detailGetsBefore);
+    expect(
+      await screen.findByTestId("hld-diagram-output-review-success")
+    ).toBeInTheDocument();
+    expect(finalOutputCalls(calls).map((c) => c.url)).toEqual([]);
+  });
+
+  it("requests changes with a note posting exactly { decision: reject, note: trimmed }", async () => {
+    const calls = stubFetch(
+      outputFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDiagramOutputListResponse()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-diagram-output-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    await screen.findByTestId("hld-diagram-output-drawer-content");
+
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("hld-diagram-output-review-note"), {
+        target: { value: "  tighten the core zone spacing  " },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("hld-diagram-output-reject"));
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === HLD_DIAGRAM_OUTPUT_REVIEW_URL && c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) => c.url === HLD_DIAGRAM_OUTPUT_REVIEW_URL && c.init?.method === "POST"
+    );
+    const bodyText = String(post?.init?.body ?? "");
+    expect(JSON.parse(bodyText)).toEqual({
+      decision: "reject",
+      note: "tighten the core zone spacing",
+    });
+  });
+
+  it("keeps an approved output read-only, internal, and free of approve/reject controls", async () => {
+    stubFetch(
+      outputFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDiagramOutputListResponse("approved"),
+        hldDiagramOutputDetailResponse(HLD_DIAGRAM_OUTPUT_ARTIFACT_ID, "approved")
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const inspect = await screen.findByTestId("hld-diagram-output-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+
+    await screen.findByTestId("hld-diagram-output-drawer-content");
+    const approved = screen.getByTestId("hld-diagram-output-review-approved");
+    expect(approved).toBeInTheDocument();
+    expect(approved.textContent ?? "").toMatch(/internal/i);
+    expect(approved.textContent ?? "").toMatch(/read-only/i);
+    expect(screen.queryByTestId("hld-diagram-output-review")).toBeNull();
+    expect(screen.queryByTestId("hld-diagram-output-approve")).toBeNull();
+    expect(screen.queryByTestId("hld-diagram-output-reject")).toBeNull();
+  });
+
+  it("does not expose output/export affordances or raw JSON dumps in the new panel or drawer", async () => {
+    stubFetch(
+      outputFetch(
+        hldGenerationReadinessReady(),
+        approvedDiagramList(),
+        hldDiagramOutputListResponse()
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const panel = await screen.findByTestId("hld-diagram-output-panel");
+    const inspect = await screen.findByTestId("hld-diagram-output-inspect");
+    await act(async () => {
+      fireEvent.click(inspect);
+    });
+    const drawer = await screen.findByTestId(
+      "hld-diagram-output-drawer-content"
+    );
+
+    // No raw JSON/pre dump in either the panel or the drawer.
+    expect(panel.querySelector("pre")).toBeNull();
+    expect(drawer.querySelector("pre")).toBeNull();
+
+    // Scoped to the NEW panel + drawer only (older HLD panels may carry
+    // historical boundary wording); no download/export/final/draw.io/xml/svg
+    // affordance vocabulary appears.
+    const scopedText = `${panel.textContent ?? ""} ${drawer.textContent ?? ""}`.toLowerCase();
+    for (const term of [
+      "download",
+      "export",
+      "draw.io",
+      "drawio",
+      "xml",
+      "svg",
+      "mermaid",
+      "final authority",
+      "certified",
+      ".docx",
+      ".pdf",
+    ]) {
+      expect(scopedText).not.toContain(term);
     }
   });
 });

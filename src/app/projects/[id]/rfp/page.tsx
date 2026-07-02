@@ -1847,6 +1847,134 @@ interface HldDocumentModelReviewResponse {
   artifact?: HldDocumentModelDetailArtifact;
 }
 
+// ---- HLD DIAGRAM OUTPUT (Stage 6I-C) read models ---------------------------
+//
+// Operator surface over internal `hld_diagram_output` artifacts: a deterministic
+// layout projection of a single approved `hld_diagram` for engineer review. The
+// page reads the lean list (counts/geometry provenance only), creates one output
+// with NO body, fetches the sanitized detail on an explicit Inspect click, and
+// records one approve/reject decision. The output is internal/reviewable only -
+// NOT a customer HLD deliverable and NOT final HLD authority. It renders no
+// draw.io/XML markup, no download/export, and carries no SKU/pricing/catalog/
+// config/AI authority. All types are local to the client page (no server service,
+// store, provider, or pricing/catalog/config import).
+
+/** Lean list payload summary (counts/geometry provenance only, never a body). */
+interface HldDiagramOutputListPayloadSummary {
+  payloadKind?: string;
+  outputFormat?: string;
+  diagramType?: string;
+  title?: string;
+  nodeCount?: number;
+  linkCount?: number;
+  zoneCount?: number;
+  validationFindingCount?: number;
+  sourceHldDiagramArtifactId?: string;
+  sourceDiagramVersion?: number;
+  canvasWidth?: number;
+  canvasHeight?: number;
+}
+
+/** One internal hld_diagram_output artifact in the list response. */
+interface HldDiagramOutputListItem {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+  payloadSummary?: HldDiagramOutputListPayloadSummary;
+}
+
+/** Lean list response of GET .../rfp/hld-diagram-output. */
+interface HldDiagramOutputListResponse {
+  artifactCount: number;
+  artifacts: HldDiagramOutputListItem[];
+}
+
+/** Canvas geometry of the diagram-output layout. */
+interface HldDiagramOutputCanvas {
+  width?: number;
+  height?: number;
+  gridSize?: number;
+}
+
+/** One laid-out diagram node (operator labels; raw ids live only in the audit). */
+interface HldDiagramOutputNode {
+  id: string;
+  label: string;
+  zoneId?: string;
+  sourceRefIds?: string[];
+}
+
+/** One laid-out link between two nodes (raw endpoint ids resolve to labels). */
+interface HldDiagramOutputLink {
+  id: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  label?: string;
+  sourceRefIds?: string[];
+}
+
+/** One laid-out zone grouping nodes. */
+interface HldDiagramOutputZone {
+  id: string;
+  label: string;
+  sourceRefIds?: string[];
+}
+
+/** One structured validation finding raised against the diagram output. */
+interface HldDiagramOutputFinding {
+  id: string;
+  severity: string;
+  code: string;
+  message: string;
+  sourceRefIds?: string[];
+}
+
+/** Sanitized rfp_hld_diagram_output contract returned in the detail response. */
+interface HldDiagramOutputDetailPayload {
+  payloadKind?: string;
+  createdAt?: string;
+  createdBy?: string;
+  sourceArtifactIds?: string[];
+  sourceHldDiagramArtifactId?: string;
+  sourceDiagramVersion?: number;
+  outputFormat?: string;
+  diagramType?: string;
+  title?: string;
+  canvas?: HldDiagramOutputCanvas;
+  nodes?: HldDiagramOutputNode[];
+  links?: HldDiagramOutputLink[];
+  zones?: HldDiagramOutputZone[];
+  validationFindings?: HldDiagramOutputFinding[];
+}
+
+/** Lean detail artifact summary for a diagram output. */
+interface HldDiagramOutputDetailArtifact {
+  id: string;
+  status: ProjectArtifactStatus;
+  version: number;
+}
+
+/** Detail response of GET .../artifacts/[id]/hld-diagram-output. */
+interface HldDiagramOutputDetailResponse {
+  artifact?: HldDiagramOutputDetailArtifact;
+  diagramOutput?: HldDiagramOutputDetailPayload;
+}
+
+/** Loaded output detail: the artifact summary plus the sanitized output. */
+interface HldDiagramOutputDetail {
+  artifact: HldDiagramOutputDetailArtifact;
+  diagramOutput: HldDiagramOutputDetailPayload;
+}
+
+/** Stage 6I-C engineer decision body is exactly { decision } or { decision, note }. */
+type HldDiagramOutputReviewDecision = "approve" | "reject";
+
+/** Lean success response of the hld_diagram_output review route. */
+interface HldDiagramOutputReviewResponse {
+  artifactStatus?: ProjectArtifactStatus;
+  artifact?: HldDiagramOutputDetailArtifact;
+}
+
 /**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
@@ -1874,6 +2002,7 @@ type DrawerKind =
   | "hld-source-bundle"
   | "hld-design-model"
   | "hld-diagram"
+  | "hld-diagram-output"
   | "hld-document-model";
 
 interface DrawerState {
@@ -2031,6 +2160,18 @@ const HLD_DOCUMENT_MODEL_APPROVE_SUCCESS = "HLD document model approved.";
 const HLD_DOCUMENT_MODEL_REJECT_SUCCESS =
   "HLD document model changes requested.";
 const HLD_DOCUMENT_MODEL_REVIEW_ERROR = "Unable to review HLD document model.";
+
+/** Exact UI copy for the Stage 6I-C internal HLD diagram-output review gate. */
+const HLD_DIAGRAM_OUTPUT_LIST_ERROR = "Unable to load HLD diagram outputs.";
+const HLD_DIAGRAM_OUTPUT_DETAIL_ERROR =
+  "Unable to load HLD diagram output detail.";
+const HLD_DIAGRAM_OUTPUT_CREATE_SUCCESS =
+  "HLD diagram output created for engineer review.";
+const HLD_DIAGRAM_OUTPUT_CREATE_ERROR = "Unable to create HLD diagram output.";
+const HLD_DIAGRAM_OUTPUT_APPROVE_SUCCESS = "HLD diagram output approved.";
+const HLD_DIAGRAM_OUTPUT_REJECT_SUCCESS =
+  "HLD diagram output changes requested.";
+const HLD_DIAGRAM_OUTPUT_REVIEW_ERROR = "Unable to review HLD diagram output.";
 
 /** Exact UI copy for the advisory deterministic design-model review surface. */
 const HLD_DESIGN_MODEL_REVIEW_LIST_ERROR =
@@ -4481,6 +4622,36 @@ export default function ProjectRfpEvidencePage() {
     useState<string | null>(null);
   const [hldDocumentModelReviewSuccess, setHldDocumentModelReviewSuccess] =
     useState<string | null>(null);
+  // Stage 6I-C internal HLD diagram-output review gate. The list is lean, the
+  // detail is fetched only on Inspect, and neither create nor review carries an
+  // authority/source/payload body. The output is internal/reviewable only.
+  const [hldDiagramOutputList, setHldDiagramOutputList] =
+    useState<HldDiagramOutputListResponse | null>(null);
+  const [hldDiagramOutputListLoading, setHldDiagramOutputListLoading] =
+    useState(true);
+  const [hldDiagramOutputListError, setHldDiagramOutputListError] = useState<
+    string | null
+  >(null);
+  const [hldDiagramOutputDetail, setHldDiagramOutputDetail] =
+    useState<HldDiagramOutputDetail | null>(null);
+  const [hldDiagramOutputDetailLoading, setHldDiagramOutputDetailLoading] =
+    useState(false);
+  const [hldDiagramOutputDetailError, setHldDiagramOutputDetailError] =
+    useState<string | null>(null);
+  const [hldDiagramOutputCreatePending, setHldDiagramOutputCreatePending] =
+    useState(false);
+  const [hldDiagramOutputCreateError, setHldDiagramOutputCreateError] =
+    useState<string | null>(null);
+  const [hldDiagramOutputCreateSuccess, setHldDiagramOutputCreateSuccess] =
+    useState<string | null>(null);
+  const [hldDiagramOutputReviewNote, setHldDiagramOutputReviewNote] =
+    useState("");
+  const [hldDiagramOutputReviewPending, setHldDiagramOutputReviewPending] =
+    useState(false);
+  const [hldDiagramOutputReviewError, setHldDiagramOutputReviewError] =
+    useState<string | null>(null);
+  const [hldDiagramOutputReviewSuccess, setHldDiagramOutputReviewSuccess] =
+    useState<string | null>(null);
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -5248,6 +5419,66 @@ export default function ProjectRfpEvidencePage() {
         setHldDocumentModelDetailError(HLD_DOCUMENT_MODEL_DETAIL_ERROR);
       } finally {
         setHldDocumentModelDetailLoading(false);
+      }
+    },
+    [id]
+  );
+
+  // Stage 6I-C internal diagram-output list (lean counts/geometry provenance
+  // only), loaded on mount and refreshed after create/review. The GET carries no
+  // request body: tenant/project authority comes only from the session and URL.
+  const loadHldDiagramOutputList = useCallback(async (): Promise<void> => {
+    setHldDiagramOutputListLoading(true);
+    setHldDiagramOutputListError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-diagram-output`);
+      const body = (await res.json().catch(() => null)) as HldDiagramOutputListResponse | null;
+      if (!res.ok || body === null || !Array.isArray(body.artifacts)) {
+        setHldDiagramOutputList(null);
+        setHldDiagramOutputListError(HLD_DIAGRAM_OUTPUT_LIST_ERROR);
+        return;
+      }
+      setHldDiagramOutputList(body);
+    } catch {
+      setHldDiagramOutputList(null);
+      setHldDiagramOutputListError(HLD_DIAGRAM_OUTPUT_LIST_ERROR);
+    } finally {
+      setHldDiagramOutputListLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadHldDiagramOutputList();
+  }, [loadHldDiagramOutputList]);
+
+  // A diagram output's sanitized content is fetched only here, on Inspect click.
+  const loadHldDiagramOutputDetail = useCallback(
+    async (artifactId: string): Promise<void> => {
+      setHldDiagramOutputDetail(null);
+      setHldDiagramOutputDetailError(null);
+      setHldDiagramOutputDetailLoading(true);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-diagram-output`
+        );
+        const body = (await res.json().catch(() => null)) as HldDiagramOutputDetailResponse | null;
+        if (
+          !res.ok ||
+          body === null ||
+          body.artifact === undefined ||
+          body.diagramOutput === undefined
+        ) {
+          setHldDiagramOutputDetailError(HLD_DIAGRAM_OUTPUT_DETAIL_ERROR);
+          return;
+        }
+        setHldDiagramOutputDetail({
+          artifact: body.artifact,
+          diagramOutput: body.diagramOutput,
+        });
+      } catch {
+        setHldDiagramOutputDetailError(HLD_DIAGRAM_OUTPUT_DETAIL_ERROR);
+      } finally {
+        setHldDiagramOutputDetailLoading(false);
       }
     },
     [id]
@@ -6585,6 +6816,112 @@ export default function ProjectRfpEvidencePage() {
     ]
   );
 
+  // Create exactly ONE internal hld_diagram_output. The route reads no body, so
+  // the POST sends no body and no authority/source/payload field. On success it
+  // refreshes the list and, when the new artifact id is present, opens its detail.
+  const submitHldDiagramOutputCreate = useCallback(async (): Promise<void> => {
+    if (hldDiagramOutputCreatePending) return;
+    setHldDiagramOutputCreatePending(true);
+    setHldDiagramOutputCreateError(null);
+    setHldDiagramOutputCreateSuccess(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-diagram-output`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => null)) as
+        | { artifact?: { id?: string } }
+        | null;
+      if (!res.ok) {
+        setHldDiagramOutputCreateError(HLD_DIAGRAM_OUTPUT_CREATE_ERROR);
+        return;
+      }
+      setHldDiagramOutputCreateSuccess(HLD_DIAGRAM_OUTPUT_CREATE_SUCCESS);
+      void loadHldDiagramOutputList();
+      const newId = body?.artifact?.id;
+      if (typeof newId === "string" && newId !== "") {
+        setDrawer({ kind: "hld-diagram-output", activeId: newId });
+        void loadHldDiagramOutputDetail(newId);
+      }
+    } catch {
+      setHldDiagramOutputCreateError(HLD_DIAGRAM_OUTPUT_CREATE_ERROR);
+    } finally {
+      setHldDiagramOutputCreatePending(false);
+    }
+  }, [
+    hldDiagramOutputCreatePending,
+    id,
+    loadHldDiagramOutputList,
+    loadHldDiagramOutputDetail,
+  ]);
+
+  // Stage 6I-C engineer decision on a needs_review diagram output. The body is
+  // exactly { decision } (or { decision, note } when the trimmed note is
+  // nonblank). On success it refreshes the list and selected detail. This is an
+  // internal review gate, not final HLD authority; it carries no
+  // authority/source/payload/pricing/SKU/catalog/config/provider field.
+  const submitHldDiagramOutputReview = useCallback(
+    async (decision: HldDiagramOutputReviewDecision): Promise<void> => {
+      if (hldDiagramOutputDetail === null || hldDiagramOutputReviewPending)
+        return;
+      const artifactId = hldDiagramOutputDetail.artifact.id;
+      setHldDiagramOutputReviewPending(true);
+      setHldDiagramOutputReviewError(null);
+      setHldDiagramOutputReviewSuccess(null);
+      try {
+        const note = hldDiagramOutputReviewNote.trim();
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-diagram-output/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              note === "" ? { decision } : { decision, note }
+            ),
+          }
+        );
+        if (!res.ok) {
+          setHldDiagramOutputReviewError(HLD_DIAGRAM_OUTPUT_REVIEW_ERROR);
+          return;
+        }
+        const body = (await res
+          .json()
+          .catch(() => null)) as HldDiagramOutputReviewResponse | null;
+        const nextStatus: ProjectArtifactStatus =
+          body?.artifactStatus ??
+          body?.artifact?.status ??
+          (decision === "approve" ? "approved" : "rejected");
+        setHldDiagramOutputDetail((prev) =>
+          prev === null
+            ? prev
+            : {
+                artifact: { ...prev.artifact, status: nextStatus },
+                diagramOutput: prev.diagramOutput,
+              }
+        );
+        setHldDiagramOutputReviewNote("");
+        setHldDiagramOutputReviewSuccess(
+          decision === "approve"
+            ? HLD_DIAGRAM_OUTPUT_APPROVE_SUCCESS
+            : HLD_DIAGRAM_OUTPUT_REJECT_SUCCESS
+        );
+        void loadHldDiagramOutputList();
+        void loadHldDiagramOutputDetail(artifactId);
+      } catch {
+        setHldDiagramOutputReviewError(HLD_DIAGRAM_OUTPUT_REVIEW_ERROR);
+      } finally {
+        setHldDiagramOutputReviewPending(false);
+      }
+    },
+    [
+      hldDiagramOutputDetail,
+      hldDiagramOutputReviewNote,
+      hldDiagramOutputReviewPending,
+      id,
+      loadHldDiagramOutputList,
+      loadHldDiagramOutputDetail,
+    ]
+  );
+
   const submitHldDesignModelReview = useCallback(
     async (decision: "approved" | "rejected"): Promise<void> => {
       if (hldDesignModelDetail === null || hldDesignModelReviewPending) return;
@@ -7338,6 +7675,14 @@ export default function ProjectRfpEvidencePage() {
     void loadHldDocumentModelDetail(artifactId);
   }
 
+  function openHldDiagramOutputDrawer(artifactId: string): void {
+    setDrawer({ kind: "hld-diagram-output", activeId: artifactId });
+    setHldDiagramOutputReviewNote("");
+    setHldDiagramOutputReviewError(null);
+    setHldDiagramOutputReviewSuccess(null);
+    void loadHldDiagramOutputDetail(artifactId);
+  }
+
   function drawerIds(): string[] {
     if (drawer === null) return [];
     if (drawer.kind === "evidence") return data?.evidence.map((item) => item.id) ?? [];
@@ -7368,6 +7713,9 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "hld-diagram") {
       return hldDiagramList?.artifacts.map((item) => item.id) ?? [];
     }
+    if (drawer.kind === "hld-diagram-output") {
+      return hldDiagramOutputList?.artifacts.map((item) => item.id) ?? [];
+    }
     if (drawer.kind === "hld-document-model") {
       return hldDocumentModelList?.artifacts.map((item) => item.id) ?? [];
     }
@@ -7385,6 +7733,8 @@ export default function ProjectRfpEvidencePage() {
     else if (kind === "hld-source-bundle") openHldSourceBundleDrawer(activeId);
     else if (kind === "hld-design-model") openHldDesignModelDrawer(activeId);
     else if (kind === "hld-diagram") openHldDiagramDrawer(activeId);
+    else if (kind === "hld-diagram-output")
+      openHldDiagramOutputDrawer(activeId);
     else if (kind === "hld-document-model")
       openHldDocumentModelDrawer(activeId);
     else openComplianceDrawer(activeId);
@@ -9600,6 +9950,229 @@ export default function ProjectRfpEvidencePage() {
     );
   }
 
+  function renderHldDiagramOutputDrawerContent(): ReactNode {
+    if (hldDiagramOutputDetail === null) return null;
+    const { artifact, diagramOutput } = hldDiagramOutputDetail;
+    const nodes = diagramOutput.nodes ?? [];
+    const links = diagramOutput.links ?? [];
+    const zones = diagramOutput.zones ?? [];
+    const validationFindings = diagramOutput.validationFindings ?? [];
+    const sourceArtifactIds = diagramOutput.sourceArtifactIds ?? [];
+    const canvas = diagramOutput.canvas ?? {};
+    // Resolve node ids to operator labels so raw ids never reach primary text;
+    // unresolved ids degrade to a placeholder, not the raw id.
+    const nodeLabelById = new Map(nodes.map((node) => [node.id, node.label]));
+    const resolveNode = (nodeId: string): string =>
+      nodeLabelById.get(nodeId) ?? "unknown node";
+
+    return (
+      <div data-testid="hld-diagram-output-drawer-content" className="space-y-3">
+        <div className={SUBTLE_CARD}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={artifact.status} />
+            <span className="text-xs text-text-secondary">
+              Version {artifact.version}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-text-tertiary">
+            Internal diagram-output review gate. Not a customer HLD deliverable.
+          </p>
+          <div className="mt-2 grid gap-1 text-xs text-text-secondary sm:grid-cols-2">
+            <p>Title: {diagramOutput.title ?? "Untitled output"}</p>
+            <p>Source diagram version: {diagramOutput.sourceDiagramVersion ?? 0}</p>
+            <p>
+              Canvas size: {canvas.width ?? 0} x {canvas.height ?? 0}
+            </p>
+            <p>Nodes: {nodes.length}</p>
+            <p>Links: {links.length}</p>
+            <p>Zones: {zones.length}</p>
+            <p>Validation findings: {validationFindings.length}</p>
+          </div>
+        </div>
+        <div data-testid="hld-diagram-output-drawer-nodes" className={SUBTLE_CARD}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Nodes ({nodes.length})
+          </p>
+          {nodes.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {nodes.map((node, nodeIndex) => (
+                <li key={nodeIndex} className="text-xs text-text-secondary">
+                  {node.label}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-text-tertiary">None</p>
+          )}
+        </div>
+        <div data-testid="hld-diagram-output-drawer-links" className={SUBTLE_CARD}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Links ({links.length})
+          </p>
+          {links.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {links.map((link, linkIndex) => (
+                <li key={linkIndex} className="text-xs text-text-secondary">
+                  {resolveNode(link.sourceNodeId)} to{" "}
+                  {resolveNode(link.targetNodeId)}
+                  {link.label ? ` - ${link.label}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-text-tertiary">None</p>
+          )}
+        </div>
+        <div data-testid="hld-diagram-output-drawer-zones" className={SUBTLE_CARD}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Zones ({zones.length})
+          </p>
+          {zones.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {zones.map((zone, zoneIndex) => (
+                <li key={zoneIndex} className="text-xs text-text-secondary">
+                  {zone.label}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-text-tertiary">None</p>
+          )}
+        </div>
+        <div
+          data-testid="hld-diagram-output-drawer-findings"
+          className={SUBTLE_CARD}
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            Validation findings ({validationFindings.length})
+          </p>
+          {validationFindings.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {validationFindings.map((finding, findingIndex) => (
+                <li key={findingIndex} className="text-xs text-text-secondary">
+                  [{finding.severity}] {finding.message} ({finding.code})
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-text-tertiary">None</p>
+          )}
+        </div>
+        {artifact.status === "needs_review" && (
+          <div data-testid="hld-diagram-output-review" className={SUBTLE_CARD}>
+            <label className="flex flex-col text-xs text-text-tertiary">
+              Review note (optional)
+              <textarea
+                data-testid="hld-diagram-output-review-note"
+                value={hldDiagramOutputReviewNote}
+                disabled={hldDiagramOutputReviewPending}
+                onChange={(e) => setHldDiagramOutputReviewNote(e.target.value)}
+                rows={2}
+                className={FIELD}
+              />
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid="hld-diagram-output-approve"
+                disabled={hldDiagramOutputReviewPending}
+                onClick={() => void submitHldDiagramOutputReview("approve")}
+                className={ACTION_BTN}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="hld-diagram-output-reject"
+                disabled={hldDiagramOutputReviewPending}
+                onClick={() => void submitHldDiagramOutputReview("reject")}
+                className={PLAIN_BTN}
+              >
+                Request changes
+              </button>
+            </div>
+            {hldDiagramOutputReviewError && (
+              <p
+                data-testid="hld-diagram-output-review-error"
+                className={`mt-2 ${ERROR_BOX}`}
+              >
+                {hldDiagramOutputReviewError}
+              </p>
+            )}
+            {hldDiagramOutputReviewSuccess && (
+              <p
+                data-testid="hld-diagram-output-review-success"
+                className="mt-2 text-xs text-emerald-300"
+              >
+                {hldDiagramOutputReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        {artifact.status === "approved" && (
+          <div
+            data-testid="hld-diagram-output-review-approved"
+            className={`${SUBTLE_CARD} text-xs text-emerald-300`}
+          >
+            This internal HLD diagram output is approved. It remains read-only
+            here and is not a customer HLD deliverable.
+            {hldDiagramOutputReviewSuccess && (
+              <p
+                data-testid="hld-diagram-output-review-success"
+                className="mt-1 text-emerald-300"
+              >
+                {hldDiagramOutputReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        {artifact.status === "rejected" && (
+          <div
+            data-testid="hld-diagram-output-review-rejected"
+            className={`${SUBTLE_CARD} text-xs text-text-secondary`}
+          >
+            Changes were requested on this internal HLD diagram output. It
+            remains read-only here.
+            {hldDiagramOutputReviewSuccess && (
+              <p
+                data-testid="hld-diagram-output-review-success"
+                className="mt-1 text-text-secondary"
+              >
+                {hldDiagramOutputReviewSuccess}
+              </p>
+            )}
+          </div>
+        )}
+        <TechnicalDetails
+          testId="hld-diagram-output-drawer-audit"
+          label="Technical details (artifact, source diagram, and node/link/zone IDs)"
+        >
+          <p>Artifact: {artifact.id}</p>
+          {diagramOutput.sourceHldDiagramArtifactId !== undefined &&
+            diagramOutput.sourceHldDiagramArtifactId !== "" && (
+              <p>Source diagram: {diagramOutput.sourceHldDiagramArtifactId}</p>
+            )}
+          {sourceArtifactIds.map((srcId, srcIndex) => (
+            <p key={`src-${srcIndex}`}>
+              Source {srcIndex + 1}: {srcId}
+            </p>
+          ))}
+          {nodes.map((node, nodeIndex) => (
+            <p key={`node-${nodeIndex}`}>Node {node.id}</p>
+          ))}
+          {links.map((link, linkIndex) => (
+            <p key={`link-${linkIndex}`}>
+              Link {link.id}: {link.sourceNodeId} to {link.targetNodeId}
+            </p>
+          ))}
+          {zones.map((zone, zoneIndex) => (
+            <p key={`zone-${zoneIndex}`}>Zone {zone.id}</p>
+          ))}
+        </TechnicalDetails>
+      </div>
+    );
+  }
+
   function renderHldDocumentModelDrawerContent(): ReactNode {
     if (hldDocumentModelDetail === null) return null;
     const { artifact, documentModel } = hldDocumentModelDetail;
@@ -9940,6 +10513,8 @@ export default function ProjectRfpEvidencePage() {
     if (drawer.kind === "hld-source-bundle") return renderHldSourceBundleDrawerContent();
     if (drawer.kind === "hld-design-model") return renderHldDesignModelDrawerContent();
     if (drawer.kind === "hld-diagram") return renderHldDiagramDrawerContent();
+    if (drawer.kind === "hld-diagram-output")
+      return renderHldDiagramOutputDrawerContent();
     if (drawer.kind === "hld-document-model")
       return renderHldDocumentModelDrawerContent();
     return renderComplianceDrawerContent();
@@ -9966,9 +10541,11 @@ export default function ProjectRfpEvidencePage() {
                       ? "HLD design model"
                       : drawer?.kind === "hld-diagram"
                         ? "HLD diagram draft"
-                        : drawer?.kind === "hld-document-model"
-                          ? "HLD document model"
-                          : "Compliance matrix";
+                        : drawer?.kind === "hld-diagram-output"
+                          ? "HLD diagram output (internal review)"
+                          : drawer?.kind === "hld-document-model"
+                            ? "HLD document model"
+                            : "Compliance matrix";
   const drawerLoading =
     drawer?.kind === "evidence"
       ? detailLoading
@@ -9990,9 +10567,11 @@ export default function ProjectRfpEvidencePage() {
                       ? hldDesignModelDetailLoading
                       : drawer?.kind === "hld-diagram"
                         ? hldDiagramDetailLoading
-                        : drawer?.kind === "hld-document-model"
-                          ? hldDocumentModelDetailLoading
-                          : complianceDetailLoading;
+                        : drawer?.kind === "hld-diagram-output"
+                          ? hldDiagramOutputDetailLoading
+                          : drawer?.kind === "hld-document-model"
+                            ? hldDocumentModelDetailLoading
+                            : complianceDetailLoading;
   const drawerError =
     drawer?.kind === "evidence"
       ? detailError
@@ -10014,9 +10593,11 @@ export default function ProjectRfpEvidencePage() {
                       ? hldDesignModelDetailError
                       : drawer?.kind === "hld-diagram"
                         ? hldDiagramDetailError
-                        : drawer?.kind === "hld-document-model"
-                          ? hldDocumentModelDetailError
-                          : complianceDetailError;
+                        : drawer?.kind === "hld-diagram-output"
+                          ? hldDiagramOutputDetailError
+                          : drawer?.kind === "hld-document-model"
+                            ? hldDocumentModelDetailError
+                            : complianceDetailError;
 
   return (
     <main className="min-h-screen bg-bg-primary px-4 py-6 sm:px-6 lg:px-8">
@@ -12475,6 +13056,204 @@ export default function ProjectRfpEvidencePage() {
                 No HLD diagram drafts yet.
               </p>
             )}
+          </div>
+
+          <div
+            data-testid="hld-diagram-output-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                HLD diagram output (Stage 6I-C)
+              </h3>
+              <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                Internal deterministic layout projection of the approved HLD
+                diagram, for engineer review only. This is an internal review
+                gate, not a customer HLD deliverable.
+              </p>
+            </div>
+            {(() => {
+              const outputReady =
+                hldGenerationReadiness?.status === "ready" &&
+                hldGenerationReadiness.ready === true;
+              const hasApprovedDiagram = (
+                hldDiagramList?.artifacts ?? []
+              ).some((item) => item.status === "approved");
+              // Generated/needs_review/approved output all count as current; a
+              // rejected output does not block creating a fresh one.
+              const hasCurrentOutput = (
+                hldDiagramOutputList?.artifacts ?? []
+              ).some(
+                (item) =>
+                  item.status === "generated" ||
+                  item.status === "needs_review" ||
+                  item.status === "approved"
+              );
+              const outputCanCreate =
+                outputReady && hasApprovedDiagram && !hasCurrentOutput;
+              return (
+                <div
+                  data-testid="hld-diagram-output-readiness"
+                  className={`mt-3 ${SUBTLE_CARD}`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className={MUTED_TEXT}>
+                      Stage 6F readiness:{" "}
+                      <span
+                        className={`font-medium ${outputCanCreate ? "text-emerald-300" : "text-amber-200"}`}
+                      >
+                        {outputCanCreate
+                          ? "Ready to create output"
+                          : "Blocked"}
+                      </span>
+                    </p>
+                    {outputCanCreate && (
+                      <button
+                        type="button"
+                        data-testid="hld-diagram-output-create"
+                        disabled={hldDiagramOutputCreatePending}
+                        onClick={() => void submitHldDiagramOutputCreate()}
+                        className={ACTION_BTN}
+                      >
+                        Create HLD diagram output
+                      </button>
+                    )}
+                  </div>
+                  {!outputCanCreate && (
+                    <p
+                      data-testid="hld-diagram-output-blocked"
+                      className="mt-2 text-xs text-amber-200"
+                    >
+                      Stage 6F generation readiness and an approved HLD diagram
+                      are required, and no current diagram output may exist,
+                      before creating an internal diagram output.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+            {hldDiagramOutputCreateError && (
+              <p
+                data-testid="hld-diagram-output-create-error"
+                className="mt-3 text-xs text-destructive"
+              >
+                {hldDiagramOutputCreateError}
+              </p>
+            )}
+            {hldDiagramOutputCreateSuccess && (
+              <p
+                data-testid="hld-diagram-output-create-success"
+                className="mt-3 text-xs text-emerald-300"
+              >
+                {hldDiagramOutputCreateSuccess}
+              </p>
+            )}
+            {hldDiagramOutputListError && (
+              <div
+                data-testid="hld-diagram-output-error"
+                className={`mt-3 ${ERROR_BOX}`}
+              >
+                {hldDiagramOutputListError}
+              </div>
+            )}
+            {hldDiagramOutputListLoading && (
+              <p className="mt-3 text-sm text-text-tertiary">
+                Loading HLD diagram outputs...
+              </p>
+            )}
+            {hldDiagramOutputList !== null &&
+              hldDiagramOutputList.artifacts.length > 0 && (
+                <div className="mt-3 overflow-x-auto">
+                  <table
+                    data-testid="hld-diagram-output-list"
+                    className="w-full border-collapse text-xs"
+                  >
+                    <thead>
+                      <tr className="text-left text-text-tertiary">
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Status
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Version
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Title
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Counts
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Canvas
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Source diagram
+                        </th>
+                        <th className="border border-[var(--border)] px-2 py-1 font-medium">
+                          Inspect
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hldDiagramOutputList.artifacts
+                        .slice()
+                        .sort((a, b) => b.version - a.version)
+                        .map((item) => {
+                          const summary = item.payloadSummary;
+                          return (
+                            <tr
+                              key={item.id}
+                              data-testid="hld-diagram-output-row"
+                              className="align-top"
+                            >
+                              <td className="border border-[var(--border)] px-2 py-1">
+                                <StatusBadge status={item.status} />
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                v{item.version}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.title ?? "Untitled output"}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.nodeCount ?? 0} nodes /{" "}
+                                {summary?.linkCount ?? 0} links /{" "}
+                                {summary?.zoneCount ?? 0} zones
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                {summary?.canvasWidth ?? 0} x{" "}
+                                {summary?.canvasHeight ?? 0}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1 text-text-secondary">
+                                v{summary?.sourceDiagramVersion ?? 0}
+                              </td>
+                              <td className="border border-[var(--border)] px-2 py-1">
+                                <button
+                                  type="button"
+                                  data-testid="hld-diagram-output-inspect"
+                                  onClick={() =>
+                                    openHldDiagramOutputDrawer(item.id)
+                                  }
+                                  className={PLAIN_BTN}
+                                >
+                                  Inspect
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            {hldDiagramOutputList !== null &&
+              hldDiagramOutputList.artifacts.length === 0 && (
+                <p
+                  data-testid="hld-diagram-output-empty"
+                  className="mt-3 text-xs text-text-tertiary"
+                >
+                  No HLD diagram outputs yet.
+                </p>
+              )}
           </div>
 
           {/* >>> HLD-DOC-MODEL-COPY-START */}
