@@ -1975,6 +1975,29 @@ interface HldDiagramOutputReviewResponse {
   artifact?: HldDiagramOutputDetailArtifact;
 }
 
+// ---- GENERATED HLD DOCUMENT (Stage 6I-E) readiness read model --------------
+//
+// Operator surface reflecting the Stage 6I-D backend dependency: a generated
+// HLD document may be created only once an approved/current hld_diagram_output
+// exists for the same approved HLD diagram that the newest approved
+// hld_document_model uses. The page reads a LEAN final-authority status only
+// (never a payload body, draw.io/XML, download/export, or manual-upload form),
+// and creates a generated document with exactly { documentModelArtifactId }.
+// All types are local to the client page (no server service, store, provider,
+// or pricing/catalog/config import).
+
+/** Safe UI states normalized from the lean final HLD document status route. */
+type FinalHldDocumentStatus = "final" | "pending" | "none" | "stale";
+
+/** Lean fields the page reads from GET .../rfp/hld-document. No payload body. */
+interface FinalHldDocumentStatusResponse {
+  finalAuthority?: unknown;
+  code?: string;
+  blockerCode?: string;
+  latestArtifact?: unknown;
+  artifact?: unknown;
+}
+
 /**
  * Fields the page reads from the success response of
  * POST /api/projects/[id]/rfp/artifacts/[artifactId]/evidence-package/review.
@@ -2172,6 +2195,25 @@ const HLD_DIAGRAM_OUTPUT_APPROVE_SUCCESS = "HLD diagram output approved.";
 const HLD_DIAGRAM_OUTPUT_REJECT_SUCCESS =
   "HLD diagram output changes requested.";
 const HLD_DIAGRAM_OUTPUT_REVIEW_ERROR = "Unable to review HLD diagram output.";
+
+/** Exact UI copy for the Stage 6I-E generated HLD document readiness panel. */
+const FINAL_HLD_DOCUMENT_STATUS_ERROR =
+  "Unable to load final HLD document status.";
+const GENERATED_HLD_DOCUMENT_CREATE_SUCCESS =
+  "Generated HLD document created for review.";
+const GENERATED_HLD_DOCUMENT_CREATE_ERROR =
+  "Unable to create the generated HLD document.";
+const GENERATED_HLD_DOCUMENT_DIAGRAM_OUTPUT_BLOCKED =
+  "Approved HLD diagram output is required before creating the generated HLD document.";
+const GENERATED_HLD_DOCUMENT_STATUS_FINAL = "A final HLD document is in place.";
+const GENERATED_HLD_DOCUMENT_STATUS_PENDING =
+  "A final HLD document is awaiting review.";
+const GENERATED_HLD_DOCUMENT_STATUS_STALE =
+  "The final HLD document authority is stale and needs a refreshed review.";
+const GENERATED_HLD_DOCUMENT_STATUS_NONE =
+  "No final HLD document is in place yet.";
+const GENERATED_HLD_DOCUMENT_BLOCKED =
+  "An approved HLD diagram output tied to the newest approved HLD document model is required before creating the generated HLD document.";
 
 /** Exact UI copy for the advisory deterministic design-model review surface. */
 const HLD_DESIGN_MODEL_REVIEW_LIST_ERROR =
@@ -4652,6 +4694,27 @@ export default function ProjectRfpEvidencePage() {
     useState<string | null>(null);
   const [hldDiagramOutputReviewSuccess, setHldDiagramOutputReviewSuccess] =
     useState<string | null>(null);
+  // Stage 6I-E generated HLD document readiness. The page reads the LEAN final
+  // authority status only and creates a generated document with exactly
+  // { documentModelArtifactId }. It renders no payload body, draw.io/XML,
+  // download/export, or manual-upload form, writes no final authority, and
+  // carries no authority/source/payload/provider/pricing/SKU/catalog/config field.
+  const [finalHldDocumentStatus, setFinalHldDocumentStatus] =
+    useState<FinalHldDocumentStatus | null>(null);
+  const [finalHldDocumentStatusLoading, setFinalHldDocumentStatusLoading] =
+    useState(true);
+  const [finalHldDocumentStatusError, setFinalHldDocumentStatusError] =
+    useState<string | null>(null);
+  const [
+    generatedHldDocumentCreatePending,
+    setGeneratedHldDocumentCreatePending,
+  ] = useState(false);
+  const [generatedHldDocumentCreateError, setGeneratedHldDocumentCreateError] =
+    useState<string | null>(null);
+  const [
+    generatedHldDocumentCreateSuccess,
+    setGeneratedHldDocumentCreateSuccess,
+  ] = useState<string | null>(null);
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -5483,6 +5546,54 @@ export default function ProjectRfpEvidencePage() {
     },
     [id]
   );
+
+  // Stage 6I-E lean final HLD document status, loaded on mount and refreshed
+  // after a generated create. The GET carries no request body: tenant/project
+  // authority comes only from the session and URL. The response is normalized
+  // into a safe UI state; no payload body, draw.io/XML, or raw code/blockerCode
+  // is ever read out to the operator.
+  const loadFinalHldDocumentStatus = useCallback(async (): Promise<void> => {
+    setFinalHldDocumentStatusLoading(true);
+    setFinalHldDocumentStatusError(null);
+    try {
+      const res = await fetch(`/api/projects/${id}/rfp/hld-document`);
+      const body = (await res.json().catch(() => null)) as
+        | FinalHldDocumentStatusResponse
+        | null;
+      if (res.ok) {
+        setFinalHldDocumentStatus(
+          body !== null &&
+            body.finalAuthority !== undefined &&
+            body.finalAuthority !== null
+            ? "final"
+            : "none"
+        );
+        return;
+      }
+      if (body?.code === "hld_document_not_final") {
+        setFinalHldDocumentStatus(
+          body.latestArtifact !== undefined && body.latestArtifact !== null
+            ? "pending"
+            : "none"
+        );
+        return;
+      }
+      if (body?.code === "hld_document_final_authority_stale") {
+        setFinalHldDocumentStatus("stale");
+        return;
+      }
+      setFinalHldDocumentStatus("none");
+    } catch {
+      setFinalHldDocumentStatus(null);
+      setFinalHldDocumentStatusError(FINAL_HLD_DOCUMENT_STATUS_ERROR);
+    } finally {
+      setFinalHldDocumentStatusLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadFinalHldDocumentStatus();
+  }, [loadFinalHldDocumentStatus]);
   // Executable-active rebuild requests (lean ids/status only), loaded on mount
   // and refreshed after an execution. The request body is NEVER sent: this is a
   // GET whose tenant/project authority comes only from the session and URL, and
@@ -6920,6 +7031,58 @@ export default function ProjectRfpEvidencePage() {
       loadHldDiagramOutputList,
       loadHldDiagramOutputDetail,
     ]
+  );
+
+  // Stage 6I-E create exactly ONE generated HLD document. The POST body is
+  // exactly { documentModelArtifactId } - it carries no tenantId/projectId/
+  // createdBy/userId/status/payload/sourceArtifactIds/source ids/authority/
+  // drawioXml/provider/pricing/SKU/catalog/config field. On success it shows
+  // compact success and reloads the lean final status. It never posts to the
+  // final /rfp/hld-document authority route and never changes manual-upload
+  // behavior. Raw JSON/code/blockerCode/provider text is never rendered; only a
+  // compact blocker or a stable compact error is shown.
+  const submitGeneratedHldDocumentCreate = useCallback(
+    async (documentModelArtifactId: string): Promise<void> => {
+      if (generatedHldDocumentCreatePending) return;
+      if (
+        typeof documentModelArtifactId !== "string" ||
+        documentModelArtifactId === ""
+      )
+        return;
+      setGeneratedHldDocumentCreatePending(true);
+      setGeneratedHldDocumentCreateError(null);
+      setGeneratedHldDocumentCreateSuccess(null);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/hld-document/generated`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ documentModelArtifactId }),
+          }
+        );
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as
+            | { blockerCode?: string }
+            | null;
+          setGeneratedHldDocumentCreateError(
+            body?.blockerCode === "diagram_output_unavailable"
+              ? GENERATED_HLD_DOCUMENT_DIAGRAM_OUTPUT_BLOCKED
+              : GENERATED_HLD_DOCUMENT_CREATE_ERROR
+          );
+          return;
+        }
+        setGeneratedHldDocumentCreateSuccess(
+          GENERATED_HLD_DOCUMENT_CREATE_SUCCESS
+        );
+        void loadFinalHldDocumentStatus();
+      } catch {
+        setGeneratedHldDocumentCreateError(GENERATED_HLD_DOCUMENT_CREATE_ERROR);
+      } finally {
+        setGeneratedHldDocumentCreatePending(false);
+      }
+    },
+    [generatedHldDocumentCreatePending, id, loadFinalHldDocumentStatus]
   );
 
   const submitHldDesignModelReview = useCallback(
@@ -13467,6 +13630,146 @@ export default function ProjectRfpEvidencePage() {
               )}
           </div>
           {/* >>> HLD-DOC-MODEL-COPY-END */}
+          <div
+            data-testid="generated-hld-document-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                Generated HLD document (Stage 6I-E)
+              </h3>
+              <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                Create the generated HLD document from the newest approved HLD
+                document model, available only once an approved HLD diagram
+                output exists for the same approved diagram. Reads lean
+                readiness status only.
+              </p>
+            </div>
+            {(() => {
+              const approvedModel = (hldDocumentModelList?.artifacts ?? [])
+                .filter((item) => item.status === "approved")
+                .slice()
+                .sort((a, b) => b.version - a.version)[0];
+              const modelSourceId =
+                approvedModel?.payloadSummary?.sourceHldDiagramArtifactId;
+              const modelSourceVersion =
+                approvedModel?.payloadSummary?.sourceDiagramVersion;
+              const modelQualifies =
+                approvedModel !== undefined &&
+                typeof modelSourceId === "string" &&
+                modelSourceId.trim() !== "" &&
+                typeof modelSourceVersion === "number" &&
+                Number.isFinite(modelSourceVersion);
+              const hasApprovedOutput =
+                modelQualifies &&
+                (hldDiagramOutputList?.artifacts ?? []).some(
+                  (item) =>
+                    item.status === "approved" &&
+                    typeof item.payloadSummary?.sourceHldDiagramArtifactId ===
+                      "string" &&
+                    item.payloadSummary.sourceHldDiagramArtifactId ===
+                      modelSourceId &&
+                    typeof item.payloadSummary?.sourceDiagramVersion ===
+                      "number" &&
+                    item.payloadSummary.sourceDiagramVersion ===
+                      modelSourceVersion
+                );
+              const statusReady =
+                !finalHldDocumentStatusLoading &&
+                finalHldDocumentStatusError === null &&
+                finalHldDocumentStatus !== null;
+              const statusAllowsCreate =
+                finalHldDocumentStatus === "none" ||
+                finalHldDocumentStatus === "stale";
+              const listsLoaded =
+                hldDocumentModelList !== null &&
+                hldDiagramOutputList !== null;
+              const canCreate =
+                statusReady &&
+                statusAllowsCreate &&
+                listsLoaded &&
+                modelQualifies &&
+                hasApprovedOutput;
+              return (
+                <div
+                  data-testid="generated-hld-document-readiness"
+                  className={`mt-3 ${SUBTLE_CARD}`}
+                >
+                  {finalHldDocumentStatusLoading && (
+                    <p
+                      data-testid="generated-hld-document-status-loading"
+                      className={MUTED_TEXT}
+                    >
+                      Loading final HLD document status...
+                    </p>
+                  )}
+                  {statusReady && (
+                    <p
+                      data-testid="generated-hld-document-status"
+                      className={MUTED_TEXT}
+                    >
+                      {finalHldDocumentStatus === "final"
+                        ? GENERATED_HLD_DOCUMENT_STATUS_FINAL
+                        : finalHldDocumentStatus === "pending"
+                          ? GENERATED_HLD_DOCUMENT_STATUS_PENDING
+                          : finalHldDocumentStatus === "stale"
+                            ? GENERATED_HLD_DOCUMENT_STATUS_STALE
+                            : GENERATED_HLD_DOCUMENT_STATUS_NONE}
+                    </p>
+                  )}
+                  {canCreate && (
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        type="button"
+                        data-testid="generated-hld-document-create"
+                        disabled={generatedHldDocumentCreatePending}
+                        onClick={() =>
+                          void submitGeneratedHldDocumentCreate(
+                            approvedModel?.id ?? ""
+                          )
+                        }
+                        className={ACTION_BTN}
+                      >
+                        Create generated HLD document
+                      </button>
+                    </div>
+                  )}
+                  {!canCreate && statusReady && statusAllowsCreate && (
+                    <p
+                      data-testid="generated-hld-document-blocked"
+                      className="mt-2 text-xs text-amber-200"
+                    >
+                      {GENERATED_HLD_DOCUMENT_BLOCKED}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+            {finalHldDocumentStatusError !== null && (
+              <div
+                data-testid="generated-hld-document-status-error"
+                className={`mt-3 ${ERROR_BOX}`}
+              >
+                {finalHldDocumentStatusError}
+              </div>
+            )}
+            {generatedHldDocumentCreateError !== null && (
+              <p
+                data-testid="generated-hld-document-create-error"
+                className="mt-3 text-xs text-destructive"
+              >
+                {generatedHldDocumentCreateError}
+              </p>
+            )}
+            {generatedHldDocumentCreateSuccess !== null && (
+              <p
+                data-testid="generated-hld-document-create-success"
+                className="mt-3 text-xs text-emerald-300"
+              >
+                {generatedHldDocumentCreateSuccess}
+              </p>
+            )}
+          </div>
         </section>
       </div>
 

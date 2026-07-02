@@ -83,6 +83,8 @@ const HLD_DIAGRAM_OUTPUT_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-diagram
 const HLD_DIAGRAM_OUTPUT_ARTIFACT_ID = "art-hld-diagram-output-1";
 const HLD_DIAGRAM_OUTPUT_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DIAGRAM_OUTPUT_ARTIFACT_ID}/hld-diagram-output`;
 const HLD_DIAGRAM_OUTPUT_REVIEW_URL = `${HLD_DIAGRAM_OUTPUT_DETAIL_URL}/review`;
+const FINAL_HLD_DOCUMENT_STATUS_URL = `/api/projects/${PROJECT_ID}/rfp/hld-document`;
+const GENERATED_HLD_DOCUMENT_CREATE_URL = `/api/projects/${PROJECT_ID}/rfp/hld-document/generated`;
 const HLD_INTAKE_FIELD_IDS = [
   "existing_network_context",
   "target_topology_intent",
@@ -2546,6 +2548,9 @@ function stubFetch(
       }
       if (url === HLD_DIAGRAM_OUTPUT_LIST_URL) {
         return jsonResponse(hldDiagramOutputListEmpty());
+      }
+      if (url === FINAL_HLD_DOCUMENT_STATUS_URL) {
+        return jsonResponse({ code: "hld_document_not_final" }, 409);
       }
       if (url === HLD_GENERATION_READINESS_URL) {
         return jsonResponse(hldGenerationReadinessBlocked());
@@ -8481,13 +8486,16 @@ describe("ProjectRfpEvidencePage static guards", () => {
   const TEST_PATH = join(process.cwd(), "tests/ui/project-rfp-page.test.tsx");
   const source = readFileSync(SRC_PATH, "utf8");
 
-  // Precise matcher for the future final /rfp/hld-document output route: it
-  // matches the exact route or one followed by a path/query/hash/quote
-  // delimiter, but deliberately NOT the allowed internal /rfp/hld-document-model
-  // route (which has a "-model" suffix). Existing guards that forbade the bare
-  // "/rfp/hld-document" substring now use this so they keep forbidding the
-  // output route without tripping on the new document-model surface.
-  const FINAL_HLD_DOCUMENT_ROUTE_RE = /\/rfp\/hld-document(?:$|["'`/?#])/;
+  // Precise matcher for the forbidden final /rfp/hld-document authority-write
+  // suffixes (review/download/upload/export/final/render). It deliberately does
+  // NOT match the allowed internal /rfp/hld-document-model route (which has a
+  // "-model" suffix), the Stage 6I-E lean status GET (bare /rfp/hld-document),
+  // or the Stage 6I-E generated create POST (/rfp/hld-document/generated).
+  // Existing guards that forbade the bare "/rfp/hld-document" output route now
+  // use this so they keep forbidding the final-authority routes while allowing
+  // the Stage 6I-E readiness status GET and generated create POST.
+  const FINAL_HLD_DOCUMENT_ROUTE_RE =
+    /\/rfp\/hld-document\/(?:review|download|upload|export|final|render)(?:$|["'`/?#])/;
 
   it("keeps the page and test ASCII-only", () => {
     expect(/[^\x00-\x7F]/.test(source)).toBe(false);
@@ -8981,7 +8989,12 @@ describe("ProjectRfpEvidencePage - Stage 6I-C internal HLD diagram output review
       const path = new URL(c.url, "http://localhost").pathname;
       return (
         FINAL_OUTPUT_ROUTES.some((route) => path.includes(route)) ||
-        /\/rfp\/hld-document(?:\/|$)/.test(path)
+        // The Stage 6I-E lean status GET (/rfp/hld-document) and the generated
+        // create POST (/rfp/hld-document/generated) are allowed; only the final
+        // authority write suffixes stay forbidden here.
+        /\/rfp\/hld-document\/(?:review|download|upload|export|final|render)(?:\/|$)/.test(
+          path
+        )
       );
     });
   }
@@ -9505,6 +9518,576 @@ describe("ProjectRfpEvidencePage - Stage 6I-C internal HLD diagram output review
       ".pdf",
     ]) {
       expect(scopedText).not.toContain(term);
+    }
+  });
+});
+
+describe("ProjectRfpEvidencePage - Stage 6I-E generated HLD document readiness", () => {
+  // Matching source diagram id/version shared by the newest approved document
+  // model and the approved diagram output. A DIFFERENT id/version stands in for
+  // wrong-source / wrong-version outputs and for a non-newest approved model.
+  const GEN_DOC_MODEL_ID = "art-hld-document-model-approved-gen-1";
+  const GEN_MATCH_DIAGRAM_ID = "art-hld-diagram-approved-gen-1";
+  const GEN_MATCH_DIAGRAM_VERSION = 5;
+  const GEN_OTHER_DIAGRAM_ID = "art-hld-diagram-approved-gen-other-1";
+  const GEN_OTHER_DIAGRAM_VERSION = 9;
+
+  function genModelItem(
+    id: string,
+    status: string,
+    version: number,
+    sourceId: unknown,
+    sourceVersion: unknown
+  ): Record<string, unknown> {
+    return {
+      id,
+      status,
+      version,
+      payloadSummary: {
+        payloadKind: "rfp_hld_document_model",
+        title: "GEN-DOCMODEL-CANARY network design model",
+        sourceHldDiagramArtifactId: sourceId,
+        sourceDiagramVersion: sourceVersion,
+      },
+    };
+  }
+
+  function genModelList(items: Record<string, unknown>[]): Record<string, unknown> {
+    return {
+      project: projectContext(),
+      artifactCount: items.length,
+      artifacts: items,
+    };
+  }
+
+  function genOutputItem(
+    id: string,
+    status: string,
+    summary: Record<string, unknown>
+  ): Record<string, unknown> {
+    return {
+      id,
+      status,
+      version: 1,
+      payloadSummary: {
+        payloadKind: "rfp_hld_diagram_output",
+        outputFormat: "layout_projection",
+        diagramType: "topology",
+        ...summary,
+      },
+    };
+  }
+
+  function genOutputList(items: Record<string, unknown>[]): Record<string, unknown> {
+    return {
+      project: projectContext(),
+      artifactCount: items.length,
+      artifacts: items,
+    };
+  }
+
+  // The newest approved model uses the matching source diagram id/version.
+  function matchingModelList(): Record<string, unknown> {
+    return genModelList([
+      genModelItem(
+        GEN_DOC_MODEL_ID,
+        "approved",
+        2,
+        GEN_MATCH_DIAGRAM_ID,
+        GEN_MATCH_DIAGRAM_VERSION
+      ),
+      // A newer draft that is NOT approved must be ignored by the gate.
+      genModelItem(
+        "art-hld-document-model-draft-1",
+        "needs_review",
+        3,
+        GEN_OTHER_DIAGRAM_ID,
+        GEN_OTHER_DIAGRAM_VERSION
+      ),
+    ]);
+  }
+
+  function matchingApprovedOutputList(): Record<string, unknown> {
+    return genOutputList([
+      genOutputItem("art-hld-diagram-output-gen-1", "approved", {
+        sourceHldDiagramArtifactId: GEN_MATCH_DIAGRAM_ID,
+        sourceDiagramVersion: GEN_MATCH_DIAGRAM_VERSION,
+      }),
+    ]);
+  }
+
+  const STATUS_NONE_BODY = {
+    code: "hld_document_not_final",
+    blockerCode: "no_final_authority",
+  };
+  const STATUS_PENDING_BODY = {
+    code: "hld_document_not_final",
+    blockerCode: "awaiting_review",
+    latestArtifact: { id: "art-hld-doc-latest-1", status: "needs_review" },
+  };
+  const STATUS_STALE_CODE = "hld_document_final_authority_stale";
+  const STATUS_STALE_BODY = {
+    code: STATUS_STALE_CODE,
+    blockerCode: "authority_stale",
+    artifact: { id: "art-hld-doc-final-stale-1", status: "approved" },
+  };
+  const STATUS_FINAL_BODY = {
+    project: projectContext(),
+    finalAuthority: { id: "art-hld-doc-final-1", status: "approved" },
+  };
+
+  function genFetch(opts?: {
+    statusGet?: () => Response | Promise<Response>;
+    modelList?: Record<string, unknown>;
+    outputList?: Record<string, unknown>;
+    onGeneratedCreate?: (init?: RequestInit) => Response;
+  }): (url: string, init?: RequestInit) => Response | Promise<Response> {
+    return (url, init) => {
+      if (url === FINAL_HLD_DOCUMENT_STATUS_URL) {
+        return opts?.statusGet
+          ? opts.statusGet()
+          : jsonResponse(STATUS_NONE_BODY, 409);
+      }
+      if (
+        url === GENERATED_HLD_DOCUMENT_CREATE_URL &&
+        init?.method === "POST"
+      ) {
+        return opts?.onGeneratedCreate
+          ? opts.onGeneratedCreate(init)
+          : jsonResponse(
+              { artifact: { id: "art-hld-doc-gen-1" }, payloadSummary: {} },
+              201
+            );
+      }
+      if (url === HLD_DOCUMENT_MODEL_LIST_URL) {
+        return jsonResponse(opts?.modelList ?? genModelList([]));
+      }
+      if (url === HLD_DIAGRAM_OUTPUT_LIST_URL) {
+        return jsonResponse(opts?.outputList ?? genOutputList([]));
+      }
+      return jsonResponse({}, 200);
+    };
+  }
+
+  it("hides create and shows the blocker when no approved diagram output exists", async () => {
+    stubFetch(
+      genFetch({
+        modelList: matchingModelList(),
+        outputList: genOutputList([]),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("generated-hld-document-panel");
+    expect(
+      await screen.findByTestId("generated-hld-document-blocked")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("generated-hld-document-create")).toBeNull();
+  });
+
+  it("shows create only with an approved output tied to the newest approved model source id/version plus loaded status/model/output prerequisites", async () => {
+    stubFetch(
+      genFetch({
+        modelList: matchingModelList(),
+        outputList: matchingApprovedOutputList(),
+      })
+    );
+    const { unmount } = render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("generated-hld-document-panel");
+    const createBtn = await screen.findByTestId(
+      "generated-hld-document-create"
+    );
+    expect(createBtn).not.toBeDisabled();
+    expect(createBtn.textContent ?? "").toContain(
+      "Create generated HLD document"
+    );
+    expect(screen.queryByTestId("generated-hld-document-blocked")).toBeNull();
+    unmount();
+
+    // An approved output tied only to the OLDER approved model's source (not the
+    // newest approved model) must not satisfy the gate.
+    cleanup();
+    vi.unstubAllGlobals();
+    stubFetch(
+      genFetch({
+        modelList: genModelList([
+          genModelItem(
+            GEN_DOC_MODEL_ID,
+            "approved",
+            2,
+            GEN_MATCH_DIAGRAM_ID,
+            GEN_MATCH_DIAGRAM_VERSION
+          ),
+          genModelItem(
+            "art-hld-document-model-approved-old-1",
+            "approved",
+            1,
+            GEN_OTHER_DIAGRAM_ID,
+            GEN_OTHER_DIAGRAM_VERSION
+          ),
+        ]),
+        outputList: genOutputList([
+          genOutputItem("art-hld-diagram-output-old-1", "approved", {
+            sourceHldDiagramArtifactId: GEN_OTHER_DIAGRAM_ID,
+            sourceDiagramVersion: GEN_OTHER_DIAGRAM_VERSION,
+          }),
+        ]),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("generated-hld-document-panel");
+    expect(
+      await screen.findByTestId("generated-hld-document-blocked")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("generated-hld-document-create")).toBeNull();
+  });
+
+  it("hides create while the final HLD document status is still loading", async () => {
+    stubFetch(
+      genFetch({
+        statusGet: () => new Promise<Response>(() => {}),
+        modelList: matchingModelList(),
+        outputList: matchingApprovedOutputList(),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("generated-hld-document-panel");
+    expect(
+      await screen.findByTestId("generated-hld-document-status-loading")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("generated-hld-document-create")).toBeNull();
+    expect(screen.queryByTestId("generated-hld-document-status")).toBeNull();
+  });
+
+  it("does not satisfy the gate for rejected/needs_review/generated/wrong-source/wrong-version/unknown/empty outputs", async () => {
+    const nonQualifying: Record<string, unknown>[] = [
+      // Right source/version but not approved.
+      genOutputList([
+        genOutputItem("out-rej", "rejected", {
+          sourceHldDiagramArtifactId: GEN_MATCH_DIAGRAM_ID,
+          sourceDiagramVersion: GEN_MATCH_DIAGRAM_VERSION,
+        }),
+      ]),
+      genOutputList([
+        genOutputItem("out-nr", "needs_review", {
+          sourceHldDiagramArtifactId: GEN_MATCH_DIAGRAM_ID,
+          sourceDiagramVersion: GEN_MATCH_DIAGRAM_VERSION,
+        }),
+      ]),
+      genOutputList([
+        genOutputItem("out-gen", "generated", {
+          sourceHldDiagramArtifactId: GEN_MATCH_DIAGRAM_ID,
+          sourceDiagramVersion: GEN_MATCH_DIAGRAM_VERSION,
+        }),
+      ]),
+      // Approved but wrong source id.
+      genOutputList([
+        genOutputItem("out-wrong-src", "approved", {
+          sourceHldDiagramArtifactId: GEN_OTHER_DIAGRAM_ID,
+          sourceDiagramVersion: GEN_MATCH_DIAGRAM_VERSION,
+        }),
+      ]),
+      // Approved but wrong source version.
+      genOutputList([
+        genOutputItem("out-wrong-ver", "approved", {
+          sourceHldDiagramArtifactId: GEN_MATCH_DIAGRAM_ID,
+          sourceDiagramVersion: GEN_MATCH_DIAGRAM_VERSION + 1,
+        }),
+      ]),
+      // Approved but unknown-shaped (no source id/version).
+      genOutputList([genOutputItem("out-unknown", "approved", {})]),
+      // Empty output list.
+      genOutputList([]),
+    ];
+
+    for (const outputList of nonQualifying) {
+      cleanup();
+      vi.unstubAllGlobals();
+      stubFetch(
+        genFetch({ modelList: matchingModelList(), outputList })
+      );
+      render(<ProjectRfpEvidencePage />);
+      await screen.findByTestId("generated-hld-document-panel");
+      await screen.findByTestId("generated-hld-document-blocked");
+      expect(screen.queryByTestId("generated-hld-document-create")).toBeNull();
+    }
+  });
+
+  it("blocks create for a final authority and for a pending latest artifact, with generic pending copy that is not generated-specific", async () => {
+    // Final authority present -> create hidden, generic final copy.
+    stubFetch(
+      genFetch({
+        statusGet: () => jsonResponse(STATUS_FINAL_BODY, 200),
+        modelList: matchingModelList(),
+        outputList: matchingApprovedOutputList(),
+      })
+    );
+    const { unmount } = render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("generated-hld-document-panel");
+    expect(
+      await screen.findByTestId("generated-hld-document-status")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("generated-hld-document-create")).toBeNull();
+    unmount();
+
+    // Pending final document (manual OR generated) -> create hidden and the
+    // pending copy stays generic, never naming the generated flow.
+    cleanup();
+    vi.unstubAllGlobals();
+    stubFetch(
+      genFetch({
+        statusGet: () => jsonResponse(STATUS_PENDING_BODY, 409),
+        modelList: matchingModelList(),
+        outputList: matchingApprovedOutputList(),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("generated-hld-document-panel");
+    const status = await screen.findByTestId("generated-hld-document-status");
+    expect(status.textContent ?? "").toContain(
+      "A final HLD document is awaiting review."
+    );
+    expect((status.textContent ?? "").toLowerCase()).not.toContain("generated");
+    expect(screen.queryByTestId("generated-hld-document-create")).toBeNull();
+  });
+
+  it("renders compact stale copy without leaking the raw stale code or blockerCode", async () => {
+    const panelCalls = stubFetch(
+      genFetch({
+        statusGet: () => jsonResponse(STATUS_STALE_BODY, 409),
+        modelList: matchingModelList(),
+        outputList: genOutputList([]),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const panel = await screen.findByTestId("generated-hld-document-panel");
+    const status = await screen.findByTestId("generated-hld-document-status");
+    expect((status.textContent ?? "").toLowerCase()).toContain("stale");
+    const panelText = panel.textContent ?? "";
+    expect(panelText).not.toContain(STATUS_STALE_CODE);
+    expect(panelText).not.toContain("authority_stale");
+    // The status GET is a lean read only; no final-authority write route fires.
+    expect(
+      panelCalls.some((c) =>
+        /\/rfp\/hld-document\/(?:review|final|download|upload|export)/.test(
+          c.url
+        )
+      )
+    ).toBe(false);
+  });
+
+  it("posts exactly { documentModelArtifactId } with no authority/source/payload/provider/pricing/SKU/catalog/config fields, then shows success and reloads status", async () => {
+    const calls = stubFetch(
+      genFetch({
+        modelList: matchingModelList(),
+        outputList: matchingApprovedOutputList(),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const createBtn = await screen.findByTestId(
+      "generated-hld-document-create"
+    );
+    const statusGetsBefore = calls.filter(
+      (c) => c.url === FINAL_HLD_DOCUMENT_STATUS_URL
+    ).length;
+
+    await act(async () => {
+      fireEvent.click(createBtn);
+    });
+
+    await waitFor(() => {
+      expect(
+        calls.some(
+          (c) =>
+            c.url === GENERATED_HLD_DOCUMENT_CREATE_URL &&
+            c.init?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    const post = calls.find(
+      (c) =>
+        c.url === GENERATED_HLD_DOCUMENT_CREATE_URL &&
+        c.init?.method === "POST"
+    );
+    const bodyText = String(post?.init?.body ?? "");
+    expect(JSON.parse(bodyText)).toEqual({
+      documentModelArtifactId: GEN_DOC_MODEL_ID,
+    });
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "createdBy",
+      "userId",
+      "status",
+      "payload",
+      "sourceArtifactIds",
+      "sourceHldDiagramArtifactId",
+      "sourceDiagramVersion",
+      "authority",
+      "drawioXml",
+      "drawio",
+      "xml",
+      "provider",
+      "pricing",
+      "sku",
+      "catalog",
+      "config",
+    ]) {
+      expect(bodyText).not.toContain(forbidden);
+    }
+
+    expect(
+      await screen.findByTestId("generated-hld-document-create-success")
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        calls.filter((c) => c.url === FINAL_HLD_DOCUMENT_STATUS_URL).length
+      ).toBeGreaterThan(statusGetsBefore);
+    });
+    // The generated flow never posts to the final /rfp/hld-document authority
+    // route nor changes the manual-upload path.
+    expect(
+      calls.some(
+        (c) =>
+          c.url === FINAL_HLD_DOCUMENT_STATUS_URL && c.init?.method === "POST"
+      )
+    ).toBe(false);
+  });
+
+  it("shows compact blocker copy on a diagram_output_unavailable failure without leaking raw JSON, code, blockerCode, provider text, or errors arrays", async () => {
+    const calls = stubFetch(
+      genFetch({
+        modelList: matchingModelList(),
+        outputList: matchingApprovedOutputList(),
+        onGeneratedCreate: () =>
+          jsonResponse(
+            {
+              code: "hld_document_precondition_failed",
+              blockerCode: "diagram_output_unavailable",
+              provider: "PROVIDER-LEAK-CANARY",
+              errors: ["ERRORS-ARRAY-LEAK-CANARY"],
+            },
+            409
+          ),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const createBtn = await screen.findByTestId(
+      "generated-hld-document-create"
+    );
+    await act(async () => {
+      fireEvent.click(createBtn);
+    });
+
+    const errorEl = await screen.findByTestId(
+      "generated-hld-document-create-error"
+    );
+    expect(errorEl.textContent ?? "").toBe(
+      "Approved HLD diagram output is required before creating the generated HLD document."
+    );
+    const panel = screen.getByTestId("generated-hld-document-panel");
+    const panelText = panel.textContent ?? "";
+    for (const leak of [
+      "hld_document_precondition_failed",
+      "diagram_output_unavailable",
+      "PROVIDER-LEAK-CANARY",
+      "ERRORS-ARRAY-LEAK-CANARY",
+      "blockerCode",
+    ]) {
+      expect(panelText).not.toContain(leak);
+    }
+    expect(panel.querySelector("pre")).toBeNull();
+    // No success and no status reload on failure.
+    expect(
+      screen.queryByTestId("generated-hld-document-create-success")
+    ).toBeNull();
+    expect(
+      calls.some(
+        (c) =>
+          c.url === GENERATED_HLD_DOCUMENT_CREATE_URL &&
+          c.init?.method === "POST"
+      )
+    ).toBe(true);
+  });
+
+  it("shows stable compact error copy on a non-blocker failure without leaking raw JSON", async () => {
+    stubFetch(
+      genFetch({
+        modelList: matchingModelList(),
+        outputList: matchingApprovedOutputList(),
+        onGeneratedCreate: () =>
+          jsonResponse({ code: "internal_error", detail: "DETAIL-LEAK" }, 500),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const createBtn = await screen.findByTestId(
+      "generated-hld-document-create"
+    );
+    await act(async () => {
+      fireEvent.click(createBtn);
+    });
+
+    const errorEl = await screen.findByTestId(
+      "generated-hld-document-create-error"
+    );
+    expect(errorEl.textContent ?? "").toBe(
+      "Unable to create the generated HLD document."
+    );
+    const panel = screen.getByTestId("generated-hld-document-panel");
+    expect(panel.textContent ?? "").not.toContain("DETAIL-LEAK");
+    expect(panel.textContent ?? "").not.toContain("internal_error");
+  });
+
+  it("static: wires the lean status GET and generated create POST but no final-authority write, TP, provider, or manual-upload drift in the generated flow", () => {
+    const SRC_PATH = join(process.cwd(), "src/app/projects/[id]/rfp/page.tsx");
+    const source = readFileSync(SRC_PATH, "utf8");
+    // The lean status GET and the generated create POST are wired.
+    expect(source).toContain("/rfp/hld-document/generated");
+    expect(source).toContain("generated-hld-document-panel");
+    expect(source).toContain("documentModelArtifactId");
+    // The generated flow must not add final-authority write, output-render,
+    // proposal/TP, or provider routes.
+    for (const forbidden of [
+      "/rfp/hld-document/review",
+      "/rfp/hld-document/download",
+      "/rfp/hld-document/upload",
+      "/rfp/hld-document/export",
+      "/rfp/hld-document/final",
+      "/rfp/hld-document/render",
+      "/rfp/hld-proposal",
+      "/rfp/hld-html",
+      "/rfp/drawio",
+      "/rfp/hld-export",
+      "technical_proposal",
+    ]) {
+      expect(source).not.toContain(forbidden);
+    }
+    // The generated create sends exactly the document-model id and no authority/
+    // source/payload/provider fields in its POST body construction.
+    expect(source).toContain(
+      "JSON.stringify({ documentModelArtifactId })"
+    );
+    // No new server service / DB / provider SDK import for the generated flow.
+    const importLines = source
+      .split("\n")
+      .filter((line) => line.trimStart().startsWith("import"));
+    for (const token of [
+      "project-rfp-hld-document-service",
+      "project-rfp-hld-document-generation",
+      "project-rfp-hld-document",
+      "@/lib/db/",
+      "@/lib/ai",
+      "@/lib/llm",
+      "@anthropic-ai/sdk",
+      "openai",
+    ]) {
+      expect(importLines.join("\n")).not.toContain(token);
     }
   });
 });
