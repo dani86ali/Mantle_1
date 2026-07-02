@@ -13,11 +13,15 @@
  * generated document OR a manual upload - is never silently regenerated), then re-prove
  * the SAME approved source chain the manual-upload lane uses (approved document model
  * whose row/payload source ids equal [bundle, model, diagram], plus the approved bundle,
- * design model, diagram, and active review with all obvious ties/versions). Only then
- * build a deterministic draw.io mxfile from the approved diagram payload, HARD-GATE the
- * `rfp_hld_document` payload with the Stage 6H-0I-A contract validator BEFORE any write,
- * and persist exactly one artifact. The response returns lean summaries only and NEVER
- * the draw.io XML, an upstream payload body, or the tenant id.
+ * design model, diagram, and active review with all obvious ties/versions). It then
+ * requires an approved HLD-stage `hld_diagram_output` tied to THIS approved diagram at
+ * its reviewed version (returning precondition_failed / diagram_output_unavailable and
+ * writing nothing when none qualifies), builds a deterministic draw.io mxfile from that
+ * REVIEWED diagram-output layout (never a re-layout of the diagram), persists the extra
+ * diagram-output source id/version, HARD-GATEs the `rfp_hld_document` payload with the
+ * Stage 6H-0I-A contract validator BEFORE any write, and persists exactly one artifact.
+ * The response returns lean summaries only and NEVER the draw.io XML, an upstream payload
+ * body, or the tenant id.
  *
  * This service reads only Project state through the project/artifact stores and the
  * read-only regeneration guard. It reads NO raw RFP/PDF/DOCX/XLSX file, storage path,
@@ -29,7 +33,12 @@ import { getProjectById } from "@/lib/db/project-store";
 import {
   createProjectArtifactVersion,
   getProjectArtifactById,
+  listProjectArtifactsByType,
 } from "@/lib/db/project-artifact-store";
+import {
+  validateRfpHldDiagramOutputPayload,
+  type RfpHldDiagramOutputPayload,
+} from "@/lib/projects/project-rfp-hld-diagram-output";
 import {
   validateRfpHldDocumentModelPayload,
   type RfpHldDocumentModelPayload,
@@ -70,6 +79,7 @@ const SOURCE_BUNDLE_TYPE: ProjectArtifactType = "hld_source_bundle";
 const MODEL_TYPE: ProjectArtifactType = "hld_design_model";
 const REVIEW_TYPE: ProjectArtifactType = "hld_design_model_review";
 const DIAGRAM_TYPE: ProjectArtifactType = "hld_diagram";
+const DIAGRAM_OUTPUT_TYPE: ProjectArtifactType = "hld_diagram_output";
 const DOCUMENT_MODEL_TYPE: ProjectArtifactType = "hld_document_model";
 const DOCUMENT_TYPE: ProjectArtifactType = "hld_document";
 const ACTIVE_REVIEW_STATUSES: ReadonlySet<ProjectArtifactStatus> =
@@ -123,9 +133,12 @@ export interface RfpHldGeneratedPayloadSummary {
   sourceModelVersion: number;
   sourceDiagramVersion: number;
   sourceDocumentModelVersion: number;
+  sourceHldDiagramOutputArtifactId: string;
+  sourceDiagramOutputVersion: number;
 }
 
 export type RfpHldGeneratedPreconditionCode =
+  | "diagram_output_unavailable"
   | "document_model_unavailable"
   | "document_model_invalid"
   | "document_model_source_ids_mismatch"
@@ -219,6 +232,8 @@ function toPayloadSummary(p: RfpHldDocumentPayload): RfpHldGeneratedPayloadSumma
     sourceModelVersion: p.sourceModelVersion,
     sourceDiagramVersion: p.sourceDiagramVersion,
     sourceDocumentModelVersion: p.sourceDocumentModelVersion,
+    sourceHldDiagramOutputArtifactId: p.sourceHldDiagramOutputArtifactId as string,
+    sourceDiagramOutputVersion: p.sourceDiagramOutputVersion as number,
   };
 }
 
@@ -249,6 +264,39 @@ function isActiveReviewOnStage(
   );
 }
 
+/** Newest by highest version, then latest createdAt. Never called on []. */
+function selectNewest(artifacts: ProjectArtifact[]): ProjectArtifact {
+  return artifacts.reduce((best, cur) => {
+    if (cur.version !== best.version) return cur.version > best.version ? cur : best;
+    return cur.createdAt.getTime() > best.createdAt.getTime() ? cur : best;
+  });
+}
+
+/**
+ * A qualifying approved hld_diagram_output for this generated document: same project,
+ * HLD stage, type hld_diagram_output, status approved, a valid diagram-output payload,
+ * and BOTH the row and payload single-source ties resolving to the approved diagram at
+ * the exact reviewed version (row sourceArtifactIds [diagramId], payload sourceArtifactIds
+ * [diagramId], payload.sourceHldDiagramArtifactId === diagramId, payload.sourceDiagramVersion
+ * === diagramVersion). No pricing/SKU/catalog/config decision is made here.
+ */
+function isQualifyingDiagramOutput(
+  artifact: ProjectArtifact,
+  projectId: string,
+  diagramId: string,
+  diagramVersion: number
+): boolean {
+  if (!isApprovedTypeOnStage(artifact, projectId, DIAGRAM_OUTPUT_TYPE)) return false;
+  if (!sameOrdered(artifact.sourceArtifactIds, [diagramId])) return false;
+  if (!validateRfpHldDiagramOutputPayload(artifact.payload).ok) return false;
+  const p = artifact.payload as unknown as RfpHldDiagramOutputPayload;
+  return (
+    sameOrdered(p.sourceArtifactIds, [diagramId]) &&
+    p.sourceHldDiagramArtifactId === diagramId &&
+    p.sourceDiagramVersion === diagramVersion
+  );
+}
+
 /** Escape a label for safe inclusion inside double-quoted XML attribute values. */
 function escapeXml(value: string): string {
   return value
@@ -259,27 +307,28 @@ function escapeXml(value: string): string {
 }
 
 /**
- * Build a deterministic, well-formed draw.io mxfile from the approved diagram payload
- * ONLY. Node cell ids are positional (`n0`, `n1`, ...) so arbitrary payload ids never
- * reach an attribute; every label is escaped. It carries no scripts, entities, or
- * pricing/SKU/catalog/config data - just the reviewed topology as an mxGraphModel.
+ * Build a deterministic, well-formed draw.io mxfile from the REVIEWED diagram-output
+ * layout ONLY - its node/link geometry and labels, NOT a re-layout of the hld_diagram.
+ * Node cell ids are positional (`n0`, `n1`, ...) so arbitrary payload ids never reach an
+ * attribute; every label is escaped and every geometry coordinate is the output model's.
+ * It carries no scripts, entities, or pricing/SKU/catalog/config data - just the reviewed
+ * layout as an mxGraphModel.
  */
-function buildDrawioXml(diagram: RfpHldDiagramDraftPayload): string {
+function buildDrawioXml(output: RfpHldDiagramOutputPayload): string {
   const nodeIndex = new Map<string, number>();
-  diagram.nodes.forEach((n, i) => nodeIndex.set(n.id, i));
+  output.nodes.forEach((n, i) => nodeIndex.set(n.id, i));
 
   const cells: string[] = [];
-  diagram.nodes.forEach((n, i) => {
-    const x = 40 + (i % 4) * 200;
-    const y = 40 + Math.floor(i / 4) * 140;
+  output.nodes.forEach((n, i) => {
+    const g = n.geometry;
     cells.push(
       `<mxCell id="n${i}" value="${escapeXml(n.label)}" vertex="1" parent="1">` +
-        `<mxGeometry x="${x}" y="${y}" width="160" height="60" as="geometry"/></mxCell>`
+        `<mxGeometry x="${g.x}" y="${g.y}" width="${g.width}" height="${g.height}" as="geometry"/></mxCell>`
     );
   });
-  diagram.links.forEach((l, i) => {
-    const from = nodeIndex.get(l.fromNodeId);
-    const to = nodeIndex.get(l.toNodeId);
+  output.links.forEach((l, i) => {
+    const from = nodeIndex.get(l.sourceNodeId);
+    const to = nodeIndex.get(l.targetNodeId);
     if (from === undefined || to === undefined) return;
     const value = l.label !== undefined ? ` value="${escapeXml(l.label)}"` : "";
     cells.push(
@@ -420,9 +469,24 @@ export async function createRfpHldDocumentGenerated(
     return { status: "precondition_failed", code: "source_chain_mismatch" };
   }
 
-  // Build the generated final payload from the approved diagram + coarse ids.
+  // --- Approved diagram OUTPUT: the reviewed layout this generated document consumes ---
+  // Require an approved HLD-stage hld_diagram_output tied to THIS approved diagram at its
+  // reviewed version. The draw.io XML is built from that layout, never re-laid-out here.
+  const outputs = await listProjectArtifactsByType(tenantId, projectId, DIAGRAM_OUTPUT_TYPE);
+  const qualifying = outputs.filter((o) =>
+    isQualifyingDiagramOutput(o, projectId, diagramId, diagramArtifact.version)
+  );
+  if (qualifying.length === 0) {
+    return { status: "precondition_failed", code: "diagram_output_unavailable" };
+  }
+  const diagramOutputArtifact = selectNewest(qualifying);
+  const diagramOutputPayload =
+    diagramOutputArtifact.payload as unknown as RfpHldDiagramOutputPayload;
+
+  // Build the generated final payload from the approved diagram OUTPUT + coarse ids.
   const createdAt = (input.createdAt ?? new Date()).toISOString();
   const documentModelId = documentModelArtifact.id;
+  const diagramOutputId = diagramOutputArtifact.id;
   const payload: RfpHldDocumentPayload = {
     payloadKind: RFP_HLD_DOCUMENT_PAYLOAD_KIND,
     sourceMode: RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED,
@@ -430,8 +494,8 @@ export async function createRfpHldDocumentGenerated(
     createdBy,
     title: GENERATED_TITLE,
     uploadedFileName: GENERATED_FILE_NAME,
-    drawioXml: buildDrawioXml(diagramPayload),
-    sourceArtifactIds: [bundleId, modelId, diagramId, documentModelId],
+    drawioXml: buildDrawioXml(diagramOutputPayload),
+    sourceArtifactIds: [bundleId, modelId, diagramId, diagramOutputId, documentModelId],
     sourceHldSourceBundleArtifactId: bundleId,
     sourceHldDesignModelArtifactId: modelId,
     sourceHldDiagramArtifactId: diagramId,
@@ -440,6 +504,8 @@ export async function createRfpHldDocumentGenerated(
     sourceModelVersion: modelArtifact.version,
     sourceDiagramVersion: diagramArtifact.version,
     sourceDocumentModelVersion: documentModelArtifact.version,
+    sourceHldDiagramOutputArtifactId: diagramOutputId,
+    sourceDiagramOutputVersion: diagramOutputArtifact.version,
     finalAuthority: {
       authorityKind: RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED,
       effectiveWhenArtifactStatus: RFP_HLD_DOCUMENT_AUTHORITY_STATUS,
@@ -461,7 +527,7 @@ export async function createRfpHldDocumentGenerated(
     status: "needs_review",
     payload: payload as unknown as Record<string, unknown>,
     sourceFileIds: [],
-    sourceArtifactIds: [bundleId, modelId, diagramId, documentModelId],
+    sourceArtifactIds: [bundleId, modelId, diagramId, diagramOutputId, documentModelId],
   });
 
   return {

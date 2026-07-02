@@ -4,12 +4,14 @@
  * Re-validates one persisted final `hld_document` upload against the Stage 6H-0I-A
  * payload contract, then re-ties it through the approved source bundle, approved
  * HLD design model, active HLD design review, approved diagram, and approved
- * document model. This module is read-only: it mutates nothing, imports no
+ * document model. For a GENERATED document it also re-ties the approved diagram
+ * OUTPUT the layout was built from. This module is read-only: it mutates nothing, imports no
  * approval store, routes, AI/provider, catalog, pricing, configuration, or raw-file
  * modules, and never exposes payload bodies or draw.io XML in invalid/stale arms.
  */
 import { getProjectArtifactById } from "@/lib/db/project-artifact-store";
 import {
+  RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED,
   validateRfpHldDocumentPayload,
   type RfpHldDocumentPayload,
 } from "@/lib/projects/project-rfp-hld-document";
@@ -26,6 +28,10 @@ import {
   validateRfpHldDiagramDraftPayload,
   type RfpHldDiagramDraftPayload,
 } from "@/lib/projects/project-rfp-hld-diagram";
+import {
+  validateRfpHldDiagramOutputPayload,
+  type RfpHldDiagramOutputPayload,
+} from "@/lib/projects/project-rfp-hld-diagram-output";
 import type {
   ProjectArtifact,
   ProjectArtifactStatus,
@@ -36,6 +42,7 @@ const SOURCE_BUNDLE_TYPE: ProjectArtifact["type"] = "hld_source_bundle";
 const MODEL_TYPE: ProjectArtifact["type"] = "hld_design_model";
 const REVIEW_TYPE: ProjectArtifact["type"] = "hld_design_model_review";
 const DIAGRAM_TYPE: ProjectArtifact["type"] = "hld_diagram";
+const DIAGRAM_OUTPUT_TYPE: ProjectArtifact["type"] = "hld_diagram_output";
 const DOCUMENT_MODEL_TYPE: ProjectArtifact["type"] = "hld_document_model";
 const ACTIVE_REVIEW_STATUSES: ReadonlySet<ProjectArtifactStatus> =
   new Set<ProjectArtifactStatus>(["generated", "needs_review", "approved"]);
@@ -51,6 +58,8 @@ export type RfpHldDocumentStaleCode =
   | "source_model_invalid"
   | "source_diagram_unavailable"
   | "source_diagram_invalid"
+  | "source_diagram_output_unavailable"
+  | "source_diagram_output_invalid"
   | "source_review_unavailable"
   | "source_chain_mismatch"
   | "source_version_mismatch";
@@ -117,7 +126,13 @@ export async function evaluateRfpHldDocumentSourceChain(
   const modelId = payload.sourceHldDesignModelArtifactId;
   const diagramId = payload.sourceHldDiagramArtifactId;
   const documentModelId = payload.sourceHldDocumentModelArtifactId;
-  const expectedSourceIds = [bundleId, modelId, diagramId, documentModelId];
+  // Generated documents carry a fifth source: the approved diagram OUTPUT, inserted
+  // between the diagram and the document model. Manual uploads keep the four-source chain.
+  const isGenerated = payload.sourceMode === RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED;
+  const diagramOutputId = payload.sourceHldDiagramOutputArtifactId;
+  const expectedSourceIds = isGenerated
+    ? [bundleId, modelId, diagramId, diagramOutputId as string, documentModelId]
+    : [bundleId, modelId, diagramId, documentModelId];
 
   if (
     !sameOrdered(artifact.sourceArtifactIds, expectedSourceIds) ||
@@ -183,6 +198,32 @@ export async function evaluateRfpHldDocumentSourceChain(
   }
   if (diagramPayload.sourceModelVersion !== modelArtifact.version) {
     return { kind: "stale", staleCode: "source_version_mismatch" };
+  }
+
+  // Generated documents additionally re-tie to the approved diagram OUTPUT they consumed:
+  // same project/HLD stage, type hld_diagram_output, approved, version-locked to the
+  // persisted proof, valid payload, and single-source tied to THIS diagram at its version.
+  if (isGenerated) {
+    const output = await getProjectArtifactById(tenantId, projectId, diagramOutputId as string);
+    if (!isApprovedTypeOnStage(output, projectId, DIAGRAM_OUTPUT_TYPE)) {
+      return { kind: "stale", staleCode: "source_diagram_output_unavailable" };
+    }
+    const outputArtifact = output as ProjectArtifact;
+    if (outputArtifact.version !== payload.sourceDiagramOutputVersion) {
+      return { kind: "stale", staleCode: "source_version_mismatch" };
+    }
+    if (!validateRfpHldDiagramOutputPayload(outputArtifact.payload).ok) {
+      return { kind: "stale", staleCode: "source_diagram_output_invalid" };
+    }
+    const outputPayload = outputArtifact.payload as unknown as RfpHldDiagramOutputPayload;
+    if (
+      !sameOrdered(outputArtifact.sourceArtifactIds, [diagramId]) ||
+      !sameOrdered(outputPayload.sourceArtifactIds, [diagramId]) ||
+      outputPayload.sourceHldDiagramArtifactId !== diagramId ||
+      outputPayload.sourceDiagramVersion !== diagramArtifact.version
+    ) {
+      return { kind: "stale", staleCode: "source_chain_mismatch" };
+    }
   }
 
   const review = await getProjectArtifactById(tenantId, projectId, reviewId);

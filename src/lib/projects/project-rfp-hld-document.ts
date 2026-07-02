@@ -20,8 +20,12 @@
  * BOMATIC/AI certification. Claude output remains candidate-only; OpenAI advisory
  * review is an internal gate, never final authority.
  *
- * Source ids are COARSE artifact pointers: exactly the four approved upstream ids
- * [source bundle, design model, diagram, document model]. This module is
+ * Source ids are COARSE artifact pointers. A manual upload references exactly the four
+ * approved upstream ids [source bundle, design model, diagram, document model]. A
+ * generated document additionally references the approved diagram OUTPUT it was built
+ * from, so its ordered ids are [bundle, model, diagram, diagramOutput, document model]
+ * and it carries sourceHldDiagramOutputArtifactId + sourceDiagramOutputVersion; those
+ * two fields are generated-only and are rejected on a manual upload. This module is
  * self-contained (no imports) so the closed contract cannot drift with upstream
  * modules, and is ASCII-only.
  */
@@ -89,6 +93,10 @@ export interface RfpHldDocumentPayload {
   sourceModelVersion: number;
   sourceDiagramVersion: number;
   sourceDocumentModelVersion: number;
+  /** Generated-only: the approved hld_diagram_output the layout was built from. */
+  sourceHldDiagramOutputArtifactId?: string;
+  /** Generated-only: positive-integer version of that approved hld_diagram_output. */
+  sourceDiagramOutputVersion?: number;
   finalAuthority: RfpHldDocumentFinalAuthority;
   /**
    * Audit record of the artifacts this manual upload supersedes. It MUST include
@@ -121,7 +129,9 @@ const TOP_LEVEL_REQUIRED: readonly string[] = [
   "sourceDocumentModelVersion", "finalAuthority", "supersedesArtifactIds",
 ];
 
-const TOP_LEVEL_OPTIONAL: readonly string[] = ["note"];
+const TOP_LEVEL_OPTIONAL: readonly string[] = [
+  "note", "sourceHldDiagramOutputArtifactId", "sourceDiagramOutputVersion",
+];
 
 const FINAL_AUTHORITY_REQUIRED: readonly string[] = [
   "authorityKind", "effectiveWhenArtifactStatus",
@@ -342,10 +352,13 @@ function validateFinalAuthority(errors: string[], raw: unknown, sourceMode: unkn
  * body or raw payload body in any error string. A payload is valid only when the
  * closed contract holds end to end: exact kind/mode, ISO-UTC createdAt, nonblank
  * createdBy/title, a draw.io uploadedFileName, a bounded well-formed single-root
- * `<mxfile>` drawioXml with no unsafe construct, four nonblank distinct source ids
- * whose ordered list is exactly [bundle, model, diagram, documentModel], positive
- * integer versions for all four, a closed finalAuthority whose authorityKind matches
- * the sourceMode and is effective on approval, a supersedesArtifactIds set drawn from the four source ids
+ * `<mxfile>` drawioXml with no unsafe construct, nonblank distinct source ids whose
+ * ordered list is exactly [bundle, model, diagram, documentModel] for a manual upload
+ * or [bundle, model, diagram, diagramOutput, documentModel] for a generated document
+ * (the latter also carrying a nonblank sourceHldDiagramOutputArtifactId + positive
+ * integer sourceDiagramOutputVersion, both rejected on a manual upload), positive
+ * integer versions for all sources, a closed finalAuthority whose authorityKind matches
+ * the sourceMode and is effective on approval, a supersedesArtifactIds set drawn from the mode-specific source ids
  * that includes at least the diagram and document-model ids, no markup outside
  * drawioXml, and no pricing/SKU/catalog/config/raw/provider/prompt key or
  * certification claim anywhere.
@@ -398,23 +411,56 @@ export function validateRfpHldDocumentPayload(
   if (diagramId === null) errors.push("payload: blank sourceHldDiagramArtifactId");
   if (documentModelId === null) errors.push("payload: blank sourceHldDocumentModelArtifactId");
 
-  const idList = [bundleId, modelId, diagramId, documentModelId];
+  const isGenerated = root.sourceMode === RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED;
+
+  // Diagram-output proof is GENERATED-only: a generated document is built from an
+  // approved hld_diagram_output and must carry that id + version; a manual upload must
+  // carry neither field. The wrong-stage / wrong-source ties for the output artifact
+  // are re-proved downstream by the source-chain lane, not here.
+  let diagramOutputId: string | null = null;
+  if (isGenerated) {
+    diagramOutputId = isNonBlank(root.sourceHldDiagramOutputArtifactId)
+      ? (root.sourceHldDiagramOutputArtifactId as string) : null;
+    if (diagramOutputId === null) {
+      errors.push("payload: blank sourceHldDiagramOutputArtifactId");
+    }
+    if (!isVersion(root.sourceDiagramOutputVersion)) {
+      errors.push("payload: invalid sourceDiagramOutputVersion");
+    }
+  } else {
+    if ("sourceHldDiagramOutputArtifactId" in root) {
+      errors.push("payload: sourceHldDiagramOutputArtifactId is generated-only");
+    }
+    if ("sourceDiagramOutputVersion" in root) {
+      errors.push("payload: sourceDiagramOutputVersion is generated-only");
+    }
+  }
+
+  // Distinctness set + expected ordered source id list depend on the source mode:
+  // generated inserts the diagram output between diagram and document model.
+  const idList = isGenerated
+    ? [bundleId, modelId, diagramId, diagramOutputId, documentModelId]
+    : [bundleId, modelId, diagramId, documentModelId];
   const allIdsPresent = idList.every((id): id is string => id !== null);
   if (allIdsPresent && hasDups(idList as string[])) {
-    errors.push("payload: source ids must be four distinct ids");
+    errors.push(
+      isGenerated
+        ? "payload: source ids must be five distinct ids"
+        : "payload: source ids must be four distinct ids"
+    );
   }
 
   if (!Array.isArray(root.sourceArtifactIds)) {
     errors.push("sourceArtifactIds: must be an array");
   } else if (allIdsPresent) {
     const ids = root.sourceArtifactIds as unknown[];
-    if (
-      ids.length !== 4 ||
-      ids[0] !== bundleId || ids[1] !== modelId ||
-      ids[2] !== diagramId || ids[3] !== documentModelId
-    ) {
+    const matches =
+      ids.length === idList.length && idList.every((id, i) => ids[i] === id);
+    if (!matches) {
       errors.push(
-        "sourceArtifactIds: must be exactly [bundle, model, diagram, documentModel]"
+        isGenerated
+          ? "sourceArtifactIds: must be exactly [bundle, model, diagram, diagramOutput, documentModel]"
+          : "sourceArtifactIds: must be exactly [bundle, model, diagram, documentModel]"
       );
     }
   }

@@ -10,27 +10,35 @@ import type { Project, ProjectArtifact } from "@/types/project";
 const {
   mockGetProjectById,
   mockGetArtifactById,
+  mockListByType,
   mockCreateArtifact,
   mockGuard,
   mockValidateDocModel,
   mockValidateSourceBundle,
   mockValidateModel,
   mockValidateDiagram,
+  mockValidateDiagramOutput,
 } = vi.hoisted(() => ({
   mockGetProjectById: vi.fn(),
   mockGetArtifactById: vi.fn(),
+  mockListByType: vi.fn(),
   mockCreateArtifact: vi.fn(),
   mockGuard: vi.fn(),
   mockValidateDocModel: vi.fn(),
   mockValidateSourceBundle: vi.fn(),
   mockValidateModel: vi.fn(),
   mockValidateDiagram: vi.fn(),
+  mockValidateDiagramOutput: vi.fn(),
 }));
 
 vi.mock("@/lib/db/project-store", () => ({ getProjectById: mockGetProjectById }));
 vi.mock("@/lib/db/project-artifact-store", () => ({
   getProjectArtifactById: mockGetArtifactById,
+  listProjectArtifactsByType: mockListByType,
   createProjectArtifactVersion: mockCreateArtifact,
+}));
+vi.mock("@/lib/projects/project-rfp-hld-diagram-output", () => ({
+  validateRfpHldDiagramOutputPayload: mockValidateDiagramOutput,
 }));
 vi.mock("@/lib/projects/project-rfp-hld-final-authority-regeneration-guard", () => ({
   evaluateRfpHldFinalAuthorityRegenerationGuard: mockGuard,
@@ -61,6 +69,7 @@ const DOCMODEL_ID = "hdocm-1";
 const BUNDLE_ID = "hsb-1";
 const MODEL_ID = "hdm-1";
 const DIAGRAM_ID = "hdg-1";
+const DIAGRAM_OUTPUT_ID = "hdgo-1";
 const REVIEW_ID = "hrev-1";
 const CREATED_AT = "2026-06-30T00:00:00.000Z";
 const CREATED_DATE = new Date(CREATED_AT);
@@ -191,6 +200,35 @@ function reviewArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifa
   };
 }
 
+// The approved diagram OUTPUT carries the REVIEWED layout: node geometry + links. The
+// generated draw.io XML is built from THIS, not from a re-layout of the hld_diagram. The
+// distinctive geometry below could never be produced by a positional fallback layout.
+function diagramOutputArtifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
+  return {
+    id: DIAGRAM_OUTPUT_ID,
+    projectId: PROJECT,
+    stageId: "hld_design_delta_review",
+    type: "hld_diagram_output",
+    status: "approved",
+    version: 2,
+    payload: {
+      sourceArtifactIds: [DIAGRAM_ID],
+      sourceHldDiagramArtifactId: DIAGRAM_ID,
+      sourceDiagramVersion: 5,
+      nodes: [
+        { id: "z1", label: "Core Switch", geometry: { x: 40, y: 40, width: 160, height: 60 } },
+        { id: "z2", label: "Edge & <Router>", geometry: { x: 333, y: 222, width: 177, height: 88 } },
+      ],
+      links: [{ id: "k1", label: "uplink", sourceNodeId: "z1", targetNodeId: "z2" }],
+    },
+    sourceFileIds: [],
+    sourceArtifactIds: [DIAGRAM_ID],
+    createdAt: CREATED_DATE,
+    updatedAt: CREATED_DATE,
+    ...overrides,
+  };
+}
+
 function setArtifactRows(
   docModel: ProjectArtifact | null,
   bundle: ProjectArtifact | null,
@@ -225,6 +263,8 @@ beforeEach(() => {
   mockGetProjectById.mockReset().mockResolvedValue(makeProject());
   mockGetArtifactById.mockReset();
   setArtifactRows(docModelArtifact(), bundleArtifact(), modelArtifact(), diagramArtifact());
+  mockListByType.mockReset().mockResolvedValue([diagramOutputArtifact()]);
+  mockValidateDiagramOutput.mockReset().mockReturnValue({ ok: true });
   mockGuard.mockReset().mockResolvedValue({ blocked: false });
   mockCreateArtifact.mockReset().mockImplementation(async (input: Record<string, unknown>) => ({
     id: "art-doc-1",
@@ -269,7 +309,9 @@ describe("createRfpHldDocumentGenerated - happy path", () => {
     expect(arg.status).toBe("needs_review");
     expect(arg.stageId).toBe("hld_design_delta_review");
     expect(arg.sourceFileIds).toEqual([]);
-    expect(arg.sourceArtifactIds).toEqual([BUNDLE_ID, MODEL_ID, DIAGRAM_ID, DOCMODEL_ID]);
+    expect(arg.sourceArtifactIds).toEqual([
+      BUNDLE_ID, MODEL_ID, DIAGRAM_ID, DIAGRAM_OUTPUT_ID, DOCMODEL_ID,
+    ]);
 
     const payload = arg.payload as Record<string, unknown>;
     expect(payload.payloadKind).toBe("rfp_hld_document");
@@ -278,7 +320,13 @@ describe("createRfpHldDocumentGenerated - happy path", () => {
       "se_approved_generated_hld"
     );
     expect(payload.supersedesArtifactIds).toEqual([DIAGRAM_ID, DOCMODEL_ID]);
+    // The five-source chain persists the diagram-output proof id + version.
+    expect(payload.sourceHldDiagramOutputArtifactId).toBe(DIAGRAM_OUTPUT_ID);
+    expect(payload.sourceDiagramOutputVersion).toBe(2);
     expect(result.payloadSummary.sourceMode).toBe("generated_drawio_output");
+    expect(result.payloadSummary.sourceHldDiagramOutputArtifactId).toBe(DIAGRAM_OUTPUT_ID);
+    expect(result.payloadSummary.sourceDiagramOutputVersion).toBe(2);
+    expect(mockListByType).toHaveBeenCalledWith(TENANT, PROJECT, "hld_diagram_output");
   });
 
   it("builds a valid, deterministic, label-escaped draw.io XML never returned in summaries", async () => {
@@ -299,6 +347,10 @@ describe("createRfpHldDocumentGenerated - happy path", () => {
     // Labels are escaped; no raw markup leaks into the XML body.
     expect(drawio).toContain("Edge &amp; &lt;Router&gt;");
     expect(drawio).not.toContain("<Router>");
+    // The XML uses the REVIEWED diagram-output geometry, not a positional re-layout.
+    expect(drawio).toContain(`x="333"`);
+    expect(drawio).toContain(`width="177"`);
+    expect(drawio).toContain(`height="88"`);
     // Lean summaries never carry the XML body, only its length.
     expect("drawioXml" in first.payloadSummary).toBe(false);
     expect(JSON.stringify(first)).not.toContain("mxfile");
@@ -356,6 +408,67 @@ describe("createRfpHldDocumentGenerated - project + source-chain gates (no write
       code: "source_review_unavailable",
     });
 
+    expect(mockCreateArtifact).not.toHaveBeenCalled();
+  });
+});
+
+describe("createRfpHldDocumentGenerated - approved diagram-output gate (no write)", () => {
+  it("blocks with diagram_output_unavailable when no output exists and writes nothing", async () => {
+    mockListByType.mockResolvedValueOnce([]);
+    expect(await generate()).toEqual({
+      status: "precondition_failed",
+      code: "diagram_output_unavailable",
+    });
+    expect(mockCreateArtifact).not.toHaveBeenCalled();
+  });
+
+  it("blocks an invalid output payload with diagram_output_unavailable", async () => {
+    mockValidateDiagramOutput.mockReturnValue({ ok: false, errors: ["bad"] });
+    expect(await generate()).toEqual({
+      status: "precondition_failed",
+      code: "diagram_output_unavailable",
+    });
+    expect(mockCreateArtifact).not.toHaveBeenCalled();
+  });
+
+  it("rejects rejected/wrong-stage/wrong-project/wrong-type/wrong-source/wrong-version outputs", async () => {
+    const badOutputs: ProjectArtifact[] = [
+      diagramOutputArtifact({ status: "rejected" }),
+      diagramOutputArtifact({ status: "needs_review" }),
+      diagramOutputArtifact({ stageId: "compliance_matrix_review" }),
+      diagramOutputArtifact({ projectId: "other-project" }),
+      diagramOutputArtifact({ type: "hld_diagram" }),
+      // wrong-source: row source ids do not resolve to the approved diagram.
+      diagramOutputArtifact({ sourceArtifactIds: [MODEL_ID] }),
+      // wrong-source: payload tie points at a different diagram.
+      diagramOutputArtifact({
+        payload: {
+          sourceArtifactIds: [DIAGRAM_ID],
+          sourceHldDiagramArtifactId: "other-diagram",
+          sourceDiagramVersion: 5,
+          nodes: [{ id: "z1", label: "X", geometry: { x: 1, y: 1, width: 2, height: 2 } }],
+          links: [],
+        },
+      }),
+      // wrong-version: payload version drifts from the approved diagram version.
+      diagramOutputArtifact({
+        payload: {
+          sourceArtifactIds: [DIAGRAM_ID],
+          sourceHldDiagramArtifactId: DIAGRAM_ID,
+          sourceDiagramVersion: 99,
+          nodes: [{ id: "z1", label: "X", geometry: { x: 1, y: 1, width: 2, height: 2 } }],
+          links: [],
+        },
+      }),
+    ];
+    for (const bad of badOutputs) {
+      mockListByType.mockResolvedValueOnce([bad]);
+      const result = await generate();
+      expect(result).toEqual({
+        status: "precondition_failed",
+        code: "diagram_output_unavailable",
+      });
+    }
     expect(mockCreateArtifact).not.toHaveBeenCalled();
   });
 });

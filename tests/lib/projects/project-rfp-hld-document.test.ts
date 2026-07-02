@@ -18,6 +18,7 @@ import {
 const BUNDLE_ID = "hsb-1";
 const MODEL_ID = "hdm-1";
 const DIAGRAM_ID = "hdg-1";
+const DIAGRAM_OUTPUT_ID = "hdgo-1";
 const DOCMODEL_ID = "hdocm-1";
 
 const VALID_DRAWIO =
@@ -74,13 +75,7 @@ describe("validateRfpHldDocumentPayload - accepts a valid manual upload", () => 
 describe("validateRfpHldDocumentPayload - generated + manual source modes", () => {
   it("accepts a generated_drawio_output paired with se_approved_generated_hld", () => {
     const result = validateRfpHldDocumentPayload(
-      validPayload({
-        sourceMode: RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED,
-        finalAuthority: {
-          authorityKind: RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED,
-          effectiveWhenArtifactStatus: RFP_HLD_DOCUMENT_AUTHORITY_STATUS,
-        },
-      })
+      validGeneratedPayload()
     );
     expect(result).toEqual({ valid: true, errors: [] });
   });
@@ -137,6 +132,67 @@ describe("validateRfpHldDocumentPayload - generated + manual source modes", () =
           },
         })
       )
+    ).toBe(false);
+  });
+});
+
+// A fully valid GENERATED document: five-source chain + diagram-output proof.
+function validGeneratedPayload(
+  overrides: Partial<RfpHldDocumentPayload> = {}
+): RfpHldDocumentPayload {
+  return validPayload({
+    sourceMode: RFP_HLD_DOCUMENT_SOURCE_MODE_GENERATED,
+    sourceArtifactIds: [BUNDLE_ID, MODEL_ID, DIAGRAM_ID, DIAGRAM_OUTPUT_ID, DOCMODEL_ID],
+    sourceHldDiagramOutputArtifactId: DIAGRAM_OUTPUT_ID,
+    sourceDiagramOutputVersion: 2,
+    finalAuthority: {
+      authorityKind: RFP_HLD_DOCUMENT_AUTHORITY_KIND_GENERATED,
+      effectiveWhenArtifactStatus: RFP_HLD_DOCUMENT_AUTHORITY_STATUS,
+    },
+    ...overrides,
+  });
+}
+
+describe("validateRfpHldDocumentPayload - generated five-source diagram-output proof", () => {
+  it("accepts a generated document with the five-source chain + output proof", () => {
+    expect(validateRfpHldDocumentPayload(validGeneratedPayload())).toEqual({
+      valid: true,
+      errors: [],
+    });
+  });
+
+  it("rejects a generated document missing the diagram-output id or version", () => {
+    const noId = validGeneratedPayload();
+    delete noId.sourceHldDiagramOutputArtifactId;
+    expect(isValidRfpHldDocumentPayload(noId)).toBe(false);
+
+    const noVersion = validGeneratedPayload();
+    delete noVersion.sourceDiagramOutputVersion;
+    expect(isValidRfpHldDocumentPayload(noVersion)).toBe(false);
+
+    expect(
+      isValidRfpHldDocumentPayload(validGeneratedPayload({ sourceDiagramOutputVersion: 0 }))
+    ).toBe(false);
+  });
+
+  it("rejects a generated document whose sourceArtifactIds omit the diagram-output id", () => {
+    expect(
+      isValidRfpHldDocumentPayload(
+        validGeneratedPayload({
+          sourceArtifactIds: [BUNDLE_ID, MODEL_ID, DIAGRAM_ID, DOCMODEL_ID],
+        })
+      )
+    ).toBe(false);
+  });
+
+  it("rejects a manual upload that carries generated-only diagram-output fields", () => {
+    expect(
+      isValidRfpHldDocumentPayload(
+        validPayload({ sourceHldDiagramOutputArtifactId: DIAGRAM_OUTPUT_ID })
+      )
+    ).toBe(false);
+    expect(
+      isValidRfpHldDocumentPayload(validPayload({ sourceDiagramOutputVersion: 2 }))
     ).toBe(false);
   });
 });

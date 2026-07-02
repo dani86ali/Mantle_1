@@ -115,6 +115,9 @@ export interface RfpHldFinalAuthorityPayloadSummary {
   sourceModelVersion: number;
   sourceDiagramVersion: number;
   sourceDocumentModelVersion: number;
+  /** Generated-only diagram-output proof; omitted for a manual upload. */
+  sourceHldDiagramOutputArtifactId?: string;
+  sourceDiagramOutputVersion?: number;
 }
 
 /** Stable blocker when no approved final HLD document is available yet. */
@@ -212,6 +215,12 @@ function toPayloadSummary(
     sourceModelVersion: p.sourceModelVersion,
     sourceDiagramVersion: p.sourceDiagramVersion,
     sourceDocumentModelVersion: p.sourceDocumentModelVersion,
+    ...(p.sourceHldDiagramOutputArtifactId !== undefined
+      ? { sourceHldDiagramOutputArtifactId: p.sourceHldDiagramOutputArtifactId }
+      : {}),
+    ...(p.sourceDiagramOutputVersion !== undefined
+      ? { sourceDiagramOutputVersion: p.sourceDiagramOutputVersion }
+      : {}),
   };
 }
 

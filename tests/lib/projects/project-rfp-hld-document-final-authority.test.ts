@@ -362,6 +362,7 @@ describe("module purity (static source check)", () => {
       "@/lib/projects/project-rfp-hld-source-bundle",
       "@/lib/projects/project-rfp-hld-design-model",
       "@/lib/projects/project-rfp-hld-diagram",
+      "@/lib/projects/project-rfp-hld-diagram-output",
       "@/types/project",
     ]);
     for (const forbidden of [
