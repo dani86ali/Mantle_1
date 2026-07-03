@@ -37,15 +37,20 @@ const RFP_BOQ_WORKSPACE_URL = `/api/projects/${PROJECT_ID}/rfp/boq`;
 const RFP_BOQ_FILE_ID = "file-boq-1";
 const NORMALIZED_BOQ_ARTIFACT_ID = "art-normalized-boq-1";
 const SKU_RESOLUTION_ARTIFACT_ID = "art-sku-resolution-1";
+const REVIEWED_SKU_RESOLUTION_ARTIFACT_ID = "art-sku-reviewed-1";
 const CONFIG_EXPANSION_DRAFT_ID = "art-config-draft-1";
 const CONFIG_EXPANSION_REVIEWED_ID = "art-config-reviewed-1";
 const RFP_BOQ_NORMALIZE_URL =
   `/api/projects/${PROJECT_ID}/rfp/files/${RFP_BOQ_FILE_ID}/boq/normalize`;
 const RFP_SKU_RESOLUTION_CREATE_URL =
   `/api/projects/${PROJECT_ID}/rfp/artifacts/${NORMALIZED_BOQ_ARTIFACT_ID}/sku-resolution`;
+const RFP_SKU_RESOLUTION_REVIEW_URL =
+  `/api/projects/${PROJECT_ID}/rfp/artifacts/${SKU_RESOLUTION_ARTIFACT_ID}/sku-resolution/review`;
 const RFP_BOQ_APPROVALS_URL = `/api/projects/${PROJECT_ID}/rfp/boq/approvals`;
 const RFP_CONFIG_EXPANSION_CREATE_URL =
   `/api/projects/${PROJECT_ID}/rfp/artifacts/${SKU_RESOLUTION_ARTIFACT_ID}/configuration-expansion`;
+const RFP_REVIEWED_SKU_CONFIG_EXPANSION_CREATE_URL =
+  `/api/projects/${PROJECT_ID}/rfp/artifacts/${REVIEWED_SKU_RESOLUTION_ARTIFACT_ID}/configuration-expansion`;
 const RFP_CONFIG_EXPANSION_REVIEW_URL =
   `/api/projects/${PROJECT_ID}/rfp/artifacts/${CONFIG_EXPANSION_DRAFT_ID}/configuration-expansion/review`;
 const HLD_READINESS_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-readiness-snapshot`;
@@ -1146,7 +1151,12 @@ function workspaceWithNormalizedBoq(
 
 function workspaceWithSkuResolution(
   status = "needs_review",
-  options: { canCreateConfigurationExpansion?: boolean } = {}
+  options: {
+    artifactId?: string;
+    version?: number;
+    sourceArtifactIds?: string[];
+    canCreateConfigurationExpansion?: boolean;
+  } = {}
 ): Record<string, unknown> {
   const normalized = rfpBoqSpineArtifact(
     NORMALIZED_BOQ_ARTIFACT_ID,
@@ -1156,11 +1166,11 @@ function workspaceWithSkuResolution(
     []
   );
   const sku = rfpBoqSpineArtifact(
-    SKU_RESOLUTION_ARTIFACT_ID,
+    options.artifactId ?? SKU_RESOLUTION_ARTIFACT_ID,
     "sku_resolution",
     status,
-    1,
-    [NORMALIZED_BOQ_ARTIFACT_ID]
+    options.version ?? 1,
+    options.sourceArtifactIds ?? [NORMALIZED_BOQ_ARTIFACT_ID]
   );
   const canCreateConfigurationExpansion =
     options.canCreateConfigurationExpansion ?? status === "approved";
@@ -1185,6 +1195,19 @@ function workspaceWithSkuResolution(
           : "Approve SKU resolution before configuration review.",
       },
     },
+  });
+}
+
+function workspaceWithReviewedSkuResolution(
+  status = "generated",
+  options: { canCreateConfigurationExpansion?: boolean } = {}
+): Record<string, unknown> {
+  return workspaceWithSkuResolution(status, {
+    artifactId: REVIEWED_SKU_RESOLUTION_ARTIFACT_ID,
+    version: 2,
+    sourceArtifactIds: [SKU_RESOLUTION_ARTIFACT_ID],
+    canCreateConfigurationExpansion:
+      options.canCreateConfigurationExpansion ?? status === "approved",
   });
 }
 
@@ -1277,6 +1300,52 @@ function workspaceWithReviewedConfigurationExpansion(
       },
     },
   });
+}
+
+function skuResolutionReviewResponse(): Record<string, unknown> {
+  return {
+    review: {
+      reviewSummary: {
+        totalLineCount: 2,
+        needsReviewCount: 1,
+        acceptedCount: 0,
+        rejectedCount: 0,
+        unresolvedCount: 1,
+        manualCount: 0,
+        outOfScopeCount: 0,
+      },
+      lines: [
+        {
+          sourceFileId: RFP_BOQ_FILE_ID,
+          sourceRowNumber: 2,
+          originalLineNumber: "1",
+          originalSku: "C9300-48P-A?",
+          status: "needs_review",
+          suggestions: [
+            {
+              suggestedSku: "C9300-48P-A",
+              description: "Access switch",
+              source: "exact",
+              confidence: 0.98,
+            },
+          ],
+          rawWorkbookCells: ["RAW-CELL-CANARY"],
+          price: 1234,
+          filePath: "C:/secret/customer-boq.xlsx",
+        },
+        {
+          sourceFileId: RFP_BOQ_FILE_ID,
+          sourceRowNumber: 3,
+          originalLineNumber: "2",
+          originalSku: "THIRD-PARTY-LINE",
+          status: "unresolved",
+          suggestions: [],
+          pricing: "PRICING-CANARY",
+          catalogSource: "CATALOG-CANARY",
+        },
+      ],
+    },
+  };
 }
 
 function configExpansionReviewResponse(): Record<string, unknown> {
@@ -5087,10 +5156,119 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     });
   });
 
-  it("approves and rejects SKU resolution only through the RFP BoQ approval route with the minimal body", async () => {
+  it("loads SKU resolution review and submits only explicit line decisions to the RFP route", async () => {
     const calls = stubFetch(
       stage45BoqFetch(
         () => workspaceWithSkuResolution("needs_review"),
+        (url, init) => {
+          if (
+            url === RFP_SKU_RESOLUTION_REVIEW_URL &&
+            (init?.method ?? "GET") === "GET"
+          ) {
+            return jsonResponse(skuResolutionReviewResponse());
+          }
+          if (
+            url === RFP_SKU_RESOLUTION_REVIEW_URL &&
+            init?.method === "POST"
+          ) {
+            return jsonResponse({
+              artifact: {
+                id: REVIEWED_SKU_RESOLUTION_ARTIFACT_ID,
+                status: "generated",
+              },
+            });
+          }
+          return undefined;
+        }
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("rfp-sku-review-action");
+    expect(screen.queryByTestId("rfp-boq-sku-approve")).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-sku-review-load"));
+    });
+
+    const panel = await screen.findByTestId("rfp-sku-review-panel");
+    for (const forbidden of [
+      "RAW-CELL-CANARY",
+      "PRICING-CANARY",
+      "CATALOG-CANARY",
+      "C:/secret",
+      "rawWorkbookCells",
+      "filePath",
+      "pricing",
+      "catalogSource",
+    ]) {
+      expect(panel.textContent ?? "").not.toContain(forbidden);
+    }
+    expect(screen.getByTestId("rfp-sku-review-submit")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("rfp-sku-review-decision-0"), {
+      target: { value: "accept" },
+    });
+    expect(screen.getByTestId("rfp-sku-review-submit")).toBeDisabled();
+    fireEvent.change(screen.getByTestId("rfp-sku-review-accepted-sku-0"), {
+      target: { value: "C9300-48P-A" },
+    });
+    fireEvent.change(screen.getByTestId("rfp-sku-review-decision-1"), {
+      target: { value: "manual" },
+    });
+    fireEvent.change(screen.getByTestId("rfp-sku-review-note-1"), {
+      target: { value: "Third-party line." },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("rfp-sku-review-submit")).not.toBeDisabled()
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-sku-review-submit"));
+    });
+    await waitFor(() => {
+      const post = calls.find(
+        (call) =>
+          call.url === RFP_SKU_RESOLUTION_REVIEW_URL &&
+          call.init?.method === "POST"
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post?.init?.body))).toEqual({
+        actions: [
+          {
+            sourceFileId: RFP_BOQ_FILE_ID,
+            sourceRowNumber: 2,
+            decision: "accept",
+            acceptedSku: "C9300-48P-A",
+          },
+          {
+            sourceFileId: RFP_BOQ_FILE_ID,
+            sourceRowNumber: 3,
+            decision: "manual",
+            note: "Third-party line.",
+          },
+        ],
+      });
+      const body = String(post?.init?.body);
+      for (const forbidden of [
+        "tenantId",
+        "projectId",
+        "artifactId",
+        "decidedBy",
+        "lineDecisions",
+        "catalogProfile",
+        "provider",
+        "pricing",
+        "catalogSource",
+      ]) {
+        expect(body).not.toContain(forbidden);
+      }
+    });
+  });
+
+  it("approves and rejects reviewed SKU resolution only through the RFP BoQ approval route with the minimal body", async () => {
+    const calls = stubFetch(
+      stage45BoqFetch(
+        () => workspaceWithReviewedSkuResolution("generated"),
         (url, init) => {
           if (url === RFP_BOQ_APPROVALS_URL && init?.method === "POST") {
             return jsonResponse({ ok: true });
@@ -5102,6 +5280,7 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     render(<ProjectRfpEvidencePage />);
 
     await screen.findByTestId("rfp-boq-sku-review-action");
+    expect(screen.queryByTestId("rfp-sku-review-load")).toBeNull();
     await act(async () => {
       fireEvent.click(screen.getByTestId("rfp-boq-sku-approve"));
     });
@@ -5125,11 +5304,11 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
       );
       expect(posts).toHaveLength(2);
       expect(JSON.parse(String(posts[0].init?.body))).toEqual({
-        artifactId: SKU_RESOLUTION_ARTIFACT_ID,
+        artifactId: REVIEWED_SKU_RESOLUTION_ARTIFACT_ID,
         decision: "approved",
       });
       expect(JSON.parse(String(posts[1].init?.body))).toEqual({
-        artifactId: SKU_RESOLUTION_ARTIFACT_ID,
+        artifactId: REVIEWED_SKU_RESOLUTION_ARTIFACT_ID,
         decision: "rejected",
       });
       for (const post of posts) {
@@ -5145,6 +5324,161 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
           expect(body).not.toContain(forbidden);
         }
       }
+    });
+  });
+
+  it("lets a fresh RFP BoQ spine progress from normalized BoQ through reviewed SKU approval to configuration expansion", async () => {
+    let skuCreated = false;
+    let skuReviewed = false;
+    let skuApproved = false;
+    let configCreated = false;
+    const calls = stubFetch(
+      stage45BoqFetch(
+        () => {
+          if (configCreated) return workspaceWithConfigurationDraft();
+          if (skuApproved) {
+            return workspaceWithReviewedSkuResolution("approved", {
+              canCreateConfigurationExpansion: true,
+            });
+          }
+          if (skuReviewed) return workspaceWithReviewedSkuResolution("generated");
+          if (skuCreated) return workspaceWithSkuResolution("needs_review");
+          return workspaceWithNormalizedBoq({ canCreateSkuResolution: true });
+        },
+        (url, init) => {
+          if (url === RFP_SKU_RESOLUTION_CREATE_URL && init?.method === "POST") {
+            skuCreated = true;
+            return jsonResponse({ artifact: { id: SKU_RESOLUTION_ARTIFACT_ID } }, 201);
+          }
+          if (
+            url === RFP_SKU_RESOLUTION_REVIEW_URL &&
+            (init?.method ?? "GET") === "GET"
+          ) {
+            return jsonResponse(skuResolutionReviewResponse());
+          }
+          if (
+            url === RFP_SKU_RESOLUTION_REVIEW_URL &&
+            init?.method === "POST"
+          ) {
+            skuReviewed = true;
+            return jsonResponse({
+              artifact: {
+                id: REVIEWED_SKU_RESOLUTION_ARTIFACT_ID,
+                status: "generated",
+              },
+            });
+          }
+          if (url === RFP_BOQ_APPROVALS_URL && init?.method === "POST") {
+            const parsed = JSON.parse(String(init.body));
+            if (
+              parsed.artifactId === REVIEWED_SKU_RESOLUTION_ARTIFACT_ID &&
+              parsed.decision === "approved"
+            ) {
+              skuApproved = true;
+            }
+            return jsonResponse({ ok: true });
+          }
+          if (
+            url === RFP_REVIEWED_SKU_CONFIG_EXPANSION_CREATE_URL &&
+            init?.method === "POST"
+          ) {
+            configCreated = true;
+            return jsonResponse({ artifact: { id: CONFIG_EXPANSION_DRAFT_ID } }, 201);
+          }
+          return undefined;
+        }
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const createSku = await screen.findByTestId("rfp-boq-create-sku-resolution");
+    await act(async () => {
+      fireEvent.click(createSku);
+    });
+    await screen.findByTestId("rfp-sku-review-action");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-sku-review-load"));
+    });
+    await screen.findByTestId("rfp-sku-review-panel");
+    fireEvent.change(screen.getByTestId("rfp-sku-review-decision-0"), {
+      target: { value: "accept" },
+    });
+    fireEvent.change(screen.getByTestId("rfp-sku-review-accepted-sku-0"), {
+      target: { value: "C9300-48P-A" },
+    });
+    fireEvent.change(screen.getByTestId("rfp-sku-review-decision-1"), {
+      target: { value: "manual" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-sku-review-submit"));
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("rfp-boq-sku-approve")).toHaveTextContent(
+        "Approve reviewed SKU resolution"
+      )
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-boq-sku-approve"));
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("rfp-boq-create-configuration-expansion")
+      ).toBeInTheDocument()
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-boq-create-configuration-expansion"));
+    });
+
+    await waitFor(() => {
+      expect(skuCreated).toBe(true);
+      expect(skuReviewed).toBe(true);
+      expect(skuApproved).toBe(true);
+      expect(configCreated).toBe(true);
+      const skuCreate = calls.find(
+        (call) =>
+          call.url === RFP_SKU_RESOLUTION_CREATE_URL &&
+          call.init?.method === "POST"
+      );
+      expect(skuCreate?.init?.body).toBeUndefined();
+      const reviewPost = calls.find(
+        (call) =>
+          call.url === RFP_SKU_RESOLUTION_REVIEW_URL &&
+          call.init?.method === "POST"
+      );
+      expect(JSON.parse(String(reviewPost?.init?.body))).toEqual({
+        actions: [
+          {
+            sourceFileId: RFP_BOQ_FILE_ID,
+            sourceRowNumber: 2,
+            decision: "accept",
+            acceptedSku: "C9300-48P-A",
+          },
+          {
+            sourceFileId: RFP_BOQ_FILE_ID,
+            sourceRowNumber: 3,
+            decision: "manual",
+          },
+        ],
+      });
+      const approvalPost = calls.find(
+        (call) =>
+          call.url === RFP_BOQ_APPROVALS_URL &&
+          call.init?.method === "POST" &&
+          String(call.init.body).includes(REVIEWED_SKU_RESOLUTION_ARTIFACT_ID)
+      );
+      expect(JSON.parse(String(approvalPost?.init?.body))).toEqual({
+        artifactId: REVIEWED_SKU_RESOLUTION_ARTIFACT_ID,
+        decision: "approved",
+      });
+      const configPost = calls.find(
+        (call) =>
+          call.url === RFP_REVIEWED_SKU_CONFIG_EXPANSION_CREATE_URL &&
+          call.init?.method === "POST"
+      );
+      expect(configPost).toBeDefined();
+      expect(configPost?.init?.body).toBeUndefined();
     });
   });
 

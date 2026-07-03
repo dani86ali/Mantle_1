@@ -393,6 +393,65 @@ interface RfpBoqWorkspaceResponse {
   workspace?: ProjectRfpBoqWorkspace;
 }
 
+type RfpSkuResolutionLineStatus =
+  | "needs_review"
+  | "accepted"
+  | "rejected"
+  | "unresolved"
+  | "manual"
+  | "out_of_scope";
+
+/** One projected SKU suggestion returned by the RFP SKU review route. */
+interface RfpSkuResolutionReviewSuggestion {
+  suggestedSku: string;
+  description?: string;
+  source: "exact" | "normalized" | "fuzzy" | "ai";
+  confidence?: number;
+  rationale?: string;
+}
+
+/** Safe advisory guidance for a deferred SKU review line. */
+interface RfpSkuResolutionReviewGuidance {
+  action: "reject";
+  reasonCode: string;
+  note: string;
+}
+
+/** One projected SKU-resolution line returned by the RFP SKU review route. */
+interface RfpSkuResolutionReviewLine {
+  sourceFileId: string;
+  sourceRowNumber: number;
+  originalLineNumber: string;
+  originalSku: string;
+  status: RfpSkuResolutionLineStatus;
+  suggestions: RfpSkuResolutionReviewSuggestion[];
+  acceptedSku?: string;
+  note?: string;
+  reviewGuidance?: RfpSkuResolutionReviewGuidance;
+}
+
+/** Lean review summary returned for SKU-resolution line review. */
+interface RfpSkuResolutionReviewSummary {
+  totalLineCount: number;
+  needsReviewCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  unresolvedCount: number;
+  manualCount: number;
+  outOfScopeCount: number;
+}
+
+/** Read-only response of GET .../sku-resolution/review. */
+interface RfpSkuResolutionReviewWorkspace {
+  reviewSummary: RfpSkuResolutionReviewSummary;
+  lines: RfpSkuResolutionReviewLine[];
+}
+
+/** Detail response of GET .../sku-resolution/review. */
+interface RfpSkuResolutionReviewResponse {
+  review?: RfpSkuResolutionReviewWorkspace;
+}
+
 /** One projected configuration-expansion review line returned by the RFP review route. */
 interface RfpConfigurationExpansionReviewLine {
   lineId: string;
@@ -2183,6 +2242,8 @@ const BOQ_NORMALIZE_SUCCESS =
 const BOQ_NORMALIZE_ERROR = "Unable to normalize the RFP BoQ file.";
 const BOQ_ACTION_ERROR = "Unable to update the RFP BoQ readiness action.";
 const BOQ_APPROVAL_ERROR = "Unable to review the RFP BoQ artifact.";
+const SKU_RESOLUTION_REVIEW_ERROR =
+  "Unable to load or submit the SKU resolution review.";
 const CONFIG_EXPANSION_REVIEW_ERROR =
   "Unable to load or submit the configuration expansion review.";
 
@@ -2513,6 +2574,46 @@ type RfpBoqConfigurationGate =
 interface ConfigExpansionLineReviewState {
   action: "" | "accept" | "reject";
   note: string;
+}
+
+type SkuResolutionLineReviewAction =
+  | ""
+  | "accept"
+  | "reject"
+  | "manual"
+  | "out_of_scope";
+
+interface SkuResolutionLineReviewState {
+  action: SkuResolutionLineReviewAction;
+  acceptedSku: string;
+  note: string;
+}
+
+function skuResolutionLineKey(line: {
+  sourceFileId: string;
+  sourceRowNumber: number;
+}): string {
+  return `${line.sourceFileId}::${line.sourceRowNumber}`;
+}
+
+function isSkuResolutionLineActionable(
+  line: RfpSkuResolutionReviewLine
+): boolean {
+  return line.status === "needs_review" || line.status === "unresolved";
+}
+
+function isSkuResolutionLineReviewReady(
+  line: RfpSkuResolutionReviewLine,
+  state: SkuResolutionLineReviewState | undefined
+): boolean {
+  if (!isSkuResolutionLineActionable(line) || state === undefined) return false;
+  if (state.action === "manual" || state.action === "out_of_scope") return true;
+  if (line.status !== "needs_review") return false;
+  if (state.action === "reject") return true;
+  if (state.action !== "accept") return false;
+  return line.suggestions.some(
+    (suggestion) => suggestion.suggestedSku === state.acceptedSku
+  );
 }
 
 /**
@@ -4618,6 +4719,20 @@ export default function ProjectRfpEvidencePage() {
   const [boqApprovalPendingId, setBoqApprovalPendingId] = useState<string | null>(null);
   const [boqApprovalError, setBoqApprovalError] = useState<string | null>(null);
   const [boqApprovalSuccess, setBoqApprovalSuccess] = useState<string | null>(null);
+  const [skuResolutionReview, setSkuResolutionReview] =
+    useState<RfpSkuResolutionReviewWorkspace | null>(null);
+  const [skuResolutionReviewArtifactId, setSkuResolutionReviewArtifactId] =
+    useState<string | null>(null);
+  const [skuResolutionReviewLoading, setSkuResolutionReviewLoading] =
+    useState(false);
+  const [skuResolutionReviewPending, setSkuResolutionReviewPending] =
+    useState(false);
+  const [skuResolutionReviewError, setSkuResolutionReviewError] = useState<
+    string | null
+  >(null);
+  const [skuResolutionLineReview, setSkuResolutionLineReview] = useState<
+    Record<string, SkuResolutionLineReviewState>
+  >({});
   const [configExpansionReview, setConfigExpansionReview] =
     useState<RfpConfigurationExpansionReviewWorkspace | null>(null);
   const [configExpansionReviewArtifactId, setConfigExpansionReviewArtifactId] =
@@ -7916,8 +8031,14 @@ export default function ProjectRfpEvidencePage() {
     boqWorkspace !== null &&
     normalizedBoqArtifact !== null &&
     boqWorkspace.readiness.canCreateSkuResolution === true;
-  const skuResolutionReviewVisible =
-    isRfpBoqReviewableArtifact(skuResolutionArtifact);
+  const skuResolutionLineReviewVisible =
+    skuResolutionArtifact !== null &&
+    skuResolutionArtifact.type === "sku_resolution" &&
+    skuResolutionArtifact.status === "needs_review";
+  const skuResolutionApprovalVisible =
+    skuResolutionArtifact !== null &&
+    skuResolutionArtifact.type === "sku_resolution" &&
+    skuResolutionArtifact.status === "generated";
   const createConfigurationExpansionVisible =
     boqWorkspace !== null &&
     skuResolutionArtifact !== null &&
@@ -7937,6 +8058,19 @@ export default function ProjectRfpEvidencePage() {
     configExpansionReview !== null &&
     configExpansionReviewExpansionLines.every(
       (line) => configExpansionLineReview[line.lineId]?.action !== ""
+    );
+  const skuResolutionReviewLines = skuResolutionReview?.lines ?? [];
+  const skuResolutionActionableLines = skuResolutionReviewLines.filter(
+    isSkuResolutionLineActionable
+  );
+  const skuResolutionReviewReady =
+    skuResolutionReview !== null &&
+    skuResolutionActionableLines.length > 0 &&
+    skuResolutionActionableLines.every((line) =>
+      isSkuResolutionLineReviewReady(
+        line,
+        skuResolutionLineReview[skuResolutionLineKey(line)]
+      )
     );
 
   const refreshRfpLists = useCallback((): void => {
@@ -8227,6 +8361,9 @@ export default function ProjectRfpEvidencePage() {
           return;
         }
         setBoqActionSuccess(`${label} draft created for engineer review.`);
+        setSkuResolutionReview(null);
+        setSkuResolutionReviewArtifactId(null);
+        setSkuResolutionLineReview({});
         setConfigExpansionReview(null);
         setConfigExpansionReviewArtifactId(null);
         setConfigExpansionLineReview({});
@@ -8265,6 +8402,9 @@ export default function ProjectRfpEvidencePage() {
             ? `${label} approved.`
             : `${label} rejected.`
         );
+        setSkuResolutionReview(null);
+        setSkuResolutionReviewArtifactId(null);
+        setSkuResolutionLineReview({});
         setConfigExpansionReview(null);
         setConfigExpansionReviewArtifactId(null);
         setConfigExpansionLineReview({});
@@ -8277,6 +8417,144 @@ export default function ProjectRfpEvidencePage() {
     },
     [boqApprovalPendingId, id, refreshRfpLists]
   );
+
+  const loadSkuResolutionReview = useCallback(
+    async (artifactId: string | undefined): Promise<void> => {
+      if (artifactId === undefined || skuResolutionReviewLoading) return;
+      setSkuResolutionReviewLoading(true);
+      setSkuResolutionReviewError(null);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/sku-resolution/review`
+        );
+        const body = (await res.json().catch(() => null)) as
+          | RfpSkuResolutionReviewResponse
+          | null;
+        if (!res.ok || body?.review === undefined || !Array.isArray(body.review.lines)) {
+          setSkuResolutionReviewError(SKU_RESOLUTION_REVIEW_ERROR);
+          setSkuResolutionReview(null);
+          setSkuResolutionReviewArtifactId(null);
+          setSkuResolutionLineReview({});
+          return;
+        }
+        const seeded: Record<string, SkuResolutionLineReviewState> = {};
+        for (const line of body.review.lines) {
+          if (!isSkuResolutionLineActionable(line)) continue;
+          seeded[skuResolutionLineKey(line)] = {
+            action: "",
+            acceptedSku: "",
+            note: "",
+          };
+        }
+        setSkuResolutionReview(body.review);
+        setSkuResolutionReviewArtifactId(artifactId);
+        setSkuResolutionLineReview(seeded);
+      } catch {
+        setSkuResolutionReviewError(SKU_RESOLUTION_REVIEW_ERROR);
+      } finally {
+        setSkuResolutionReviewLoading(false);
+      }
+    },
+    [id, skuResolutionReviewLoading]
+  );
+
+  const updateSkuResolutionLineReview = useCallback(
+    (
+      lineKey: string,
+      patch: Partial<SkuResolutionLineReviewState>
+    ): void => {
+      setSkuResolutionLineReview((prev) => {
+        const current = prev[lineKey] ?? {
+          action: "",
+          acceptedSku: "",
+          note: "",
+        };
+        const next = { ...current, ...patch };
+        if (patch.action !== undefined && patch.action !== "accept") {
+          next.acceptedSku = "";
+        }
+        return { ...prev, [lineKey]: next };
+      });
+    },
+    []
+  );
+
+  const submitSkuResolutionReview = useCallback(async (): Promise<void> => {
+    if (
+      skuResolutionReviewArtifactId === null ||
+      skuResolutionReview === null ||
+      skuResolutionReviewPending
+    ) {
+      return;
+    }
+
+    const actions: Array<{
+      sourceFileId: string;
+      sourceRowNumber: number;
+      decision: "accept" | "reject" | "manual" | "out_of_scope";
+      acceptedSku?: string;
+      note?: string;
+    }> = [];
+    for (const line of skuResolutionReview.lines.filter(isSkuResolutionLineActionable)) {
+      const key = skuResolutionLineKey(line);
+      const state = skuResolutionLineReview[key];
+      if (!isSkuResolutionLineReviewReady(line, state)) return;
+      const note = state.note.trim();
+      const base = {
+        sourceFileId: line.sourceFileId,
+        sourceRowNumber: line.sourceRowNumber,
+        ...(note === "" ? {} : { note }),
+      };
+      if (state.action === "accept") {
+        actions.push({
+          ...base,
+          decision: "accept",
+          acceptedSku: state.acceptedSku,
+        });
+      } else if (state.action === "reject") {
+        actions.push({ ...base, decision: "reject" });
+      } else if (
+        state.action === "manual" ||
+        state.action === "out_of_scope"
+      ) {
+        actions.push({ ...base, decision: state.action });
+      }
+    }
+    if (actions.length === 0) return;
+
+    setSkuResolutionReviewPending(true);
+    setSkuResolutionReviewError(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${id}/rfp/artifacts/${skuResolutionReviewArtifactId}/sku-resolution/review`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ actions }),
+        }
+      );
+      if (!res.ok) {
+        setSkuResolutionReviewError(SKU_RESOLUTION_REVIEW_ERROR);
+        return;
+      }
+      setSkuResolutionReview(null);
+      setSkuResolutionReviewArtifactId(null);
+      setSkuResolutionLineReview({});
+      setBoqActionSuccess("SKU resolution line review submitted.");
+      refreshRfpLists();
+    } catch {
+      setSkuResolutionReviewError(SKU_RESOLUTION_REVIEW_ERROR);
+    } finally {
+      setSkuResolutionReviewPending(false);
+    }
+  }, [
+    id,
+    refreshRfpLists,
+    skuResolutionLineReview,
+    skuResolutionReview,
+    skuResolutionReviewArtifactId,
+    skuResolutionReviewPending,
+  ]);
 
   const loadConfigurationExpansionReview = useCallback(
     async (artifactId: string | undefined): Promise<void> => {
@@ -12252,7 +12530,8 @@ export default function ProjectRfpEvidencePage() {
                   </p>
                   {(boqNormalizeVisible ||
                     createSkuResolutionVisible ||
-                    skuResolutionReviewVisible ||
+                    skuResolutionLineReviewVisible ||
+                    skuResolutionApprovalVisible ||
                     createConfigurationExpansionVisible ||
                     configurationExpansionDraftVisible ||
                     configurationExpansionApprovalVisible) && (
@@ -12319,14 +12598,225 @@ export default function ProjectRfpEvidencePage() {
                           </button>
                         </div>
                       )}
-                      {skuResolutionReviewVisible && (
+                      {skuResolutionLineReviewVisible && (
+                        <div
+                          data-testid="rfp-sku-review-action"
+                          className={SUBTLE_CARD}
+                        >
+                          <p className={MUTED_TEXT}>
+                            Load the SKU resolution draft and submit explicit
+                            line decisions before artifact approval.
+                          </p>
+                          <button
+                            type="button"
+                            data-testid="rfp-sku-review-load"
+                            onClick={() =>
+                              void loadSkuResolutionReview(
+                                skuResolutionArtifact?.id
+                              )
+                            }
+                            disabled={skuResolutionReviewLoading}
+                            className={`${ACTION_BTN} mt-2`}
+                          >
+                            Load SKU review
+                          </button>
+                          {skuResolutionReview !== null &&
+                            skuResolutionReviewArtifactId ===
+                              skuResolutionArtifact?.id && (
+                              <div
+                                data-testid="rfp-sku-review-panel"
+                                className="mt-3 space-y-2"
+                              >
+                                <p className={MUTED_TEXT}>
+                                  Needs review:{" "}
+                                  {
+                                    skuResolutionReview.reviewSummary
+                                      .needsReviewCount
+                                  }
+                                  {" | "}Unresolved:{" "}
+                                  {
+                                    skuResolutionReview.reviewSummary
+                                      .unresolvedCount
+                                  }
+                                  {" | "}Resolved:{" "}
+                                  {skuResolutionReview.reviewSummary.acceptedCount +
+                                    skuResolutionReview.reviewSummary
+                                      .rejectedCount +
+                                    skuResolutionReview.reviewSummary.manualCount +
+                                    skuResolutionReview.reviewSummary
+                                      .outOfScopeCount}
+                                </p>
+                                {skuResolutionReview.lines.map((line, index) => {
+                                  const lineKey = skuResolutionLineKey(line);
+                                  const state =
+                                    skuResolutionLineReview[lineKey] ?? {
+                                      action: "",
+                                      acceptedSku: "",
+                                      note: "",
+                                    };
+                                  const actionable =
+                                    isSkuResolutionLineActionable(line);
+                                  return (
+                                    <div
+                                      key={lineKey}
+                                      data-testid="rfp-sku-review-line"
+                                      className="rounded-button border border-[var(--border)] bg-bg-card p-2"
+                                    >
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <p className="text-xs font-medium text-text-primary">
+                                          Line{" "}
+                                          {line.originalLineNumber.trim() === ""
+                                            ? index + 1
+                                            : line.originalLineNumber}
+                                        </p>
+                                        <span
+                                          className="inline-flex rounded-full border border-[var(--border)] bg-bg-primary px-2 py-0.5 text-[11px] font-medium capitalize text-text-secondary"
+                                        >
+                                          {humanizeToken(line.status)}
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 text-xs text-text-secondary">
+                                        Original SKU: {line.originalSku}
+                                      </p>
+                                      {line.suggestions.length > 0 && (
+                                        <div className="mt-1 space-y-1">
+                                          {line.suggestions.map(
+                                            (suggestion, suggestionIndex) => (
+                                              <p
+                                                key={`${suggestion.suggestedSku}-${suggestion.source}-${suggestionIndex}`}
+                                                className={MUTED_TEXT}
+                                              >
+                                                Suggestion:{" "}
+                                                {suggestion.suggestedSku}
+                                                {suggestion.description
+                                                  ? ` - ${suggestion.description}`
+                                                  : ""}
+                                              </p>
+                                            )
+                                          )}
+                                        </div>
+                                      )}
+                                      {line.reviewGuidance && (
+                                        <p className="mt-1 text-xs text-amber-200">
+                                          {line.reviewGuidance.note}
+                                        </p>
+                                      )}
+                                      {actionable ? (
+                                        <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,12rem)_minmax(0,14rem)_1fr]">
+                                          <select
+                                            data-testid={`rfp-sku-review-decision-${index}`}
+                                            value={state.action}
+                                            onChange={(e) =>
+                                              updateSkuResolutionLineReview(
+                                                lineKey,
+                                                {
+                                                  action: e.target
+                                                    .value as SkuResolutionLineReviewAction,
+                                                  acceptedSku: "",
+                                                }
+                                              )
+                                            }
+                                            className={`${FIELD} mt-0 w-full`}
+                                          >
+                                            <option value="">Select decision</option>
+                                            {line.status === "needs_review" &&
+                                              line.suggestions.length > 0 && (
+                                                <option value="accept">
+                                                  Accept suggestion
+                                                </option>
+                                              )}
+                                            {line.status === "needs_review" && (
+                                              <option value="reject">Reject</option>
+                                            )}
+                                            <option value="manual">Manual</option>
+                                            <option value="out_of_scope">
+                                              Out of scope
+                                            </option>
+                                          </select>
+                                          {state.action === "accept" ? (
+                                            <select
+                                              data-testid={`rfp-sku-review-accepted-sku-${index}`}
+                                              value={state.acceptedSku}
+                                              onChange={(e) =>
+                                                updateSkuResolutionLineReview(
+                                                  lineKey,
+                                                  { acceptedSku: e.target.value }
+                                                )
+                                              }
+                                              className={`${FIELD} mt-0 w-full`}
+                                            >
+                                              <option value="">
+                                                Select suggestion
+                                              </option>
+                                              {line.suggestions.map(
+                                                (
+                                                  suggestion,
+                                                  suggestionIndex
+                                                ) => (
+                                                  <option
+                                                    key={`${suggestion.suggestedSku}-${suggestion.source}-${suggestionIndex}`}
+                                                    value={
+                                                      suggestion.suggestedSku
+                                                    }
+                                                  >
+                                                    {suggestion.suggestedSku}
+                                                  </option>
+                                                )
+                                              )}
+                                            </select>
+                                          ) : (
+                                            <span aria-hidden="true" />
+                                          )}
+                                          <textarea
+                                            data-testid={`rfp-sku-review-note-${index}`}
+                                            value={state.note}
+                                            onChange={(e) =>
+                                              updateSkuResolutionLineReview(
+                                                lineKey,
+                                                { note: e.target.value }
+                                              )
+                                            }
+                                            rows={2}
+                                            placeholder="Optional decision note"
+                                            className={`${FIELD} mt-0 w-full`}
+                                          />
+                                        </div>
+                                      ) : (
+                                        <p className={MUTED_TEXT}>
+                                          This line already has a recorded
+                                          decision.
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                                <button
+                                  type="button"
+                                  data-testid="rfp-sku-review-submit"
+                                  onClick={() =>
+                                    void submitSkuResolutionReview()
+                                  }
+                                  disabled={
+                                    !skuResolutionReviewReady ||
+                                    skuResolutionReviewPending
+                                  }
+                                  className={ACTION_BTN}
+                                >
+                                  Submit SKU review
+                                </button>
+                              </div>
+                            )}
+                        </div>
+                      )}
+                      {skuResolutionApprovalVisible && (
                         <div
                           data-testid="rfp-boq-sku-review-action"
                           className={SUBTLE_CARD}
                         >
                           <p className={MUTED_TEXT}>
-                            Record the engineer decision for the SKU resolution
-                            artifact through the RFP BoQ approval gate.
+                            Record the engineer decision for the reviewed SKU
+                            resolution artifact through the RFP BoQ approval
+                            gate.
                           </p>
                           <div className="mt-2 flex flex-wrap gap-2">
                             <button
@@ -12342,7 +12832,7 @@ export default function ProjectRfpEvidencePage() {
                               disabled={boqApprovalPendingId !== null}
                               className={ACTION_BTN}
                             >
-                              Approve SKU resolution
+                              Approve reviewed SKU resolution
                             </button>
                             <button
                               type="button"
@@ -12357,7 +12847,7 @@ export default function ProjectRfpEvidencePage() {
                               disabled={boqApprovalPendingId !== null}
                               className={PLAIN_BTN}
                             >
-                              Reject SKU resolution
+                              Reject reviewed SKU resolution
                             </button>
                           </div>
                         </div>
@@ -12579,6 +13069,14 @@ export default function ProjectRfpEvidencePage() {
                           className="text-xs text-emerald-300"
                         >
                           {boqApprovalSuccess}
+                        </p>
+                      )}
+                      {skuResolutionReviewError && (
+                        <p
+                          data-testid="rfp-sku-review-error"
+                          className={ERROR_BOX}
+                        >
+                          {skuResolutionReviewError}
                         </p>
                       )}
                       {configExpansionReviewError && (
