@@ -88,6 +88,7 @@ const FINAL_HLD_DOCUMENT_DOWNLOAD_URL = `/api/projects/${PROJECT_ID}/rfp/hld-doc
 const GENERATED_HLD_DOCUMENT_CREATE_URL = `/api/projects/${PROJECT_ID}/rfp/hld-document/generated`;
 const FINAL_HLD_DOCUMENT_REVIEW_ARTIFACT_ID = "art-hld-doc-review-1";
 const FINAL_HLD_DOCUMENT_REVIEW_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${FINAL_HLD_DOCUMENT_REVIEW_ARTIFACT_ID}/hld-document/review`;
+const FINAL_HLD_DOCUMENT_CANDIDATE_DOWNLOAD_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${FINAL_HLD_DOCUMENT_REVIEW_ARTIFACT_ID}/hld-document/download`;
 const HLD_CLOSE_URL = `/api/projects/${PROJECT_ID}/rfp/hld-close`;
 const TP_HANDOFF_GATE_URL = `/api/projects/${PROJECT_ID}/rfp/tp-handoff-gate`;
 const HLD_INTAKE_FIELD_IDS = [
@@ -10257,6 +10258,52 @@ describe("ProjectRfpEvidencePage - Stage 6I-F final HLD review, close, and TP ha
     expect(screen.getByTestId("final-hld-document-reject")).toBeInTheDocument();
   });
 
+  it("Stage 6I-G-B shows generated candidate download only for a pending generated candidate", async () => {
+    stubFetch(
+      sixIFFetch({ statusGet: () => jsonResponse(PENDING_GENERATED_BODY, 409) })
+    );
+    const first = render(<ProjectRfpEvidencePage />);
+
+    const link = await screen.findByTestId(
+      "generated-hld-document-candidate-download"
+    );
+    expect(link.getAttribute("href")).toBe(
+      FINAL_HLD_DOCUMENT_CANDIDATE_DOWNLOAD_URL
+    );
+    expect(link.textContent ?? "").toContain(
+      "Download generated candidate for manual edit"
+    );
+    expect(link.textContent ?? "").not.toContain("final");
+    expect(link.textContent ?? "").not.toContain("export");
+    expect(screen.queryByTestId("final-hld-document-download")).toBeNull();
+    first.unmount();
+    cleanup();
+    vi.unstubAllGlobals();
+
+    stubFetch(
+      sixIFFetch({ statusGet: () => jsonResponse(PENDING_MANUAL_BODY, 409) })
+    );
+    const second = render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("final-hld-document-review-controls");
+    expect(
+      screen.queryByTestId("generated-hld-document-candidate-download")
+    ).toBeNull();
+    second.unmount();
+    cleanup();
+    vi.unstubAllGlobals();
+
+    stubFetch(
+      sixIFFetch({
+        statusGet: () => jsonResponse({ code: "hld_document_not_final" }, 409),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("final-hld-document-review-panel");
+    expect(
+      screen.queryByTestId("generated-hld-document-candidate-download")
+    ).toBeNull();
+  });
+
   it("Stage 6I-F shows a pending manual upload as manual and distinct from generated", async () => {
     stubFetch(
       sixIFFetch({ statusGet: () => jsonResponse(PENDING_MANUAL_BODY, 409) })
@@ -10272,6 +10319,9 @@ describe("ProjectRfpEvidencePage - Stage 6I-F final HLD review, close, and TP ha
     expect(
       await screen.findByTestId("final-hld-document-review-controls")
     ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("generated-hld-document-candidate-download")
+    ).toBeNull();
   });
 
   it("Stage 6I-F approve/request-changes post only { decision } or { decision, note } to the artifact-scoped review route", async () => {
@@ -10654,6 +10704,9 @@ describe("ProjectRfpEvidencePage - Stage 6I-F final HLD review, close, and TP ha
     const download = await screen.findByTestId("final-hld-document-download");
     expect(download.getAttribute("href")).toBe(FINAL_HLD_DOCUMENT_DOWNLOAD_URL);
     expect(download.textContent ?? "").toContain("Download final HLD document");
+    expect(
+      screen.queryByTestId("generated-hld-document-candidate-download")
+    ).toBeNull();
   });
 
   it("Stage 6I-G-A posts only the allowed manual upload body, reads file text, and refreshes downstream gates", async () => {
@@ -10833,15 +10886,19 @@ describe("ProjectRfpEvidencePage - Stage 6I-F final HLD review, close, and TP ha
     expect(source).toContain("JSON.stringify({ documentModelArtifactId })");
   });
 
-  it("Stage 6I-G-A static: wires scoped manual upload/download affordances but no TP/proposal/export/provider route", () => {
+  it("Stage 6I-G-B static: wires scoped candidate/manual/final download affordances but no TP/proposal/export/provider route", () => {
     const source = readFileSync(SRC_PATH, "utf8");
     // The final HLD document review is wired ONLY in the artifact-scoped form.
     expect(source).toContain(
       "/rfp/artifacts/${artifactId}/hld-document/review"
     );
+    expect(source).toContain(
+      "/rfp/artifacts/${artifactId}/hld-document/download"
+    );
     expect(source).toContain("/rfp/hld-close");
     expect(source).toContain("/rfp/tp-handoff-gate");
     expect(source).toContain("/rfp/hld-document/download");
+    expect(source).toContain("generated-hld-document-candidate-download");
     expect(source).toContain("manual-hld-document-upload-panel");
     expect(source).toContain("final-hld-document-review-panel");
     expect(source).toContain("hld-close-readiness-panel");

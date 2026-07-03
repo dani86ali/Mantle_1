@@ -2302,6 +2302,8 @@ const MANUAL_HLD_DOCUMENT_UPLOAD_FILE_ERROR =
   "Select a .drawio or .xml file before upload.";
 const MANUAL_HLD_DOCUMENT_UPLOAD_BLOCKED =
   "Approve an HLD document model before uploading a manual draw.io candidate.";
+const GENERATED_HLD_DOCUMENT_CANDIDATE_DOWNLOAD_LABEL =
+  "Download generated candidate for manual edit";
 const FINAL_HLD_DOCUMENT_DOWNLOAD_LABEL = "Download final HLD document";
 const HLD_CLOSE_BLOCKED =
   "HLD cannot be closed until a valid final HLD document authority exists.";
@@ -14228,6 +14230,13 @@ export default function ProjectRfpEvidencePage() {
                 artifactId !== "" &&
                 (artifactStatus === "needs_review" ||
                   artifactStatus === "pending_review");
+              const generatedCandidateDownloadHref =
+                reviewablePending &&
+                finalHldDocumentBlockerCode ===
+                  "generated_hld_document_pending_review" &&
+                typeof artifactId === "string"
+                  ? `/api/projects/${id}/rfp/artifacts/${artifactId}/hld-document/download`
+                  : null;
               const pendingCopy =
                 finalHldDocumentBlockerCode ===
                 "generated_hld_document_pending_review"
@@ -14286,6 +14295,17 @@ export default function ProjectRfpEvidencePage() {
                       data-testid="final-hld-document-review-controls"
                       className="mt-2"
                     >
+                      {generatedCandidateDownloadHref !== null && (
+                        <div className="mb-2 flex flex-wrap justify-end gap-2">
+                          <a
+                            data-testid="generated-hld-document-candidate-download"
+                            href={generatedCandidateDownloadHref}
+                            className={PLAIN_BTN}
+                          >
+                            {GENERATED_HLD_DOCUMENT_CANDIDATE_DOWNLOAD_LABEL}
+                          </a>
+                        </div>
+                      )}
                       <label className="flex flex-col text-xs text-text-tertiary">
                         Review note (optional)
                         <textarea
