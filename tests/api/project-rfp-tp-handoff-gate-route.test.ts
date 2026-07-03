@@ -209,6 +209,30 @@ describe("GET tp-handoff-gate - result mapping", () => {
     expect(pendingJson.blockerCode).toBe("hld_manual_upload_pending_review");
     expect(pendingJson.hldCloseBlockerCode).toBe("manual_upload_pending_review");
     expect(pendingJson.latestArtifact).toEqual(ARTIFACT_SUMMARY);
+
+    mockHandoffGate.mockResolvedValueOnce({
+      status: "blocked",
+      gateStatus: "tp_handoff_blocked",
+      blockerCode: "hld_not_closed",
+      hldCloseBlockerCode: "generated_hld_document_pending_review",
+      project: PROJECT_SUMMARY,
+      latestArtifact: {
+        ...ARTIFACT_SUMMARY,
+        id: "art-generated-doc-pending",
+        status: "needs_review",
+      },
+    });
+    const generatedPending = await GET(req(), PARAMS);
+    expect(generatedPending.status).toBe(409);
+    const generatedPendingJson = await generatedPending.json();
+    expect(generatedPendingJson.code).toBe("tp_handoff_blocked");
+    expect(generatedPendingJson.blockerCode).toBe("hld_not_closed");
+    expect(generatedPendingJson.hldCloseBlockerCode).toBe(
+      "generated_hld_document_pending_review"
+    );
+    expect(generatedPendingJson.latestArtifact.id).toBe(
+      "art-generated-doc-pending"
+    );
   });
 
   it("maps blocked/stale -> 409 tp_handoff_blocked with hld_final_authority_stale + artifact", async () => {

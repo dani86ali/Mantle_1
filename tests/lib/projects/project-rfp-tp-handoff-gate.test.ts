@@ -162,6 +162,32 @@ describe("getRfpTpHandoffGate - blocked/not_closed", () => {
       latestArtifact: pending,
     });
   });
+
+  it("maps generated_hld_document_pending_review -> blocked hld_not_closed preserving latestArtifact", async () => {
+    const pending = {
+      ...ARTIFACT_SUMMARY,
+      id: "art-generated-doc-pending",
+      status: "needs_review",
+    };
+    mockCloseStatus.mockResolvedValueOnce({
+      status: "blocked",
+      blocker: "not_closed",
+      project: PROJECT_SUMMARY,
+      blockerCode: "generated_hld_document_pending_review",
+      latestArtifact: pending,
+    });
+    const res = await getRfpTpHandoffGate({ tenantId: TENANT, projectId: PROJECT });
+    expect(res).toEqual({
+      status: "blocked",
+      gateStatus: "tp_handoff_blocked",
+      blockerCode: "hld_not_closed",
+      hldCloseBlockerCode: "generated_hld_document_pending_review",
+      project: PROJECT_SUMMARY,
+      latestArtifact: pending,
+    });
+    expect(JSON.stringify(res)).not.toContain("secret-topology");
+    expect(JSON.stringify(res)).not.toContain("drawioXml");
+  });
 });
 
 describe("getRfpTpHandoffGate - blocked/stale_final_authority", () => {
@@ -202,6 +228,13 @@ describe("getRfpTpHandoffGate - only closed opens the gate", () => {
         blocker: "not_closed",
         project: PROJECT_SUMMARY,
         blockerCode: "manual_upload_pending_review",
+        latestArtifact: ARTIFACT_SUMMARY,
+      },
+      {
+        status: "blocked",
+        blocker: "not_closed",
+        project: PROJECT_SUMMARY,
+        blockerCode: "generated_hld_document_pending_review",
         latestArtifact: ARTIFACT_SUMMARY,
       },
       {
