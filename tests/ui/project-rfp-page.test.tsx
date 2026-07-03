@@ -10304,6 +10304,84 @@ describe("ProjectRfpEvidencePage - Stage 6I-F final HLD review, close, and TP ha
     ).toBeNull();
   });
 
+  it("R-HLD-3 keeps generated-candidate, pending-manual, and approved-final download states unambiguous", async () => {
+    stubFetch(
+      sixIFFetch({
+        statusGet: () => jsonResponse(PENDING_GENERATED_BODY, 409),
+        modelList: APPROVED_DOCUMENT_MODEL_LIST_BODY,
+        closeGet: () => jsonResponse(CLOSE_BLOCKED_BODY, 409),
+        tpGet: () => jsonResponse(TP_BLOCKED_BODY, 409),
+      })
+    );
+    const generated = render(<ProjectRfpEvidencePage />);
+    const candidateLink = await screen.findByTestId(
+      "generated-hld-document-candidate-download"
+    );
+    expect(candidateLink).toHaveAttribute(
+      "href",
+      FINAL_HLD_DOCUMENT_CANDIDATE_DOWNLOAD_URL
+    );
+    expect(screen.queryByTestId("final-hld-document-download")).toBeNull();
+    expect(await screen.findByTestId("tp-handoff-gate-blocked")).toBeInTheDocument();
+    generated.unmount();
+    cleanup();
+    vi.unstubAllGlobals();
+
+    stubFetch(
+      sixIFFetch({
+        statusGet: () => jsonResponse(PENDING_MANUAL_BODY, 409),
+        modelList: APPROVED_DOCUMENT_MODEL_LIST_BODY,
+        closeGet: () => jsonResponse(CLOSE_BLOCKED_BODY, 409),
+        tpGet: () => jsonResponse(TP_BLOCKED_BODY, 409),
+      })
+    );
+    const manual = render(<ProjectRfpEvidencePage />);
+    const manualState = await screen.findByTestId(
+      "final-hld-document-review-state"
+    );
+    expect(manualState.textContent ?? "").toContain("manual draw.io upload");
+    expect(
+      await screen.findByTestId("final-hld-document-review-controls")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("generated-hld-document-candidate-download")
+    ).toBeNull();
+    expect(screen.queryByTestId("final-hld-document-download")).toBeNull();
+    manual.unmount();
+    cleanup();
+    vi.unstubAllGlobals();
+
+    stubFetch(
+      sixIFFetch({
+        statusGet: () => jsonResponse(FINAL_AUTHORITY_BODY, 200),
+        modelList: APPROVED_DOCUMENT_MODEL_LIST_BODY,
+        closeGet: () => jsonResponse(CLOSE_CLOSED_GENERATED_BODY, 200),
+        tpGet: () => jsonResponse(TP_READY_BODY, 200),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+    const finalLink = await screen.findByTestId("final-hld-document-download");
+    expect(finalLink).toHaveAttribute("href", FINAL_HLD_DOCUMENT_DOWNLOAD_URL);
+    expect(
+      screen.queryByTestId("generated-hld-document-candidate-download")
+    ).toBeNull();
+    expect(screen.queryByTestId("final-hld-document-review-controls")).toBeNull();
+    expect(await screen.findByTestId("tp-handoff-gate-ready")).toBeInTheDocument();
+
+    const hrefs = Array.from(document.querySelectorAll("a"))
+      .map((a) => a.getAttribute("href") ?? "")
+      .join("\n");
+    for (const forbidden of [
+      "/rfp/hld-document/export",
+      "/rfp/hld-export",
+      "/rfp/hld-proposal",
+      "/rfp/technical-proposal",
+      "/rfp/tp/",
+    ]) {
+      expect(hrefs).not.toContain(forbidden);
+    }
+  });
+
   it("Stage 6I-F shows a pending manual upload as manual and distinct from generated", async () => {
     stubFetch(
       sixIFFetch({ statusGet: () => jsonResponse(PENDING_MANUAL_BODY, 409) })
@@ -10472,6 +10550,51 @@ describe("ProjectRfpEvidencePage - Stage 6I-F final HLD review, close, and TP ha
     }
     expect(panel.querySelector("pre")).toBeNull();
     expect(screen.queryByTestId("final-hld-document-review-success")).toBeNull();
+  });
+
+  it("R-HLD-3 approves a pending manual final HLD through review only and refreshes final, close, and TP handoff state", async () => {
+    const calls = stubFetch(
+      sixIFFetch({
+        statusGet: () => jsonResponse(PENDING_MANUAL_BODY, 409),
+        closeGet: () => jsonResponse(CLOSE_BLOCKED_BODY, 409),
+        tpGet: () => jsonResponse(TP_BLOCKED_BODY, 409),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("final-hld-document-review-controls");
+
+    const before = {
+      status: countUrl(calls, FINAL_HLD_DOCUMENT_STATUS_URL),
+      close: countUrl(calls, HLD_CLOSE_URL),
+      tp: countUrl(calls, TP_HANDOFF_GATE_URL),
+    };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("final-hld-document-approve"));
+    });
+    await screen.findByTestId("final-hld-document-review-success");
+
+    const posts = reviewPosts(calls);
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(String(posts[0].init?.body))).toEqual({
+      decision: "approve",
+    });
+    await waitFor(() => {
+      expect(countUrl(calls, FINAL_HLD_DOCUMENT_STATUS_URL)).toBeGreaterThan(
+        before.status
+      );
+      expect(countUrl(calls, HLD_CLOSE_URL)).toBeGreaterThan(before.close);
+      expect(countUrl(calls, TP_HANDOFF_GATE_URL)).toBeGreaterThan(before.tp);
+    });
+    expect(
+      calls.some(
+        (c) =>
+          c.init?.method === "POST" &&
+          (/technical-proposal|hld-proposal|hld-export|\/rfp\/tp\//.test(
+            c.url
+          ) ||
+            c.url === TP_HANDOFF_GATE_URL)
+      )
+    ).toBe(false);
   });
 
   it("Stage 6I-F HLD close readiness is blocked, stale, or closed by the lean gate with no close mutation", async () => {
