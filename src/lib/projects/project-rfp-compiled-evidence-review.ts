@@ -235,7 +235,7 @@ export interface CompiledEvidenceFinding {
   audit: CompiledEvidenceAuditEntry[];
 }
 
-/** Why one deterministic text input was suppressed from primary findings. */
+/** Why one deterministic input was suppressed from primary findings. */
 export type CompiledEvidenceSuppressionReason =
   | "empty_fragment"
   | "tiny_fragment"
@@ -370,6 +370,33 @@ function classifyText(
   if (nonWhitespaceLength(collapsed) <= TINY_MAX_NON_WHITESPACE) {
     return "tiny_fragment";
   }
+  if (seen.has(lower)) {
+    return collapsed.length <= HEADER_MAX_LENGTH
+      ? "repeated_header"
+      : "duplicate_body";
+  }
+  seen.add(lower);
+  return null;
+}
+
+/** Flatten table cells into a deterministic body used only for noise detection. */
+function tableBody(input: CompiledEvidenceTableInput): string {
+  return input.rows.map((row) => row.join(" ")).join(" ");
+}
+
+/**
+ * Tables can carry repeated proprietary/header boilerplate. Keep small valid
+ * tables visible; suppress only empty/page-only/proprietary or repeated bodies.
+ */
+function classifyTable(
+  input: CompiledEvidenceTableInput,
+  seen: Set<string>
+): CompiledEvidenceSuppressionReason | null {
+  const collapsed = collapse(tableBody(input));
+  if (collapsed === "" || !hasAlphanumeric(collapsed)) return "empty_fragment";
+  if (isPageOnly(collapsed)) return "page_only";
+  const lower = collapsed.toLowerCase();
+  if (isProprietaryNotice(lower)) return "proprietary_notice";
   if (seen.has(lower)) {
     return collapsed.length <= HEADER_MAX_LENGTH
       ? "repeated_header"
@@ -519,8 +546,19 @@ export function compileCompiledEvidenceReview(
   }
   const matchedRepairEvidenceIds = new Set<string>();
   const tableCountByDocument = new Map<string, number>();
+  const seenTableBodies = new Set<string>();
   let repairedTableFindingCount = 0;
   tableInputs.forEach((entry, index) => {
+    const reason = classifyTable(entry, seenTableBodies);
+    if (reason !== null) {
+      suppressedByReason[reason] += 1;
+      suppressed.push({
+        reason,
+        preview: toPreview(tableBody(entry)),
+        audit: tableAudit(entry),
+      });
+      return;
+    }
     const documentName = documentNameOf(entry.sourceFileName);
     const perDocument = (tableCountByDocument.get(documentName) ?? 0) + 1;
     tableCountByDocument.set(documentName, perDocument);

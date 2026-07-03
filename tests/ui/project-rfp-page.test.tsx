@@ -34,6 +34,20 @@ const EVIDENCE_PACKAGE_ARTIFACT_ID = "art-ep-1";
 const EVIDENCE_PACKAGE_APPROVED_ID = "art-ep-approved-1";
 const EVIDENCE_PACKAGE_DETAIL_URL = `${EVIDENCE_PACKAGE_LIST_URL}/${EVIDENCE_PACKAGE_ARTIFACT_ID}`;
 const RFP_BOQ_WORKSPACE_URL = `/api/projects/${PROJECT_ID}/rfp/boq`;
+const RFP_BOQ_FILE_ID = "file-boq-1";
+const NORMALIZED_BOQ_ARTIFACT_ID = "art-normalized-boq-1";
+const SKU_RESOLUTION_ARTIFACT_ID = "art-sku-resolution-1";
+const CONFIG_EXPANSION_DRAFT_ID = "art-config-draft-1";
+const CONFIG_EXPANSION_REVIEWED_ID = "art-config-reviewed-1";
+const RFP_BOQ_NORMALIZE_URL =
+  `/api/projects/${PROJECT_ID}/rfp/files/${RFP_BOQ_FILE_ID}/boq/normalize`;
+const RFP_SKU_RESOLUTION_CREATE_URL =
+  `/api/projects/${PROJECT_ID}/rfp/artifacts/${NORMALIZED_BOQ_ARTIFACT_ID}/sku-resolution`;
+const RFP_BOQ_APPROVALS_URL = `/api/projects/${PROJECT_ID}/rfp/boq/approvals`;
+const RFP_CONFIG_EXPANSION_CREATE_URL =
+  `/api/projects/${PROJECT_ID}/rfp/artifacts/${SKU_RESOLUTION_ARTIFACT_ID}/configuration-expansion`;
+const RFP_CONFIG_EXPANSION_REVIEW_URL =
+  `/api/projects/${PROJECT_ID}/rfp/artifacts/${CONFIG_EXPANSION_DRAFT_ID}/configuration-expansion/review`;
 const HLD_READINESS_LIST_URL = `/api/projects/${PROJECT_ID}/rfp/hld-readiness-snapshot`;
 const HLD_READINESS_SNAPSHOT_ID = "art-hld-rs-1";
 const HLD_READINESS_APPROVED_ID = "art-hld-rs-approved-1";
@@ -914,6 +928,8 @@ function rfpBoqWorkspaceResponse(): Record<string, unknown> {
         status: "blocked",
         boqFileCount: 0,
         boqFiles: [],
+        hasBoqFiles: false,
+        normalizationCandidateFileIds: [],
         canNormalizeBoq: false,
         canCreateSkuResolution: false,
         canCreateConfigurationExpansion: false,
@@ -967,6 +983,8 @@ function workspaceWithConfigurationGate(
         status: "blocked",
         boqFileCount: 0,
         boqFiles: [],
+        hasBoqFiles: false,
+        normalizationCandidateFileIds: [],
         canNormalizeBoq: false,
         canCreateSkuResolution: false,
         canCreateConfigurationExpansion: false,
@@ -982,6 +1000,326 @@ function workspaceWithConfigurationGate(
           steps: [],
         },
       },
+    },
+  };
+}
+
+function boqFileSummary(): Record<string, unknown> {
+  return {
+    id: RFP_BOQ_FILE_ID,
+    projectId: PROJECT_ID,
+    fileRole: "boq",
+    fileName: "customer-boq.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    sizeBytes: 2048,
+    uploadedAt: "2026-06-03T09:00:00.000Z",
+    retainUntil: "2026-12-03T09:00:00.000Z",
+  };
+}
+
+function uploadedBoqFileSummary(): Record<string, unknown> {
+  return {
+    id: RFP_BOQ_FILE_ID,
+    fileName: "customer-boq.xlsx",
+    fileRole: "boq",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    sizeBytes: 2048,
+    uploadedAt: "2026-06-03T09:00:00.000Z",
+  };
+}
+
+function rfpBoqSpineArtifact(
+  id: string,
+  type: string,
+  status: string,
+  version: number,
+  sourceArtifactIds: string[] = []
+): Record<string, unknown> {
+  return {
+    ...artifact(id, type, status, version, sourceArtifactIds),
+    stageId:
+      type === "normalized_boq"
+        ? "boq_normalization"
+        : type === "sku_resolution"
+          ? "sku_resolution_review"
+          : "configuration_expansion_review",
+    sourceFileIds: [RFP_BOQ_FILE_ID],
+  };
+}
+
+function rfpBoqWorkspaceWithSpine(options: {
+  artifacts: Record<string, unknown>[];
+  normalized?: Record<string, unknown> | null;
+  sku?: Record<string, unknown> | null;
+  configuration?: Record<string, unknown> | null;
+  readiness: Record<string, unknown>;
+  nextStepId?: string | null;
+}): Record<string, unknown> {
+  return {
+    workspace: {
+      project: projectContext(),
+      stages: [],
+      boqFiles: [boqFileSummary()],
+      uploadedFiles: [uploadedBoqFileSummary()],
+      artifacts: [
+        artifact(INPUT_PACKAGE_ARTIFACT_ID, "input_package", "approved", 1, []),
+        ...options.artifacts,
+      ],
+      spineArtifacts: {
+        normalized_boq: options.normalized ?? null,
+        sku_resolution: options.sku ?? null,
+        configuration_expansion: options.configuration ?? null,
+        priced_boq: null,
+        export_package: null,
+      },
+      approvals: [],
+      readiness: {
+        projectId: PROJECT_ID,
+        status: "quick_bom_in_progress",
+        boqFileCount: 1,
+        boqFiles: [boqFileSummary()],
+        hasBoqFiles: true,
+        normalizationCandidateFileIds: [RFP_BOQ_FILE_ID],
+        canNormalizeBoq: false,
+        canCreateSkuResolution: false,
+        canCreateConfigurationExpansion: false,
+        canCreatePricedBoq: false,
+        canCreateExportPackage: false,
+        isCustomerDeliverableReady: false,
+        messages: [],
+        quickBomReadiness: {
+          projectId: PROJECT_ID,
+          nextStepId: options.nextStepId ?? null,
+          isCustomerDeliverableReady: false,
+          steps: [],
+        },
+        ...options.readiness,
+      },
+    },
+  };
+}
+
+function workspaceReadyToNormalize(): Record<string, unknown> {
+  return rfpBoqWorkspaceWithSpine({
+    artifacts: [],
+    nextStepId: "normalized_boq",
+    readiness: {
+      status: "ready_to_normalize",
+      canNormalizeBoq: true,
+      configurationGate: {
+        required: true,
+        satisfied: false,
+        waived: false,
+        status: "requires_boq_normalization",
+        message: "Normalize the uploaded BoQ before configuration review.",
+      },
+    },
+  });
+}
+
+function workspaceWithNormalizedBoq(
+  options: { canCreateSkuResolution?: boolean } = {}
+): Record<string, unknown> {
+  const normalized = rfpBoqSpineArtifact(
+    NORMALIZED_BOQ_ARTIFACT_ID,
+    "normalized_boq",
+    "generated",
+    1,
+    []
+  );
+  return rfpBoqWorkspaceWithSpine({
+    artifacts: [normalized],
+    normalized,
+    nextStepId: "sku_resolution",
+    readiness: {
+      canCreateSkuResolution: options.canCreateSkuResolution ?? true,
+      configurationGate: {
+        required: true,
+        satisfied: false,
+        waived: false,
+        status: "requires_sku_resolution",
+        message: "Create and approve SKU resolution before configuration review.",
+      },
+    },
+  });
+}
+
+function workspaceWithSkuResolution(
+  status = "needs_review",
+  options: { canCreateConfigurationExpansion?: boolean } = {}
+): Record<string, unknown> {
+  const normalized = rfpBoqSpineArtifact(
+    NORMALIZED_BOQ_ARTIFACT_ID,
+    "normalized_boq",
+    "generated",
+    1,
+    []
+  );
+  const sku = rfpBoqSpineArtifact(
+    SKU_RESOLUTION_ARTIFACT_ID,
+    "sku_resolution",
+    status,
+    1,
+    [NORMALIZED_BOQ_ARTIFACT_ID]
+  );
+  const canCreateConfigurationExpansion =
+    options.canCreateConfigurationExpansion ?? status === "approved";
+  return rfpBoqWorkspaceWithSpine({
+    artifacts: [normalized, sku],
+    normalized,
+    sku,
+    nextStepId: canCreateConfigurationExpansion
+      ? "configuration_expansion"
+      : "sku_resolution",
+    readiness: {
+      canCreateConfigurationExpansion,
+      configurationGate: {
+        required: true,
+        satisfied: false,
+        waived: false,
+        status: canCreateConfigurationExpansion
+          ? "requires_configuration_expansion"
+          : "requires_sku_resolution",
+        message: canCreateConfigurationExpansion
+          ? "Create and review configuration expansion before compliance."
+          : "Approve SKU resolution before configuration review.",
+      },
+    },
+  });
+}
+
+function workspaceWithConfigurationDraft(): Record<string, unknown> {
+  const normalized = rfpBoqSpineArtifact(
+    NORMALIZED_BOQ_ARTIFACT_ID,
+    "normalized_boq",
+    "generated",
+    1,
+    []
+  );
+  const sku = rfpBoqSpineArtifact(
+    SKU_RESOLUTION_ARTIFACT_ID,
+    "sku_resolution",
+    "approved",
+    1,
+    [NORMALIZED_BOQ_ARTIFACT_ID]
+  );
+  const configuration = rfpBoqSpineArtifact(
+    CONFIG_EXPANSION_DRAFT_ID,
+    "configuration_expansion",
+    "needs_review",
+    1,
+    [NORMALIZED_BOQ_ARTIFACT_ID, SKU_RESOLUTION_ARTIFACT_ID]
+  );
+  return rfpBoqWorkspaceWithSpine({
+    artifacts: [normalized, sku, configuration],
+    normalized,
+    sku,
+    configuration,
+    nextStepId: "configuration_expansion",
+    readiness: {
+      configurationGate: {
+        required: true,
+        satisfied: false,
+        waived: false,
+        status: "requires_configuration_expansion",
+        message: "Review configuration expansion before compliance.",
+      },
+    },
+  });
+}
+
+function workspaceWithReviewedConfigurationExpansion(
+  status = "needs_review"
+): Record<string, unknown> {
+  const normalized = rfpBoqSpineArtifact(
+    NORMALIZED_BOQ_ARTIFACT_ID,
+    "normalized_boq",
+    "generated",
+    1,
+    []
+  );
+  const sku = rfpBoqSpineArtifact(
+    SKU_RESOLUTION_ARTIFACT_ID,
+    "sku_resolution",
+    "approved",
+    1,
+    [NORMALIZED_BOQ_ARTIFACT_ID]
+  );
+  const configuration = rfpBoqSpineArtifact(
+    CONFIG_EXPANSION_REVIEWED_ID,
+    "configuration_expansion",
+    status,
+    2,
+    [NORMALIZED_BOQ_ARTIFACT_ID, SKU_RESOLUTION_ARTIFACT_ID, CONFIG_EXPANSION_DRAFT_ID]
+  );
+  return rfpBoqWorkspaceWithSpine({
+    artifacts: [normalized, sku, configuration],
+    normalized,
+    sku,
+    configuration,
+    nextStepId: status === "approved" ? null : "configuration_expansion",
+    readiness: {
+      configurationGate: {
+        required: true,
+        satisfied: status === "approved",
+        waived: false,
+        status:
+          status === "approved"
+            ? "configuration_expansion_approved"
+            : "requires_configuration_expansion",
+        message:
+          status === "approved"
+            ? "Configuration expansion approved."
+            : "Approve configuration expansion before compliance.",
+        ...(status === "approved"
+          ? { approvedConfigurationExpansionArtifactId: CONFIG_EXPANSION_REVIEWED_ID }
+          : {}),
+      },
+    },
+  });
+}
+
+function configExpansionReviewResponse(): Record<string, unknown> {
+  return {
+    review: {
+      mode: "draft",
+      reviewSummary: {
+        customerLineCount: 1,
+        expansionLineCount: 2,
+      },
+      lines: [
+        {
+          lineId: "line-customer-1",
+          origin: "customer",
+          sku: "RAW-SKU-CUSTOMER-CANARY",
+          description: "Customer access switch",
+          quantity: 2,
+          evidenceCount: 0,
+          evidenceSourceTypes: [],
+        },
+        {
+          lineId: "line-expansion-1",
+          origin: "expansion",
+          sku: "RAW-SKU-EXPANSION-CANARY-1",
+          description: "Power supply expansion",
+          quantity: 2,
+          relationshipType: "requires",
+          sourceRuleId: "RAW-RULE-CANARY-1",
+          evidenceCount: 1,
+          evidenceSourceTypes: ["catalog_rule"],
+        },
+        {
+          lineId: "line-expansion-2",
+          origin: "expansion",
+          sku: "RAW-SKU-EXPANSION-CANARY-2",
+          description: "Stacking accessory expansion",
+          quantity: 1,
+          relationshipType: "requires",
+          sourceRuleId: "RAW-RULE-CANARY-2",
+          evidenceCount: 1,
+          evidenceSourceTypes: ["catalog_rule"],
+        },
+      ],
     },
   };
 }
@@ -2606,6 +2944,32 @@ function stage5ComplianceFetch(
     }
     if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(rfpBoqWorkspaceResponse());
     if (url === HLD_READINESS_LIST_URL) return jsonResponse(hldReadinessListBlocked());
+    if (url === HLD_GENERATION_READINESS_URL) {
+      return jsonResponse(hldGenerationReadinessBlocked());
+    }
+    return jsonResponse({}, 200);
+  };
+}
+
+function stage45BoqFetch(
+  workspace: () => Record<string, unknown>,
+  extra?: (url: string, init?: RequestInit) => Response | undefined
+): (url: string, init?: RequestInit) => Response {
+  return (url, init) => {
+    const extraResponse = extra?.(url, init);
+    if (extraResponse !== undefined) return extraResponse;
+    if (url === LIST_URL) return jsonResponse(listResponse());
+    if (url === BASELINE_LIST_URL) return jsonResponse(baselineListResponse("approved"));
+    if (url === EVIDENCE_PACKAGE_LIST_URL) {
+      return jsonResponse(evidencePackageApprovedOnlyResponse());
+    }
+    if (url === COMPLIANCE_MATRIX_LIST_URL) {
+      return jsonResponse({ project: projectContext(), artifactCount: 0, artifacts: [] });
+    }
+    if (url === EXTRACTION_DELTA_LIST_URL) return jsonResponse(deltaListResponse());
+    if (url === RFP_BOQ_WORKSPACE_URL) return jsonResponse(workspace());
+    if (url === HLD_READINESS_LIST_URL) return jsonResponse(hldReadinessListBlocked());
+    if (url === HLD_INTAKE_LIST_URL) return jsonResponse(hldIntakeListResponse());
     if (url === HLD_GENERATION_READINESS_URL) {
       return jsonResponse(hldGenerationReadinessBlocked());
     }
@@ -4636,6 +5000,384 @@ describe("ProjectRfpEvidencePage - Stage 4.5 guided workflow", () => {
     // The next Quick BoM step shows as a human label, not the raw token.
     expect(gateStatus).toHaveTextContent("Next Quick BoM step: Configuration expansion.");
     expect(gateStatus.textContent ?? "").not.toContain("configuration_expansion");
+  });
+
+  it("renders Normalize BoQ when the readiness gate permits it and posts to the normalize route without a body", async () => {
+    let normalized = false;
+    const calls = stubFetch(
+      stage45BoqFetch(
+        () =>
+          normalized
+            ? workspaceWithNormalizedBoq({ canCreateSkuResolution: true })
+            : workspaceReadyToNormalize(),
+        (url, init) => {
+          if (url === RFP_BOQ_NORMALIZE_URL && init?.method === "POST") {
+            normalized = true;
+            return jsonResponse({ artifact: {} }, 201);
+          }
+          return undefined;
+        }
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const button = await screen.findByTestId("rfp-boq-normalize-submit");
+    expect(screen.getByTestId("rfp-boq-normalize-action")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    await waitFor(() => {
+      const post = calls.find(
+        (call) =>
+          call.url === RFP_BOQ_NORMALIZE_URL && call.init?.method === "POST"
+      );
+      expect(post).toBeDefined();
+      expect(post?.init?.body).toBeUndefined();
+    });
+    expect(await screen.findByTestId("rfp-boq-create-sku-resolution")).toBeInTheDocument();
+  });
+
+  it("shows the SKU resolution create action only when readiness permits and posts no body to the existing route", async () => {
+    stubFetch(
+      stage45BoqFetch(() =>
+        workspaceWithNormalizedBoq({ canCreateSkuResolution: false })
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("rfp-boq-readiness");
+    expect(screen.queryByTestId("rfp-boq-create-sku-resolution")).toBeNull();
+
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+
+    let created = false;
+    const calls = stubFetch(
+      stage45BoqFetch(
+        () =>
+          created
+            ? workspaceWithSkuResolution("needs_review")
+            : workspaceWithNormalizedBoq({ canCreateSkuResolution: true }),
+        (url, init) => {
+          if (url === RFP_SKU_RESOLUTION_CREATE_URL && init?.method === "POST") {
+            created = true;
+            return jsonResponse({ artifact: {} }, 201);
+          }
+          return undefined;
+        }
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const create = await screen.findByTestId("rfp-boq-create-sku-resolution");
+    await act(async () => {
+      fireEvent.click(create);
+    });
+
+    await waitFor(() => {
+      const post = calls.find(
+        (call) =>
+          call.url === RFP_SKU_RESOLUTION_CREATE_URL &&
+          call.init?.method === "POST"
+      );
+      expect(post).toBeDefined();
+      expect(post?.init?.body).toBeUndefined();
+    });
+  });
+
+  it("approves and rejects SKU resolution only through the RFP BoQ approval route with the minimal body", async () => {
+    const calls = stubFetch(
+      stage45BoqFetch(
+        () => workspaceWithSkuResolution("needs_review"),
+        (url, init) => {
+          if (url === RFP_BOQ_APPROVALS_URL && init?.method === "POST") {
+            return jsonResponse({ ok: true });
+          }
+          return undefined;
+        }
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("rfp-boq-sku-review-action");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-boq-sku-approve"));
+    });
+    await waitFor(() => {
+      expect(
+        calls.filter(
+          (call) =>
+            call.url === RFP_BOQ_APPROVALS_URL &&
+            call.init?.method === "POST"
+        ).length
+      ).toBe(1);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-boq-sku-reject"));
+    });
+
+    await waitFor(() => {
+      const posts = calls.filter(
+        (call) =>
+          call.url === RFP_BOQ_APPROVALS_URL && call.init?.method === "POST"
+      );
+      expect(posts).toHaveLength(2);
+      expect(JSON.parse(String(posts[0].init?.body))).toEqual({
+        artifactId: SKU_RESOLUTION_ARTIFACT_ID,
+        decision: "approved",
+      });
+      expect(JSON.parse(String(posts[1].init?.body))).toEqual({
+        artifactId: SKU_RESOLUTION_ARTIFACT_ID,
+        decision: "rejected",
+      });
+      for (const post of posts) {
+        const body = String(post.init?.body);
+        for (const forbidden of [
+          "note",
+          "acceptedSku",
+          "lineDecisions",
+          "catalogProfile",
+          "provider",
+          "pricing",
+        ]) {
+          expect(body).not.toContain(forbidden);
+        }
+      }
+    });
+  });
+
+  it("shows the configuration expansion create action only when readiness permits and posts no body to the existing route", async () => {
+    stubFetch(
+      stage45BoqFetch(() =>
+        workspaceWithSkuResolution("approved", {
+          canCreateConfigurationExpansion: false,
+        })
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("rfp-boq-readiness");
+    expect(screen.queryByTestId("rfp-boq-create-configuration-expansion")).toBeNull();
+
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+
+    let created = false;
+    const calls = stubFetch(
+      stage45BoqFetch(
+        () =>
+          created
+            ? workspaceWithConfigurationDraft()
+            : workspaceWithSkuResolution("approved", {
+                canCreateConfigurationExpansion: true,
+              }),
+        (url, init) => {
+          if (url === RFP_CONFIG_EXPANSION_CREATE_URL && init?.method === "POST") {
+            created = true;
+            return jsonResponse({ artifact: {} }, 201);
+          }
+          return undefined;
+        }
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const create = await screen.findByTestId(
+      "rfp-boq-create-configuration-expansion"
+    );
+    await act(async () => {
+      fireEvent.click(create);
+    });
+
+    await waitFor(() => {
+      const post = calls.find(
+        (call) =>
+          call.url === RFP_CONFIG_EXPANSION_CREATE_URL &&
+          call.init?.method === "POST"
+      );
+      expect(post).toBeDefined();
+      expect(post?.init?.body).toBeUndefined();
+    });
+  });
+
+  it("loads configuration expansion review and submits only explicit expansion-line decisions", async () => {
+    const calls = stubFetch(
+      stage45BoqFetch(
+        () => workspaceWithConfigurationDraft(),
+        (url, init) => {
+          if (
+            url === RFP_CONFIG_EXPANSION_REVIEW_URL &&
+            (init?.method ?? "GET") === "GET"
+          ) {
+            return jsonResponse(configExpansionReviewResponse());
+          }
+          if (url === RFP_CONFIG_EXPANSION_REVIEW_URL && init?.method === "POST") {
+            return jsonResponse({ artifact: {} }, 201);
+          }
+          return undefined;
+        }
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("rfp-boq-spine-actions");
+    const loadReview = await screen.findByTestId("rfp-config-review-load");
+    await act(async () => {
+      fireEvent.click(loadReview);
+    });
+
+    const panel = await screen.findByTestId("rfp-config-review-panel");
+    expect(panel.textContent ?? "").not.toContain("RAW-SKU");
+    expect(panel.textContent ?? "").not.toContain("RAW-RULE");
+    expect(panel.textContent ?? "").not.toContain("catalog_rule");
+    expect(panel.textContent ?? "").not.toContain("line-expansion");
+    expect(screen.getByTestId("rfp-config-review-submit")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("rfp-config-review-decision-1"), {
+      target: { value: "accept" },
+    });
+    expect(screen.getByTestId("rfp-config-review-submit")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("rfp-config-review-decision-2"), {
+      target: { value: "reject" },
+    });
+    fireEvent.change(screen.getByTestId("rfp-config-review-note-2"), {
+      target: { value: "Not required for this RFP." },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("rfp-config-review-submit")).not.toBeDisabled()
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-config-review-submit"));
+    });
+
+    await waitFor(() => {
+      const post = calls.find(
+        (call) =>
+          call.url === RFP_CONFIG_EXPANSION_REVIEW_URL &&
+          call.init?.method === "POST"
+      );
+      expect(post).toBeDefined();
+      const parsed = JSON.parse(String(post?.init?.body));
+      expect(parsed).toEqual({
+        decisions: [
+          { lineId: "line-expansion-1", action: "accept" },
+          {
+            lineId: "line-expansion-2",
+            action: "reject",
+            note: "Not required for this RFP.",
+          },
+        ],
+      });
+      const body = String(post?.init?.body);
+      expect(body).not.toContain("line-customer-1");
+      for (const forbidden of [
+        "sku",
+        "sourceRuleId",
+        "catalog",
+        "provider",
+        "pricing",
+        "configAuthority",
+      ]) {
+        expect(body).not.toContain(forbidden);
+      }
+    });
+  });
+
+  it("enables compliance generation only after the approved configuration-expansion gate authorizes it", async () => {
+    let approved = false;
+    const calls = stubFetch(
+      stage45BoqFetch(
+        () =>
+          approved
+            ? workspaceWithReviewedConfigurationExpansion("approved")
+            : workspaceWithReviewedConfigurationExpansion("needs_review"),
+        (url, init) => {
+          if (url === RFP_BOQ_APPROVALS_URL && init?.method === "POST") {
+            approved = true;
+            return jsonResponse({ ok: true });
+          }
+          if (url === COMPLIANCE_MATRIX_GENERATE_URL && init?.method === "POST") {
+            return jsonResponse({ artifact: complianceMatrixListItem(), draftSummary: {} }, 201);
+          }
+          return undefined;
+        }
+      )
+    );
+    render(<ProjectRfpEvidencePage />);
+
+    const generate = await screen.findByTestId("generate-compliance");
+    expect(generate).toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("rfp-boq-config-approve"));
+    });
+
+    await waitFor(() => {
+      const approvalPost = calls.find(
+        (call) =>
+          call.url === RFP_BOQ_APPROVALS_URL && call.init?.method === "POST"
+      );
+      expect(approvalPost).toBeDefined();
+      expect(JSON.parse(String(approvalPost?.init?.body))).toEqual({
+        artifactId: CONFIG_EXPANSION_REVIEWED_ID,
+        decision: "approved",
+      });
+      expect(screen.getByTestId("rfp-config-gate-status")).toHaveTextContent(
+        "Configuration expansion is approved."
+      );
+      expect(screen.getByTestId("generate-compliance")).not.toBeDisabled();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("generate-compliance"));
+    });
+
+    await waitFor(() => {
+      const post = calls.find(
+        (call) =>
+          call.url === COMPLIANCE_MATRIX_GENERATE_URL &&
+          call.init?.method === "POST"
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post?.init?.body))).toEqual({
+        requirementsBaselineArtifactId: BASELINE_ARTIFACT_ID,
+        evidencePackageArtifactId: EVIDENCE_PACKAGE_APPROVED_ID,
+        configurationExpansionArtifactId: CONFIG_EXPANSION_REVIEWED_ID,
+      });
+    });
+  });
+
+  it("keeps raw IDs, XML/provider/pricing/catalog/config-authority canaries, and raw step tokens out of the primary BoQ UI", async () => {
+    stubFetch(stage45BoqFetch(() => workspaceWithConfigurationDraft()));
+    render(<ProjectRfpEvidencePage />);
+
+    await screen.findByTestId("rfp-config-review-action");
+    const primaryText = [
+      screen.getByTestId("rfp-boq-readiness").textContent ?? "",
+      screen.getByTestId("rfp-config-gate-status").textContent ?? "",
+      screen.getByTestId("rfp-boq-spine-actions").textContent ?? "",
+    ].join(" ");
+    for (const forbidden of [
+      NORMALIZED_BOQ_ARTIFACT_ID,
+      SKU_RESOLUTION_ARTIFACT_ID,
+      CONFIG_EXPANSION_DRAFT_ID,
+      "normalized_boq",
+      "sku_resolution",
+      "configuration_expansion",
+      "drawioXml",
+      "provider",
+      "pricing",
+      "catalog",
+      "config-authority",
+      "RAW-SKU",
+    ]) {
+      expect(primaryText).not.toContain(forbidden);
+    }
   });
 
   it("enables compliance generation under an approved no-BoQ service-only exception and sends its artifact id as the configuration expansion id", async () => {

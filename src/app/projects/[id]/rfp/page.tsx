@@ -393,6 +393,37 @@ interface RfpBoqWorkspaceResponse {
   workspace?: ProjectRfpBoqWorkspace;
 }
 
+/** One projected configuration-expansion review line returned by the RFP review route. */
+interface RfpConfigurationExpansionReviewLine {
+  lineId: string;
+  origin: "customer" | "expansion";
+  sku: string;
+  description: string;
+  quantity: number;
+  relationshipType?: string;
+  sourceRuleId?: string;
+  evidenceCount: number;
+  evidenceSourceTypes: string[];
+}
+
+/** Lean review summary returned for a configuration-expansion draft. */
+interface RfpConfigurationExpansionReviewSummary {
+  customerLineCount: number;
+  expansionLineCount: number;
+}
+
+/** Read-only response of GET .../configuration-expansion/review. */
+interface RfpConfigurationExpansionReviewWorkspace {
+  mode: "draft" | "reviewed";
+  reviewSummary?: RfpConfigurationExpansionReviewSummary;
+  lines: RfpConfigurationExpansionReviewLine[];
+}
+
+/** Detail response of GET .../configuration-expansion/review. */
+interface RfpConfigurationExpansionReviewResponse {
+  review?: RfpConfigurationExpansionReviewWorkspace;
+}
+
 /** One hld_readiness_snapshot artifact in the list response. */
 interface HldReadinessListItem {
   id: string;
@@ -2147,6 +2178,13 @@ const PACKAGE_REVIEW_ERROR = "Unable to review final evidence package.";
 
 /** Exact UI copy required for the RFP BoQ readiness failure state. */
 const BOQ_WORKSPACE_ERROR = "Unable to load RFP BoQ readiness.";
+const BOQ_NORMALIZE_SUCCESS =
+  "BoQ normalization started. Continue through the BoQ readiness steps.";
+const BOQ_NORMALIZE_ERROR = "Unable to normalize the RFP BoQ file.";
+const BOQ_ACTION_ERROR = "Unable to update the RFP BoQ readiness action.";
+const BOQ_APPROVAL_ERROR = "Unable to review the RFP BoQ artifact.";
+const CONFIG_EXPANSION_REVIEW_ERROR =
+  "Unable to load or submit the configuration expansion review.";
 
 /** Exact UI copy required for the HLD readiness snapshot list failure state. */
 const HLD_READINESS_LIST_ERROR = "Unable to load HLD readiness snapshots.";
@@ -2444,11 +2482,14 @@ const FILE_ROLE_LABELS: Record<ProjectFileRole, string> = {
   scope_of_work: "Scope of work",
   compliance: "Compliance attachment",
   addendum: "Addendum",
-  boq: "BoQ / pricing workbook",
+  boq: "BoQ workbook",
   other: "Other supporting file",
 };
 
 type BoqSpineKey = keyof ProjectRfpBoqWorkspace["spineArtifacts"];
+type RfpBoqSpineArtifact = NonNullable<
+  ProjectRfpBoqWorkspace["spineArtifacts"][BoqSpineKey]
+>;
 
 const BOQ_SPINE_KEYS: BoqSpineKey[] = [
   "normalized_boq",
@@ -2468,6 +2509,11 @@ const BOQ_SPINE_LABELS: Record<BoqSpineKey, string> = {
 
 type RfpBoqConfigurationGate =
   ProjectRfpBoqWorkspace["readiness"]["configurationGate"];
+
+interface ConfigExpansionLineReviewState {
+  action: "" | "accept" | "reject";
+  note: string;
+}
 
 /**
  * Human-readable label for a Quick BoM next-step id. A known BoQ spine key maps
@@ -2509,6 +2555,32 @@ function configurationGateStatusLine(
       ? ` Next Quick BoM step: ${nextStepLabel(nextStepId)}.`
       : "";
   return `${gate.message}${nextStep}`;
+}
+
+function isRfpBoqReviewableArtifact(
+  artifact: RfpBoqSpineArtifact | null
+): artifact is RfpBoqSpineArtifact {
+  return (
+    artifact !== null &&
+    ["generated", "needs_review"].includes(artifact.status) &&
+    [
+      "sku_resolution",
+      "configuration_expansion",
+      "priced_boq",
+      "export_package",
+    ].includes(artifact.type)
+  );
+}
+
+function isConfigurationExpansionDraftSummary(
+  artifact: RfpBoqSpineArtifact | null
+): boolean {
+  return (
+    artifact !== null &&
+    artifact.type === "configuration_expansion" &&
+    artifact.status === "needs_review" &&
+    artifact.sourceArtifactIds[2] === undefined
+  );
 }
 
 /** Build the list URL; blank filters are omitted so unfiltered = bare URL. */
@@ -4537,6 +4609,29 @@ export default function ProjectRfpEvidencePage() {
   const [boqWorkspace, setBoqWorkspace] = useState<ProjectRfpBoqWorkspace | null>(null);
   const [boqWorkspaceLoading, setBoqWorkspaceLoading] = useState(true);
   const [boqWorkspaceError, setBoqWorkspaceError] = useState<string | null>(null);
+  const [boqNormalizePending, setBoqNormalizePending] = useState(false);
+  const [boqNormalizeError, setBoqNormalizeError] = useState<string | null>(null);
+  const [boqNormalizeSuccess, setBoqNormalizeSuccess] = useState<string | null>(null);
+  const [boqActionPending, setBoqActionPending] = useState<string | null>(null);
+  const [boqActionError, setBoqActionError] = useState<string | null>(null);
+  const [boqActionSuccess, setBoqActionSuccess] = useState<string | null>(null);
+  const [boqApprovalPendingId, setBoqApprovalPendingId] = useState<string | null>(null);
+  const [boqApprovalError, setBoqApprovalError] = useState<string | null>(null);
+  const [boqApprovalSuccess, setBoqApprovalSuccess] = useState<string | null>(null);
+  const [configExpansionReview, setConfigExpansionReview] =
+    useState<RfpConfigurationExpansionReviewWorkspace | null>(null);
+  const [configExpansionReviewArtifactId, setConfigExpansionReviewArtifactId] =
+    useState<string | null>(null);
+  const [configExpansionReviewLoading, setConfigExpansionReviewLoading] =
+    useState(false);
+  const [configExpansionReviewPending, setConfigExpansionReviewPending] =
+    useState(false);
+  const [configExpansionReviewError, setConfigExpansionReviewError] = useState<
+    string | null
+  >(null);
+  const [configExpansionLineReview, setConfigExpansionLineReview] = useState<
+    Record<string, ConfigExpansionLineReviewState>
+  >({});
 
   // No-BoQ service-only exception request (gate requires_boq_upload_or_exception).
   const [noBoqExceptionReason, setNoBoqExceptionReason] = useState("");
@@ -7801,6 +7896,48 @@ export default function ProjectRfpEvidencePage() {
     : workflowConfigGate !== undefined && !workflowConfigGate.satisfied
       ? workflowConfigGate.message
       : workflow.nextAction.reason;
+  const normalizedBoqArtifact =
+    boqWorkspace?.spineArtifacts.normalized_boq ?? null;
+  const skuResolutionArtifact =
+    boqWorkspace?.spineArtifacts.sku_resolution ?? null;
+  const configurationExpansionArtifact =
+    boqWorkspace?.spineArtifacts.configuration_expansion ?? null;
+  const nextBoqStepId =
+    boqWorkspace?.readiness.quickBomReadiness.nextStepId ?? null;
+  const boqNormalizeVisible =
+    boqWorkspace !== null &&
+    boqWorkspace.readiness.hasBoqFiles === true &&
+    boqWorkspace.readiness.canNormalizeBoq === true &&
+    boqWorkspace.readiness.normalizationCandidateFileIds.length > 0 &&
+    (nextBoqStepId === "normalized_boq" ||
+      boqWorkspace.readiness.configurationGate.status ===
+        "requires_boq_normalization");
+  const createSkuResolutionVisible =
+    boqWorkspace !== null &&
+    normalizedBoqArtifact !== null &&
+    boqWorkspace.readiness.canCreateSkuResolution === true;
+  const skuResolutionReviewVisible =
+    isRfpBoqReviewableArtifact(skuResolutionArtifact);
+  const createConfigurationExpansionVisible =
+    boqWorkspace !== null &&
+    skuResolutionArtifact !== null &&
+    skuResolutionArtifact.status === "approved" &&
+    boqWorkspace.readiness.canCreateConfigurationExpansion === true;
+  const configurationExpansionDraftVisible =
+    boqWorkspace?.readiness.hasBoqFiles === true &&
+    isConfigurationExpansionDraftSummary(configurationExpansionArtifact);
+  const configurationExpansionApprovalVisible =
+    isRfpBoqReviewableArtifact(configurationExpansionArtifact) &&
+    !isConfigurationExpansionDraftSummary(configurationExpansionArtifact);
+  const configExpansionReviewLines = configExpansionReview?.lines ?? [];
+  const configExpansionReviewExpansionLines = configExpansionReviewLines.filter(
+    (line) => line.origin === "expansion"
+  );
+  const configExpansionReviewReady =
+    configExpansionReview !== null &&
+    configExpansionReviewExpansionLines.every(
+      (line) => configExpansionLineReview[line.lineId]?.action !== ""
+    );
 
   const refreshRfpLists = useCallback((): void => {
     void loadBoqWorkspace();
@@ -8045,6 +8182,214 @@ export default function ProjectRfpEvidencePage() {
     },
     [boqWorkspace, id, noBoqExceptionNote, noBoqExceptionReviewPending, refreshRfpLists]
   );
+
+  const submitNormalizeBoq = useCallback(async (): Promise<void> => {
+    const fileId = boqWorkspace?.readiness.normalizationCandidateFileIds[0];
+    if (fileId === undefined || boqNormalizePending) return;
+    setBoqNormalizePending(true);
+    setBoqNormalizeError(null);
+    setBoqNormalizeSuccess(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${id}/rfp/files/${fileId}/boq/normalize`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        setBoqNormalizeError(BOQ_NORMALIZE_ERROR);
+        return;
+      }
+      setBoqNormalizeSuccess(BOQ_NORMALIZE_SUCCESS);
+      refreshRfpLists();
+    } catch {
+      setBoqNormalizeError(BOQ_NORMALIZE_ERROR);
+    } finally {
+      setBoqNormalizePending(false);
+    }
+  }, [boqNormalizePending, boqWorkspace, id, refreshRfpLists]);
+
+  const runBoqCreate = useCallback(
+    async (
+      sourceArtifactId: string | undefined,
+      routeSegment: "sku-resolution" | "configuration-expansion",
+      label: string
+    ): Promise<void> => {
+      if (sourceArtifactId === undefined || boqActionPending !== null) return;
+      setBoqActionPending(routeSegment);
+      setBoqActionError(null);
+      setBoqActionSuccess(null);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${sourceArtifactId}/${routeSegment}`,
+          { method: "POST" }
+        );
+        if (!res.ok) {
+          setBoqActionError(BOQ_ACTION_ERROR);
+          return;
+        }
+        setBoqActionSuccess(`${label} draft created for engineer review.`);
+        setConfigExpansionReview(null);
+        setConfigExpansionReviewArtifactId(null);
+        setConfigExpansionLineReview({});
+        refreshRfpLists();
+      } catch {
+        setBoqActionError(BOQ_ACTION_ERROR);
+      } finally {
+        setBoqActionPending(null);
+      }
+    },
+    [boqActionPending, id, refreshRfpLists]
+  );
+
+  const submitRfpBoqArtifactReview = useCallback(
+    async (
+      artifactId: string | undefined,
+      decision: "approved" | "rejected",
+      label: string
+    ): Promise<void> => {
+      if (artifactId === undefined || boqApprovalPendingId !== null) return;
+      setBoqApprovalPendingId(artifactId);
+      setBoqApprovalError(null);
+      setBoqApprovalSuccess(null);
+      try {
+        const res = await fetch(`/api/projects/${id}/rfp/boq/approvals`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ artifactId, decision }),
+        });
+        if (!res.ok) {
+          setBoqApprovalError(BOQ_APPROVAL_ERROR);
+          return;
+        }
+        setBoqApprovalSuccess(
+          decision === "approved"
+            ? `${label} approved.`
+            : `${label} rejected.`
+        );
+        setConfigExpansionReview(null);
+        setConfigExpansionReviewArtifactId(null);
+        setConfigExpansionLineReview({});
+        refreshRfpLists();
+      } catch {
+        setBoqApprovalError(BOQ_APPROVAL_ERROR);
+      } finally {
+        setBoqApprovalPendingId(null);
+      }
+    },
+    [boqApprovalPendingId, id, refreshRfpLists]
+  );
+
+  const loadConfigurationExpansionReview = useCallback(
+    async (artifactId: string | undefined): Promise<void> => {
+      if (artifactId === undefined || configExpansionReviewLoading) return;
+      setConfigExpansionReviewLoading(true);
+      setConfigExpansionReviewError(null);
+      try {
+        const res = await fetch(
+          `/api/projects/${id}/rfp/artifacts/${artifactId}/configuration-expansion/review`
+        );
+        const body = (await res.json().catch(() => null)) as
+          | RfpConfigurationExpansionReviewResponse
+          | null;
+        if (!res.ok || body?.review === undefined || !Array.isArray(body.review.lines)) {
+          setConfigExpansionReviewError(CONFIG_EXPANSION_REVIEW_ERROR);
+          setConfigExpansionReview(null);
+          setConfigExpansionReviewArtifactId(null);
+          setConfigExpansionLineReview({});
+          return;
+        }
+        const seeded: Record<string, ConfigExpansionLineReviewState> = {};
+        for (const line of body.review.lines) {
+          if (line.origin !== "expansion") continue;
+          seeded[line.lineId] = { action: "", note: "" };
+        }
+        setConfigExpansionReview(body.review);
+        setConfigExpansionReviewArtifactId(artifactId);
+        setConfigExpansionLineReview(seeded);
+      } catch {
+        setConfigExpansionReviewError(CONFIG_EXPANSION_REVIEW_ERROR);
+      } finally {
+        setConfigExpansionReviewLoading(false);
+      }
+    },
+    [configExpansionReviewLoading, id]
+  );
+
+  const updateConfigExpansionLineReview = useCallback(
+    (
+      lineId: string,
+      patch: Partial<ConfigExpansionLineReviewState>
+    ): void => {
+      setConfigExpansionLineReview((prev) => ({
+        ...prev,
+        [lineId]: {
+          action: prev[lineId]?.action ?? "",
+          note: prev[lineId]?.note ?? "",
+          ...patch,
+        },
+      }));
+    },
+    []
+  );
+
+  const submitConfigurationExpansionReview = useCallback(async (): Promise<void> => {
+    if (
+      configExpansionReviewArtifactId === null ||
+      configExpansionReview === null ||
+      configExpansionReviewPending
+    ) {
+      return;
+    }
+    const expansionLines = configExpansionReview.lines.filter(
+      (line) => line.origin === "expansion"
+    );
+    const decisions: Array<{
+      lineId: string;
+      action: "accept" | "reject";
+      note?: string;
+    }> = [];
+    for (const line of expansionLines) {
+      const state = configExpansionLineReview[line.lineId];
+      if (state === undefined || state.action === "") return;
+      const note = state.note.trim();
+      decisions.push(
+        state.action === "accept" || note === ""
+          ? { lineId: line.lineId, action: state.action }
+          : { lineId: line.lineId, action: state.action, note }
+      );
+    }
+    setConfigExpansionReviewPending(true);
+    setConfigExpansionReviewError(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${id}/rfp/artifacts/${configExpansionReviewArtifactId}/configuration-expansion/review`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decisions }),
+        }
+      );
+      if (!res.ok) {
+        setConfigExpansionReviewError(CONFIG_EXPANSION_REVIEW_ERROR);
+        return;
+      }
+      setConfigExpansionReview(null);
+      setConfigExpansionReviewArtifactId(null);
+      setConfigExpansionLineReview({});
+      setBoqActionSuccess("Configuration expansion review submitted.");
+      refreshRfpLists();
+    } catch {
+      setConfigExpansionReviewError(CONFIG_EXPANSION_REVIEW_ERROR);
+    } finally {
+      setConfigExpansionReviewPending(false);
+    }
+  }, [
+    configExpansionLineReview,
+    configExpansionReview,
+    configExpansionReviewArtifactId,
+    configExpansionReviewPending,
+    id,
+    refreshRfpLists,
+  ]);
 
   const submitPrepareEvidenceReview = useCallback(async (): Promise<void> => {
     if (prepareEvidencePending) return;
@@ -11860,7 +12205,7 @@ export default function ProjectRfpEvidencePage() {
                 BoQ / Configuration Readiness
               </h2>
               <p className="mt-1 text-sm text-text-secondary">
-                Quick BoM remains the pricing and configuration path.
+                Quick BoM remains the BoQ and configuration path.
               </p>
             </div>
             {approvedExportArtifact !== null && (
@@ -11894,7 +12239,7 @@ export default function ProjectRfpEvidencePage() {
                 </p>
                 <p data-testid="rfp-boq-next-step" className={MUTED_TEXT}>
                   Next Quick BoM step:{" "}
-                  {boqWorkspace.readiness.quickBomReadiness.nextStepId ?? "none"}
+                  {nextBoqStepId === null ? "none" : nextStepLabel(nextBoqStepId)}
                 </p>
               </div>
               {boqWorkspace.readiness.configurationGate && (
@@ -11905,6 +12250,347 @@ export default function ProjectRfpEvidencePage() {
                       boqWorkspace.readiness.quickBomReadiness.nextStepId ?? null
                     )}
                   </p>
+                  {(boqNormalizeVisible ||
+                    createSkuResolutionVisible ||
+                    skuResolutionReviewVisible ||
+                    createConfigurationExpansionVisible ||
+                    configurationExpansionDraftVisible ||
+                    configurationExpansionApprovalVisible) && (
+                    <div data-testid="rfp-boq-spine-actions" className="space-y-2">
+                      {boqNormalizeVisible && (
+                        <div
+                          data-testid="rfp-boq-normalize-action"
+                          className={SUBTLE_CARD}
+                        >
+                          <p className={MUTED_TEXT}>
+                            Normalize the uploaded BoQ into the reviewed BoQ
+                            spine.
+                          </p>
+                          <button
+                            type="button"
+                            data-testid="rfp-boq-normalize-submit"
+                            onClick={() => void submitNormalizeBoq()}
+                            disabled={boqNormalizePending}
+                            className={`${ACTION_BTN} mt-2`}
+                          >
+                            Normalize BoQ
+                          </button>
+                          {boqNormalizeError && (
+                            <p
+                              data-testid="rfp-boq-normalize-error"
+                              className={`mt-2 ${ERROR_BOX}`}
+                            >
+                              {boqNormalizeError}
+                            </p>
+                          )}
+                          {boqNormalizeSuccess && (
+                            <p
+                              data-testid="rfp-boq-normalize-success"
+                              className="mt-2 text-xs text-emerald-300"
+                            >
+                              {boqNormalizeSuccess}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {createSkuResolutionVisible && (
+                        <div
+                          data-testid="rfp-boq-create-sku-resolution-action"
+                          className={SUBTLE_CARD}
+                        >
+                          <p className={MUTED_TEXT}>
+                            Create a SKU resolution draft from the normalized
+                            BoQ for engineer review.
+                          </p>
+                          <button
+                            type="button"
+                            data-testid="rfp-boq-create-sku-resolution"
+                            onClick={() =>
+                              void runBoqCreate(
+                                normalizedBoqArtifact?.id,
+                                "sku-resolution",
+                                "SKU resolution"
+                              )
+                            }
+                            disabled={boqActionPending !== null}
+                            className={`${ACTION_BTN} mt-2`}
+                          >
+                            Create SKU resolution
+                          </button>
+                        </div>
+                      )}
+                      {skuResolutionReviewVisible && (
+                        <div
+                          data-testid="rfp-boq-sku-review-action"
+                          className={SUBTLE_CARD}
+                        >
+                          <p className={MUTED_TEXT}>
+                            Record the engineer decision for the SKU resolution
+                            artifact through the RFP BoQ approval gate.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              data-testid="rfp-boq-sku-approve"
+                              onClick={() =>
+                                void submitRfpBoqArtifactReview(
+                                  skuResolutionArtifact?.id,
+                                  "approved",
+                                  "SKU resolution"
+                                )
+                              }
+                              disabled={boqApprovalPendingId !== null}
+                              className={ACTION_BTN}
+                            >
+                              Approve SKU resolution
+                            </button>
+                            <button
+                              type="button"
+                              data-testid="rfp-boq-sku-reject"
+                              onClick={() =>
+                                void submitRfpBoqArtifactReview(
+                                  skuResolutionArtifact?.id,
+                                  "rejected",
+                                  "SKU resolution"
+                                )
+                              }
+                              disabled={boqApprovalPendingId !== null}
+                              className={PLAIN_BTN}
+                            >
+                              Reject SKU resolution
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {createConfigurationExpansionVisible && (
+                        <div
+                          data-testid="rfp-boq-create-configuration-expansion-action"
+                          className={SUBTLE_CARD}
+                        >
+                          <p className={MUTED_TEXT}>
+                            Create a configuration expansion draft from the
+                            approved SKU resolution.
+                          </p>
+                          <button
+                            type="button"
+                            data-testid="rfp-boq-create-configuration-expansion"
+                            onClick={() =>
+                              void runBoqCreate(
+                                skuResolutionArtifact?.id,
+                                "configuration-expansion",
+                                "Configuration expansion"
+                              )
+                            }
+                            disabled={boqActionPending !== null}
+                            className={`${ACTION_BTN} mt-2`}
+                          >
+                            Create configuration expansion
+                          </button>
+                        </div>
+                      )}
+                      {configurationExpansionDraftVisible && (
+                        <div
+                          data-testid="rfp-config-review-action"
+                          className={SUBTLE_CARD}
+                        >
+                          <p className={MUTED_TEXT}>
+                            Load the configuration expansion draft and submit
+                            explicit line decisions.
+                          </p>
+                          <button
+                            type="button"
+                            data-testid="rfp-config-review-load"
+                            onClick={() =>
+                              void loadConfigurationExpansionReview(
+                                configurationExpansionArtifact?.id
+                              )
+                            }
+                            disabled={configExpansionReviewLoading}
+                            className={`${ACTION_BTN} mt-2`}
+                          >
+                            Load configuration review
+                          </button>
+                          {configExpansionReview !== null && (
+                            <div
+                              data-testid="rfp-config-review-panel"
+                              className="mt-3 space-y-2"
+                            >
+                              <p className={MUTED_TEXT}>
+                                Customer lines:{" "}
+                                {configExpansionReview.reviewSummary
+                                  ?.customerLineCount ??
+                                  configExpansionReview.lines.filter(
+                                    (line) => line.origin === "customer"
+                                  ).length}
+                                {" | "}Expansion lines:{" "}
+                                {configExpansionReview.reviewSummary
+                                  ?.expansionLineCount ??
+                                  configExpansionReviewExpansionLines.length}
+                              </p>
+                              {configExpansionReview.lines.map((line, index) => (
+                                <div
+                                  key={line.lineId}
+                                  data-testid="rfp-config-review-line"
+                                  className="rounded-button border border-[var(--border)] bg-bg-card p-2"
+                                >
+                                  <p className="text-xs font-medium text-text-primary">
+                                    {line.origin === "customer"
+                                      ? "Customer line"
+                                      : "Expansion line"}{" "}
+                                    {index + 1}
+                                  </p>
+                                  <p className={MUTED_TEXT}>
+                                    Quantity: {line.quantity} | Evidence:{" "}
+                                    {line.evidenceCount}
+                                  </p>
+                                  <p className="mt-1 text-xs text-text-secondary">
+                                    {line.description}
+                                  </p>
+                                  {line.origin === "expansion" && (
+                                    <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,14rem)_1fr]">
+                                      <select
+                                        data-testid={`rfp-config-review-decision-${index}`}
+                                        value={
+                                          configExpansionLineReview[line.lineId]
+                                            ?.action ?? ""
+                                        }
+                                        onChange={(e) =>
+                                          updateConfigExpansionLineReview(
+                                            line.lineId,
+                                            {
+                                              action: e.target.value as
+                                                | ""
+                                                | "accept"
+                                                | "reject",
+                                            }
+                                          )
+                                        }
+                                        className={`${FIELD} mt-0 w-full`}
+                                      >
+                                        <option value="">Select decision</option>
+                                        <option value="accept">Accept</option>
+                                        <option value="reject">Reject</option>
+                                      </select>
+                                      <textarea
+                                        data-testid={`rfp-config-review-note-${index}`}
+                                        value={
+                                          configExpansionLineReview[line.lineId]
+                                            ?.note ?? ""
+                                        }
+                                        onChange={(e) =>
+                                          updateConfigExpansionLineReview(
+                                            line.lineId,
+                                            { note: e.target.value }
+                                          )
+                                        }
+                                        rows={2}
+                                        placeholder="Optional decision note"
+                                        className={`${FIELD} mt-0 w-full`}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                              <button
+                                type="button"
+                                data-testid="rfp-config-review-submit"
+                                onClick={() =>
+                                  void submitConfigurationExpansionReview()
+                                }
+                                disabled={
+                                  !configExpansionReviewReady ||
+                                  configExpansionReviewPending
+                                }
+                                className={ACTION_BTN}
+                              >
+                                Submit configuration review
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {configurationExpansionApprovalVisible && (
+                        <div
+                          data-testid="rfp-boq-config-review-action"
+                          className={SUBTLE_CARD}
+                        >
+                          <p className={MUTED_TEXT}>
+                            Record the engineer decision for the reviewed
+                            configuration expansion.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              data-testid="rfp-boq-config-approve"
+                              onClick={() =>
+                                void submitRfpBoqArtifactReview(
+                                  configurationExpansionArtifact?.id,
+                                  "approved",
+                                  "Configuration expansion"
+                                )
+                              }
+                              disabled={boqApprovalPendingId !== null}
+                              className={ACTION_BTN}
+                            >
+                              Approve configuration expansion
+                            </button>
+                            <button
+                              type="button"
+                              data-testid="rfp-boq-config-reject"
+                              onClick={() =>
+                                void submitRfpBoqArtifactReview(
+                                  configurationExpansionArtifact?.id,
+                                  "rejected",
+                                  "Configuration expansion"
+                                )
+                              }
+                              disabled={boqApprovalPendingId !== null}
+                              className={PLAIN_BTN}
+                            >
+                              Reject configuration expansion
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {boqActionError && (
+                        <p data-testid="rfp-boq-action-error" className={ERROR_BOX}>
+                          {boqActionError}
+                        </p>
+                      )}
+                      {boqActionSuccess && (
+                        <p
+                          data-testid="rfp-boq-action-success"
+                          className="text-xs text-emerald-300"
+                        >
+                          {boqActionSuccess}
+                        </p>
+                      )}
+                      {boqApprovalError && (
+                        <p
+                          data-testid="rfp-boq-approval-error"
+                          className={ERROR_BOX}
+                        >
+                          {boqApprovalError}
+                        </p>
+                      )}
+                      {boqApprovalSuccess && (
+                        <p
+                          data-testid="rfp-boq-approval-success"
+                          className="text-xs text-emerald-300"
+                        >
+                          {boqApprovalSuccess}
+                        </p>
+                      )}
+                      {configExpansionReviewError && (
+                        <p
+                          data-testid="rfp-config-review-error"
+                          className={ERROR_BOX}
+                        >
+                          {configExpansionReviewError}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {boqWorkspace.readiness.configurationGate.status ===
                     "requires_boq_upload_or_exception" && (
                     <div

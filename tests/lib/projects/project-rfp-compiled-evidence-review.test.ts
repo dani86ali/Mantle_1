@@ -245,6 +245,58 @@ describe("compileCompiledEvidenceReview - tables", () => {
     expect(audit).toContain("file-uuid-ccc:table:7");
     expect(review.findings[0].title).not.toContain("file-uuid-ccc");
   });
+
+  it("suppresses repeated proprietary notice tables while keeping raw table audit", () => {
+    const review = compile({
+      deterministicEvidence: [
+        tableInput({
+          evidenceId: "notice-page-2",
+          sourceFileName: "rfp_general_instructions.pdf.pdf",
+          sheetName: undefined,
+          pageNumber: 2,
+          rows: [
+            ["STC Proprietary and Confidential"],
+            ["Copyright 2026. All rights reserved."],
+          ],
+        }),
+        tableInput({
+          evidenceId: "notice-page-3",
+          sourceFileName: "rfp_general_instructions.pdf.pdf",
+          sheetName: undefined,
+          pageNumber: 3,
+          rows: [
+            ["STC Proprietary and Confidential"],
+            ["Copyright 2026. All rights reserved."],
+          ],
+        }),
+        tableInput({
+          evidenceId: "scope-table",
+          sourceFileName: "rfp_scope.pdf",
+          sheetName: undefined,
+          pageNumber: 8,
+          rows: [
+            ["Requirement", "Response"],
+            ["The supplier shall provide managed LAN support.", "Comply"],
+          ],
+        }),
+      ],
+    });
+
+    expect(review.findings).toHaveLength(1);
+    expect(review.findings[0].audit[0].evidenceId).toBe("scope-table");
+    expect(review.suppressed.map((entry) => entry.audit.evidenceId)).toEqual([
+      "notice-page-2",
+      "notice-page-3",
+    ]);
+    expect(
+      review.suppressed.every((entry) => entry.reason === "proprietary_notice")
+    ).toBe(true);
+    expect(review.accounting.suppressedByReason.proprietary_notice).toBe(2);
+    expect(review.accounting.deterministicTableInputCount).toBe(3);
+    expect(review.accounting.accountedInPrimaryCount).toBe(1);
+    expect(review.accounting.suppressedCount).toBe(2);
+    expect(review.accounting.balanced).toBe(true);
+  });
 });
 
 describe("compileCompiledEvidenceReview - refinement and missing candidates", () => {
