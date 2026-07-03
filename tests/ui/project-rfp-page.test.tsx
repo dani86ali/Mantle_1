@@ -84,6 +84,7 @@ const HLD_DIAGRAM_OUTPUT_ARTIFACT_ID = "art-hld-diagram-output-1";
 const HLD_DIAGRAM_OUTPUT_DETAIL_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${HLD_DIAGRAM_OUTPUT_ARTIFACT_ID}/hld-diagram-output`;
 const HLD_DIAGRAM_OUTPUT_REVIEW_URL = `${HLD_DIAGRAM_OUTPUT_DETAIL_URL}/review`;
 const FINAL_HLD_DOCUMENT_STATUS_URL = `/api/projects/${PROJECT_ID}/rfp/hld-document`;
+const FINAL_HLD_DOCUMENT_DOWNLOAD_URL = `/api/projects/${PROJECT_ID}/rfp/hld-document/download`;
 const GENERATED_HLD_DOCUMENT_CREATE_URL = `/api/projects/${PROJECT_ID}/rfp/hld-document/generated`;
 const FINAL_HLD_DOCUMENT_REVIEW_ARTIFACT_ID = "art-hld-doc-review-1";
 const FINAL_HLD_DOCUMENT_REVIEW_URL = `/api/projects/${PROJECT_ID}/rfp/artifacts/${FINAL_HLD_DOCUMENT_REVIEW_ARTIFACT_ID}/hld-document/review`;
@@ -4968,7 +4969,6 @@ describe("ProjectRfpEvidencePage - Stage 6.5 HLD readiness surface", () => {
       "/rfp/hld-model",
       "/rfp/hld-diagram",
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -5190,7 +5190,6 @@ describe("ProjectRfpEvidencePage - Stage 6.2 HLD intake surface", () => {
       "/rfp/hld-model",
       "/rfp/hld-diagram",
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -7845,7 +7844,6 @@ describe("ProjectRfpEvidencePage - Stage 6H-A HLD document model surface", () =>
     "/rfp/hld-document-model/generate",
     "/rfp/hld-document-model/render",
     "/rfp/hld-document/review",
-    "/rfp/hld-document/download",
     "/rfp/hld-document/upload",
     "/rfp/hld-document/export",
     "/rfp/hld-document/final",
@@ -8500,15 +8498,16 @@ describe("ProjectRfpEvidencePage static guards", () => {
   const source = readFileSync(SRC_PATH, "utf8");
 
   // Precise matcher for the forbidden final /rfp/hld-document authority-write
-  // suffixes (review/download/upload/export/final/render). It deliberately does
+  // suffixes (review/upload/export/final/render). It deliberately does
   // NOT match the allowed internal /rfp/hld-document-model route (which has a
   // "-model" suffix), the Stage 6I-E lean status GET (bare /rfp/hld-document),
-  // or the Stage 6I-E generated create POST (/rfp/hld-document/generated).
+  // the Stage 6I-E generated create POST (/rfp/hld-document/generated), or the
+  // Stage 6I-G-A final-authority download GET.
   // Existing guards that forbade the bare "/rfp/hld-document" output route now
   // use this so they keep forbidding the final-authority routes while allowing
   // the Stage 6I-E readiness status GET and generated create POST.
   const FINAL_HLD_DOCUMENT_ROUTE_RE =
-    /\/rfp\/hld-document\/(?:review|download|upload|export|final|render)(?:$|["'`/?#])/;
+    /\/rfp\/hld-document\/(?:review|upload|export|final|render)(?:$|["'`/?#])/;
 
   it("keeps the page and test ASCII-only", () => {
     expect(/[^\x00-\x7F]/.test(source)).toBe(false);
@@ -8593,7 +8592,6 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "/rfp/hld-diagram/export",
       "/rfp/hld-diagram/final",
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -8619,7 +8617,6 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "/rfp/hld-diagram/export",
       "/rfp/hld-diagram/final",
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -8647,7 +8644,6 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "/rfp/hld-diagram/export",
       "/rfp/hld-diagram/final",
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -8685,7 +8681,6 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "/rfp/hld-diagram/export",
       "/rfp/hld-diagram/final",
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -8724,7 +8719,6 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "/rfp/hld-diagram/export",
       "/rfp/hld-diagram/final",
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -8765,7 +8759,6 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "/rfp/hld-diagram/export",
       "/rfp/hld-diagram/final",
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -8807,7 +8800,6 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "/rfp/hld-diagram/export",
       "/rfp/hld-diagram/final",
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -8860,7 +8852,6 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "/rfp/hld-diagram/export",
       "/rfp/hld-diagram/final",
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -8916,7 +8907,6 @@ describe("ProjectRfpEvidencePage static guards", () => {
       "/rfp/hld-diagram/export",
       "/rfp/hld-diagram/final",
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -10068,7 +10058,6 @@ describe("ProjectRfpEvidencePage - Stage 6I-E generated HLD document readiness",
     // proposal/TP, or provider routes.
     for (const forbidden of [
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",
@@ -10161,21 +10150,61 @@ describe("ProjectRfpEvidencePage - Stage 6I-F final HLD review, close, and TP ha
     gateStatus: "ready",
     hldClose: { closeStatus: "closed", closeKind: "generated" },
   };
+  const APPROVED_DOCUMENT_MODEL_LIST_BODY = {
+    project: projectContext(),
+    artifactCount: 2,
+    artifacts: [
+      {
+        id: "art-hld-document-model-old-approved-1",
+        status: "approved",
+        version: 1,
+        payloadSummary: { title: "Older approved document model" },
+      },
+      {
+        id: HLD_DOCUMENT_MODEL_ARTIFACT_ID,
+        status: "approved",
+        version: 4,
+        payloadSummary: { title: "Newest approved document model" },
+      },
+    ],
+  };
+  const EMPTY_DOCUMENT_MODEL_LIST_BODY = {
+    project: projectContext(),
+    artifactCount: 0,
+    artifacts: [],
+  };
+  const FINAL_AUTHORITY_BODY = {
+    project: projectContext(),
+    finalAuthority: {
+      finalAuthorityStatus: "approved_generated_hld_document",
+      payloadSummary: { sourceMode: "generated_drawio_output" },
+    },
+  };
 
   // A lean handler for the Stage 6I-F reads: final status, the artifact-scoped
   // review POST, HLD close, and TP handoff. Everything else degrades to an empty
   // 200 so the page still mounts (the panels under test are what we assert on).
   function sixIFFetch(opts?: {
     statusGet?: () => Response | Promise<Response>;
+    modelList?: Record<string, unknown>;
     closeGet?: () => Response | Promise<Response>;
     tpGet?: () => Response | Promise<Response>;
     onReview?: (init?: RequestInit) => Response;
+    onManualUpload?: (init?: RequestInit) => Response;
   }): (url: string, init?: RequestInit) => Response | Promise<Response> {
     return (url, init) => {
+      if (url === FINAL_HLD_DOCUMENT_STATUS_URL && init?.method === "POST") {
+        return opts?.onManualUpload
+          ? opts.onManualUpload(init)
+          : jsonResponse({ artifact: { id: "art-manual-hld-doc-1" } }, 201);
+      }
       if (url === FINAL_HLD_DOCUMENT_STATUS_URL) {
         return opts?.statusGet
           ? opts.statusGet()
           : jsonResponse({ code: "hld_document_not_final" }, 409);
+      }
+      if (url === HLD_DOCUMENT_MODEL_LIST_URL) {
+        return jsonResponse(opts?.modelList ?? EMPTY_DOCUMENT_MODEL_LIST_BODY);
       }
       if (url === FINAL_HLD_DOCUMENT_REVIEW_URL && init?.method === "POST") {
         return opts?.onReview
@@ -10201,6 +10230,12 @@ describe("ProjectRfpEvidencePage - Stage 6I-F final HLD review, close, and TP ha
   function reviewPosts(calls: FetchCall[]): FetchCall[] {
     return calls.filter(
       (c) => c.url === FINAL_HLD_DOCUMENT_REVIEW_URL && c.init?.method === "POST"
+    );
+  }
+
+  function manualUploadPosts(calls: FetchCall[]): FetchCall[] {
+    return calls.filter(
+      (c) => c.url === FINAL_HLD_DOCUMENT_STATUS_URL && c.init?.method === "POST"
     );
   }
 
@@ -10584,13 +10619,221 @@ describe("ProjectRfpEvidencePage - Stage 6I-F final HLD review, close, and TP ha
     }
   });
 
+  it("Stage 6I-G-A gates manual upload on an approved document model and shows final download only when final authority exists", async () => {
+    stubFetch(
+      sixIFFetch({
+        statusGet: () => jsonResponse(PENDING_GENERATED_BODY, 409),
+        modelList: EMPTY_DOCUMENT_MODEL_LIST_BODY,
+      })
+    );
+    const first = render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("manual-hld-document-upload-panel");
+    expect(
+      await screen.findByTestId("manual-hld-document-upload-blocked")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("manual-hld-document-upload-controls")).toBeNull();
+    expect(screen.queryByTestId("final-hld-document-download")).toBeNull();
+    first.unmount();
+    cleanup();
+    vi.unstubAllGlobals();
+
+    stubFetch(
+      sixIFFetch({
+        statusGet: () => jsonResponse(FINAL_AUTHORITY_BODY, 200),
+        modelList: APPROVED_DOCUMENT_MODEL_LIST_BODY,
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+    expect(
+      await screen.findByTestId("manual-hld-document-upload-controls")
+    ).toBeInTheDocument();
+    const fileInput = screen.getByTestId(
+      "manual-hld-document-file"
+    ) as HTMLInputElement;
+    expect(fileInput.accept).toBe(".drawio,.xml");
+    const download = await screen.findByTestId("final-hld-document-download");
+    expect(download.getAttribute("href")).toBe(FINAL_HLD_DOCUMENT_DOWNLOAD_URL);
+    expect(download.textContent ?? "").toContain("Download final HLD document");
+  });
+
+  it("Stage 6I-G-A posts only the allowed manual upload body, reads file text, and refreshes downstream gates", async () => {
+    const calls = stubFetch(
+      sixIFFetch({
+        statusGet: () => jsonResponse(PENDING_GENERATED_BODY, 409),
+        modelList: APPROVED_DOCUMENT_MODEL_LIST_BODY,
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("manual-hld-document-upload-controls");
+
+    const before = {
+      status: countUrl(calls, FINAL_HLD_DOCUMENT_STATUS_URL),
+      close: countUrl(calls, HLD_CLOSE_URL),
+      tp: countUrl(calls, TP_HANDOFF_GATE_URL),
+    };
+    fireEvent.change(screen.getByTestId("manual-hld-document-title"), {
+      target: { value: "SE edited final HLD" },
+    });
+    fireEvent.change(screen.getByTestId("manual-hld-document-note"), {
+      target: { value: "  reviewed in draw.io  " },
+    });
+    const xml = '<mxfile><diagram id="d1">EDITED-HLD-CANARY</diagram></mxfile>';
+    const file = new File([xml], "edited-final.drawio", {
+      type: "application/vnd.jgraph.mxfile",
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("manual-hld-document-file"), {
+        target: { files: [file] },
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("manual-hld-document-upload")).not.toBeDisabled();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("manual-hld-document-upload"));
+    });
+    await screen.findByTestId("manual-hld-document-upload-success");
+
+    const posts = manualUploadPosts(calls);
+    expect(posts).toHaveLength(1);
+    const body = JSON.parse(String(posts[0].init?.body));
+    expect(body).toEqual({
+      documentModelArtifactId: HLD_DOCUMENT_MODEL_ARTIFACT_ID,
+      title: "SE edited final HLD",
+      uploadedFileName: "edited-final.drawio",
+      drawioXml: xml,
+      note: "reviewed in draw.io",
+    });
+    for (const forbidden of [
+      "tenantId",
+      "projectId",
+      "userId",
+      "status",
+      "payload",
+      "sourceArtifactIds",
+      "sourceHld",
+      "authority",
+      "provider",
+      "pricing",
+      "sku",
+      "catalog",
+      "config",
+    ]) {
+      expect(body).not.toHaveProperty(forbidden);
+      expect(String(posts[0].init?.body)).not.toContain(forbidden);
+    }
+    await waitFor(() => {
+      expect(countUrl(calls, FINAL_HLD_DOCUMENT_STATUS_URL)).toBeGreaterThan(
+        before.status
+      );
+      expect(countUrl(calls, HLD_CLOSE_URL)).toBeGreaterThan(before.close);
+      expect(countUrl(calls, TP_HANDOFF_GATE_URL)).toBeGreaterThan(before.tp);
+    });
+    expect(
+      screen.getByTestId("manual-hld-document-upload-panel").textContent ?? ""
+    ).not.toContain("EDITED-HLD-CANARY");
+  });
+
+  it("Stage 6I-G-A rejects non-draw.io manual upload files client-side without posting", async () => {
+    const calls = stubFetch(
+      sixIFFetch({
+        modelList: APPROVED_DOCUMENT_MODEL_LIST_BODY,
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("manual-hld-document-upload-controls");
+
+    fireEvent.change(screen.getByTestId("manual-hld-document-title"), {
+      target: { value: "Wrong extension" },
+    });
+    const file = new File(["not xml"], "edited-final.txt", {
+      type: "text/plain",
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("manual-hld-document-file"), {
+        target: { files: [file] },
+      });
+    });
+
+    const err = await screen.findByTestId("manual-hld-document-upload-error");
+    expect(err.textContent ?? "").toContain(".drawio or .xml");
+    expect(screen.getByTestId("manual-hld-document-upload")).toBeDisabled();
+    expect(manualUploadPosts(calls)).toHaveLength(0);
+  });
+
+  it("Stage 6I-G-A renders compact manual upload error copy without leaking raw response bodies", async () => {
+    stubFetch(
+      sixIFFetch({
+        modelList: APPROVED_DOCUMENT_MODEL_LIST_BODY,
+        onManualUpload: () =>
+          jsonResponse(
+            {
+              code: "hld_document_payload_invalid",
+              provider: "UPLOAD-PROVIDER-LEAK",
+              errors: ["UPLOAD-ERRORS-LEAK"],
+              drawioXml:
+                "<mxfile><diagram>UPLOAD-MXCELL-LEAK</diagram></mxfile>",
+              payload: { filePath: "C:/secret/final.drawio" },
+            },
+            409
+          ),
+      })
+    );
+    render(<ProjectRfpEvidencePage />);
+    await screen.findByTestId("manual-hld-document-upload-controls");
+    fireEvent.change(screen.getByTestId("manual-hld-document-title"), {
+      target: { value: "SE edited final HLD" },
+    });
+    const file = new File(
+      ["<mxfile><diagram>CLIENT-MXCELL-CANARY</diagram></mxfile>"],
+      "edited-final.xml",
+      { type: "application/xml" }
+    );
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("manual-hld-document-file"), {
+        target: { files: [file] },
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("manual-hld-document-upload")).not.toBeDisabled();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("manual-hld-document-upload"));
+    });
+
+    const err = await screen.findByTestId("manual-hld-document-upload-error");
+    expect(err.textContent ?? "").toBe(
+      "Unable to upload the manual HLD document."
+    );
+    const panelText =
+      screen.getByTestId("manual-hld-document-upload-panel").textContent ?? "";
+    for (const leak of [
+      "hld_document_payload_invalid",
+      "UPLOAD-PROVIDER-LEAK",
+      "UPLOAD-ERRORS-LEAK",
+      "UPLOAD-MXCELL-LEAK",
+      "CLIENT-MXCELL-CANARY",
+      "C:/secret",
+      "drawioXml",
+      "payload",
+      "provider",
+      "filePath",
+    ]) {
+      expect(panelText).not.toContain(leak);
+    }
+    expect(
+      screen.getByTestId("manual-hld-document-upload-panel").querySelector("pre")
+    ).toBeNull();
+  });
+
   it("Stage 6I-F static: generated HLD document create still posts exactly { documentModelArtifactId }", () => {
     const source = readFileSync(SRC_PATH, "utf8");
     expect(source).toContain("/rfp/hld-document/generated");
     expect(source).toContain("JSON.stringify({ documentModelArtifactId })");
   });
 
-  it("Stage 6I-F static: wires the artifact-scoped review, close, and TP handoff routes but no bare final write, TP/proposal, or provider route", () => {
+  it("Stage 6I-G-A static: wires scoped manual upload/download affordances but no TP/proposal/export/provider route", () => {
     const source = readFileSync(SRC_PATH, "utf8");
     // The final HLD document review is wired ONLY in the artifact-scoped form.
     expect(source).toContain(
@@ -10598,17 +10841,24 @@ describe("ProjectRfpEvidencePage - Stage 6I-F final HLD review, close, and TP ha
     );
     expect(source).toContain("/rfp/hld-close");
     expect(source).toContain("/rfp/tp-handoff-gate");
+    expect(source).toContain("/rfp/hld-document/download");
+    expect(source).toContain("manual-hld-document-upload-panel");
     expect(source).toContain("final-hld-document-review-panel");
     expect(source).toContain("hld-close-readiness-panel");
     expect(source).toContain("tp-handoff-gate-panel");
     // The review body is exactly { decision } or { decision, note }.
     expect(source).toContain('note === "" ? { decision } : { decision, note }');
+    // The manual upload body is assembled from only the allowed route fields.
+    expect(source).toContain("documentModelArtifactId: approvedModel.id");
+    expect(source).toContain("uploadedFileName: file.name");
+    expect(source).toContain("drawioXml");
+    expect(source).toContain("if (note !== \"\") body.note = note");
+    expect(source).toContain('accept=".drawio,.xml"');
     // The bare final-authority review route stays forbidden; only the
-    // artifact-scoped variant is allowed. Upload/download/export/final/render, a
+    // artifact-scoped variant is allowed. Upload suffix/export/final/render, a
     // close mutation, TP/proposal generation, and provider routes stay out.
     for (const forbidden of [
       "/rfp/hld-document/review",
-      "/rfp/hld-document/download",
       "/rfp/hld-document/upload",
       "/rfp/hld-document/export",
       "/rfp/hld-document/final",

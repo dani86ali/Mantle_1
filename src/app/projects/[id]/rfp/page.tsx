@@ -16,7 +16,15 @@
  * server stores, provider SDKs, pricing/configuration authority, or raw files.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
 import { useParams } from "next/navigation";
 import {
   buildRfpOperatorWorkflow,
@@ -1981,8 +1989,9 @@ interface HldDiagramOutputReviewResponse {
 // HLD document may be created only once an approved/current hld_diagram_output
 // exists for the same approved HLD diagram that the newest approved
 // hld_document_model uses. The page reads a LEAN final-authority status only
-// (never a payload body, draw.io/XML, download/export, or manual-upload form),
-// and creates a generated document with exactly { documentModelArtifactId }.
+// (never a payload body or draw.io/XML) and creates a generated document with
+// exactly { documentModelArtifactId }. Manual upload and final download are
+// separate Stage 6I-G-A controls that use existing final-HLD routes.
 // All types are local to the client page (no server service, store, provider,
 // or pricing/catalog/config import).
 
@@ -2285,6 +2294,15 @@ const HLD_DOCUMENT_REVIEW_APPROVE_SUCCESS = "Final HLD document approved.";
 const HLD_DOCUMENT_REVIEW_REJECT_SUCCESS =
   "Requested changes on the final HLD document.";
 const HLD_DOCUMENT_REVIEW_ERROR = "Unable to review the final HLD document.";
+const MANUAL_HLD_DOCUMENT_UPLOAD_SUCCESS =
+  "Manual draw.io upload recorded for SE review.";
+const MANUAL_HLD_DOCUMENT_UPLOAD_ERROR =
+  "Unable to upload the manual HLD document.";
+const MANUAL_HLD_DOCUMENT_UPLOAD_FILE_ERROR =
+  "Select a .drawio or .xml file before upload.";
+const MANUAL_HLD_DOCUMENT_UPLOAD_BLOCKED =
+  "Approve an HLD document model before uploading a manual draw.io candidate.";
+const FINAL_HLD_DOCUMENT_DOWNLOAD_LABEL = "Download final HLD document";
 const HLD_CLOSE_BLOCKED =
   "HLD cannot be closed until a valid final HLD document authority exists.";
 const HLD_CLOSE_STALE =
@@ -2315,6 +2333,33 @@ function normalizeHldFinalAuthoritySource(
     return "manual";
   if (normalized.includes("generated")) return "generated";
   return null;
+}
+
+/** Newest approved document model by version; null when no upload source exists. */
+function newestApprovedHldDocumentModel(
+  list: HldDocumentModelListResponse | null
+): HldDocumentModelListItem | null {
+  const approved = (list?.artifacts ?? [])
+    .filter((item) => item.status === "approved")
+    .slice()
+    .sort((a, b) => b.version - a.version);
+  return approved[0] ?? null;
+}
+
+function isAllowedDrawioFileName(name: string): boolean {
+  return /\.(?:drawio|xml)$/i.test(name.trim());
+}
+
+function readUploadFileText(file: File): Promise<string> {
+  const withText = file as File & { text?: () => Promise<string> };
+  if (typeof withText.text === "function") return withText.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Unable to read file."));
+    reader.onload = () =>
+      resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.readAsText(file);
+  });
 }
 
 /** Exact UI copy for the advisory deterministic design-model review surface. */
@@ -4799,8 +4844,9 @@ export default function ProjectRfpEvidencePage() {
   // Stage 6I-E generated HLD document readiness. The page reads the LEAN final
   // authority status only and creates a generated document with exactly
   // { documentModelArtifactId }. It renders no payload body, draw.io/XML,
-  // download/export, or manual-upload form, writes no final authority, and
-  // carries no authority/source/payload/provider/pricing/SKU/catalog/config field.
+  // final-authority write, and carries no authority/source/payload/provider/
+  // pricing/SKU/catalog/config field. Manual upload/final download are handled
+  // separately by Stage 6I-G-A controls against existing final-HLD routes.
   const [finalHldDocumentStatus, setFinalHldDocumentStatus] =
     useState<FinalHldDocumentStatus | null>(null);
   const [finalHldDocumentStatusLoading, setFinalHldDocumentStatusLoading] =
@@ -4839,12 +4885,28 @@ export default function ProjectRfpEvidencePage() {
   const [hldDocumentReviewSuccess, setHldDocumentReviewSuccess] = useState<
     string | null
   >(null);
+  const [manualHldDocumentTitle, setManualHldDocumentTitle] = useState("");
+  const [manualHldDocumentFile, setManualHldDocumentFile] =
+    useState<File | null>(null);
+  const [manualHldDocumentFileInputKey, setManualHldDocumentFileInputKey] =
+    useState(0);
+  const [manualHldDocumentNote, setManualHldDocumentNote] = useState("");
+  const [manualHldDocumentUploadPending, setManualHldDocumentUploadPending] =
+    useState(false);
+  const [manualHldDocumentUploadError, setManualHldDocumentUploadError] =
+    useState<string | null>(null);
+  const [manualHldDocumentUploadSuccess, setManualHldDocumentUploadSuccess] =
+    useState<string | null>(null);
   const [hldCloseState, setHldCloseState] =
     useState<HldCloseUiState>("loading");
   const [hldCloseKind, setHldCloseKind] =
     useState<HldFinalAuthoritySource | null>(null);
   const [tpHandoffState, setTpHandoffState] =
     useState<TpHandoffUiState>("loading");
+  const approvedHldDocumentModelForManualUpload = useMemo(
+    () => newestApprovedHldDocumentModel(hldDocumentModelList),
+    [hldDocumentModelList]
+  );
   const loadList = useCallback(
     async (filters: EvidenceFilters): Promise<void> => {
       setListLoading(true);
@@ -7240,6 +7302,97 @@ export default function ProjectRfpEvidencePage() {
       loadHldDiagramOutputDetail,
     ]
   );
+
+  const onManualHldDocumentFileChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      const file = event.target.files?.[0] ?? null;
+      setManualHldDocumentUploadSuccess(null);
+      if (file === null) {
+        setManualHldDocumentFile(null);
+        return;
+      }
+      if (!isAllowedDrawioFileName(file.name)) {
+        setManualHldDocumentFile(null);
+        setManualHldDocumentUploadError(MANUAL_HLD_DOCUMENT_UPLOAD_FILE_ERROR);
+        return;
+      }
+      setManualHldDocumentFile(file);
+      setManualHldDocumentUploadError(null);
+      if (manualHldDocumentTitle.trim() === "") {
+        setManualHldDocumentTitle(file.name.replace(/\.(?:drawio|xml)$/i, ""));
+      }
+    },
+    [manualHldDocumentTitle]
+  );
+
+  // Stage 6I-G-A manual draw.io final-candidate upload. The POST body is
+  // exactly { documentModelArtifactId, title, uploadedFileName, drawioXml }
+  // with optional { note }. It carries no tenant/project/user/status/payload/
+  // source ids/authority/provider/pricing/SKU/catalog/config field. The XML is
+  // read client-side from the selected .drawio/.xml file and never rendered.
+  const submitManualHldDocumentUpload = useCallback(async (): Promise<void> => {
+    if (manualHldDocumentUploadPending) return;
+    const approvedModel = approvedHldDocumentModelForManualUpload;
+    const title = manualHldDocumentTitle.trim();
+    const file = manualHldDocumentFile;
+    if (approvedModel === null || title === "" || file === null) return;
+    if (!isAllowedDrawioFileName(file.name)) {
+      setManualHldDocumentUploadError(MANUAL_HLD_DOCUMENT_UPLOAD_FILE_ERROR);
+      return;
+    }
+
+    setManualHldDocumentUploadPending(true);
+    setManualHldDocumentUploadError(null);
+    setManualHldDocumentUploadSuccess(null);
+    try {
+      const drawioXml = await readUploadFileText(file);
+      const note = manualHldDocumentNote.trim();
+      const body: {
+        documentModelArtifactId: string;
+        title: string;
+        uploadedFileName: string;
+        drawioXml: string;
+        note?: string;
+      } = {
+        documentModelArtifactId: approvedModel.id,
+        title,
+        uploadedFileName: file.name,
+        drawioXml,
+      };
+      if (note !== "") body.note = note;
+
+      const res = await fetch(`/api/projects/${id}/rfp/hld-document`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        setManualHldDocumentUploadError(MANUAL_HLD_DOCUMENT_UPLOAD_ERROR);
+        return;
+      }
+      setManualHldDocumentUploadSuccess(MANUAL_HLD_DOCUMENT_UPLOAD_SUCCESS);
+      setManualHldDocumentNote("");
+      setManualHldDocumentFile(null);
+      setManualHldDocumentFileInputKey((value) => value + 1);
+      void loadFinalHldDocumentStatus();
+      void loadHldCloseStatus();
+      void loadTpHandoffGate();
+    } catch {
+      setManualHldDocumentUploadError(MANUAL_HLD_DOCUMENT_UPLOAD_ERROR);
+    } finally {
+      setManualHldDocumentUploadPending(false);
+    }
+  }, [
+    approvedHldDocumentModelForManualUpload,
+    id,
+    loadFinalHldDocumentStatus,
+    loadHldCloseStatus,
+    loadTpHandoffGate,
+    manualHldDocumentFile,
+    manualHldDocumentNote,
+    manualHldDocumentTitle,
+    manualHldDocumentUploadPending,
+  ]);
 
   // Stage 6I-E create exactly ONE generated HLD document. The POST body is
   // exactly { documentModelArtifactId } - it carries no tenantId/projectId/
@@ -14197,6 +14350,123 @@ export default function ProjectRfpEvidencePage() {
                 {finalHldDocumentStatusError}
               </div>
             )}
+          </div>
+          {/* Stage 6I-G-A: manual draw.io edit/download-upload path. */}
+          <div
+            data-testid="manual-hld-document-upload-panel"
+            className="mt-4 border-t border-[var(--border)] pt-4"
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                Manual HLD edit path
+              </h3>
+              <p className={`mt-0.5 ${MUTED_TEXT}`}>
+                Upload an edited draw.io HLD candidate against the newest
+                approved HLD document model. The upload becomes reviewable only;
+                SE approval remains the final authority.
+              </p>
+            </div>
+            {(() => {
+              const approvedModel = approvedHldDocumentModelForManualUpload;
+              const canUpload =
+                approvedModel !== null &&
+                manualHldDocumentTitle.trim() !== "" &&
+                manualHldDocumentFile !== null &&
+                !manualHldDocumentUploadPending;
+              return (
+                <div
+                  data-testid="manual-hld-document-upload-status"
+                  className={`mt-3 ${SUBTLE_CARD}`}
+                >
+                  {finalHldDocumentStatus === "final" && (
+                    <div className="mb-3 flex flex-wrap justify-end gap-2">
+                      <a
+                        data-testid="final-hld-document-download"
+                        href={`/api/projects/${id}/rfp/hld-document/download`}
+                        className={ACTION_BTN}
+                      >
+                        {FINAL_HLD_DOCUMENT_DOWNLOAD_LABEL}
+                      </a>
+                    </div>
+                  )}
+                  {approvedModel === null ? (
+                    <p
+                      data-testid="manual-hld-document-upload-blocked"
+                      className="text-xs text-amber-200"
+                    >
+                      {MANUAL_HLD_DOCUMENT_UPLOAD_BLOCKED}
+                    </p>
+                  ) : (
+                    <div data-testid="manual-hld-document-upload-controls">
+                      <label className="flex flex-col text-xs text-text-tertiary">
+                        Manual HLD title
+                        <input
+                          data-testid="manual-hld-document-title"
+                          value={manualHldDocumentTitle}
+                          disabled={manualHldDocumentUploadPending}
+                          onChange={(e) =>
+                            setManualHldDocumentTitle(e.target.value)
+                          }
+                          className={FIELD}
+                        />
+                      </label>
+                      <label className="mt-2 flex flex-col text-xs text-text-tertiary">
+                        Edited draw.io file
+                        <input
+                          key={manualHldDocumentFileInputKey}
+                          data-testid="manual-hld-document-file"
+                          type="file"
+                          accept=".drawio,.xml"
+                          disabled={manualHldDocumentUploadPending}
+                          onChange={onManualHldDocumentFileChange}
+                          className={FIELD}
+                        />
+                      </label>
+                      <label className="mt-2 flex flex-col text-xs text-text-tertiary">
+                        Upload note (optional)
+                        <textarea
+                          data-testid="manual-hld-document-note"
+                          value={manualHldDocumentNote}
+                          disabled={manualHldDocumentUploadPending}
+                          onChange={(e) =>
+                            setManualHldDocumentNote(e.target.value)
+                          }
+                          rows={2}
+                          className={FIELD}
+                        />
+                      </label>
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="button"
+                          data-testid="manual-hld-document-upload"
+                          disabled={!canUpload}
+                          onClick={() => void submitManualHldDocumentUpload()}
+                          className={ACTION_BTN}
+                        >
+                          Upload manual HLD candidate
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {manualHldDocumentUploadError !== null && (
+                    <p
+                      data-testid="manual-hld-document-upload-error"
+                      className="mt-2 text-xs text-destructive"
+                    >
+                      {manualHldDocumentUploadError}
+                    </p>
+                  )}
+                  {manualHldDocumentUploadSuccess !== null && (
+                    <p
+                      data-testid="manual-hld-document-upload-success"
+                      className="mt-2 text-xs text-emerald-300"
+                    >
+                      {manualHldDocumentUploadSuccess}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           {/* Stage 6I-F: read-only HLD close readiness. */}
           <div
