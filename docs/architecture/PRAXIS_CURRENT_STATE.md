@@ -1,6 +1,6 @@
 # Praxis Current State
 
-Date: 2026-08-07
+Date: 2026-08-18
 
 Purpose: first-read source of truth for future Codex/Claude/Govern AI sessions. This file summarizes repo location, current runtime reality, approved target-flow authority, and hard authority rules. It does not replace code inspection, tests, ledgers, or human review.
 
@@ -11,6 +11,9 @@ Purpose: first-read source of truth for future Codex/Claude/Govern AI sessions. 
 - Quick BoM feature name: BoMatic.
 - Product repo: `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic`.
 - Canonical architecture: `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic\docs\architecture`.
+- Shared Claude Code policy: `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic\.claude\settings.json`.
+- Developer-local Claude approvals: `.claude/settings.local.json` (not tracked).
+- Native Windows Claude Code sandboxing is not currently active; shared permission rules are the enforced local boundary until an isolated WSL2 or development-container environment is approved.
 - Historical planning/ledgers: `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic_planning`.
 - Harness: `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic-harness`.
 - Benchmark/source folders live outside the product repo under `C:\Pre-Sales\` and vendor/catalog folders under `vendor_data_price_guide_instructions\`.
@@ -19,15 +22,7 @@ Purpose: first-read source of truth for future Codex/Claude/Govern AI sessions. 
 
 Every new session must run `git status --short -b` in the product repo and inspect relevant diffs before acting. Do not assume this file is newer than the repo.
 
-Known local dirt at the time this file was updated:
-
-- `.claude/settings.local.json`
-- `CLAUDE.md`
-- `README.md`
-- `docs/README.md`
-- `docs/execution-history/DEMO_FINDINGS_2026-07-01.md`
-
-Do not revert user or generated changes unless explicitly asked.
+Do not maintain a static list of local changes in this document; it becomes stale. Treat live Git status as authoritative, and do not revert user or generated changes unless explicitly asked.
 
 ## Target Flow Authority
 

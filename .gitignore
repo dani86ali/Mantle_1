@@ -48,11 +48,12 @@ desktop.ini
 # Moat task system
 .moat/
 
-# Claude Code configuration — ignore everything under .claude/ EXCEPT shared skills.
-# (Git can't re-include files inside an excluded directory, so we ignore the
-# directory's contents with /* and re-include skills/ explicitly.)
+# Claude Code: commit only deliberate shared policy and packaged project skills.
+# Developer-local approvals and transient commands, hooks, and worktrees stay local.
 .claude/*
+!.claude/settings.json
 !.claude/skills/
+!.claude/skills/**
 
 # Large real-customer BoQ benchmark fixtures — kept on disk for the E2 acceptance
 # tests in tests/engines/e2/boq-parse-fixtures.test.ts, but too large to track.

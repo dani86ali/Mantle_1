@@ -43,7 +43,8 @@ Older `src/engines` and legacy planning may exist. Inspect current code before e
 ## Hard Guardrails
 
 - Do not touch `stc-knowledge/`.
-- Do not modify `.claude/settings.local.json`.
+- Do not modify `.claude/settings.local.json` unless the Owner explicitly requests a Claude permission-policy change.
+- Shared Claude policy belongs in `.claude/settings.json`; machine-local approvals remain untracked.
 - Do not touch stash.
 - Do not install packages unless explicitly approved.
 - Do not use legacy runtime code for new runtime behavior.
