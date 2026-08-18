@@ -2,7 +2,7 @@
 
 **Type:** Historical execution and closure record only.
 
-**Source of truth:** `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md` remains the
+**Source of truth:** `docs/architecture/MVP_CANONICAL_PROJECT_STATE.md` remains the
 canonical product state source of truth. This file is a historical execution record for the
 Prompt 104-125 sequence and must not be treated as an architecture reference or planning document.
 

@@ -77,16 +77,10 @@ Reference docs may contain useful RFP, HLD, proposal, catalog, or historical wor
 - `docs/reference/catalog/`
 - `docs/reference/rfp/`
 - `docs/reference/hld/`
-- `docs/reference/flowcharts/`
 
 ## Execution History And Archive
 
-Prompt/story docs are historical evidence only. Use them to understand why a change exists, not to decide current behavior.
-
-Archived docs are retained for history and should not be read by default:
-
-- `docs/archive/`
-- `docs/archive/superseded/`
+Execution-history Markdown is retained only where regression tests load it. One superseded runtime architecture document remains because legacy engine comments still cite it. Remove that document with the legacy engine, not before.
 
 ## Product Spine Guard Checklist
 

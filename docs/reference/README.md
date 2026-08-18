@@ -1,14 +1,11 @@
 # Reference Material
 
-This folder contains future-scope and historical reference material for catalog,
-RFP, HLD, proposal, and flowchart work.
+Reference files are not architecture or runtime authority. Use them only when a task
+explicitly targets the relevant domain and verifies them against current code and the
+canonical documents under `docs/architecture/`.
 
-Reference files are not runtime authority by themselves. They become authority only
-through approved structured artifacts, deterministic services, and human approval.
+- `catalog/`: catalogue material; governed separately from Praxis and the LLM Wiki.
+- `hld/`: design/proposal source material still cited by legacy engine code.
+- `rfp/`: compliance research plus two parser references still cited by legacy engine code.
 
-Use these folders only when a task explicitly targets the corresponding area:
-
-- `catalog/`
-- `rfp/`
-- `hld/`
-- `flowcharts/`
+Future governed AI knowledge belongs in the separate LLM Wiki, not in this folder.

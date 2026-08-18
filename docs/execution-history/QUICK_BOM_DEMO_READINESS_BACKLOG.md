@@ -1,6 +1,6 @@
 # Quick BoM Demo-Readiness Product Fix Backlog
 
-Execution tracker only. `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md`
+Execution tracker only. `docs/architecture/MVP_CANONICAL_PROJECT_STATE.md`
 is the architecture source of truth; this backlog never overrides it and is not a
 planning document. Last refreshed by Prompt 142 (docs/test alignment for the local
 production build proof: `npm.cmd run build` completed successfully after Prompt 141
@@ -89,7 +89,7 @@ written as a testing task rather than an assertion.
 
 ## 3. Source Of Truth And Boundaries
 
-- `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md` remains the
+- `docs/architecture/MVP_CANONICAL_PROJECT_STATE.md` remains the
   architecture source of truth. This backlog never overrides it.
 - Benchmark/priced files (Mantle priced workbook, `Honeywell_BoQ_priced.xlsx`,
   CCW exports) are regression/sanity references only. They are NOT rule sources

@@ -106,7 +106,8 @@ Planning reference folders are not current implementation authority by themselve
 
 - `../bomatic_planning/reference/compliance/`: useful compliance framework reference.
 - `../bomatic_planning/reference/data_dictionary/`: historical/current data dictionary reference.
-- `../bomatic_planning/reference/parser_strategies/`: historical parser research only. Runtime parser authority lives in code/tests.
+- `../bomatic_planning/reference/hld/HLD_CISCO_CVD_RESEARCH.md`: non-authoritative HLD research seed for future governed LLM Wiki curation.
+- `../bomatic_planning/reference/parser_strategies/INVENTORY.md`: retained because a current test loads it; runtime parser authority lives in code/tests.
 
 Do not bulk-load archives or large inventories by default.
 

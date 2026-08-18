@@ -4,7 +4,7 @@
 >
 > This document is retained as historical/future-scope architecture reference.
 > Where it conflicts with the Project-centered Quick BoM/RFP architecture, use
-> `C:\Pre-Sales\bomatic_planning\MVP_CANONICAL_PROJECT_STATE.md`,
+> `docs/architecture/MVP_CANONICAL_PROJECT_STATE.md`,
 > `docs/README.md`, current code, and current tests.
 
 **Version:** 2.0 (replaces Hub-Spoke Architecture v1.0)
@@ -342,7 +342,7 @@ Single-pass Sonnet check between engine output and human checkpoint. Not a full 
 | Validation engine (8 rules) | `src/lib/validation/` | Deterministic validation | Extend with Shahid's 9 rules + Fortinet rules. |
 | Excel export | `src/lib/export/xlsx` | Deterministic TA workbook generation | Extend with TA V35 121-column structure. |
 | Document parsers | To build | Deterministic PDF/DOCX/XLSX ingestion | New. Use pdfplumber, python-docx, openpyxl. |
-| Cost stack formulas | To build | Deterministic TypeScript functions (CS-001→CS-009) | New. From Tender_Analyzer_Model.md §2. |
+| Cost stack formulas | To build | Deterministic TypeScript functions (CS-001→CS-009) | Historical source retired; use current code and tests. |
 | Compliance framework DB | To build | Deterministic control lookup | New. From NCA_ECC2_2024.json + SAMA_CSF.json + ISO_27001.json. |
 | BoQ template parser | To build | Deterministic 5-type parser | New. From BoQ_Template_Patterns.md. |
 | Fortinet price DB | To build | Deterministic SKU→price lookup | New. Parse from quarterly price list Excel. |

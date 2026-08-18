@@ -1,9 +1,7 @@
-# Execution History
+# Retained Execution Evidence
 
-These files record why prior prompt sequences changed BOMATIC.
+The tracked Markdown in this folder is retained because regression tests load it.
+It is test evidence, not architecture authority. Do not add new prompt journals or
+build diaries here; Git commits and automated tests are the implementation record.
 
-They are useful for audit and historical context, but they are not current product
-architecture authority. Current guidance starts at:
-
-- `docs/architecture/MVP_CANONICAL_PROJECT_STATE.md`
-- `docs/README.md`
+Current guidance starts at `docs/architecture/` and `docs/README.md`.
