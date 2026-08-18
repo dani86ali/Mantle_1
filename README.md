@@ -1,64 +1,74 @@
-# BOMATIC — Multi-Vendor Pre-Sales Deliverable Generation Platform
+# Praxis
 
-BOMATIC ingests RFPs, RFIs, and raw requirements and produces the artifacts a pre-sales team owes the customer: compliance matrices, priced Bills of Materials, technical proposals, and HLD/LLD design documents. First tenant is **STC Solutions**; first supported vendors are **Cisco** and **Fortinet**.
+Praxis is a pre-sales delivery workspace for System Integrator teams. It manages RFP evidence, requirements, BoQ/configuration artifacts, compliance matrices, HLD artifacts, technical proposals, and audited downloads through a Project-centered workflow.
 
-## Five Sweet Spots
+The repository folder is still named `bomatic`. The Quick BoM feature inside Praxis is called BoMatic.
 
-| ID  | Sweet Spot                | Gate | Engine | Intake Path     | Automation       |
-|-----|---------------------------|------|--------|-----------------|------------------|
-| SS1 | RFP Parser + Compliance   | 2    | E1     | RFP             | AI + validation  |
-| SS2 | BoM Construction          | 4    | E2     | RFP / Quick / RFI | Deterministic  |
-| SS3 | Proposal Authorship       | 5    | E3     | RFP / Quick / RFI | AI + templates |
-| SS4 | RFI Questionnaire         | 2    | E4     | RFI             | AI + validation  |
-| SS5 | Design (HLD/LLD)          | 3    | E5     | RFI             | AI + tool-use    |
+## Current Product Spine
 
-## Three Intake Modes
-
-- **RFP** — `E1 → E2 → E3`. Parse RFP package, build BoM against the client BoQ, author proposal.
-- **Quick BoM** — `E2 → E3`. Skip discovery; price a known component list and wrap a short proposal.
-- **RFI** — `E4 → E5 → E2 → E3`. Generate questionnaire, design from responses, build BoM, author proposal.
-
-## Architecture
-
-- **5 engines** (`src/engines/e1`…`e5`) — each owns one Sweet Spot, never imports from another engine.
-- **Pipeline coordinator** (`src/coordinator/`) — routes by intake mode, passes typed pipeline state between engines.
-- **Deterministic-first** — 65% TypeScript functions, 26% AI-with-validation, 9% pure AI. E2 has zero pure-AI tasks.
-- **5 human checkpoints** — one per engine, where an engineer reviews/edits/approves before the next stage runs.
-
-## Tech Stack
-
-- **Next.js 14** (App Router, TypeScript)
-- **PostgreSQL** — tenant-isolated pipeline + catalog data
-- **Anthropic Claude** via the `callAI` wrapper (single chokepoint for all AI calls, with retry + post-gate validation)
-- **Zod** — runtime validation at every engine boundary
-
-## Key Principles
-
-- **No LLM math.** Arithmetic, catalog lookups, and rule checks are TypeScript functions or DB queries — never Claude calls.
-- **200-line file cap.** Split when longer. Engines compose small pure functions.
-- **Typed I/O.** Every public function has explicit input and output types; no `any` at engine boundaries.
-- **Graceful AI degradation.** AI failure never halts the pipeline: retry once with the error injected, then flag for the engineer and proceed.
-
-## Repository Layout
-
-```
-src/
-  engines/
-    e1/   RFP Parser + Compliance Matrix
-    e2/   BoM Construction (BoQ parsers, validation, cost stack)
-    e3/   Proposal Authorship (boilerplate + narrative sections)
-    e4/   RFI Discovery (questionnaire + response interpretation)
-    e5/   Design (topology, HLD, LLD, diagrams)
-  coordinator/   Pipeline router, state types, per-engine drivers
-  app/           Next.js routes (API + UI)
-  lib/           Shared adapters, validation rules, DB, AI wrapper
-tests/           Vitest suites alongside engine implementations
-docs/            Runtime + build architecture, data inventory
+```text
+Project
+-> immutable source files
+-> versioned artifacts
+-> deterministic processing or bounded AI candidate drafting
+-> exception-focused SE decisions and required finalizations
+-> current deliverable
+-> audited download
 ```
 
-## Team
+The approved target flow is defined in `docs/architecture/PRAXIS_APPLICATION_FLOW_BLUEPRINTS.md`. Current code still contains older approval-heavy paths and should be migrated to that blueprint.
 
-- **Danish** — architect
-- **Claude** — AI developer
-- **Mohammad** — business strategy
-- **Shahid Khan** — domain expert (pre-sales / network engineering)
+Core implementation areas:
+
+- `src/app/projects/[id]/...`: Project UI and API routes.
+- `src/lib/projects/...`: artifact services, validators, readiness checks, source-chain checks, and workflow logic.
+- `src/types/project.ts`: Project and artifact types.
+- `tests/...`: Vitest coverage for services, routes, and UI.
+
+Older engine-style docs and folders may still exist. Current work should follow inspected code and tests, not stale planning assumptions.
+
+## Major Flows
+
+BoMatic / Quick BoM:
+
+- Normalizes supported BoQ inputs.
+- Resolves SKUs by exact active catalog match.
+- Shows a non-blocking alert for unmatched SKUs and excludes them from configuration, pricing, and export.
+- Expands configuration through deterministic approved rules.
+- Prices through approved pricing authority using Project-level SAR/VAT/margin or markup settings.
+- Uses user intervention only for invalid input and actionable configuration/pricing exceptions.
+- Produces a current Mantle export package for audited download without routine SKU/configuration/pricing/export approvals.
+
+RFP chain:
+
+- Stores immutable RFP package files and extracts text/tables.
+- Uses bounded AI evidence cleanup and item-level confidence to draft a reviewable requirements baseline.
+- Runs BoMatic configuration-only early and consumes the current unpriced Configured BoM.
+- Uses AI plus governed LLM Wiki retrieval to draft HLD intake questions, HLD design model, and HLD diagram candidates.
+- Places compliance matrix after Approved HLD Design Model.
+- Generates the full Technical Proposal from Approved Requirements Baseline, Current Configured BoM, Approved HLD Design Model, and Approved Compliance Matrix.
+
+Current runtime status:
+
+- Current runtime still has older RFP/HLD approval gates, manual diagram/final HLD paths, RFP pricing/export approval assumptions, and TP handoff behavior.
+- Rebuild work should replace those paths with the approved blueprint flow.
+
+## Authority Rules
+
+- Runtime AI does not perform math, pricing, SKU replacement, catalog lookup, configuration decisions, validation authority, or final design authority.
+- Configuration authority and pricing authority stay separate.
+- Product catalog/pricing authority and LLM Wiki stay separate.
+- No silent SKU substitution.
+- No raw source document rereads downstream once approved artifacts exist.
+- AI drafting outputs are candidates until SE finalization makes the artifact authoritative.
+- Human/business/SE approval remains final runtime/customer-deliverable authority.
+
+## First Read For Agents
+
+Use these entry points before changing code:
+
+1. `docs/architecture/PRAXIS_CURRENT_STATE.md`
+2. `docs/architecture/PRAXIS_APPLICATION_FLOW_BLUEPRINTS.md`
+3. `docs/architecture/MVP_CANONICAL_PROJECT_STATE.md`
+4. `docs/README.md`
+5. The exact source and tests for the task

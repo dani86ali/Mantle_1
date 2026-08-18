@@ -6,10 +6,10 @@ Product name: Praxis. The repository folder is still named `bomatic`. The Quick 
 
 Before implementation, read only the current entry points needed for the task:
 
-1. `../bomatic_planning/PRAXIS_CURRENT_STATE.md`
-2. `../bomatic_planning/PRAXIS_APPLICATION_FLOW_BLUEPRINTS.md`
-3. `../bomatic_planning/MVP_CANONICAL_PROJECT_STATE.md`
-4. `../bomatic_planning/BUILD_PROCESS_ARCHITECTURE.md` only when branch/worktree/harness process matters
+1. `docs/architecture/PRAXIS_CURRENT_STATE.md`
+2. `docs/architecture/PRAXIS_APPLICATION_FLOW_BLUEPRINTS.md`
+3. `docs/architecture/MVP_CANONICAL_PROJECT_STATE.md`
+4. `docs/architecture/BUILD_PROCESS_ARCHITECTURE.md` only when branch/worktree/harness process matters
 5. `docs/README.md`
 6. The exact source and test files for the task
 
