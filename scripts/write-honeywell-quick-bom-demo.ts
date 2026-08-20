@@ -1,8 +1,8 @@
 /**
  * Operator command: write the Honeywell Quick BoM Mantle demo workbook on demand.
  *
- * This is the Prompt 73 local command behind the Honeywell Quick BoM demo runbook
- * (docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md). It runs the SAME verified
+ * This is the Prompt 73 local command for the Honeywell Quick BoM demo. It
+ * runs the SAME verified
  * in-memory path the Prompt 71 end-to-end test proves
  * (tests/lib/projects/honeywell-quick-bom-demo-e2e.test.ts): it builds the
  * Honeywell-shaped normalized BoQ and human-accepted SKU decisions inline, builds

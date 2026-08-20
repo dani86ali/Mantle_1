@@ -54,7 +54,6 @@ BoMatic, RFP, HLD, and TP work must preserve deterministic authority boundaries:
 
 These are current evidence/regression docs for the Honeywell MVP authority pack. They are not generic Cisco authority and should not be copied into customer-facing product language without abstraction.
 
-- `docs/quick-bom/HONEYWELL_QUICK_BOM_DEMO_RUNBOOK.md`
 - `docs/quick-bom/HONEYWELL_CCW_PARITY_EVIDENCE.md`
 - `docs/quick-bom/HONEYWELL_DEMO_CATALOG_FIXTURE.md`
 - `docs/quick-bom/HONEYWELL_DEMO_PRICING_FIXTURE.md`
@@ -81,9 +80,12 @@ Reference docs may contain useful RFP, HLD, proposal, catalog, or historical wor
 - `docs/reference/rfp/`
 - `docs/reference/hld/`
 
-## Execution History And Archive
+## Dependency-Bound Legacy Documentation
 
-Execution-history Markdown is retained only where regression tests load it. One superseded runtime architecture document remains because legacy engine comments still cite it. Remove that document with the legacy engine, not before.
+Prompt ledgers and execution-history Markdown are retained in Git history rather than the active working tree. They are not current architecture or implementation authority.
+
+- `docs/RFP_STAGE_4_5_COMPILED_EVIDENCE_REVIEW_CONTRACT.md` is a legacy-frozen implementation contract retained while its deterministic compiled-evidence component is classified for controlled migration. It does not authorize a separate evidence-package review or approval gate.
+- `docs/archive/superseded/BOMATIC_Runtime_Architecture.md` remains only because a legacy engine comment still cites it. Remove it with that legacy engine, not before.
 
 ## Product Spine Guard Checklist
 

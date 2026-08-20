@@ -1,10 +1,18 @@
 # RFP Stage 4.5 - Compiled Evidence Review Contract
 
-Status: active
-Owner: RFP operator workflow (Stage 4.5)
+Status: legacy-frozen
+Owner: Legacy RFP operator workflow (Stage 4.5)
 Model: `src/lib/projects/project-rfp-compiled-evidence-review.ts`
 Consumers: `src/lib/projects/project-rfp-evidence-package-inspection.ts`,
 `src/app/projects/[id]/rfp/page.tsx`
+
+> **Legacy boundary:** This document records a current legacy implementation
+> contract. The target flow is controlled by
+> `docs/architecture/PRAXIS_APPLICATION_FLOW_BLUEPRINTS.md`, which permits
+> deterministic evidence compilation and on-demand inspection but no separate
+> package-level evidence review or approval gate. Treat the compiled model only
+> as a PWM-00 migration candidate. Do not use this document to preserve, require,
+> restore, or recommend the Stage 4.5 operator step.
 
 ## Why
 
