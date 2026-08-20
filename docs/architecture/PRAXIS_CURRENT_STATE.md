@@ -1,6 +1,6 @@
 # Praxis Current State
 
-Date: 2026-08-18
+Date: 2026-08-19
 
 Purpose: first-read source of truth for future Codex/Claude/Govern AI sessions. This file summarizes repo location, current runtime reality, approved target-flow authority, and hard authority rules. It does not replace code inspection, tests, ledgers, or human review.
 
@@ -9,18 +9,19 @@ Purpose: first-read source of truth for future Codex/Claude/Govern AI sessions. 
 - Product name: Praxis.
 - Product repo folder: `bomatic` for now.
 - Quick BoM feature name: BoMatic.
-- Product repo: `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic`.
-- Canonical architecture: `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic\docs\architecture`.
-- Shared Claude Code policy: `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic\.claude\settings.json`.
+- Active product repo: `/home/dani86ali/src/praxis/bomatic` in Ubuntu WSL2.
+- Retained Windows clone: `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic`; it is for recovery/reference and is not an active editing target.
+- Canonical architecture: `/home/dani86ali/src/praxis/bomatic/docs/architecture`.
+- Shared Claude Code policy: `/home/dani86ali/src/praxis/bomatic/.claude/settings.json`.
 - Developer-local Claude approvals: `.claude/settings.local.json` (not tracked).
-- Native Windows Claude Code sandboxing is not currently active; shared permission rules are the enforced local boundary until an isolated WSL2 or development-container environment is approved.
+- Praxis development commands run inside Ubuntu WSL2 with Linux-native Git, Node.js, npm, Codex, and Claude Code. Do not route `npm` through Windows interop.
 - Historical planning/ledgers: `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic_planning`.
 - Harness: `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic-harness`.
 - Benchmark/source folders live outside the product repo under `C:\Pre-Sales\` and vendor/catalog folders under `vendor_data_price_guide_instructions\`.
 
 ## Current Repo State To Reconfirm
 
-Every new session must run `git status --short -b` in the product repo and inspect relevant diffs before acting. Do not assume this file is newer than the repo.
+Every new session must run `git status --short -b` in the active Ubuntu WSL2 product repo and inspect relevant diffs before acting. Do not assume this file is newer than the repo.
 
 Do not maintain a static list of local changes in this document; it becomes stale. Treat live Git status as authoritative, and do not revert user or generated changes unless explicitly asked.
 
@@ -112,4 +113,4 @@ Do not bulk-load archives or large inventories by default.
 2. Add the Project Processing Status backend/UI early because both flows have many asynchronous processing events.
 3. Rebuild Quick BoM first around exception-driven deterministic progression.
 4. Rebuild RFP/HLD/TP stages around the approved artifact order and remove obsolete retry/review blockers.
-5. Keep generated worktrees, run artifacts, and temporary harness output outside OneDrive where possible.
+5. Keep generated worktrees, run artifacts, and temporary harness output in the Linux filesystem outside OneDrive.

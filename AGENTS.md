@@ -4,14 +4,15 @@
 
 Product name: Praxis. The repository folder is still named `bomatic`. The Quick BoM product feature is called BoMatic.
 
+The active development repository is `/home/dani86ali/src/praxis/bomatic` in Ubuntu WSL2. The Windows OneDrive clone is retained for recovery/reference and is not an active editing target. Run development commands with Linux-native tools inside the WSL clone; do not route `npm` through Windows interop.
+
 Before implementation, read only the current entry points needed for the task:
 
 1. `docs/architecture/PRAXIS_CURRENT_STATE.md`
 2. `docs/architecture/PRAXIS_APPLICATION_FLOW_BLUEPRINTS.md`
 3. `docs/architecture/MVP_CANONICAL_PROJECT_STATE.md`
-4. `docs/architecture/BUILD_PROCESS_ARCHITECTURE.md` only when branch/worktree/harness process matters
-5. `docs/README.md`
-6. The exact source and test files for the task
+4. `docs/README.md`
+5. The exact source and test files for the task
 
 Do not bulk-load archived docs or planning reference folders by default.
 
@@ -71,6 +72,6 @@ Older `src/engines` and legacy planning may exist. Inspect current code before e
 - Start with `git status --short -b` and inspect relevant diffs.
 - Keep changes narrow and aligned to the current Project spine.
 - Write or update tests in the same stage as implementation.
-- Run focused Vitest, impacted suites, `npm.cmd run typecheck`, `git diff --check`, and `npm.cmd run build` before claiming completion.
+- Run focused Vitest, impacted suites, `npm run typecheck`, `git diff --check`, and `npm run build` before claiming completion.
 - Do not commit or push until actual verification has passed.
-- Keep future worktrees, run artifacts, and harness output outside OneDrive unless explicitly directed.
+- Keep active worktrees, run artifacts, and temporary harness output in the Linux filesystem outside OneDrive unless explicitly directed.

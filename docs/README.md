@@ -9,15 +9,18 @@ Read these first for current Praxis work:
 1. `docs/architecture/PRAXIS_CURRENT_STATE.md`
 2. `docs/architecture/PRAXIS_APPLICATION_FLOW_BLUEPRINTS.md`
 3. `docs/architecture/MVP_CANONICAL_PROJECT_STATE.md`
-4. `docs/architecture/BUILD_PROCESS_ARCHITECTURE.md` only when coordinating branches, worktrees, harness use, or parallel implementation
-5. This file: `docs/README.md`
-6. The exact source and test files for the feature being changed
+4. This file: `docs/README.md`
+5. The exact source and test files for the feature being changed
 
 Current workspace root:
 
-`C:\Users\dani8\OneDrive - Mantle\System Integrator`
+`/home/dani86ali/src/praxis`
 
 Product repo:
+
+`/home/dani86ali/src/praxis/bomatic`
+
+Retained Windows clone (recovery/reference only; not an active editing target):
 
 `C:\Users\dani8\OneDrive - Mantle\System Integrator\Praxis\bomatic`
 
